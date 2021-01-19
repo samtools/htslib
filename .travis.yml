@@ -83,6 +83,7 @@ before_script:
         popd && \
         popd
     fi
+    git submodule update --init --recursive
 
 script:
   - |

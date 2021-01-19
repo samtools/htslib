@@ -73,7 +73,22 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "os.h"
 #include "../htslib/hts.h"
 #include "open_trace_file.h"
-#include "rANS_static.h"
+
+#if defined(HAVE_EXTERNAL_LIBHTSCODECS)
+#include <htscodecs/rANS_static.h>
+#include <htscodecs/rANS_static4x16.h>
+#include <htscodecs/arith_dynamic.h>
+#include <htscodecs/tokenise_name3.h>
+#include <htscodecs/fqzcomp_qual.h>
+#include <htscodecs/varint.h> // CRAM v4.0 variable-size integers
+#else
+#include "../htscodecs/htscodecs/rANS_static.h"
+#include "../htscodecs/htscodecs/rANS_static4x16.h"
+#include "../htscodecs/htscodecs/arith_dynamic.h"
+#include "../htscodecs/htscodecs/tokenise_name3.h"
+#include "../htscodecs/htscodecs/fqzcomp_qual.h"
+#include "../htscodecs/htscodecs/varint.h"
+#endif
 
 //#define REF_DEBUG
 
@@ -95,9 +110,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define PATH_MAX FILENAME_MAX
 #endif
 
-#define TRIAL_SPAN 50
+#define TRIAL_SPAN 70
 #define NTRIALS 3
 
+#define CRAM_DEFAULT_LEVEL 5
 
 /* ----------------------------------------------------------------------
  * ITF8 encoding and decoding.
@@ -245,6 +261,112 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
     }
 
     return 5;
+}
+
+/*
+ * Stores a value to memory in ITF-8 format.
+ *
+ * Returns the number of bytes required to store the number.
+ * This is a maximum of 5 bytes.
+ */
+static inline int itf8_put(char *cp, int32_t val) {
+    unsigned char *up = (unsigned char *)cp;
+    if        (!(val & ~0x00000007f)) { // 1 byte
+        *up = val;
+        return 1;
+    } else if (!(val & ~0x00003fff)) { // 2 byte
+        *up++ = (val >> 8 ) | 0x80;
+        *up   = val & 0xff;
+        return 2;
+    } else if (!(val & ~0x01fffff)) { // 3 byte
+        *up++ = (val >> 16) | 0xc0;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 3;
+    } else if (!(val & ~0x0fffffff)) { // 4 byte
+        *up++ = (val >> 24) | 0xe0;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 4;
+    } else {                           // 5 byte
+        *up++ = 0xf0 | ((val>>28) & 0xff);
+        *up++ = (val >> 20) & 0xff;
+        *up++ = (val >> 12) & 0xff;
+        *up++ = (val >> 4 ) & 0xff;
+        *up = val & 0x0f;
+        return 5;
+    }
+}
+
+
+/* 64-bit itf8 variant */
+static inline int ltf8_put(char *cp, int64_t val) {
+    unsigned char *up = (unsigned char *)cp;
+    if        (!(val & ~((1LL<<7)-1))) {
+        *up = val;
+        return 1;
+    } else if (!(val & ~((1LL<<(6+8))-1))) {
+        *up++ = (val >> 8 ) | 0x80;
+        *up   = val & 0xff;
+        return 2;
+    } else if (!(val & ~((1LL<<(5+2*8))-1))) {
+        *up++ = (val >> 16) | 0xc0;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 3;
+    } else if (!(val & ~((1LL<<(4+3*8))-1))) {
+        *up++ = (val >> 24) | 0xe0;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 4;
+    } else if (!(val & ~((1LL<<(3+4*8))-1))) {
+        *up++ = (val >> 32) | 0xf0;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 5;
+    } else if (!(val & ~((1LL<<(2+5*8))-1))) {
+        *up++ = (val >> 40) | 0xf8;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 6;
+    } else if (!(val & ~((1LL<<(1+6*8))-1))) {
+        *up++ = (val >> 48) | 0xfc;
+        *up++ = (val >> 40) & 0xff;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 7;
+    } else if (!(val & ~((1LL<<(7*8))-1))) {
+        *up++ = (val >> 56) | 0xfe;
+        *up++ = (val >> 48) & 0xff;
+        *up++ = (val >> 40) & 0xff;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 8;
+    } else {
+        *up++ = 0xff;
+        *up++ = (val >> 56) & 0xff;
+        *up++ = (val >> 48) & 0xff;
+        *up++ = (val >> 40) & 0xff;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 9;
+    }
 }
 
 /*
@@ -514,6 +636,361 @@ int ltf8_put_blk(cram_block *blk, int64_t val) {
     return -1;
 }
 
+static int64_t safe_itf8_get(char **cp, const char *endp, int *err) {
+    const unsigned char *up = (unsigned char *)*cp;
+
+    if (endp && endp - *cp < 5 &&
+        (*cp >= endp || endp - *cp < itf8_bytes[up[0]>>4])) {
+        if (err) *err = 1;
+        return 0;
+    }
+
+    if (up[0] < 0x80) {
+        (*cp)++;
+        return up[0];
+    } else if (up[0] < 0xc0) {
+        (*cp)+=2;
+        return ((up[0] <<8) |  up[1])                           & 0x3fff;
+    } else if (up[0] < 0xe0) {
+        (*cp)+=3;
+        return ((up[0]<<16) | (up[1]<< 8) |  up[2])             & 0x1fffff;
+    } else if (up[0] < 0xf0) {
+        (*cp)+=4;
+        uint32_t uv = (((uint32_t)up[0]<<24) | (up[1]<<16) | (up[2]<<8) | up[3]) & 0x0fffffff;
+        return (int32_t)uv;
+    } else {
+        (*cp)+=5;
+        uint32_t uv = (((uint32_t)up[0] & 0x0f)<<28) | (up[1]<<20) | (up[2]<<12) | (up[3]<<4) | (up[4] & 0x0f);
+        return (int32_t)uv;
+    }
+}
+
+static int64_t safe_ltf8_get(char **cp, const char *endp, int *err) {
+    unsigned char *up = (unsigned char *)*cp;
+
+    if (endp && endp - *cp < 9 &&
+        (*cp >= endp || endp - *cp < ltf8_bytes[up[0]])) {
+        if (err) *err = 1;
+        return 0;
+    }
+
+    if (up[0] < 0x80) {
+        (*cp)++;
+        return up[0];
+    } else if (up[0] < 0xc0) {
+        (*cp)+=2;
+        return (((uint64_t)up[0]<< 8) |
+                 (uint64_t)up[1]) & (((1LL<<(6+8)))-1);
+    } else if (up[0] < 0xe0) {
+        (*cp)+=3;
+        return (((uint64_t)up[0]<<16) |
+                ((uint64_t)up[1]<< 8) |
+                 (uint64_t)up[2]) & ((1LL<<(5+2*8))-1);
+    } else if (up[0] < 0xf0) {
+        (*cp)+=4;
+        return (((uint64_t)up[0]<<24) |
+                ((uint64_t)up[1]<<16) |
+                ((uint64_t)up[2]<< 8) |
+                 (uint64_t)up[3]) & ((1LL<<(4+3*8))-1);
+    } else if (up[0] < 0xf8) {
+        (*cp)+=5;
+        return (((uint64_t)up[0]<<32) |
+                ((uint64_t)up[1]<<24) |
+                ((uint64_t)up[2]<<16) |
+                ((uint64_t)up[3]<< 8) |
+                 (uint64_t)up[4]) & ((1LL<<(3+4*8))-1);
+    } else if (up[0] < 0xfc) {
+        (*cp)+=6;
+        return (((uint64_t)up[0]<<40) |
+                ((uint64_t)up[1]<<32) |
+                ((uint64_t)up[2]<<24) |
+                ((uint64_t)up[3]<<16) |
+                ((uint64_t)up[4]<< 8) |
+                 (uint64_t)up[5]) & ((1LL<<(2+5*8))-1);
+    } else if (up[0] < 0xfe) {
+        (*cp)+=7;
+        return (((uint64_t)up[0]<<48) |
+                ((uint64_t)up[1]<<40) |
+                ((uint64_t)up[2]<<32) |
+                ((uint64_t)up[3]<<24) |
+                ((uint64_t)up[4]<<16) |
+                ((uint64_t)up[5]<< 8) |
+                 (uint64_t)up[6]) & ((1LL<<(1+6*8))-1);
+    } else if (up[0] < 0xff) {
+        (*cp)+=8;
+        return (((uint64_t)up[1]<<48) |
+                ((uint64_t)up[2]<<40) |
+                ((uint64_t)up[3]<<32) |
+                ((uint64_t)up[4]<<24) |
+                ((uint64_t)up[5]<<16) |
+                ((uint64_t)up[6]<< 8) |
+                 (uint64_t)up[7]) & ((1LL<<(7*8))-1);
+    } else {
+        (*cp)+=9;
+        return (((uint64_t)up[1]<<56) |
+                ((uint64_t)up[2]<<48) |
+                ((uint64_t)up[3]<<40) |
+                ((uint64_t)up[4]<<32) |
+                ((uint64_t)up[5]<<24) |
+                ((uint64_t)up[6]<<16) |
+                ((uint64_t)up[7]<< 8) |
+                 (uint64_t)up[8]);
+    }
+}
+
+// Wrapper for now
+int safe_itf8_put(char *cp, const char *cp_end, int32_t val) {
+    return itf8_put(cp, val);
+}
+
+int safe_ltf8_put(char *cp, const char *cp_end, int64_t val) {
+    return ltf8_put(cp, val);
+}
+
+int itf8_size(int64_t v) {
+    return ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5);
+}
+
+//-----------------------------------------------------------------------------
+
+// CRAM v4.0 onwards uses a different variable sized integer encoding
+// that is size agnostic.
+
+// Local interface to varint.h inline version, so we can use in func ptr.
+// Note a lot of these use the unsigned interface but take signed int64_t.
+// This is because the old CRAM ITF8 inteface had signed -1 as unsigned
+// 0xffffffff.
+static int uint7_size(int64_t v) {
+    return var_size_u64(v);
+}
+
+static int64_t uint7_get_32(char **cp, const char *endp, int *err) {
+    uint32_t val;
+    int nb = var_get_u32((uint8_t *)(*cp), (const uint8_t *)endp, &val);
+    (*cp) += nb;
+    if (!nb && err) *err = 1;
+    return val;
+}
+
+static int64_t sint7_get_32(char **cp, const char *endp, int *err) {
+    int32_t val;
+    int nb = var_get_s32((uint8_t *)(*cp), (const uint8_t *)endp, &val);
+    (*cp) += nb;
+    if (!nb && err) *err = 1;
+    return val;
+}
+
+static int64_t uint7_get_64(char **cp, const char *endp, int *err) {
+    uint64_t val;
+    int nb = var_get_u64((uint8_t *)(*cp), (const uint8_t *)endp, &val);
+    (*cp) += nb;
+    if (!nb && err) *err = 1;
+    return val;
+}
+
+static int64_t sint7_get_64(char **cp, const char *endp, int *err) {
+    int64_t val;
+    int nb = var_get_s64((uint8_t *)(*cp), (const uint8_t *)endp, &val);
+    (*cp) += nb;
+    if (!nb && err) *err = 1;
+    return val;
+}
+
+static int uint7_put_32(char *cp, const char *endp, int32_t val) {
+    return var_put_u32((uint8_t *)cp, (const uint8_t *)endp, val);
+}
+
+static int sint7_put_32(char *cp, const char *endp, int32_t val) {
+    return var_put_s32((uint8_t *)cp, (const uint8_t *)endp, val);
+}
+
+static int uint7_put_64(char *cp, const char *endp, int64_t val) {
+    return var_put_u64((uint8_t *)cp, (const uint8_t *)endp, val);
+}
+
+static int sint7_put_64(char *cp, const char *endp, int64_t val) {
+    return var_put_s64((uint8_t *)cp, (const uint8_t *)endp, val);
+}
+
+// Put direct to to cram_block
+static int uint7_put_blk_32(cram_block *blk, int32_t v) {
+    uint8_t buf[10];
+    int sz = var_put_u32(buf, buf+10, v);
+    BLOCK_APPEND(blk, buf, sz);
+    return sz;
+
+ block_err:
+    return -1;
+}
+
+static int sint7_put_blk_32(cram_block *blk, int32_t v) {
+    uint8_t buf[10];
+    int sz = var_put_s32(buf, buf+10, v);
+    BLOCK_APPEND(blk, buf, sz);
+    return sz;
+
+ block_err:
+    return -1;
+}
+
+static int uint7_put_blk_64(cram_block *blk, int64_t v) {
+    uint8_t buf[10];
+    int sz = var_put_u64(buf, buf+10, v);
+    BLOCK_APPEND(blk, buf, sz);
+    return sz;
+
+ block_err:
+    return -1;
+}
+
+static int sint7_put_blk_64(cram_block *blk, int64_t v) {
+    uint8_t buf[10];
+    int sz = var_put_s64(buf, buf+10, v);
+    BLOCK_APPEND(blk, buf, sz);
+    return sz;
+
+ block_err:
+    return -1;
+}
+
+// Decode 32-bits with CRC update from cram_fd
+static int uint7_decode_crc32(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
+    uint8_t b[5], i = 0;
+    int c;
+    uint32_t v = 0;
+
+#ifdef VARINT2
+    b[0] = hgetc(fd->fp);
+    if (b[0] < 177) {
+    } else if (b[0] < 241) {
+        b[1] = hgetc(fd->fp);
+    } else if (b[0] < 249) {
+        b[1] = hgetc(fd->fp);
+        b[2] = hgetc(fd->fp);
+    } else {
+        int n = b[0]+2, z = 1;
+        while (n-- >= 249)
+            b[z++] = hgetc(fd->fp);
+    }
+    i = var_get_u32(b, NULL, &v);
+#else
+//    // Little endian
+//    int s = 0;
+//    do {
+//        b[i++] = c = hgetc(fd->fp);
+//        if (c < 0)
+//            return -1;
+//        v |= (c & 0x7f) << s;
+//      s += 7;
+//    } while (i < 5 && (c & 0x80));
+
+    // Big endian, see also htscodecs/varint.h
+    do {
+        b[i++] = c = hgetc(fd->fp);
+        if (c < 0)
+            return -1;
+        v = (v<<7) | (c & 0x7f);
+    } while (i < 5 && (c & 0x80));
+#endif
+    *crc = crc32(*crc, b, i);
+
+    *val_p = v;
+    return i;
+}
+
+// Decode 32-bits with CRC update from cram_fd
+static int sint7_decode_crc32(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
+    uint8_t b[5], i = 0;
+    int c;
+    uint32_t v = 0;
+
+#ifdef VARINT2
+    b[0] = hgetc(fd->fp);
+    if (b[0] < 177) {
+    } else if (b[0] < 241) {
+        b[1] = hgetc(fd->fp);
+    } else if (b[0] < 249) {
+        b[1] = hgetc(fd->fp);
+        b[2] = hgetc(fd->fp);
+    } else {
+        int n = b[0]+2, z = 1;
+        while (n-- >= 249)
+            b[z++] = hgetc(fd->fp);
+    }
+    i = var_get_u32(b, NULL, &v);
+#else
+//    // Little endian
+//    int s = 0;
+//    do {
+//        b[i++] = c = hgetc(fd->fp);
+//        if (c < 0)
+//            return -1;
+//        v |= (c & 0x7f) << s;
+//      s += 7;
+//    } while (i < 5 && (c & 0x80));
+
+    // Big endian, see also htscodecs/varint.h
+    do {
+        b[i++] = c = hgetc(fd->fp);
+        if (c < 0)
+            return -1;
+        v = (v<<7) | (c & 0x7f);
+    } while (i < 5 && (c & 0x80));
+#endif
+    *crc = crc32(*crc, b, i);
+
+    *val_p = (v>>1) ^ -(v&1);
+    return i;
+}
+
+
+// Decode 64-bits with CRC update from cram_fd
+static int uint7_decode_crc64(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
+    uint8_t b[10], i = 0;
+    int c;
+    uint64_t v = 0;
+
+#ifdef VARINT2
+    b[0] = hgetc(fd->fp);
+    if (b[0] < 177) {
+    } else if (b[0] < 241) {
+        b[1] = hgetc(fd->fp);
+    } else if (b[0] < 249) {
+        b[1] = hgetc(fd->fp);
+        b[2] = hgetc(fd->fp);
+    } else {
+        int n = b[0]+2, z = 1;
+        while (n-- >= 249)
+            b[z++] = hgetc(fd->fp);
+    }
+    i = var_get_u64(b, NULL, &v);
+#else
+//    // Little endian
+//    int s = 0;
+//    do {
+//        b[i++] = c = hgetc(fd->fp);
+//        if (c < 0)
+//            return -1;
+//        v |= (c & 0x7f) << s;
+//      s += 7;
+//    } while (i < 10 && (c & 0x80));
+
+    // Big endian, see also htscodecs/varint.h
+    do {
+        b[i++] = c = hgetc(fd->fp);
+        if (c < 0)
+            return -1;
+        v = (v<<7) | (c & 0x7f);
+    } while (i < 5 && (c & 0x80));
+#endif
+    *crc = crc32(*crc, b, i);
+
+    *val_p = v;
+    return i;
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Decodes a 32-bit little endian value from fd and stores in val.
  *
@@ -634,6 +1111,9 @@ static char *libdeflate_deflate(char *data, size_t size, size_t *cdata_size,
     level *= 1.2; // NB levels go up to 12 here; 5 onwards is +1
     if (level >= 8) level += level/8; // 8->10, 9->12
     if (level > 12) level = 12;
+
+    if (strat == Z_RLE) // not supported by libdeflate
+        level = 1;
 
     struct libdeflate_compressor *z = libdeflate_alloc_compressor(level);
     if (!z) {
@@ -912,6 +1392,9 @@ cram_block *cram_new_block(enum cram_content_type content_type,
     b->alloc = 0;
     b->byte = 0;
     b->bit = 7; // MSB
+    b->crc32 = 0;
+    b->idx = 0;
+    b->m = NULL;
 
     return b;
 }
@@ -934,9 +1417,9 @@ cram_block *cram_read_block(cram_fd *fd) {
     c = b->method; crc = crc32(crc, &c, 1);
     if (-1 == (b->content_type= hgetc(fd->fp))) { free(b); return NULL; }
     c = b->content_type; crc = crc32(crc, &c, 1);
-    if (-1 == itf8_decode_crc(fd, &b->content_id, &crc))  { free(b); return NULL; }
-    if (-1 == itf8_decode_crc(fd, &b->comp_size, &crc))   { free(b); return NULL; }
-    if (-1 == itf8_decode_crc(fd, &b->uncomp_size, &crc)) { free(b); return NULL; }
+    if (-1 == fd->vv.varint_decode32_crc(fd, &b->content_id, &crc))  { free(b); return NULL; }
+    if (-1 == fd->vv.varint_decode32_crc(fd, &b->comp_size, &crc))   { free(b); return NULL; }
+    if (-1 == fd->vv.varint_decode32_crc(fd, &b->uncomp_size, &crc)) { free(b); return NULL; }
 
     //fprintf(stderr, "  method %d, ctype %d, cid %d, csize %d, ucsize %d\n",
     //      b->method, b->content_type, b->content_id, b->comp_size, b->uncomp_size);
@@ -1015,13 +1498,18 @@ uint32_t cram_block_size(cram_block *b) {
  *        -1 on failure
  */
 int cram_write_block(cram_fd *fd, cram_block *b) {
+    char vardata[100];
+    int vardata_o = 0;
+
     assert(b->method != RAW || (b->comp_size == b->uncomp_size));
 
     if (hputc(b->method,       fd->fp)  == EOF) return -1;
     if (hputc(b->content_type, fd->fp)  == EOF) return -1;
-    if (itf8_encode(fd, b->content_id)  ==  -1) return -1;
-    if (itf8_encode(fd, b->comp_size)   ==  -1) return -1;
-    if (itf8_encode(fd, b->uncomp_size) ==  -1) return -1;
+    vardata_o += fd->vv.varint_put32(vardata          , vardata+100, b->content_id);
+    vardata_o += fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->comp_size);
+    vardata_o += fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->uncomp_size);
+    if (vardata_o != hwrite(fd->fp, vardata, vardata_o))
+        return -1;
 
     if (b->data) {
         if (b->method == RAW) {
@@ -1037,15 +1525,15 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
     }
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-        unsigned char dat[100], *cp = dat;;
+        char dat[100], *cp = (char *)dat;
         uint32_t crc;
 
         *cp++ = b->method;
         *cp++ = b->content_type;
-        cp += itf8_put((char*)cp, b->content_id);
-        cp += itf8_put((char*)cp, b->comp_size);
-        cp += itf8_put((char*)cp, b->uncomp_size);
-        crc = crc32(0L, dat, cp-dat);
+        cp += fd->vv.varint_put32(cp, dat+100, b->content_id);
+        cp += fd->vv.varint_put32(cp, dat+100, b->comp_size);
+        cp += fd->vv.varint_put32(cp, dat+100, b->uncomp_size);
+        crc = crc32(0L, (uc *)dat, cp-dat);
 
         if (b->method == RAW) {
             b->crc32 = crc32(crc, b->data ? b->data : (uc*)"", b->uncomp_size);
@@ -1177,6 +1665,62 @@ int cram_uncompress_block(cram_block *b) {
         break;
     }
 
+    case FQZ: {
+        uncomp_size = b->uncomp_size;
+        uncomp = fqz_decompress((char *)b->data, b->comp_size, &uncomp_size, NULL, 0);
+        if (!uncomp)
+            return -1;
+        free(b->data);
+        b->data = (unsigned char *)uncomp;
+        b->alloc = uncomp_size;
+        b->method = RAW;
+        break;
+    }
+
+    case RANS_PR0: {
+        unsigned int usize = b->uncomp_size, usize2;
+        uncomp = (char *)rans_uncompress_4x16(b->data, b->comp_size, &usize2);
+        if (!uncomp || usize != usize2)
+            return -1;
+        b->orig_method = RANS_PR0 + (b->data[0]&1)
+            + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
+        free(b->data);
+        b->data = (unsigned char *)uncomp;
+        b->alloc = usize2;
+        b->method = RAW;
+        b->uncomp_size = usize2; // Just incase it differs
+        //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
+        break;
+    }
+
+    case ARITH_PR0: {
+        unsigned int usize = b->uncomp_size, usize2;
+        uncomp = (char *)arith_uncompress_to(b->data, b->comp_size, NULL, &usize2);
+        if (!uncomp || usize != usize2)
+            return -1;
+        b->orig_method = ARITH_PR0 + (b->data[0]&1)
+            + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
+        free(b->data);
+        b->data = (unsigned char *)uncomp;
+        b->alloc = usize2;
+        b->method = RAW;
+        b->uncomp_size = usize2; // Just incase it differs
+        //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
+        break;
+    }
+
+    case TOK3: {
+        uint32_t out_len;
+        uint8_t *cp = decode_names(b->data, b->comp_size, &out_len);
+        b->orig_method = TOK3;
+        b->method = RAW;
+        free(b->data);
+        b->data = cp;
+        b->alloc = out_len;
+        b->uncomp_size = out_len;
+        break;
+    }
+
     default:
         return -1;
     }
@@ -1184,12 +1728,14 @@ int cram_uncompress_block(cram_block *b) {
     return 0;
 }
 
-static char *cram_compress_by_method(char *in, size_t in_size,
+static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
                                      int content_id, size_t *out_size,
-                                     enum cram_block_method method,
+                                     enum cram_block_method_int method,
                                      int level, int strat) {
     switch (method) {
     case GZIP:
+    case GZIP_RLE:
+    case GZIP_1:
         // Read names bizarrely benefit from zlib over libdeflate for
         // mid-range compression levels.  Focusing purely of ratio or
         // speed, libdeflate still wins.  It also seems to win for
@@ -1225,6 +1771,32 @@ static char *cram_compress_by_method(char *in, size_t in_size,
 #endif
     }
 
+    case FQZ:
+    case FQZ_b:
+    case FQZ_c:
+    case FQZ_d: {
+        // Extract the necessary portion of the slice into an fqz_slice struct.
+        // These previously were the same thing, but this permits us to detach
+        // the codec from the rest of this CRAM implementation.
+        fqz_slice *f = malloc(2*s->hdr->num_records * sizeof(uint32_t) + sizeof(fqz_slice));
+        if (!f)
+            return NULL;
+        f->num_records = s->hdr->num_records;
+        f->len = (uint32_t *)(((char *)f) + sizeof(fqz_slice));
+        f->flags = f->len + s->hdr->num_records;
+        int i;
+        for (i = 0; i < s->hdr->num_records; i++) {
+            f->flags[i] = s->crecs[i].flags;
+            f->len[i] = (i+1 < s->hdr->num_records
+                         ? s->crecs[i+1].qual - s->crecs[i].qual
+                         : s->block[DS_QS]->uncomp_size - s->crecs[i].qual);
+        }
+        char *comp = fqz_compress(strat & 0xff /* cram vers */, f,
+                                  in, in_size, out_size, strat >> 8, NULL);
+        free(f);
+        return comp;
+    }
+
     case LZMA:
 #ifdef HAVE_LIBLZMA
         return lzma_mem_deflate(in, in_size, out_size, level);
@@ -1232,20 +1804,64 @@ static char *cram_compress_by_method(char *in, size_t in_size,
         return NULL;
 #endif
 
-    case RANS0: {
+    case RANS0:
+    case RANS1: {
         unsigned int out_size_i;
         unsigned char *cp;
-        cp = rans_compress((unsigned char *)in, in_size, &out_size_i, 0);
+        cp = rans_compress((unsigned char *)in, in_size, &out_size_i,
+                           method == RANS0 ? 0 : 1);
         *out_size = out_size_i;
         return (char *)cp;
     }
 
-    case RANS1: {
+    case RANS_PR0:
+    case RANS_PR1:
+    case RANS_PR64:
+    case RANS_PR9:
+    case RANS_PR128:
+    case RANS_PR129:
+    case RANS_PR192:
+    case RANS_PR193: {
         unsigned int out_size_i;
         unsigned char *cp;
 
-        cp = rans_compress((unsigned char *)in, in_size, &out_size_i, 1);
+        // see enum cram_block. We map RANS_* methods to order bit-fields
+        static int methmap[] = { 1, 64,9, 128,129, 192,193 };
+
+        cp = rans_compress_4x16((unsigned char *)in, in_size, &out_size_i,
+                                method == RANS_PR0 ? 0 : methmap[method - RANS_PR1]);
         *out_size = out_size_i;
+        return (char *)cp;
+    }
+
+    case ARITH_PR0:
+    case ARITH_PR1:
+    case ARITH_PR64:
+    case ARITH_PR9:
+    case ARITH_PR128:
+    case ARITH_PR129:
+    case ARITH_PR192:
+    case ARITH_PR193: {
+        unsigned int out_size_i;
+        unsigned char *cp;
+
+        // see enum cram_block. We map ARITH_* methods to order bit-fields
+        static int methmap[] = { 1, 64,9, 128,129, 192,193 };
+
+        cp = arith_compress_to((unsigned char *)in, in_size, NULL, &out_size_i,
+                               method == ARITH_PR0 ? 0 : methmap[method - ARITH_PR1]);
+        *out_size = out_size_i;
+        return (char *)cp;
+    }
+
+    case TOK3:
+    case TOKA: {
+        int out_len;
+        int lev = level;
+        if (method == TOK3 && lev > 3)
+            lev = 3;
+        uint8_t *cp = encode_names(in, in_size, lev, strat, &out_len, NULL);
+        *out_size = out_len;
         return (char *)cp;
     }
 
@@ -1270,12 +1886,36 @@ static char *cram_compress_by_method(char *in, size_t in_size,
  *
  * Method and level -1 implies defaults, as specified in cram_fd.
  */
-int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
-                        int method, int level) {
+int cram_compress_block2(cram_fd *fd, cram_slice *s,
+                         cram_block *b, cram_metrics *metrics,
+                         int method, int level) {
+
+    if (!b)
+        return 0;
 
     char *comp = NULL;
     size_t comp_size = 0;
     int strat;
+
+    // Internally we have parameterised methods that externally map
+    // to the same CRAM method value.
+    // See enum_cram_block_method_int in cram_structs.h.
+    int methmap[] = {
+        // Externally defined values
+        RAW, GZIP, BZIP2, LZMA, RANS, RANSPR, ARITH, FQZ, TOK3,
+
+        // Reserved for possible expansion
+        0, 0,
+
+        // Internally parameterised versions matching back to above
+        // external values
+        GZIP, GZIP,
+        FQZ, FQZ, FQZ,
+        RANS,
+        RANSPR, RANSPR, RANSPR, RANSPR, RANSPR, RANSPR, RANSPR,
+        TOK3,
+        ARITH,  ARITH,  ARITH,  ARITH,  ARITH,  ARITH,  ARITH,
+    };
 
     if (b->method != RAW) {
         // Maybe already compressed if s->block[0] was compressed and
@@ -1309,14 +1949,10 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
     if (metrics) {
         pthread_mutex_lock(&fd->metrics_lock);
         if (metrics->trial > 0 || --metrics->next_trial <= 0) {
-            size_t sz_best = INT_MAX;
-            size_t sz_gz_rle = 0;
-            size_t sz_gz_def = 0;
-            size_t sz_rans0 = 0;
-            size_t sz_rans1 = 0;
-            size_t sz_bzip2 = 0;
-            size_t sz_lzma = 0;
-            int method_best = 0;
+            int m, unpackable = metrics->unpackable;
+            size_t sz_best = b->uncomp_size;
+            size_t sz[CRAM_MAX_METHOD] = {0};
+            int method_best = 0; // RAW
             char *c_best = NULL, *c = NULL;
 
             if (metrics->revised_method)
@@ -1327,174 +1963,185 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
             if (metrics->next_trial <= 0) {
                 metrics->next_trial = TRIAL_SPAN;
                 metrics->trial = NTRIALS;
-                metrics->sz_gz_rle /= 2;
-                metrics->sz_gz_def /= 2;
-                metrics->sz_rans0  /= 2;
-                metrics->sz_rans1  /= 2;
-                metrics->sz_bzip2  /= 2;
-                metrics->sz_lzma   /= 2;
+                for (m = 0; m < CRAM_MAX_METHOD; m++)
+                    metrics->sz[m] /= 2;
+                metrics->unpackable = 0;
             }
+
+            // Compress this block using the best method
+            if (unpackable && CRAM_MAJOR_VERS(fd->version) > 3) {
+                // No point trying bit-pack if 17+ symbols.
+                if (method & (1<<RANS_PR128))
+                    method = (method|(1<<RANS_PR0))&~(1<<RANS_PR128);
+                if (method & (1<<RANS_PR129))
+                    method = (method|(1<<RANS_PR1))&~(1<<RANS_PR129);
+                if (method & (1<<RANS_PR192))
+                    method = (method|(1<<RANS_PR64))&~(1<<RANS_PR192);
+                if (method & (1<<RANS_PR193))
+                    method = (method|(1<<RANS_PR64)|(1<<RANS_PR1))&~(1<<RANS_PR193);
+
+                if (method & (1<<ARITH_PR128))
+                    method = (method|(1<<ARITH_PR0))&~(1<<ARITH_PR128);
+                if (method & (1<<ARITH_PR129))
+                    method = (method|(1<<ARITH_PR1))&~(1<<ARITH_PR129);
+                if (method & (1<<ARITH_PR192))
+                    method = (method|(1<<ARITH_PR64))&~(1<<ARITH_PR192);
+                if (method & (1u<<ARITH_PR193))
+                    method = (method|(1<<ARITH_PR64)|(1<<ARITH_PR1))&~(1u<<ARITH_PR193);
+            }
+
+            // Libdeflate doesn't have a Z_RLE strategy.
+            // We treat it as level 1, but iff we haven't also
+            // explicitly listed that in the method list.
+#ifdef HAVE_LIBDEFLATE
+            if ((method & (1<<GZIP_RLE)) && (method & (1<<GZIP_1)))
+                method &= ~(1<<GZIP_RLE);
+#endif
 
             pthread_mutex_unlock(&fd->metrics_lock);
 
-            if (method & (1<<GZIP_RLE)) {
-                c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            b->content_id, &sz_gz_rle, GZIP, 1, Z_RLE);
-                if (c && sz_best > sz_gz_rle) {
-                    sz_best = sz_gz_rle;
-                    method_best = GZIP_RLE;
-                    if (c_best)
-                        free(c_best);
-                    c_best = c;
-                } else if (c) {
-                    free(c);
+            for (m = 0; m < CRAM_MAX_METHOD; m++) {
+                if (method & (1u<<m)) {
+                    int lvl = level;
+                    switch (m) {
+                    case GZIP:     strat = Z_FILTERED; break;
+                    case GZIP_1:   strat = Z_DEFAULT_STRATEGY; lvl = 1; break;
+                    case GZIP_RLE: strat = Z_RLE; break;
+                    case FQZ:      strat = CRAM_MAJOR_VERS(fd->version); break;
+                    case FQZ_b:    strat = CRAM_MAJOR_VERS(fd->version)+256; break;
+                    case FQZ_c:    strat = CRAM_MAJOR_VERS(fd->version)+2*256; break;
+                    case FQZ_d:    strat = CRAM_MAJOR_VERS(fd->version)+3*256; break;
+                    case TOK3:     strat = 0; break;
+                    case TOKA:     strat = 1; break;
+                    default:       strat = 0;
+                    }
+
+                    c = cram_compress_by_method(s, (char *)b->data, b->uncomp_size,
+                                                b->content_id, &sz[m], m, lvl, strat);
+
+                    if (c && sz_best > sz[m]) {
+                        sz_best = sz[m];
+                        method_best = m;
+                        if (c_best)
+                            free(c_best);
+                        c_best = c;
+                    } else if (c) {
+                        free(c);
+                    } else {
+                        sz[m] = b->uncomp_size*2+1000; // arbitrarily worse than raw
+                    }
                 } else {
-                    sz_gz_rle = b->uncomp_size*2+1000;
-                }
-
-                //fprintf(stderr, "Block %d; %d->%d\n", b->content_id, b->uncomp_size, sz_gz_rle);
-            }
-
-            if (method & (1<<GZIP)) {
-                c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            b->content_id, &sz_gz_def, GZIP, level,
-                                            Z_FILTERED);
-                if (c && sz_best > sz_gz_def) {
-                    sz_best = sz_gz_def;
-                    method_best = GZIP;
-                    if (c_best)
-                        free(c_best);
-                    c_best = c;
-                } else if (c) {
-                    free(c);
-                } else {
-                    sz_gz_def = b->uncomp_size*2+1000;
-                }
-
-                //fprintf(stderr, "Block %d; %d->%d\n", b->content_id, b->uncomp_size, sz_gz_def);
-            }
-
-            if (method & (1<<RANS0)) {
-                c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            b->content_id, &sz_rans0, RANS0, 0, 0);
-                if (c && sz_best > sz_rans0) {
-                    sz_best = sz_rans0;
-                    method_best = RANS0;
-                    if (c_best)
-                        free(c_best);
-                    c_best = c;
-                } else if (c) {
-                    free(c);
-                } else {
-                    sz_rans0 = b->uncomp_size*2+1000;
+                    sz[m] = b->uncomp_size*2+1000; // arbitrarily worse than raw
                 }
             }
 
-            if (method & (1<<RANS1)) {
-                c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            b->content_id, &sz_rans1, RANS1, 0, 0);
-                if (c && sz_best > sz_rans1) {
-                    sz_best = sz_rans1;
-                    method_best = RANS1;
-                    if (c_best)
-                        free(c_best);
-                    c_best = c;
-                } else if (c) {
-                    free(c);
-                } else {
-                    sz_rans1 = b->uncomp_size*2+1000;
-                }
+            if (c_best) {
+                free(b->data);
+                b->data = (unsigned char *)c_best;
+                b->method = method_best; // adjusted to methmap[method_best] later
+                b->comp_size = sz_best;
             }
 
-            if (method & (1<<BZIP2)) {
-                c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            b->content_id, &sz_bzip2, BZIP2, level, 0);
-                if (c && sz_best > sz_bzip2) {
-                    sz_best = sz_bzip2;
-                    method_best = BZIP2;
-                    if (c_best)
-                        free(c_best);
-                    c_best = c;
-                } else if (c) {
-                    free(c);
-                } else {
-                    sz_bzip2 = b->uncomp_size*2+1000;
-                }
-            }
-
-            if (method & (1<<LZMA)) {
-                c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            b->content_id, &sz_lzma, LZMA, level, 0);
-                if (c && sz_best > sz_lzma) {
-                    sz_best = sz_lzma;
-                    method_best = LZMA;
-                    if (c_best)
-                        free(c_best);
-                    c_best = c;
-                } else if (c) {
-                    free(c);
-                } else {
-                    sz_lzma = b->uncomp_size*2+1000;
-                }
-            }
-
-            //fprintf(stderr, "sz_best = %d\n", sz_best);
-
-            free(b->data);
-            b->data = (unsigned char *)c_best;
-            //printf("method_best = %s\n", cram_block_method2str(method_best));
-            b->method = method_best == GZIP_RLE ? GZIP : method_best;
-            b->comp_size = sz_best;
-
+            // Accumulate stats for all methods tried
             pthread_mutex_lock(&fd->metrics_lock);
-            metrics->sz_gz_rle += sz_gz_rle;
-            metrics->sz_gz_def += sz_gz_def;
-            metrics->sz_rans0  += sz_rans0;
-            metrics->sz_rans1  += sz_rans1;
-            metrics->sz_bzip2  += sz_bzip2;
-            metrics->sz_lzma   += sz_lzma;
+            for (m = 0; m < CRAM_MAX_METHOD; m++)
+                // don't be overly sure on small blocks.
+                // +2000 means eg bzip2 vs gzip (1.07 to 1.04) or gz vs rans1
+                // needs to be at least 60 bytes smaller to overcome the
+                // fixed size addition.
+                metrics->sz[m] += sz[m]+2000;
+
+            // When enough trials performed, find the best on average
             if (--metrics->trial == 0) {
                 int best_method = RAW;
                 int best_sz = INT_MAX;
 
-                // Scale methods by cost
-                if (fd->level <= 3) {
-                    metrics->sz_rans1  *= 1.02;
-                    metrics->sz_gz_def *= 1.04;
-                    metrics->sz_bzip2  *= 1.08;
-                    metrics->sz_lzma   *= 1.10;
+                // Relative costs of methods. See enum_cram_block_method_int
+                // and methmap
+                double meth_cost[32] = {
+                    // Externally defined methods
+                    1,    // 0  raw
+                    1.04, // 1  gzip (Z_FILTERED)
+                    1.07, // 2  bzip2
+                    1.08, // 3  lzma
+                    1.00, // 4  rans    (O0)
+                    1.00, // 5  ranspr  (O0)
+                    1.04, // 6  arithpr (O0)
+                    1.05, // 7  fqz
+                    1.05, // 8  tok3 (rans)
+                    9, 9, // 9,10 reserved
+
+                    // Paramterised versions of above
+                    1.01, // gzip rle
+                    1.01, // gzip -1
+
+                    1.05, 1.05, 1.05, // FQZ_b,c,d
+
+                    1.01, // rans O1
+
+                    1.01, // rans_pr1
+                    1.00, // rans_pr64; if smaller, usually fast
+                    1.03, // rans_pr65/9
+                    1.00, // rans_pr128
+                    1.01, // rans_pr129
+                    1.00, // rans_pr192
+                    1.01, // rans_pr193
+
+                    1.07, // tok3 arith
+
+                    1.04, // arith_pr1
+                    1.04, // arith_pr64
+                    1.04, // arith_pr9
+                    1.03, // arith_pr128
+                    1.04, // arith_pr129
+                    1.04, // arith_pr192
+                    1.04, // arith_pr193
+                };
+
+                // Scale methods by cost based on compression level
+                if (fd->level <= 1) {
+                    for (m = 0; m < CRAM_MAX_METHOD; m++)
+                        metrics->sz[m] *= 1+(meth_cost[m]-1)*4;
+                } else if (fd->level <= 3) {
+                    for (m = 0; m < CRAM_MAX_METHOD; m++)
+                        metrics->sz[m] *= 1+(meth_cost[m]-1);
                 } else if (fd->level <= 6) {
-                    metrics->sz_rans1  *= 1.01;
-                    metrics->sz_gz_def *= 1.02;
-                    metrics->sz_bzip2  *= 1.03;
-                    metrics->sz_lzma   *= 1.05;
+                    for (m = 0; m < CRAM_MAX_METHOD; m++)
+                        metrics->sz[m] *= 1+(meth_cost[m]-1)/2;
+                } else if (fd->level <= 7) {
+                    for (m = 0; m < CRAM_MAX_METHOD; m++)
+                        metrics->sz[m] *= 1+(meth_cost[m]-1)/3;
+                } // else cost is ignored
+
+                for (m = 0; m < CRAM_MAX_METHOD; m++) {
+                    if ((!metrics->sz[m]) || (!(method & (1u<<m))))
+                        continue;
+
+                    if (best_sz > metrics->sz[m])
+                        best_sz = metrics->sz[m], best_method = m;
                 }
 
-                if (method & (1<<GZIP_RLE) && best_sz > metrics->sz_gz_rle)
-                    best_sz = metrics->sz_gz_rle, best_method = GZIP_RLE;
-
-                if (method & (1<<GZIP) && best_sz > metrics->sz_gz_def)
-                    best_sz = metrics->sz_gz_def, best_method = GZIP;
-
-                if (method & (1<<RANS0) && best_sz > metrics->sz_rans0)
-                    best_sz = metrics->sz_rans0, best_method = RANS0;
-
-                if (method & (1<<RANS1) && best_sz > metrics->sz_rans1)
-                    best_sz = metrics->sz_rans1, best_method = RANS1;
-
-                if (method & (1<<BZIP2) && best_sz > metrics->sz_bzip2)
-                    best_sz = metrics->sz_bzip2, best_method = BZIP2;
-
-                if (method & (1<<LZMA) && best_sz > metrics->sz_lzma)
-                    best_sz = metrics->sz_lzma, best_method = LZMA;
-
-                if (best_method == GZIP_RLE) {
-                    metrics->method = GZIP;
-                    metrics->strat  = Z_RLE;
+                if (best_method != metrics->method) {
+                    //metrics->trial = (NTRIALS+1)/2; // be sure
+                    //metrics->next_trial /= 1.5;
+                    metrics->consistency = 0;
                 } else {
-                    metrics->method = best_method;
-                    metrics->strat  = Z_FILTERED;
+                    metrics->next_trial *= MIN(2, 1+metrics->consistency/4.0);
+                    metrics->consistency++;
                 }
+
+                metrics->method = best_method;
+                switch (best_method) {
+                case GZIP:     strat = Z_FILTERED; break;
+                case GZIP_1:   strat = Z_DEFAULT_STRATEGY; break;
+                case GZIP_RLE: strat = Z_RLE; break;
+                case FQZ:      strat = CRAM_MAJOR_VERS(fd->version); break;
+                case FQZ_b:    strat = CRAM_MAJOR_VERS(fd->version)+256; break;
+                case FQZ_c:    strat = CRAM_MAJOR_VERS(fd->version)+2*256; break;
+                case FQZ_d:    strat = CRAM_MAJOR_VERS(fd->version)+3*256; break;
+                default:       strat = 0;
+                }
+                metrics->strat  = strat;
 
                 // If we see at least MAXFAIL trials in a row for a specific
                 // compression method with more than MAXDELTA aggregate
@@ -1502,68 +2149,27 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
                 // for this block type.
 #define MAXDELTA 0.20
 #define MAXFAILS 4
-                if (best_method == GZIP_RLE) {
-                    metrics->gz_rle_cnt = 0;
-                    metrics->gz_rle_extra = 0;
-                } else if (best_sz < metrics->sz_gz_rle) {
-                    double r = (double)metrics->sz_gz_rle / best_sz - 1;
-                    if (++metrics->gz_rle_cnt >= MAXFAILS &&
-                        (metrics->gz_rle_extra += r) >= MAXDELTA)
-                        method &= ~(1<<GZIP_RLE);
+                for (m = 0; m < CRAM_MAX_METHOD; m++) {
+                    if (best_method == m) {
+                        metrics->cnt[m] = 0;
+                        metrics->extra[m] = 0;
+                    } else if (best_sz < metrics->sz[m]) {
+                        double r = (double)metrics->sz[m] / best_sz - 1;
+                        int mul = 1+(fd->level>=7);
+                        if (++metrics->cnt[m] >= MAXFAILS*mul &&
+                            (metrics->extra[m] += r) >= MAXDELTA*mul)
+                            method &= ~(1u<<m);
+
+                        // Special case for fqzcomp as it rarely changes
+                        if (m == FQZ || m == FQZ_b || m == FQZ_c || m == FQZ_d) {
+                            if (metrics->sz[m] > best_sz)
+                                method &= ~(1u<<m);
+                        }
+                    }
                 }
 
-                if (best_method == GZIP) {
-                    metrics->gz_def_cnt = 0;
-                    metrics->gz_def_extra = 0;
-                } else if (best_sz < metrics->sz_gz_def) {
-                    double r = (double)metrics->sz_gz_def / best_sz - 1;
-                    if (++metrics->gz_def_cnt >= MAXFAILS &&
-                        (metrics->gz_def_extra += r) >= MAXDELTA)
-                        method &= ~(1<<GZIP);
-                }
-
-                if (best_method == RANS0) {
-                    metrics->rans0_cnt = 0;
-                    metrics->rans0_extra = 0;
-                } else if (best_sz < metrics->sz_rans0) {
-                    double r = (double)metrics->sz_rans0 / best_sz - 1;
-                    if (++metrics->rans0_cnt >= MAXFAILS &&
-                        (metrics->rans0_extra += r) >= MAXDELTA)
-                        method &= ~(1<<RANS0);
-                }
-
-                if (best_method == RANS1) {
-                    metrics->rans1_cnt = 0;
-                    metrics->rans1_extra = 0;
-                } else if (best_sz < metrics->sz_rans1) {
-                    double r = (double)metrics->sz_rans1 / best_sz - 1;
-                    if (++metrics->rans1_cnt >= MAXFAILS &&
-                        (metrics->rans1_extra += r) >= MAXDELTA)
-                        method &= ~(1<<RANS1);
-                }
-
-                if (best_method == BZIP2) {
-                    metrics->bzip2_cnt = 0;
-                    metrics->bzip2_extra = 0;
-                } else if (best_sz < metrics->sz_bzip2) {
-                    double r = (double)metrics->sz_bzip2 / best_sz - 1;
-                    if (++metrics->bzip2_cnt >= MAXFAILS &&
-                        (metrics->bzip2_extra += r) >= MAXDELTA)
-                        method &= ~(1<<BZIP2);
-                }
-
-                if (best_method == LZMA) {
-                    metrics->lzma_cnt = 0;
-                    metrics->lzma_extra = 0;
-                } else if (best_sz < metrics->sz_lzma) {
-                    double r = (double)metrics->sz_lzma / best_sz - 1;
-                    if (++metrics->lzma_cnt >= MAXFAILS &&
-                        (metrics->lzma_extra += r) >= MAXDELTA)
-                        method &= ~(1<<LZMA);
-                }
-
-                //if (method != metrics->revised_method)
-                //    fprintf(stderr, "%d: method from %x to %x\n",
+                //if (fd->verbose > 1 && method != metrics->revised_method)
+                //    fprintf(stderr, "%d: revising method from %x to %x\n",
                 //          b->content_id, metrics->revised_method, method);
                 metrics->revised_method = method;
             }
@@ -1573,39 +2179,54 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
             method = metrics->method;
 
             pthread_mutex_unlock(&fd->metrics_lock);
-            comp = cram_compress_by_method((char *)b->data, b->uncomp_size,
+            comp = cram_compress_by_method(s, (char *)b->data, b->uncomp_size,
                                            b->content_id, &comp_size, method,
-                                           level, strat);
+                                           method == GZIP_1 ? 1 : level,
+                                           strat);
             if (!comp)
                 return -1;
-            free(b->data);
-            b->data = (unsigned char *)comp;
-            b->comp_size = comp_size;
-            b->method = method;
+
+            if (comp_size < b->uncomp_size) {
+                free(b->data);
+                b->data = (unsigned char *)comp;
+                b->comp_size = comp_size;
+                b->method = method;
+            } else {
+                free(comp);
+            }
         }
 
     } else {
         // no cached metrics, so just do zlib?
-        comp = cram_compress_by_method((char *)b->data, b->uncomp_size,
+        comp = cram_compress_by_method(s, (char *)b->data, b->uncomp_size,
                                        b->content_id, &comp_size, GZIP, level, Z_FILTERED);
         if (!comp) {
-            hts_log_error("Compression failed");
+            hts_log_error("Compression failed!");
             return -1;
         }
-        free(b->data);
-        b->data = (unsigned char *)comp;
-        b->comp_size = comp_size;
-        b->method = GZIP;
+
+        if (comp_size < b->uncomp_size) {
+            free(b->data);
+            b->data = (unsigned char *)comp;
+            b->comp_size = comp_size;
+            b->method = GZIP;
+        } else {
+            free(comp);
+        }
+        strat = Z_FILTERED;
     }
 
     hts_log_info("Compressed block ID %d from %d to %d by method %s",
                  b->content_id, b->uncomp_size, b->comp_size,
                  cram_block_method2str(b->method));
 
-    if (b->method == RANS1)
-        b->method = RANS0; // Spec just has RANS (not 0/1) with auto-sensing
+    b->method = methmap[b->method];
 
     return 0;
+}
+int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
+                        int method, int level) {
+    return cram_compress_block2(fd, NULL, b, metrics, method, level);
 }
 
 cram_metrics *cram_new_metrics(void) {
@@ -1613,23 +2234,47 @@ cram_metrics *cram_new_metrics(void) {
     if (!m)
         return NULL;
     m->trial = NTRIALS-1;
-    m->next_trial = TRIAL_SPAN;
+    m->next_trial = TRIAL_SPAN/2; // learn quicker at start
     m->method = RAW;
     m->strat = 0;
     m->revised_method = 0;
+    m->unpackable = 0;
 
     return m;
 }
 
-char *cram_block_method2str(enum cram_block_method m) {
+char *cram_block_method2str(enum cram_block_method_int m) {
     switch(m) {
-    case RAW:      return "RAW";
-    case GZIP:     return "GZIP";
-    case BZIP2:    return "BZIP2";
-    case LZMA:     return "LZMA";
-    case RANS0:    return "RANS0";
-    case RANS1:    return "RANS1";
-    case GZIP_RLE: return "GZIP_RLE";
+    case RAW:         return "RAW";
+    case GZIP:        return "GZIP";
+    case BZIP2:       return "BZIP2";
+    case LZMA:        return "LZMA";
+    case RANS0:       return "RANS0";
+    case RANS1:       return "RANS1";
+    case GZIP_RLE:    return "GZIP_RLE";
+    case GZIP_1:      return "GZIP_1";
+    case FQZ:         return "FQZ";
+    case FQZ_b:       return "FQZ_b";
+    case FQZ_c:       return "FQZ_c";
+    case FQZ_d:       return "FQZ_d";
+    case RANS_PR0:    return "RANS_PR0";
+    case RANS_PR1:    return "RANS_PR1";
+    case RANS_PR64:   return "RANS_PR64";
+    case RANS_PR9:    return "RANS_PR9";
+    case RANS_PR128:  return "RANS_PR128";
+    case RANS_PR129:  return "RANS_PR129";
+    case RANS_PR192:  return "RANS_PR192";
+    case RANS_PR193:  return "RANS_PR193";
+    case TOK3:        return "TOK3_R";
+    case TOKA:        return "TOK3_A";
+    case ARITH_PR0:   return "ARITH_PR0";
+    case ARITH_PR1:   return "ARITH_PR1";
+    case ARITH_PR64:  return "ARITH_PR64";
+    case ARITH_PR9:   return "ARITH_PR9";
+    case ARITH_PR128: return "ARITH_PR128";
+    case ARITH_PR129: return "ARITH_PR129";
+    case ARITH_PR192: return "ARITH_PR192";
+    case ARITH_PR193: return "ARITH_PR193";
     case BM_ERROR: break;
     }
     return "?";
@@ -2925,6 +3570,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     c->pos_sorted = 1;
     c->max_apos   = 0;
     c->multi_seq  = 0;
+    c->qs_seq_orient = 1;
 
     c->bams = NULL;
 
@@ -3036,13 +3682,13 @@ cram_container *cram_read_container(cram_fd *fd) {
 
     memset(&c2, 0, sizeof(c2));
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        if ((s = itf8_decode_crc(fd, &c2.length, &crc)) == -1) {
+        if ((s = fd->vv.varint_decode32_crc(fd, &c2.length, &crc)) == -1) {
             fd->eof = fd->empty_container ? 1 : 2;
             return NULL;
         } else {
             rd+=s;
         }
-    } else {
+    } else if (CRAM_MAJOR_VERS(fd->version) < 4) {
         uint32_t len;
         if ((s = int32_decode(fd, &c2.length)) == -1) {
             if (CRAM_MAJOR_VERS(fd->version) == 2 &&
@@ -3056,55 +3702,61 @@ cram_container *cram_read_container(cram_fd *fd) {
         }
         len = le_int4(c2.length);
         crc = crc32(0L, (unsigned char *)&len, 4);
+    } else {
+        if ((s = fd->vv.varint_decode32_crc(fd, &c2.length, &crc))   == -1) {
+            fd->eof = fd->empty_container ? 1 : 2;
+            return NULL;
+        } else {
+            rd+=s;
+        }
     }
-    if ((s = itf8_decode_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
-/*
- * LARGE_POS used in this code is purely a debugging mechanism for testing
- * whether the htslib API can cope with 64-bit quantities.  These are
- * possible in SAM, but not *yet* in BAM or CRAM.
- *
- * DO NOT ENABLE LARGE_POS for anything other than debugging / testing.
- *
- * At some point it is expected these ifdefs will become a version check
- * instead.
- */
-#ifdef LARGE_POS
-    if ((s = ltf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
-    if ((s = ltf8_decode_crc(fd, &c2.ref_seq_span, &crc)) == -1) return NULL; else rd+=s;
-#else
-    int32_t i32;
-    if ((s = itf8_decode_crc(fd, &i32, &crc))== -1) return NULL; else rd+=s;
-    c2.ref_seq_start = i32;
-    if ((s = itf8_decode_crc(fd, &i32, &crc)) == -1) return NULL; else rd+=s;
-    c2.ref_seq_span = i32;
-#endif
-    if ((s = itf8_decode_crc(fd, &c2.num_records, &crc))  == -1) return NULL; else rd+=s;
+    if ((s = fd->vv.varint_decode32s_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
+    if (CRAM_MAJOR_VERS(fd->version) >= 4) {
+        int64_t i64;
+        if ((s = fd->vv.varint_decode64_crc(fd, &i64, &crc))== -1) return NULL; else rd+=s;
+        c2.ref_seq_start = i64;
+        if ((s = fd->vv.varint_decode64_crc(fd, &i64, &crc)) == -1) return NULL; else rd+=s;
+        c2.ref_seq_span = i64;
+    } else {
+        int32_t i32;
+        if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc))== -1) return NULL; else rd+=s;
+        c2.ref_seq_start = i32;
+        if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc)) == -1) return NULL; else rd+=s;
+        c2.ref_seq_span = i32;
+    }
+    if ((s = fd->vv.varint_decode32_crc(fd, &c2.num_records, &crc))  == -1) return NULL; else rd+=s;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
         c2.record_counter = 0;
         c2.num_bases = 0;
     } else {
         if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-            if ((s = ltf8_decode_crc(fd, &c2.record_counter, &crc)) == -1)
+            if ((s = fd->vv.varint_decode64_crc(fd, &c2.record_counter, &crc)) == -1)
                 return NULL;
             else
                 rd += s;
         } else {
             int32_t i32;
-            if ((s = itf8_decode_crc(fd, &i32, &crc)) == -1)
+            if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc)) == -1)
                 return NULL;
             else
                 rd += s;
             c2.record_counter = i32;
         }
 
-        if ((s = ltf8_decode_crc(fd, &c2.num_bases, &crc))== -1)
+        if ((s = fd->vv.varint_decode64_crc(fd, &c2.num_bases, &crc))== -1)
             return NULL;
         else
             rd += s;
     }
-    if ((s = itf8_decode_crc(fd, &c2.num_blocks, &crc))   == -1) return NULL; else rd+=s;
-    if ((s = itf8_decode_crc(fd, &c2.num_landmarks, &crc))== -1) return NULL; else rd+=s;
+    if ((s = fd->vv.varint_decode32_crc(fd, &c2.num_blocks, &crc))   == -1)
+        return NULL;
+    else
+        rd+=s;
+    if ((s = fd->vv.varint_decode32_crc(fd, &c2.num_landmarks, &crc))== -1)
+        return NULL;
+    else
+        rd+=s;
 
     if (c2.num_landmarks < 0 || c2.num_landmarks >= SIZE_MAX / sizeof(int32_t))
         return NULL;
@@ -3120,7 +3772,7 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
     }
     for (i = 0; i < c->num_landmarks; i++) {
-        if ((s = itf8_decode_crc(fd, &c->landmark[i], &crc)) == -1) {
+        if ((s = fd->vv.varint_decode32_crc(fd, &c->landmark[i], &crc)) == -1) {
             cram_free_container(c);
             return NULL;
         } else {
@@ -3182,7 +3834,7 @@ int cram_container_size(cram_container *c) {
  */
 int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
 {
-    unsigned char *cp = (unsigned char *)dat;
+    char *cp = (char *)dat;
     int i;
 
     // Check the input buffer is large enough according to our stated
@@ -3191,41 +3843,39 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
         return -1;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        cp += itf8_put((char*)cp, c->length);
+        cp += itf8_put(cp, c->length);
     } else {
         *(int32_t *)cp = le_int4(c->length);
         cp += 4;
     }
     if (c->multi_seq) {
-        cp += itf8_put((char*)cp, -2);
-        cp += itf8_put((char*)cp, 0);
-        cp += itf8_put((char*)cp, 0);
+        cp += fd->vv.varint_put32(cp, NULL, -2);
+        cp += fd->vv.varint_put32(cp, NULL, 0);
+        cp += fd->vv.varint_put32(cp, NULL, 0);
     } else {
-        cp += itf8_put((char*)cp, c->ref_seq_id);
-#ifdef LARGE_POS
-        cp += ltf8_put((char*)cp, c->ref_seq_start);
-        cp += ltf8_put((char*)cp, c->ref_seq_span);
-#else
-        cp += itf8_put((char*)cp, c->ref_seq_start);
-        cp += itf8_put((char*)cp, c->ref_seq_span);
-#endif
+        cp += fd->vv.varint_put32s(cp, NULL, c->ref_seq_id);
+        if (CRAM_MAJOR_VERS(fd->version) >= 4) {
+            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_start);
+            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_span);
+        } else {
+            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_start);
+            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_span);
+        }
     }
-    cp += itf8_put((char*)cp, c->num_records);
+    cp += fd->vv.varint_put32(cp, NULL, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
-        cp += itf8_put((char*)cp, c->record_counter);
-        cp += ltf8_put((char*)cp, c->num_bases);
+        cp += fd->vv.varint_put64(cp, NULL, c->record_counter);
     } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-        cp += ltf8_put((char*)cp, c->record_counter);
-        cp += ltf8_put((char*)cp, c->num_bases);
+        cp += fd->vv.varint_put32(cp, NULL, c->record_counter);
     }
-
-    cp += itf8_put((char*)cp, c->num_blocks);
-    cp += itf8_put((char*)cp, c->num_landmarks);
+    cp += fd->vv.varint_put64(cp, NULL, c->num_bases);
+    cp += fd->vv.varint_put32(cp, NULL, c->num_blocks);
+    cp += fd->vv.varint_put32(cp, NULL, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
-        cp += itf8_put((char*)cp, c->landmark[i]);
+        cp += fd->vv.varint_put32(cp, NULL, c->landmark[i]);
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-        c->crc32 = crc32(0L, (uc *)dat, (char*)cp-dat);
+        c->crc32 = crc32(0L, (uc *)dat, cp-dat);
         cp[0] =  c->crc32        & 0xff;
         cp[1] = (c->crc32 >>  8) & 0xff;
         cp[2] = (c->crc32 >> 16) & 0xff;
@@ -3233,7 +3883,7 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
         cp += 4;
     }
 
-    *size = (char *)cp-dat; // actual used size
+    *size = cp-dat; // actual used size
 
     return 0;
 }
@@ -3246,50 +3896,51 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
  *        -1 on failure
  */
 int cram_write_container(cram_fd *fd, cram_container *c) {
-    char buf_a[1024], *buf = buf_a;
-    unsigned char *cp;
+    char buf_a[1024], *buf = buf_a, *cp;
     int i;
 
-    if (55 + c->num_landmarks * 5 >= 1024)
-        buf = malloc(55 + c->num_landmarks * 5);
-    cp = (unsigned char *)buf;
+    if (61 + c->num_landmarks * 10 >= 1024) {
+        buf = malloc(61 + c->num_landmarks * 10);
+        if (!buf)
+            return -1;
+    }
+    cp = buf;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        cp += itf8_put((char*)cp, c->length);
-    } else {
+        cp += itf8_put(cp, c->length);
+    } else if (CRAM_MAJOR_VERS(fd->version) <= 3) {
         *(int32_t *)cp = le_int4(c->length);
         cp += 4;
+    } else {
+        cp += fd->vv.varint_put32(cp, NULL, c->length);
     }
     if (c->multi_seq) {
-        cp += itf8_put((char*)cp, -2);
-        cp += itf8_put((char*)cp, 0);
-        cp += itf8_put((char*)cp, 0);
+        cp += fd->vv.varint_put32(cp, NULL, (uint32_t)-2);
+        cp += fd->vv.varint_put32(cp, NULL, 0);
+        cp += fd->vv.varint_put32(cp, NULL, 0);
     } else {
-        cp += itf8_put((char*)cp, c->ref_seq_id);
-#ifdef LARGE_POS
-        cp += ltf8_put((char*)cp, c->ref_seq_start);
-        cp += ltf8_put((char*)cp, c->ref_seq_span);
-#else
-        cp += itf8_put((char*)cp, c->ref_seq_start);
-        cp += itf8_put((char*)cp, c->ref_seq_span);
-#endif
+        cp += fd->vv.varint_put32s(cp, NULL, c->ref_seq_id);
+        if (CRAM_MAJOR_VERS(fd->version) >= 4) {
+            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_start);
+            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_span);
+        } else {
+            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_start);
+            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_span);
+        }
     }
-    cp += itf8_put((char*)cp, c->num_records);
-    if (CRAM_MAJOR_VERS(fd->version) == 2) {
-        cp += itf8_put((char*)cp, c->record_counter);
-        cp += ltf8_put((char*)cp, c->num_bases);
-    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-        cp += ltf8_put((char*)cp, c->record_counter);
-        cp += ltf8_put((char*)cp, c->num_bases);
-    }
-
-    cp += itf8_put((char*)cp, c->num_blocks);
-    cp += itf8_put((char*)cp, c->num_landmarks);
+    cp += fd->vv.varint_put32(cp, NULL, c->num_records);
+    if (CRAM_MAJOR_VERS(fd->version) >= 3)
+        cp += fd->vv.varint_put64(cp, NULL, c->record_counter);
+    else
+        cp += fd->vv.varint_put32(cp, NULL, c->record_counter);
+    cp += fd->vv.varint_put64(cp, NULL, c->num_bases);
+    cp += fd->vv.varint_put32(cp, NULL, c->num_blocks);
+    cp += fd->vv.varint_put32(cp, NULL, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
-        cp += itf8_put((char*)cp, c->landmark[i]);
+        cp += fd->vv.varint_put32(cp, NULL, c->landmark[i]);
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-        c->crc32 = crc32(0L, (uc *)buf, (char*)cp-buf);
+        c->crc32 = crc32(0L, (uc *)buf, cp-buf);
         cp[0] =  c->crc32        & 0xff;
         cp[1] = (c->crc32 >>  8) & 0xff;
         cp[2] = (c->crc32 >> 16) & 0xff;
@@ -3297,7 +3948,7 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
         cp += 4;
     }
 
-    if ((char*)cp-buf != hwrite(fd->fp, buf, (char*)cp-buf)) {
+    if (cp-buf != hwrite(fd->fp, buf, cp-buf)) {
         if (buf != buf_a)
             free(buf);
         return -1;
@@ -3490,13 +4141,9 @@ void reset_metrics(cram_fd *fd) {
         m->trial = NTRIALS;
         m->next_trial = TRIAL_SPAN;
         m->revised_method = 0;
+        m->unpackable = 0;
 
-        m->sz_gz_rle = 0;
-        m->sz_gz_def = 0;
-        m->sz_rans0  = 0;
-        m->sz_rans1  = 0;
-        m->sz_bzip2  = 0;
-        m->sz_lzma   = 0;
+        memset(m->sz, 0, sizeof(m->sz));
     }
 }
 
@@ -3894,8 +4541,8 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
         return NULL;
     }
 
-    if (def->major_version > 3) {
-        hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x or 3.x, got %d.%d",
+    if (def->major_version > 4) {
+        hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x, 3.x or 4.x, got %d.%d",
                       def->major_version, def->minor_version);
         free(def);
         return NULL;
@@ -3984,9 +4631,9 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
         }
 
         len = b->comp_size + 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
-            itf8_size(b->content_id) +
-            itf8_size(b->uncomp_size) +
-            itf8_size(b->comp_size);
+            fd->vv.varint_size(b->content_id) +
+            fd->vv.varint_size(b->uncomp_size) +
+            fd->vv.varint_size(b->comp_size);
 
         /* Extract header from 1st block */
         if (-1 == int32_get_blk(b, &header_len) ||
@@ -4013,9 +4660,9 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
                 return NULL;
             }
             len += b->comp_size + 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
-                itf8_size(b->content_id) +
-                itf8_size(b->uncomp_size) +
-                itf8_size(b->comp_size);
+                fd->vv.varint_size(b->content_id) +
+                fd->vv.varint_size(b->uncomp_size) +
+                fd->vv.varint_size(b->comp_size);
             cram_free_block(b);
         }
 
@@ -4209,9 +4856,9 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
 
         if (blank_block) {
             c->length = b->comp_size + 2 + 4*is_cram_3 +
-                itf8_size(b->content_id)   +
-                itf8_size(b->uncomp_size)  +
-                itf8_size(b->comp_size);
+                fd->vv.varint_size(b->content_id)   +
+                fd->vv.varint_size(b->uncomp_size)  +
+                fd->vv.varint_size(b->comp_size);
 
             c->num_blocks = 2;
             c->num_landmarks = 2;
@@ -4226,8 +4873,8 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
             // Plus extra storage for uncompressed secondary blank block
             padded_length = MIN(c->length*.5, 10000);
             c->length += padded_length + 2 + 4*is_cram_3 +
-                itf8_size(b->content_id) +
-                itf8_size(padded_length)*2;
+                fd->vv.varint_size(b->content_id) +
+                fd->vv.varint_size(padded_length)*2;
         } else {
             // Pad the block instead.
             c->num_blocks = 1;
@@ -4240,9 +4887,9 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
 
             c->length = b->comp_size + padded_length +
                 2 + 4*is_cram_3 +
-                itf8_size(b->content_id)   +
-                itf8_size(b->uncomp_size)  +
-                itf8_size(b->comp_size);
+                fd->vv.varint_size(b->content_id)   +
+                fd->vv.varint_size(b->uncomp_size)  +
+                fd->vv.varint_size(b->comp_size);
 
             if (NULL == (pads = calloc(1, padded_length))) {
                 cram_free_block(b);
@@ -4302,6 +4949,53 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
 /* ----------------------------------------------------------------------
  * The top-level cram opening, closing and option handling
  */
+
+/*
+ * Sets CRAM variable sized integer decode function tables.
+ * CRAM 1, 2, and 3.x all used ITF8 for uint32 and UTF8 for uint64.
+ * CRAM 4.x uses the same encoding mechanism for 32-bit and 64-bit
+ * (or anything inbetween), but also now supports signed values.
+ *
+ * Version is the CRAM major version number.
+ * vv is the vector table (probably &cram_fd->vv)
+ */
+static void cram_init_varint(varint_vec *vv, int version) {
+    if (version >= 4) {
+        vv->varint_get32 = uint7_get_32; // FIXME: varint.h API should be size agnostic
+        vv->varint_get32s = sint7_get_32;
+        vv->varint_get64 = uint7_get_64;
+        vv->varint_get64s = sint7_get_64;
+        vv->varint_put32 = uint7_put_32;
+        vv->varint_put32s = sint7_put_32;
+        vv->varint_put64 = uint7_put_64;
+        vv->varint_put64s = sint7_put_64;
+        vv->varint_put32_blk = uint7_put_blk_32;
+        vv->varint_put32s_blk = sint7_put_blk_32;
+        vv->varint_put64_blk = uint7_put_blk_64;
+        vv->varint_put64s_blk = sint7_put_blk_64;
+        vv->varint_size = uint7_size;
+        vv->varint_decode32_crc = uint7_decode_crc32;
+        vv->varint_decode32s_crc = sint7_decode_crc32;
+        vv->varint_decode64_crc = uint7_decode_crc64;
+    } else {
+        vv->varint_get32 = safe_itf8_get;
+        vv->varint_get32s = safe_itf8_get;
+        vv->varint_get64 = safe_ltf8_get;
+        vv->varint_get64s = safe_ltf8_get;
+        vv->varint_put32 = safe_itf8_put;
+        vv->varint_put32s = safe_itf8_put;
+        vv->varint_put64 = safe_ltf8_put;
+        vv->varint_put64s = safe_ltf8_put;
+        vv->varint_put32_blk = itf8_put_blk;
+        vv->varint_put32s_blk = itf8_put_blk;
+        vv->varint_put64_blk = ltf8_put_blk;
+        vv->varint_put64s_blk = ltf8_put_blk;
+        vv->varint_size = itf8_size;
+        vv->varint_decode32_crc = itf8_decode_crc;
+        vv->varint_decode32s_crc = itf8_decode_crc;
+        vv->varint_decode64_crc = ltf8_decode_crc;
+    }
+}
 
 /*
  * Initialises the lookup tables. These could be global statics, but they're
@@ -4385,6 +5079,8 @@ static void cram_init_tables(cram_fd *fd) {
         fd->cram_sub_matrix["ACGTN"[i>>2]&0x1f][CRAM_SUBST_MATRIX[i+2]&0x1f]=2;
         fd->cram_sub_matrix["ACGTN"[i>>2]&0x1f][CRAM_SUBST_MATRIX[i+3]&0x1f]=3;
     }
+
+    cram_init_varint(&fd->vv, CRAM_MAJOR_VERS(fd->version));
 }
 
 // Default version numbers for CRAM
@@ -4430,7 +5126,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     if (!fd)
         return NULL;
 
-    fd->level = 5;
+    fd->level = CRAM_DEFAULT_LEVEL;
     for (i = 0; mode[i]; i++) {
         if (mode[i] >= '0' && mode[i] <= '9') {
             fd->level = mode[i] - '0';
@@ -4451,6 +5147,8 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
 
         fd->version = fd->file_def->major_version * 256 +
             fd->file_def->minor_version;
+
+        cram_init_tables(fd);
 
         if (!(fd->header = cram_read_SAM_hdr(fd))) {
             cram_free_file_def(fd->file_def);
@@ -4475,11 +5173,10 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
         strncpy(def->file_id, filename, 20);
 
         fd->version = major_version * 256 + minor_version;
+        cram_init_tables(fd);
 
         /* SAM header written later along with this file_def */
     }
-
-    cram_init_tables(fd);
 
     fd->prefix = strdup((cp = strrchr(filename, '/')) ? cp+1 : filename);
     if (!fd->prefix)
@@ -4501,10 +5198,12 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->slices_per_container = SLICE_PER_CNT;
     fd->embed_ref = 0;
     fd->no_ref = 0;
+    fd->ap_delta = 0;
     fd->ignore_md5 = 0;
     fd->lossy_read_names = 0;
     fd->use_bz2 = 0;
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
+    fd->use_tok = (CRAM_MAJOR_VERS(fd->version) >= 3) && (CRAM_MINOR_VERS(fd->version) >= 1);
     fd->use_lzma = 0;
     fd->multi_seq = -1;
     fd->multi_seq_user = -1;
@@ -4604,6 +5303,88 @@ int cram_flush(cram_fd *fd) {
 }
 
 /*
+ * Writes an EOF block to a CRAM file.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int cram_write_eof_block(cram_fd *fd) {
+    // EOF block is a container with special values to aid detection
+    if (CRAM_MAJOR_VERS(fd->version) >= 2) {
+        // Empty container with
+        //   ref_seq_id -1
+        //   start pos 0x454f46 ("EOF")
+        //   span 0
+        //   nrec 0
+        //   counter 0
+        //   nbases 0
+        //   1 block (landmark 0)
+        //   (CRC32)
+        cram_container c;
+        memset(&c, 0, sizeof(c));
+        c.ref_seq_id = -1;
+        c.ref_seq_start = 0x454f46; // "EOF"
+        c.ref_seq_span = 0;
+        c.record_counter = 0;
+        c.num_bases = 0;
+        c.num_blocks = 1;
+        int32_t land[1] = {0};
+        c.landmark = land;
+
+        // An empty compression header block with
+        //   method raw (0)
+        //   type comp header (1)
+        //   content id 0
+        //   block contents size 6
+        //   raw size 6
+        //     empty preservation map (01 00)
+        //     empty data series map (01 00)
+        //     empty tag map (01 00)
+        //   block CRC
+        cram_block_compression_hdr ch;
+        memset(&ch, 0, sizeof(ch));
+        c.comp_hdr_block = cram_encode_compression_header(fd, &c, &ch);
+
+        c.length = c.comp_hdr_block->byte            // Landmark[0]
+            + 5                                      // block struct
+            + 4*(CRAM_MAJOR_VERS(fd->version) >= 3); // CRC
+        if (cram_write_container(fd, &c) < 0 ||
+            cram_write_block(fd, c.comp_hdr_block) < 0) {
+            cram_close(fd);
+            cram_free_block(c.comp_hdr_block);
+            return -1;
+        }
+        cram_free_block(c.comp_hdr_block);
+
+        // V2.1 bytes
+        // 0b 00 00 00 ff ff ff ff 0f // Cont HDR: size, ref seq id
+        // e0 45 4f 46 00 00 00       // Cont HDR: pos, span, nrec, counter
+        // 00 01 00                   // Cont HDR: nbase, nblk, landmark
+        // 00 01 00 06 06             // Comp.HDR blk
+        // 01 00 01 00 01 00          // Comp.HDR blk
+
+        // V3.0 bytes:
+        // 0f 00 00 00 ff ff ff ff 0f // Cont HDR: size, ref seq id
+        // e0 45 4f 46 00 00 00       // Cont HDR: pos, span, nrec, counter
+        // 00 01 00                   // Cont HDR: nbase, nblk, landmark
+        // 05 bd d9 4f                // CRC32
+        // 00 01 00 06 06             // Comp.HDR blk
+        // 01 00 01 00 01 00          // Comp.HDR blk
+        // ee 63 01 4b                // CRC32
+
+        // V4.0 bytes:
+        // 0f 00 00 00 8f ff ff ff    // Cont HDR: size, ref seq id
+        // 82 95 9e 46 00 00 00       // Cont HDR: pos, span, nrec, counter
+        // 00 01 00                   // Cont HDR: nbase, nblk, landmark
+        // ac d6 05 bc                // CRC32
+        // 00 01 00 06 06             // Comp.HDR blk
+        // 01 00 01 00 01 00          // Comp.HDR blk
+        // ee 63 01 4b                // CRC32
+    }
+
+    return 0;
+}
+/*
  * Closes a CRAM file.
  * Returns 0 on success
  *        -1 on failure
@@ -4646,25 +5427,8 @@ int cram_close(cram_fd *fd) {
 
     if (fd->mode == 'w') {
         /* Write EOF block */
-        if (CRAM_MAJOR_VERS(fd->version) == 3) {
-            if (38 != hwrite(fd->fp,
-                             "\x0f\x00\x00\x00\xff\xff\xff\xff" // Cont HDR
-                             "\x0f\xe0\x45\x4f\x46\x00\x00\x00" // Cont HDR
-                             "\x00\x01\x00"                     // Cont HDR
-                             "\x05\xbd\xd9\x4f"                 // CRC32
-                             "\x00\x01\x00\x06\x06"             // Comp.HDR blk
-                             "\x01\x00\x01\x00\x01\x00"         // Comp.HDR blk
-                             "\xee\x63\x01\x4b",                // CRC32
-                             38))
-                return -1;
-        } else {
-            if (30 != hwrite(fd->fp,
-                             "\x0b\x00\x00\x00\xff\xff\xff\xff"
-                             "\x0f\xe0\x45\x4f\x46\x00\x00\x00"
-                             "\x00\x01\x00\x00\x01\x00\x06\x06"
-                             "\x01\x00\x01\x00\x01\x00", 30))
-                return -1;
-        }
+        if (0 != cram_write_eof_block(fd))
+            return -1;
     }
 
     for (bl = fd->bl; bl; bl = next) {
@@ -4788,6 +5552,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_SEQS_PER_SLICE:
         fd->seqs_per_slice = va_arg(args, int);
+        if (fd->bases_per_slice == BASES_PER_SLICE)
+            fd->bases_per_slice = fd->seqs_per_slice * 500;
         break;
 
     case CRAM_OPT_BASES_PER_SLICE:
@@ -4804,6 +5570,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_NO_REF:
         fd->no_ref = va_arg(args, int);
+        break;
+
+    case CRAM_OPT_POS_DELTA:
+        fd->ap_delta = va_arg(args, int);
         break;
 
     case CRAM_OPT_IGNORE_MD5:
@@ -4826,6 +5596,18 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_USE_RANS:
         fd->use_rans = va_arg(args, int);
+        break;
+
+    case CRAM_OPT_USE_TOK:
+        fd->use_tok = va_arg(args, int);
+        break;
+
+    case CRAM_OPT_USE_FQZ:
+        fd->use_fqz = va_arg(args, int);
+        break;
+
+    case CRAM_OPT_USE_ARITH:
+        fd->use_arith = va_arg(args, int);
         break;
 
     case CRAM_OPT_USE_LZMA:
@@ -4883,15 +5665,30 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         }
         if (!((major == 1 &&  minor == 0) ||
               (major == 2 && (minor == 0 || minor == 1)) ||
-              (major == 3 &&  minor == 0))) {
-            hts_log_error("Unknown version string; use 1.0, 2.0, 2.1 or 3.0");
+              (major == 3 && (minor == 0 || minor == 1)) ||
+              (major == 4 &&  minor == 0))) {
+            hts_log_error("Unknown version string; use 1.0, 2.0, 2.1, 3.0, 3.1 or 4.0");
             errno = EINVAL;
             return -1;
         }
+
+        if (major > 3 || (major == 3 && minor > 0)) {
+            hts_log_warning(
+                "CRAM version %s is still in draft and is subject to\n"
+                "change. Please consider this a technology demonstration "
+                "and do not use for\n"
+                "long term archival of data.", s);
+        }
+
         fd->version = major*256 + minor;
 
-        if (CRAM_MAJOR_VERS(fd->version) >= 3)
-            fd->use_rans = 1;
+        fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3) ? 1 : 0;
+
+        fd->use_tok = ((CRAM_MAJOR_VERS(fd->version) == 3 &&
+                        CRAM_MINOR_VERS(fd->version) >= 1) ||
+                        CRAM_MAJOR_VERS(fd->version) >= 4) ? 1 : 0;
+        cram_init_tables(fd);
+
         break;
     }
 
@@ -4954,6 +5751,41 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case HTS_OPT_COMPRESSION_LEVEL:
         fd->level = va_arg(args, int);
         break;
+
+    case HTS_OPT_PROFILE: {
+        enum hts_profile_option prof = va_arg(args, int);
+        switch (prof) {
+        case HTS_PROFILE_FAST:
+            if (fd->level == CRAM_DEFAULT_LEVEL) fd->level = 1;
+            fd->use_tok = 0;
+            fd->seqs_per_slice = 10000;
+            break;
+
+        case HTS_PROFILE_NORMAL:
+            break;
+
+        case HTS_PROFILE_SMALL:
+            if (fd->level == CRAM_DEFAULT_LEVEL) fd->level = 6;
+            fd->use_bz2 = 1;
+            fd->use_fqz = 1;
+            fd->seqs_per_slice = 25000;
+            break;
+
+        case HTS_PROFILE_ARCHIVE:
+            if (fd->level == CRAM_DEFAULT_LEVEL) fd->level = 7;
+            fd->use_bz2 = 1;
+            fd->use_fqz = 1;
+            fd->use_arith = 1;
+            if (fd->level > 7)
+                fd->use_lzma = 1;
+            fd->seqs_per_slice = 100000;
+            break;
+        }
+
+        if (fd->bases_per_slice == BASES_PER_SLICE)
+            fd->bases_per_slice = fd->seqs_per_slice * 500;
+        break;
+    }
 
     default:
         hts_log_error("Unknown CRAM option code %d", opt);

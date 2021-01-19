@@ -47,17 +47,36 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+// see cram/cram_structs.h for an internal more complete copy of this enum
+
+// Htslib 1.11 had these listed without any hts prefix, and included
+// some internal values such as RANS1 and GZIP_RLE (which shouldn't have ever
+// been public).
+//
+// We can't find evidence of these being used and the data type occurs
+// nowhere in functions or structures meaning using it would be pointless.
+// However for safety, if you absolute need the API to not change then
+// define HTS_COMPAT to 101100 (XYYYZZ for X.Y[.Z], meaning 1.11).
+#if defined(HTS_COMPAT) && HTS_COMPAT <= 101100
 enum cram_block_method {
+    // Public methods as defined in the CRAM spec.
     BM_ERROR = -1,
+
+    // CRAM 2.x and 3.0
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
     LZMA     = 3,
-    RANS     = 4,  // Generic; either order
+    RANS     = 4,
+
+    // NB: the subsequent numbers may change.  They're simply here for
+    // compatibility with the old API, but may have no bearing on the
+    // internal way htslib works.  DO NOT USE
     RANS0    = 4,
-    RANS1    = 10, // Not externalised; stored as RANS (generic)
-    GZIP_RLE = 11, // NB: not externalised in CRAM
+    RANS1    = 10,
+    GZIP_RLE = 11,
 };
+#endif
 
 enum cram_content_type {
     CT_ERROR           = -1,
@@ -306,6 +325,9 @@ int cram_uncompress_block(cram_block *b);
 HTSLIB_EXPORT
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
                         int method, int level);
+int cram_compress_block2(cram_fd *fd, cram_slice *s,
+                         cram_block *b, cram_metrics *metrics,
+                         int method, int level);
 
 /**@}*/
 /**@{ ----------------------------------------------------------------------

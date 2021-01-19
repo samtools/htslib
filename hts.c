@@ -745,6 +745,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "NO_REF") == 0)
         o->opt = CRAM_OPT_NO_REF, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "pos_delta") == 0 ||
+             strcmp(o->arg, "POS_DELTA") == 0)
+        o->opt = CRAM_OPT_POS_DELTA, o->val.i = atoi(val);
+
     else if (strcmp(o->arg, "ignore_md5") == 0 ||
              strcmp(o->arg, "IGNORE_MD5") == 0)
         o->opt = CRAM_OPT_IGNORE_MD5, o->val.i = atoi(val);
@@ -760,6 +764,34 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     else if (strcmp(o->arg, "use_lzma") == 0 ||
              strcmp(o->arg, "USE_LZMA") == 0)
         o->opt = CRAM_OPT_USE_LZMA, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_tok") == 0 ||
+             strcmp(o->arg, "USE_TOK") == 0)
+        o->opt = CRAM_OPT_USE_TOK, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_fqz") == 0 ||
+             strcmp(o->arg, "USE_FQZ") == 0)
+        o->opt = CRAM_OPT_USE_FQZ, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_arith") == 0 ||
+             strcmp(o->arg, "USE_ARITH") == 0)
+        o->opt = CRAM_OPT_USE_ARITH, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "fast") == 0 ||
+             strcmp(o->arg, "FAST") == 0)
+        o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_FAST;
+
+    else if (strcmp(o->arg, "normal") == 0 ||
+             strcmp(o->arg, "NORMAL") == 0)
+        o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_NORMAL;
+
+    else if (strcmp(o->arg, "small") == 0 ||
+             strcmp(o->arg, "SMALL") == 0)
+        o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_SMALL;
+
+    else if (strcmp(o->arg, "archive") == 0 ||
+             strcmp(o->arg, "ARCHIVE") == 0)
+        o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_ARCHIVE;
 
     else if (strcmp(o->arg, "reference") == 0 ||
              strcmp(o->arg, "REFERENCE") == 0)
@@ -1141,7 +1173,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         fp->fp.cram = cram_dopen(hfile, fn, simple_mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
-            cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
+            cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, -1); // auto
         fp->is_cram = 1;
         break;
 
@@ -1350,6 +1382,28 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         char *expr = va_arg(args, char *);
         va_end(args);
         return hts_set_filter_expression(fp, expr);
+    }
+
+    case HTS_OPT_PROFILE: {
+        va_start(args, opt);
+        enum hts_profile_option prof = va_arg(args, int);
+        va_end(args);
+        if (fp->is_bgzf) {
+            switch (prof) {
+#ifdef HAVE_LIBDEFLATE
+            case HTS_PROFILE_FAST:    fp->fp.bgzf->compress_level =  2; break;
+            case HTS_PROFILE_NORMAL:  fp->fp.bgzf->compress_level = -1; break;
+            case HTS_PROFILE_SMALL:   fp->fp.bgzf->compress_level = 10; break;
+            case HTS_PROFILE_ARCHIVE: fp->fp.bgzf->compress_level = 12; break;
+#else
+            case HTS_PROFILE_FAST:    fp->fp.bgzf->compress_level =  1; break;
+            case HTS_PROFILE_NORMAL:  fp->fp.bgzf->compress_level = -1; break;
+            case HTS_PROFILE_SMALL:   fp->fp.bgzf->compress_level =  8; break;
+            case HTS_PROFILE_ARCHIVE: fp->fp.bgzf->compress_level =  9; break;
+#endif
+            }
+        } // else CRAM manages this in its own way
+        break;
     }
 
     default:

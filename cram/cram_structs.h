@@ -97,21 +97,36 @@ typedef struct cram_stats {
     khash_t(m_i2i) *h;
     int nsamp; // total number of values added
     int nvals; // total number of unique values added
+    int64_t min_val, max_val;
 } cram_stats;
 
 /* NB: matches java impl, not the spec */
 enum cram_encoding {
     E_NULL               = 0,
-    E_EXTERNAL           = 1,
-    E_GOLOMB             = 2,
-    E_HUFFMAN            = 3,
+    E_EXTERNAL           = 1,  // Only for BYTE type in CRAM 4
+    E_GOLOMB             = 2,  // Not in CRAM 4
+    E_HUFFMAN            = 3,  // Not in CRAM 4
     E_BYTE_ARRAY_LEN     = 4,
     E_BYTE_ARRAY_STOP    = 5,
-    E_BETA               = 6,
-    E_SUBEXP             = 7,
-    E_GOLOMB_RICE        = 8,
-    E_GAMMA              = 9,
-    E_NUM_CODECS         = 10, /* Number of codecs, not a real one. */
+    E_BETA               = 6,  // Not in CRAM 4
+    E_SUBEXP             = 7,  // Not in CRAM 4
+    E_GOLOMB_RICE        = 8,  // Not in CRAM 4
+    E_GAMMA              = 9,  // Not in CRAM 4
+
+    // CRAM 4 specific codecs
+    E_VARINT_UNSIGNED    = 41, // Specialisation of EXTERNAL
+    E_VARINT_SIGNED      = 42, // Specialisation of EXTERNAL
+    E_CONST_BYTE         = 43, // Alternative to HUFFMAN with 1 symbol
+    E_CONST_INT          = 44, // Alternative to HUFFMAN with 1 symbol
+
+    // More experimental ideas, not documented in spec yet
+    E_XHUFFMAN           = 50, // To external block
+    E_XPACK              = 51, // Transform to sub-codec
+    E_XRLE               = 52, // Transform to sub-codec
+    E_XDELTA             = 53, // Transform to sub-codec
+
+    // Total number of codecs, not a real one.
+    E_NUM_CODECS,
 };
 
 enum cram_external_type {
@@ -120,6 +135,8 @@ enum cram_external_type {
     E_BYTE               = 3,
     E_BYTE_ARRAY         = 4,
     E_BYTE_ARRAY_BLOCK   = 5,
+    E_SINT               = 6, // signed INT
+    E_SLONG              = 7, // signed LONG
 };
 
 /* External IDs used by this implementation (only assumed during writing) */
@@ -192,19 +209,61 @@ struct cram_file_def {
 
 struct cram_slice;
 
-/* Now in htslib/cram.h
-enum cram_block_method {
+// Internal version of htslib/cram.h enum.
+// Note these have to match the laout of methmap and methcost in
+// cram_io.c:cram_compress_block2
+enum cram_block_method_int {
+    // Public methods as defined in the CRAM spec.
     BM_ERROR = -1,
+
+    // CRAM 2.x and 3.0
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
     LZMA     = 3,
-    RANS     = 4,  // Generic; either order
-    RANS0    = 4,
-    RANS1    = 10, // Not externalised; stored as RANS (generic)
-    GZIP_RLE = 11, // NB: not externalised in CRAM
+    RANS     = 4, RANS0 = RANS,
+
+    // CRAM 3.1 onwards
+    RANSPR   = 5, RANS_PR0  = RANSPR,
+    ARITH    = 6, ARITH_PR0 = ARITH,
+    FQZ      = 7,
+    TOK3     = 8,
+    // BSC = 9, ZSTD = 10
+
+    // Methods not externalised, but used in metrics.
+    // Externally they become one of the above methods.
+    GZIP_RLE = 11,
+    GZIP_1,      // Z_DEFAULT_STRATEGY level 1, NB: not externalised in CRAM
+
+    FQZ_b, FQZ_c, FQZ_d, // Various preset FQZ methods
+
+  //RANS0,       // Order 0
+    RANS1,
+
+  //RANS_PR0,    // Order 0
+    RANS_PR1,    // Order 1
+    RANS_PR64,   // O0 + RLE
+    RANS_PR9,    // O1 + X4
+    RANS_PR128,  // O0 + Pack
+    RANS_PR129,  // O1 + Pack
+    RANS_PR192,  // O0 + RLE + pack
+    RANS_PR193,  // O1 + RLE + pack
+
+  //TOK3,   // tok+rans
+    TOKA,   // tok+arith
+
+  //ARITH_PR0,   // Order 0
+    ARITH_PR1,   // Order 1
+    ARITH_PR64,  // O0 + RLE
+    ARITH_PR9,   // O1 + X4
+    ARITH_PR128, // O0 + Pack
+    ARITH_PR129, // O1 + Pack
+    ARITH_PR192, // O0 + RLE + pack
+    ARITH_PR193, // O1 + RLE + pack
+
+    // NB: must end on no more than 31 unless we change to a
+    // 64-bit method type.
 };
-*/
 
 /* Now in htslib/cram.h
 enum cram_content_type {
@@ -218,39 +277,30 @@ enum cram_content_type {
 };
 */
 
+/* Maximum simultaneous codecs allowed, 1 per bit */
+#define CRAM_MAX_METHOD 32
+
 /* Compression metrics */
 struct cram_metrics {
     // number of trials and time to next trial
     int trial;
     int next_trial;
+    int consistency;
 
     // aggregate sizes during trials
-    int sz_gz_rle;
-    int sz_gz_def;
-    int sz_rans0;
-    int sz_rans1;
-    int sz_bzip2;
-    int sz_lzma;
+    int sz[CRAM_MAX_METHOD];
 
     // resultant method from trials
-    int method;
+    int method, revised_method;
     int strat;
 
     // Revisions of method, to allow culling of continually failing ones.
-    int gz_rle_cnt;
-    int gz_def_cnt;
-    int rans0_cnt;
-    int rans1_cnt;
-    int bzip2_cnt;
-    int lzma_cnt;
-    int revised_method;
+    int cnt[CRAM_MAX_METHOD];
 
-    double gz_rle_extra;
-    double gz_def_extra;
-    double rans0_extra;
-    double rans1_extra;
-    double bzip2_extra;
-    double lzma_extra;
+    double extra[CRAM_MAX_METHOD];
+
+    // Not amenable to rANS bit-packing techniques; cardinality > 16
+    int unpackable;
 };
 
 // Hash aux key (XX:i) to cram_metrics
@@ -259,7 +309,7 @@ KHASH_MAP_INIT_INT(m_metrics, cram_metrics*)
 
 /* Block */
 struct cram_block {
-    enum cram_block_method  method, orig_method;
+    enum cram_block_method_int  method, orig_method;
     enum cram_content_type  content_type;
     int32_t  content_id;
     int32_t  comp_size;
@@ -301,6 +351,7 @@ struct cram_block_compression_hdr {
     // indexed by ref-base and subst. code
     char substitution_matrix[5][4];
     int no_ref;
+    int qs_seq_orient; // 1 => same as seq. 0 => original orientation
 
     // TD Dictionary as a concatenated block
     cram_block *TD_blk;          // Tag Dictionary
@@ -317,6 +368,9 @@ struct cram_block_compression_hdr {
 
     char *uncomp; // A single block of uncompressed data
     size_t uncomp_size, uncomp_alloc;
+
+    // Total codec count, used for index to block_by_id for transforms
+    int ncodecs;
 };
 
 typedef struct cram_map {
@@ -331,6 +385,7 @@ typedef struct cram_map {
 typedef struct cram_tag_map {
     struct cram_codec *codec;
     cram_block *blk;
+    cram_block *blk2;
     cram_metrics *m;
 } cram_tag_map;
 
@@ -396,6 +451,7 @@ struct cram_container {
     int last_slice;              // number of reads in last slice (0 for 1st)
     int multi_seq;               // true if packing multi seqs per cont/slice
     int unsorted;                // true is AP_delta is 0.
+    int qs_seq_orient;           // 1 => same as seq. 0 => original orientation
 
     /* Copied from fd before encoding, to allow multi-threading */
     int ref_start, first_base, last_base, ref_id, ref_end;
@@ -436,6 +492,7 @@ typedef struct cram_record {
     int32_t mate_ref_id;
     int64_t mate_pos;     // NP
     int64_t tlen;         // TS
+    int64_t explicit_tlen;// TS, but PNEXT/RNEXT still need auto-computing
 
     // Auxiliary data
     int32_t ntags;        // TC
@@ -681,6 +738,36 @@ typedef struct spare_bams {
     struct spare_bams *next;
 } spare_bams;
 
+struct cram_fd;
+typedef struct varint_vec {
+    // Returns number of bytes decoded from fd, 0 on error
+    int (*varint_decode32_crc)(struct cram_fd *fd, int32_t *val_p, uint32_t *crc);
+    int (*varint_decode32s_crc)(struct cram_fd *fd, int32_t *val_p, uint32_t *crc);
+    int (*varint_decode64_crc)(struct cram_fd *fd, int64_t *val_p, uint32_t *crc);
+
+    // Returns the value and increments *cp.  Sets err to 1 iff an error occurs.
+    // NOTE: Does not set err to 0 on success.
+    int64_t (*varint_get32) (char **cp, const char *endp, int *err);
+    int64_t (*varint_get32s)(char **cp, const char *endp, int *err);
+    int64_t (*varint_get64) (char **cp, const char *endp, int *err);
+    int64_t (*varint_get64s)(char **cp, const char *endp, int *err);
+
+    // Returns the number of bytes written, <= 0 on error.
+    int (*varint_put32) (char *cp, const char *endp, int32_t val_p);
+    int (*varint_put32s)(char *cp, const char *endp, int32_t val_p);
+    int (*varint_put64) (char *cp, const char *endp, int64_t val_p);
+    int (*varint_put64s)(char *cp, const char *endp, int64_t val_p);
+
+    // Returns the number of bytes written, <= 0 on error.
+    int (*varint_put32_blk) (cram_block *blk, int32_t val_p);
+    int (*varint_put32s_blk)(cram_block *blk, int32_t val_p);
+    int (*varint_put64_blk) (cram_block *blk, int64_t val_p);
+    int (*varint_put64s_blk)(cram_block *blk, int64_t val_p);
+
+    // Returns number of bytes needed to encode 'val'
+    int (*varint_size)(int64_t val);
+} varint_vec;
+
 struct cram_fd {
     struct hFILE  *fp;
     int            mode;     // 'r' or 'w'
@@ -729,6 +816,9 @@ struct cram_fd {
     int use_bz2;
     int use_rans;
     int use_lzma;
+    int use_fqz;
+    int use_tok;
+    int use_arith;
     int shared_ref;
     unsigned int required_fields;
     int store_md;
@@ -772,6 +862,16 @@ struct cram_fd {
     int tlen_zero;                      // If true, permit tlen 0 (=> tlen calculated)
 
     BGZF *idxfp;                        // File pointer for on-the-fly index creation
+
+    // variable integer decoding callbacks.
+    // This changed in CRAM4.0 to a data-size agnostic encoding.
+    varint_vec vv;
+
+    // Force AP delta even on non positional sorted data.
+    // This can be beneficial for pairs where pairs are nearby each other.
+    // We suffer with delta to unrelated things (previous pair), but gain
+    // in delta between them.  (Ideal would be a per read setting.)
+    int ap_delta;
 };
 
 // Translation of required fields to cram data series
@@ -853,7 +953,8 @@ enum cram_fields {
 #define CRAM_FLAG_DETACHED             (1<<1)
 #define CRAM_FLAG_MATE_DOWNSTREAM      (1<<2)
 #define CRAM_FLAG_NO_SEQ               (1<<3)
-#define CRAM_FLAG_MASK                 ((1<<4)-1)
+#define CRAM_FLAG_EXPLICIT_TLEN        (1<<4)
+#define CRAM_FLAG_MASK                 ((1<<5)-1)
 
 /* Internal only */
 #define CRAM_FLAG_STATS_ADDED          (1<<30)
