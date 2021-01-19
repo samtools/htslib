@@ -2901,6 +2901,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 hts_log_error("Position value '%s' is too large", p);
                 goto err;
             } else {
+                if (v->pos < 1) {
+                    hts_log_error("Position must be greater than zero in VCF records");
+                    goto err;
+                }
                 v->pos -= 1;
             }
             if (v->pos >= INT32_MAX)
