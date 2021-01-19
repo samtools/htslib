@@ -1368,6 +1368,12 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     ptr += bytes;
 
     // Check REF and ALT
+    if (rec->n_allele < 1) {
+        hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": No REF allele",
+                        bcf_seqname_safe(hdr,rec), rec->pos+1);
+        err |= BCF_ERR_TAG_UNDEF;
+    }
+
     reports = 0;
     for (i = 0; i < rec->n_allele; i++) {
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
