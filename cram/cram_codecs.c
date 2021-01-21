@@ -2758,8 +2758,7 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         for (i = 0; i < ncodes; i++)
             codes[i].symbol = vv->varint_get32(&cp, data_end, &err);
     } else {
-        free(h);
-        return NULL;
+        goto malformed;
     }
 
     if (err)
@@ -2794,9 +2793,7 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
     if (max_len > max_code_bits) {
         hts_log_error("Huffman code length (%d) is greater "
                       "than maximum supported (%d)", max_len, max_code_bits);
-        free(h);
-        free(codes);
-        return NULL;
+        goto malformed;
     }
 
     /* Sort by bit length and then by symbol value */
