@@ -111,8 +111,8 @@ unsigned int htslib_features(void) {
     return feat;
 }
 
-const char *htslib_test_feature(int id) {
-    int feat = htslib_features();
+const char *htslib_test_feature(unsigned int id) {
+    unsigned int feat = htslib_features();
 
     switch (id) {
     case HTS_FEATURE_CONFIGURE:
@@ -142,7 +142,7 @@ const char *htslib_test_feature(int id) {
         return HTS_CPPFLAGS;
 
     default:
-        fprintf(stderr, "Unknown feature code: %d\n", id);
+        fprintf(stderr, "Unknown feature code: %u\n", id);
     }
 
     return NULL;
