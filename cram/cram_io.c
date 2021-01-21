@@ -1680,8 +1680,12 @@ int cram_uncompress_block(cram_block *b) {
     case RANS_PR0: {
         unsigned int usize = b->uncomp_size, usize2;
         uncomp = (char *)rans_uncompress_4x16(b->data, b->comp_size, &usize2);
-        if (!uncomp || usize != usize2)
+        if (!uncomp)
             return -1;
+        if (usize != usize2) {
+            free(uncomp);
+            return -1;
+        }
         b->orig_method = RANS_PR0 + (b->data[0]&1)
             + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
         free(b->data);
@@ -1696,8 +1700,12 @@ int cram_uncompress_block(cram_block *b) {
     case ARITH_PR0: {
         unsigned int usize = b->uncomp_size, usize2;
         uncomp = (char *)arith_uncompress_to(b->data, b->comp_size, NULL, &usize2);
-        if (!uncomp || usize != usize2)
+        if (!uncomp)
             return -1;
+        if (usize != usize2) {
+            free(uncomp);
+            return -1;
+        }
         b->orig_method = ARITH_PR0 + (b->data[0]&1)
             + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
         free(b->data);
@@ -1712,6 +1720,8 @@ int cram_uncompress_block(cram_block *b) {
     case TOK3: {
         uint32_t out_len;
         uint8_t *cp = decode_names(b->data, b->comp_size, &out_len);
+        if (!cp)
+            return -1;
         b->orig_method = TOK3;
         b->method = RAW;
         free(b->data);
