@@ -18,6 +18,7 @@ htscodecs_tokenise_name3_h = htscodecs/htscodecs/tokenise_name3.h
 htscodecs_varint_h = htscodecs/htscodecs/varint.h
 
 htscodecs_rANS_byte_h = htscodecs/htscodecs/rANS_byte.h
+htscodecs_rANS_word_h = htscodecs/htscodecs/rANS_word.h
 htscodecs_c_range_coder_h = htscodecs/htscodecs/c_range_coder.h
 htscodecs_c_simple_model_h = htscodecs/htscodecs/c_simple_model.h $(htscodecs_c_range_coder_h)
 htscodecs_pooled_alloc_h = htscodecs/htscodecs/pooled_alloc.h
