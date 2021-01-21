@@ -7,6 +7,7 @@
 *.dll.a
 *.pc.tmp
 *-uninstalled.pc
+config_vars.h
 /version.h
 
 autom4te.cache
@@ -55,7 +56,9 @@ shlib-exports-*.txt
 /test/test-bcf-sr
 /test/test-bcf-translate
 /test/test_bgzf
+/test/test_expr
 /test/test_index
+/test/test_introspection
 /test/test_kfunc
 /test/test_kstring
 /test/test-parse-reg
