@@ -1400,7 +1400,7 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
         c->decode = cram_xpack_decode_char;
     else {
         fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
-        return NULL;
+        goto malformed;
     }
     c->free = cram_xpack_decode_free;
     c->size = cram_xpack_decode_size;
@@ -1408,6 +1408,9 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
 
     c->u.xpack.nbits = vv->varint_get32(&cp, endp, NULL);
     c->u.xpack.nval  = vv->varint_get32(&cp, endp, NULL);
+    if (c->u.xpack.nbits >= 8  || c->u.xpack.nbits < 0 ||
+        c->u.xpack.nval  > 256 || c->u.xpack.nval < 0)
+        goto malformed;
     int i;
     for (i = 0; i < c->u.xpack.nval; i++) {
         uint32_t v = vv->varint_get32(&cp, endp, NULL);
