@@ -362,7 +362,7 @@ if test "$enable_libcurl" != no; then
        *) MSG_ERROR([libcurl $message
 
 Support for HTTPS and other SSL-based URLs requires routines from the libcurl
-library <http://curl.haxx.se/libcurl/>.  Building HTSlib with libcurl enabled
+library <http://curl.se/libcurl/>.  Building HTSlib with libcurl enabled
 requires libcurl development files to be installed on the build machine; you
 may need to ensure a package such as libcurl4-{gnutls,nss,openssl}-dev (on
 Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions
