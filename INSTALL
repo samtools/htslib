@@ -145,7 +145,7 @@ various features and specify further optional external requirements:
     on to cause additional directories to be searched.
 
 --enable-libcurl
-    Use libcurl (<http://curl.haxx.se/>) to implement network access to
+    Use libcurl (<http://curl.se/>) to implement network access to
     remote files via FTP, HTTP, HTTPS, etc.
 
 --enable-gcs
