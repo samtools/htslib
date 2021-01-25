@@ -66,7 +66,7 @@ from a release tar file, you can skip this section.
 
 Some parts of HTSlib are provided by the external "htscodecs" project.  This
 is included as a submodule.  When building from the git repository,
-either clone the project using "git clone -r", or run:
+either clone the project using "git clone --recurse-submodules", or run:
 
     git submodule update --init --recursive
 
