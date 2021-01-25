@@ -1674,6 +1674,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = uncomp_size;
         b->method = RAW;
+        b->uncomp_size = uncomp_size;
         break;
     }
 

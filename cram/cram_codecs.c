@@ -745,7 +745,7 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
                                     enum cram_external_type option,
                                     int version, varint_vec *vv) {
     cram_codec *c;
-    char *cp = data;
+    char *cp = data, *cp_end = data+size;
 
     if (!(c = malloc(sizeof(*c))))
         return NULL;
@@ -775,8 +775,8 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
     c->size   = cram_varint_decode_size;
     c->get_block = cram_varint_get_block;
 
-    c->u.varint.content_id = vv->varint_get32 (&cp, NULL, NULL);
-    c->u.varint.offset     = vv->varint_get64s(&cp, NULL, NULL);
+    c->u.varint.content_id = vv->varint_get32 (&cp, cp_end, NULL);
+    c->u.varint.offset     = vv->varint_get64s(&cp, cp_end, NULL);
 
     if (cp - data != size) {
         fprintf(stderr, "Malformed varint header stream\n");
@@ -1414,7 +1414,8 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
     int i;
     for (i = 0; i < c->u.xpack.nval; i++) {
         uint32_t v = vv->varint_get32(&cp, endp, NULL);
-        if (v >= 256) return NULL;
+        if (v >= 256)
+            goto malformed;
         c->u.xpack.rmap[i] = v; // reverse map: e.g 0-3 to P,A,C,K
     }
 
@@ -1714,7 +1715,7 @@ cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
     char *cp = data;
     char *endp = data+size;
 
-    if (!(c = malloc(sizeof(*c))))
+    if (!(c = calloc(1, sizeof(*c))))
         return NULL;
 
     c->codec  = E_XDELTA;
@@ -1749,7 +1750,7 @@ cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
     if (cp - data != size) {
     malformed:
         fprintf(stderr, "Malformed xdelta header stream\n");
-        free(c);
+        cram_xdelta_decode_free(c);
         return NULL;
     }
 
