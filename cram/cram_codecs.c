@@ -3067,9 +3067,10 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
                                      enum cram_external_type option,
                                      void *dat,
                                      int version, varint_vec *vv) {
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *lens = NULL, code, len;
+    int *vals = NULL, *freqs = NULL, *lens = NULL, code, len;
     int *new_vals, *new_freqs;
-    int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
+    int i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
+    size_t nvals, vals_alloc = 0;
     cram_codec *c;
     cram_huffman_code *codes;
 
