@@ -341,8 +341,7 @@ errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htsl
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
-hfile.o hfile.pico: TMP_CPPFLAGS := $(CPPFLAGS)
-hfile.o hfile.pico: CPPFLAGS += -DHTS_CPPFLAGS=\"$(TMP_CPPFLAGS)\" -DHTS_CFLAGS="\"$(CFLAGS)\"" -DHTS_LDFLAGS="\"$(LDFLAGS)\"" -DHTS_CC="\"$(CC)\""
+hfile.o hfile.pico: ALL_CPPFLAGS += -DHTS_CPPFLAGS="\"$(CPPFLAGS)\"" -DHTS_CFLAGS="\"$(CFLAGS)\"" -DHTS_LDFLAGS="\"$(LDFLAGS)\"" -DHTS_CC="\"$(CC)\""
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
