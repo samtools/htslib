@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/samtools/htslib.svg?branch=develop)](https://travis-ci.org/samtools/htslib)
+[![Build Status](https://api.cirrus-ci.com/github/samtools/htslib.svg?branch=develop)](https://api.cirrus-ci.com/github/samtools/htslib)
 [![Build status](https://ci.appveyor.com/api/projects/status/v46hkwyfjp3l8nd3/branch/develop?svg=true)](https://ci.appveyor.com/project/samtools/htslib/branch/develop)
 [![Github All Releases](https://img.shields.io/github/downloads/samtools/htslib/total.svg)](https://github.com/samtools/htslib)
 
