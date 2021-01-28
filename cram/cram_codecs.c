@@ -964,7 +964,7 @@ cram_codec *cram_const_decode_init(cram_block_compression_hdr *hdr,
     c->size   = cram_const_decode_size;
     c->get_block = NULL;
 
-    c->u.xconst.val = vv->varint_get64s(&cp, NULL, NULL);
+    c->u.xconst.val = vv->varint_get64s(&cp, data+size, NULL);
 
     if (cp - data != size) {
         fprintf(stderr, "Malformed const header stream\n");
@@ -2118,7 +2118,7 @@ cram_codec *cram_xrle_decode_init(cram_block_compression_hdr *hdr,
     char *endp = data+size;
     int err = 0;
 
-    if (!(c = malloc(sizeof(*c))))
+    if (!(c = calloc(1, sizeof(*c))))
         return NULL;
 
     c->codec  = E_XRLE;
@@ -2175,7 +2175,7 @@ cram_codec *cram_xrle_decode_init(cram_block_compression_hdr *hdr,
 
  malformed:
     fprintf(stderr, "Malformed xrle header stream\n");
-    free(c);
+    cram_xrle_decode_free(c);
     return NULL;
 }
 
