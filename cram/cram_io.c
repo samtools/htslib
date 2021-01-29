@@ -2080,7 +2080,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     1.04, // 6  arithpr (O0)
                     1.05, // 7  fqz
                     1.05, // 8  tok3 (rans)
-                    9, 9, // 9,10 reserved
+                    1.00, 1.00, // 9,10 reserved
 
                     // Paramterised versions of above
                     1.01, // gzip rle
@@ -2123,6 +2123,9 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     for (m = 0; m < CRAM_MAX_METHOD; m++)
                         metrics->sz[m] *= 1+(meth_cost[m]-1)/3;
                 } // else cost is ignored
+
+                // Ensure these are never used
+                metrics->sz[9] = metrics->sz[10] = INT_MAX;
 
                 for (m = 0; m < CRAM_MAX_METHOD; m++) {
                     if ((!metrics->sz[m]) || (!(method & (1u<<m))))
@@ -4395,8 +4398,8 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block_by_id = NULL;
     s->last_apos = 0;
     if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))  goto err;
-    s->cigar = NULL;
-    s->cigar_alloc = 0;
+    s->cigar_alloc = 1024;
+    if (!(s->cigar = malloc(s->cigar_alloc * sizeof(*s->cigar)))) goto err;
     s->ncigar = 0;
 
     if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))       goto err;
@@ -4499,8 +4502,8 @@ cram_slice *cram_read_slice(cram_fd *fd) {
     }
 
     /* Initialise encoding/decoding tables */
-    s->cigar = NULL;
-    s->cigar_alloc = 0;
+    s->cigar_alloc = 1024;
+    if (!(s->cigar = malloc(s->cigar_alloc * sizeof(*s->cigar)))) goto err;
     s->ncigar = 0;
 
     if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))      goto err;
