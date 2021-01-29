@@ -3494,8 +3494,8 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
                                       int *out_size) {
     cram_block *b;
     cram_block *out = (cram_block *)out_;
-    char *cp, *out_cp, *cp_end;
-    char stop;
+    unsigned char *cp, *cp_end;
+    unsigned char stop;
 
     b = cram_get_block_by_id(slice, c->u.byte_array_stop.content_id);
     if (!b)
@@ -3503,25 +3503,25 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
 
     if (b->idx >= b->uncomp_size)
         return -1;
-    cp = (char *)b->data + b->idx;
-    cp_end = (char *)b->data + b->uncomp_size;
-    out_cp = (char *)BLOCK_END(out);
+    cp = b->data + b->idx;
+    cp_end = b->data + b->uncomp_size;
 
     stop = c->u.byte_array_stop.stop;
     if (cp_end - cp < out->alloc - out->byte) {
+        unsigned char *out_cp = BLOCK_END(out);
         while (cp != cp_end && *cp != stop)
             *out_cp++ = *cp++;
-        BLOCK_SIZE(out) = out_cp - (char *)BLOCK_DATA(out);
+        BLOCK_SIZE(out) = out_cp - BLOCK_DATA(out);
     } else {
-        char *cp_start;
+        unsigned char *cp_start;
         for (cp_start = cp; cp != cp_end && *cp != stop; cp++)
             ;
         BLOCK_APPEND(out, cp_start, cp - cp_start);
         BLOCK_GROW(out, cp - cp_start);
     }
 
-    *out_size = cp - (char *)(b->data + b->idx);
-    b->idx = cp - (char *)b->data + 1;
+    *out_size = cp - (b->data + b->idx);
+    b->idx = cp - b->data + 1;
 
     return 0;
 
