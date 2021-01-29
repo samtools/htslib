@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013-2018, 2020 Genome Research Ltd.
+   Copyright (C) 2013-2018, 2020-2021 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -151,6 +151,15 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 		l = kputd(d, s);
 		va_end(args);
 		return l;
+	}
+
+	if (!s->s) {
+		const size_t sz = 64;
+		s->s = malloc(sz);
+		if (!s->s)
+			return -1;
+		s->m = sz;
+		s->l = 0;
 	}
 
 	l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args); // This line does not work with glibc 2.0. See `man snprintf'.
