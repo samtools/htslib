@@ -4443,28 +4443,64 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
 int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
     if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
-    kstring_t tmp = {0,0,0};
     char *free_old = NULL;
+    char buffer[256];
+    size_t used = 0;
 
-    // If the supplied alleles are not pointers to line->d.als, the existing block can be reused.
+    // The pointers in alleles may point into the existing line->d.als memory,
+    // so care needs to be taken not to clobber them while updating.  Usually
+    // they will be short so we can copy through an intermediate buffer.
+    // If they're longer, or won't fit in the existing allocation we
+    // can allocate a new buffer to write into.  Note that in either case
+    // pointers to line->d.als memory in alleles may not be valid when we've
+    // finished.
     int i;
-    for (i=0; i<nals; i++)
-        if ( alleles[i]>=line->d.als && alleles[i]<line->d.als+line->d.m_als ) break;
-    if ( i==nals )
-    {
-        // all alleles point elsewhere, reuse the existing block
-        tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
+    size_t avail = line->d.m_als < sizeof(buffer) ? line->d.m_als : sizeof(buffer);
+    for (i=0; i<nals; i++) {
+        size_t sz = strlen(alleles[i]) + 1;
+        if (avail - used < sz)
+            break;
+        memcpy(buffer + used, alleles[i], sz);
+        used += sz;
     }
-    else
-        free_old = line->d.als;
 
-    for (i=0; i<nals; i++)
-    {
-        kputs(alleles[i], &tmp);
-        kputc(0, &tmp);
+    // Did we miss anything?
+    if (i < nals) {
+        int j;
+        size_t needed = used;
+        char *new_als;
+        for (j = i; j < nals; j++)
+            needed += strlen(alleles[j]) + 1;
+        if (needed < line->d.m_als) // Don't shrink the buffer
+            needed = line->d.m_als;
+        if (needed > INT_MAX) {
+            hts_log_error("REF + alleles too long to fit in a BCF record");
+            return -1;
+        }
+        new_als = malloc(needed);
+        if (!new_als)
+            return -1;
+        free_old = line->d.als;
+        line->d.als = new_als;
+        line->d.m_als = needed;
     }
-    line->d.als = tmp.s; line->d.m_als = tmp.m;
-    free(free_old);
+
+    // Copy from the temp buffer to the destination
+    if (used) {
+        assert(used <= line->d.m_als);
+        memcpy(line->d.als, buffer, used);
+    }
+
+    // Add in any remaining entries - if this happens we will always be
+    // writing to a newly-allocated buffer.
+    for (; i < nals; i++) {
+        size_t sz = strlen(alleles[i]) + 1;
+        memcpy(line->d.als + used, alleles[i], sz);
+        used += sz;
+    }
+
+    if (free_old)
+        free(free_old);
     return _bcf1_sync_alleles(hdr,line,nals);
 }
 
