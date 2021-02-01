@@ -1032,6 +1032,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     if (!err)
         return hdr;
 
+    free(hdr->block_content_ids);
     free(hdr);
     return NULL;
 }
