@@ -1,6 +1,6 @@
 /*  hts_expr.c -- filter expression parsing and processing.
 
-    Copyright (C) 2020 Genome Research Ltd.
+    Copyright (C) 2020-2021 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -413,7 +413,7 @@ static int bitand_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 hts_expr_val_free(&val);
                 return -1;
             }
-            res->is_true = res->d = (int64_t)res->d & (int64_t)val.d;
+            res->is_true = (res->d = ((int64_t)res->d & (int64_t)val.d)) != 0;
         } else {
             break;
         }
@@ -441,7 +441,7 @@ static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 hts_expr_val_free(&val);
                 return -1;
             }
-            res->is_true = res->d = (int64_t)res->d ^ (int64_t)val.d;
+            res->is_true = (res->d = ((int64_t)res->d ^ (int64_t)val.d)) != 0;
         } else {
             break;
         }
@@ -469,7 +469,7 @@ static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 hts_expr_val_free(&val);
                 return -1;
             }
-            res->is_true = res->d = (int64_t)res->d | (int64_t)val.d;
+            res->is_true = (res->d = ((int64_t)res->d | (int64_t)val.d)) != 0;
         } else {
             break;
         }
