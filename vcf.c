@@ -1236,9 +1236,9 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     shared_len = le_to_u32(x);
     if (shared_len < 24) return -2;
     shared_len -= 24; // to exclude six 32-bit integers
-    if (ks_resize(&v->shared, shared_len) != 0) return -2;
+    if (ks_resize(&v->shared, shared_len ? shared_len : 1) != 0) return -2;
     indiv_len = le_to_u32(x + 4);
-    if (ks_resize(&v->indiv, indiv_len) != 0) return -2;
+    if (ks_resize(&v->indiv, indiv_len ? indiv_len : 1) != 0) return -2;
     v->rid  = le_to_i32(x + 8);
     v->pos  = le_to_u32(x + 12);
     v->rlen = le_to_i32(x + 16);
