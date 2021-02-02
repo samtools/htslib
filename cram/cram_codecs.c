@@ -1388,7 +1388,7 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
     char *cp = data;
     char *endp = data+size;
 
-    if (!(c = malloc(sizeof(*c))))
+    if (!(c = calloc(1, sizeof(*c))))
         return NULL;
 
     c->codec  = E_XPACK;
@@ -1433,7 +1433,7 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
         || c->u.xpack.nbits < 0 || c->u.xpack.nbits > 8 * sizeof(int64_t)) {
     malformed:
         fprintf(stderr, "Malformed xpack header stream\n");
-        free(c);
+        cram_xpack_decode_free(c);
         return NULL;
     }
 
