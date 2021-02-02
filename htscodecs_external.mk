@@ -11,7 +11,10 @@ htscodecs_rle_h =
 htscodecs_tokenise_name3_h =
 htscodecs_varint_h =
 
-htscodecs_rANS_byte_h =
+htscodecs_htscodecs_endian_h =
 htscodecs_c_range_coder_h =
 htscodecs_c_simple_model_h =
 htscodecs_pooled_alloc_h =
+htscodecs_rANS_byte_h =
+htscodecs_rANS_word_h =
+htscodecs_utils_h =
