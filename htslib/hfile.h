@@ -316,7 +316,7 @@ purpose other than closing.
 HTSLIB_EXPORT
 char *hfile_mem_steal_buffer(hFILE *file, size_t *length);
 
-/// Fills out sc_list[] with the list of known schemes.
+/// Fills out sc_list[] with the list of known URL schemes.
 /**
  * @param plugin   [in]     Restricts schemes to only those from 'plugin.
  * @param sc_list  [out]    Filled out with the scheme names
@@ -335,9 +335,9 @@ char *hfile_mem_steal_buffer(hFILE *file, size_t *length);
  *         -1 on failure
  */
 HTSLIB_EXPORT
-int hts_list_schemes(const char *plugin, const char *sc_list[], int *nschemes);
+int hfile_list_schemes(const char *plugin, const char *sc_list[], int *nschemes);
 
-/// Fills out plist[] with the list of known plugins.
+/// Fills out plist[] with the list of known hFILE plugins.
 /*
  * @param plist    [out]    Filled out with the plugin names
  * @param nplugins [in/out] Size of plist (in) and number returned (out)
@@ -353,16 +353,16 @@ int hts_list_schemes(const char *plugin, const char *sc_list[], int *nschemes);
  *         -1 on failure
  */
 HTSLIB_EXPORT
-int hts_list_plugins(const char *plist[], int *nplugins);
+int hfile_list_plugins(const char *plist[], int *nplugins);
 
-/// Tests for the presence of a specific plugin.
+/// Tests for the presence of a specific hFILE plugin.
 /*
  * @param name     The name of the plugin to query.
  *
  * @return 1 if found, 0 otherwise.
  */
 HTSLIB_EXPORT
-int htslib_has_plugin(const char *name);
+int hfile_has_plugin(const char *name);
 
 #ifdef __cplusplus
 }
