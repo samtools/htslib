@@ -64,13 +64,13 @@ int main(void) {
     const char *plugins[100];
     int np = 100, i, j;
 
-    if (hts_list_plugins(plugins, &np) < 0)
+    if (hfile_list_plugins(plugins, &np) < 0)
         return 1;
 
     for (i = 0; i < np; i++) {
         const char *sc_list[100];
         int nschemes = 100;
-        if (hts_list_schemes(plugins[i], sc_list, &nschemes) < 0)
+        if (hfile_list_schemes(plugins[i], sc_list, &nschemes) < 0)
             return 1;
 
         printf("    %s:\n", plugins[i]);

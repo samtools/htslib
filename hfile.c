@@ -1148,7 +1148,7 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
  ***************************/
 
 /*
- * Fills out sc_list[] with the list of known schemes.
+ * Fills out sc_list[] with the list of known URL schemes.
  * This can be restricted to just ones from a specific plugin,
  * or all (plugin == NULL).
  *
@@ -1156,7 +1156,7 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
  *        -1 on failure.
  */
 HTSLIB_EXPORT
-int hts_list_schemes(const char *plugin, const char *sc_list[], int *nschemes)
+int hfile_list_schemes(const char *plugin, const char *sc_list[], int *nschemes)
 {
     pthread_mutex_lock(&plugins_lock);
     if (!schemes && load_hfile_plugins() < 0) {
@@ -1189,13 +1189,13 @@ int hts_list_schemes(const char *plugin, const char *sc_list[], int *nschemes)
 
 
 /*
- * Fills out plist[] with the list of known plugins.
+ * Fills out plist[] with the list of known hFILE plugins.
  *
  * Returns number of schemes found on success;
  *        -1 on failure
  */
 HTSLIB_EXPORT
-int hts_list_plugins(const char *plist[], int *nplugins)
+int hfile_list_plugins(const char *plist[], int *nplugins)
 {
     pthread_mutex_lock(&plugins_lock);
     if (!schemes && load_hfile_plugins() < 0) {
@@ -1225,13 +1225,13 @@ int hts_list_plugins(const char *plist[], int *nplugins)
 
 
 /*
- * Tests for the presence of a specific plugin.
+ * Tests for the presence of a specific hFILE plugin.
  *
  * Returns 1 if true
  *         0 otherwise
  */
 HTSLIB_EXPORT
-int htslib_has_plugin(const char *name)
+int hfile_has_plugin(const char *name)
 {
     pthread_mutex_lock(&plugins_lock);
     if (!schemes && load_hfile_plugins() < 0) {
