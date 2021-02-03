@@ -73,7 +73,7 @@ const char *hts_version()
     return HTS_VERSION_TEXT;
 }
 
-unsigned int htslib_features(void) {
+unsigned int hts_features(void) {
     unsigned int feat = 0;
 
 #ifdef PACKAGE_URL
@@ -111,8 +111,8 @@ unsigned int htslib_features(void) {
     return feat;
 }
 
-const char *htslib_test_feature(unsigned int id) {
-    unsigned int feat = htslib_features();
+const char *hts_test_feature(unsigned int id) {
+    unsigned int feat = hts_features();
 
     switch (id) {
     case HTS_FEATURE_CONFIGURE:
@@ -150,7 +150,7 @@ const char *htslib_test_feature(unsigned int id) {
 
 // Note this implementation also means we can just "strings" the library
 // to find the configuration parameters.
-const char *htslib_feature_string(void) {
+const char *hts_feature_string(void) {
     const char *fmt=
 
 #ifdef PACKAGE_URL
@@ -203,7 +203,7 @@ const char *htslib_feature_string(void) {
 
 #ifdef ENABLE_PLUGINS
     static char config[1200];
-    sprintf(config, fmt, htslib_plugin_path());
+    sprintf(config, fmt, hts_plugin_path());
     return config;
 #else
     return fmt;

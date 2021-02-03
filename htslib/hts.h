@@ -456,17 +456,17 @@ const char *hts_version(void);
  * @return a bitfield of HTS_FEATURE_* macros.
  */
 HTSLIB_EXPORT
-unsigned int htslib_features(void);
+unsigned int hts_features(void);
 
 HTSLIB_EXPORT
-const char *htslib_test_feature(unsigned int id);
+const char *hts_test_feature(unsigned int id);
 
 /*! @abstract Introspection on the features enabled in htslib, string form
  *
  * @return a string describing htslib build features
  */
 HTSLIB_EXPORT
-const char *htslib_feature_string(void);
+const char *hts_feature_string(void);
 
 // Whether ./configure was used or vanilla Makefile
 #define HTS_FEATURE_CONFIGURE    1

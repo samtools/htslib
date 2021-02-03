@@ -192,7 +192,7 @@ void close_plugin(void *plugin)
     }
 }
 
-const char *htslib_plugin_path(void) {
+const char *hts_plugin_path(void) {
 #ifdef ENABLE_PLUGINS
     char *path = getenv("HTS_PATH");
     if (!path) path = "";
