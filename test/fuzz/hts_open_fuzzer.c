@@ -1,7 +1,7 @@
 /*  test/fuzz/hts_open_fuzzer.c -- Fuzz driver for hts_open.
 
     Copyright (C) 2018 Google LLC.
-    Copyright (C) 2019 Genome Research Ltd.
+    Copyright (C) 2019-2020 Genome Research Ltd.
 
     Author: Markus Kusano <kusano@google.com>
 

@@ -1,6 +1,6 @@
 # Makefile variables useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2017, 2019 Genome Research Ltd.
+#    Copyright (C) 2013-2017, 2019-2020 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
