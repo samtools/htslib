@@ -32,12 +32,12 @@ int main(void) {
     printf("Version string: %s\n", hts_version());
     printf("Version number: %d\n", HTS_VERSION);
 
-    printf("\nCC:             %s\n", htslib_test_feature(HTS_FEATURE_CC));
-    printf("CPPFLAGS:       %s\n", htslib_test_feature(HTS_FEATURE_CPPFLAGS));
-    printf("CFLAGS:         %s\n", htslib_test_feature(HTS_FEATURE_CFLAGS));
-    printf("LDFLAGS:        %s\n", htslib_test_feature(HTS_FEATURE_LDFLAGS));
+    printf("\nCC:             %s\n", hts_test_feature(HTS_FEATURE_CC));
+    printf("CPPFLAGS:       %s\n", hts_test_feature(HTS_FEATURE_CPPFLAGS));
+    printf("CFLAGS:         %s\n", hts_test_feature(HTS_FEATURE_CFLAGS));
+    printf("LDFLAGS:        %s\n", hts_test_feature(HTS_FEATURE_LDFLAGS));
 
-    unsigned int feat = htslib_features();
+    unsigned int feat = hts_features();
     printf("\nFeature number: 0x%x\n", feat);
     if (feat & HTS_FEATURE_CONFIGURE)
         printf("                HTS_FEATURE_CONFIGURE\n");
@@ -56,7 +56,7 @@ int main(void) {
     if (feat & HTS_FEATURE_BZIP2)
         printf("                HTS_FEATURE_BZIP2\n");
 
-    printf("\nFeature string: %s\n", htslib_feature_string());
+    printf("\nFeature string: %s\n", hts_feature_string());
 
 
     // Plugins and schemes
