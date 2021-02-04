@@ -2130,6 +2130,7 @@ cram_codec *cram_xrle_decode_init(cram_block_compression_hdr *hdr,
         c->decode = cram_xrle_decode_char;
     else {
         fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
+        free(c);
         return NULL;
     }
     c->free   = cram_xrle_decode_free;
