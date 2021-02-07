@@ -549,7 +549,7 @@ static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         if ((err = eq_expr(filt, data, fn, str+2, end, &val))) {
             res->is_true = res->d = 0;
         } else {
-            res->is_true = res->d = res->is_str
+            res->is_true = res->d == res->is_str
                 ? (res->s.s && val.s.s ? strcmp(res->s.s, val.s.s)==0 : 0)
                 : !res->is_str && !val.is_str && res->d == val.d;
         }
@@ -559,7 +559,7 @@ static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         if ((err = eq_expr(filt, data, fn, str+2, end, &val))) {
             res->is_true = res->d = 0;
         } else {
-            res->is_true = res->d = res->is_str
+            res->is_true = res->d == res->is_str
                 ? (res->s.s && val.s.s ? strcmp(res->s.s, val.s.s) != 0 : 1)
                 : res->is_str != val.is_str || res->d != val.d;
         }
