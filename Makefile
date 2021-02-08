@@ -122,7 +122,13 @@ include htscodecs.mk
 PACKAGE_VERSION := $(shell ./version.sh)
 
 LIBHTS_SOVERSION = 3
-MACH_O_COMPATIBILITY_VERSION = $(LIBHTS_SOVERSION)
+
+# Version numbers for the Mac dynamic library.  Note that the leading 3
+# is not strictly necessary and should be removed the next time
+# LIBHTS_SOVERSION is bumped (see #1144 and
+# https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
+MACH_O_COMPATIBILITY_VERSION = 3.1.11
+MACH_O_CURRENT_VERSION = 3.1.11
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
@@ -308,7 +314,7 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico)
 # includes this project's build directory).
 
 libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(MACH_O_COMPATIBILITY_VERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBS)
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(MACH_O_CURRENT_VERSION) -compatibility_version $(MACH_O_COMPATIBILITY_VERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 cyghts-$(LIBHTS_SOVERSION).dll libhts.dll.a: $(LIBHTS_OBJS)
