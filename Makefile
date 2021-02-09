@@ -386,8 +386,8 @@ cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/po
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_log_h)
 
-htscodecs/htscodecs/arith_dynamic.o htscodecs/htscodecs/arith_dynamic.pico: htscodecs/htscodecs/arith_dynamic.c config.h $(htscodecs_arith_dynamic_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htsodecs_utils_h) $(htscodecs_c_simple_model.h)
-htscodecs/htscodecs/fqzcomp_qual.o htscodecs/htscodecs/fqzcomp_qual.pico: htscodecs/htscodecs/fqzcomp_qual.c config.h $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htscodecs_c_simple_model.h)
+htscodecs/htscodecs/arith_dynamic.o htscodecs/htscodecs/arith_dynamic.pico: htscodecs/htscodecs/arith_dynamic.c config.h $(htscodecs_arith_dynamic_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_utils_h) $(htscodecs_c_simple_model_h)
+htscodecs/htscodecs/fqzcomp_qual.o htscodecs/htscodecs/fqzcomp_qual.pico: htscodecs/htscodecs/fqzcomp_qual.c config.h $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htscodecs_c_simple_model_h)
 htscodecs/htscodecs/pack.o htscodecs/htscodecs/pack.pico: htscodecs/htscodecs/pack.c config.h $(htscodecs_pack_h)
 htscodecs/htscodecs/rANS_static4x16pr.o htscodecs/htscodecs/rANS_static4x16pr.pico: htscodecs/htscodecs/rANS_static4x16pr.c config.h $(htscodecs_rANS_word_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(htscodecs_utils_h)
 htscodecs/htscodecs/rANS_static.o htscodecs/htscodecs/rANS_static.pico: htscodecs/htscodecs/rANS_static.c config.h $(htscodecs_rANS_byte_h) $(htscodecs_utils_h) $(htscodecs_rANS_static_h)
