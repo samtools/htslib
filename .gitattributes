@@ -9,7 +9,7 @@
 # Omit these files from release tarballs.
 /.appveyor.yml  export-ignore
 .git*           export-ignore
-/.travis.yml    export-ignore
+/.cirrus.yml    export-ignore
 README.md       export-ignore
 
 # Remove the text attribute from reference files, so that git doesn't convert
