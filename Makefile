@@ -422,10 +422,10 @@ htscodecs/htscodecs/%.h: | htscodecs/htscodecs
 	;
 htscodecs/htscodecs:
 	@if test -e .git ; then \
-	printf "\\n\\nError: htscodecs submodule files not present.\\n\
+	printf "\\n\\nError: htscodecs submodule files not present for htslib.\\n\
 	Try running: \\n\
 	    git submodule update --init --recursive\\n\
-	and then re-run make.\\n\\n\\n" ; \
+	in the top-level htslib directory and then re-run make.\\n\\n\\n" ; \
 	else \
 	  printf "\\n\\nError: htscodecs submodule files not present and this is not a git checkout.\\n\
 	  You have an incomplete distribution.  Please try downloading one of the\\n\

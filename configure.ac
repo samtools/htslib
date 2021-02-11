@@ -319,7 +319,7 @@ included as a submodule.  Try running:
 
   git submodule update --init --recursive
 
-to update it, and then re-run configure.
+in  the top-level htslib directory to update it, and then re-run configure.
 ])],
         [MSG_ERROR([htscodecs submodule files not present.
 
