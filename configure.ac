@@ -60,7 +60,9 @@ endif
 EOF
    AC_MSG_ERROR([$1], [$2])])
 
+AC_CANONICAL_HOST
 AC_PROG_CC
+AC_PROG_INSTALL
 AC_PROG_RANLIB
 
 dnl Turn on compiler warnings, if possible
@@ -143,9 +145,8 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
-basic_host=${host_alias:-unknown-`uname -s`}
-AC_MSG_CHECKING([shared library type for $basic_host])
-case $basic_host in
+AC_MSG_CHECKING([shared library type${host_alias:+ for $host_alias}])
+case $host in
   *-cygwin* | *-CYGWIN*)
     host_result="Cygwin DLL"
     PLATFORM=CYGWIN
