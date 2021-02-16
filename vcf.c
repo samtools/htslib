@@ -4165,7 +4165,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     if ( inf )
     {
         // Is it big enough to accommodate new block?
-        if ( str.l <= inf->vptr_len + inf->vptr_off )
+        if ( inf->vptr && str.l <= inf->vptr_len + inf->vptr_off )
         {
             if ( str.l != inf->vptr_len + inf->vptr_off ) line->d.shared_dirty |= BCF1_DIRTY_INF;
             uint8_t *ptr = inf->vptr - inf->vptr_off;
@@ -4322,7 +4322,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     else
     {
         // The tag is already present, check if it is big enough to accommodate the new block
-        if ( str.l <= fmt->p_len + fmt->p_off )
+        if ( fmt->p && str.l <= fmt->p_len + fmt->p_off )
         {
             // good, the block is big enough
             if ( str.l != fmt->p_len + fmt->p_off ) line->d.indiv_dirty = 1;
