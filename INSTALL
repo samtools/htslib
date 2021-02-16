@@ -17,6 +17,7 @@ In addition, building the configure script requires:
 
     autoheader
     autoconf
+    autoreconf
 
 Running the configure script uses awk, along with a number of
 standard UNIX tools (cat, cp, grep, mv, rm, sed, among others).  Almost
@@ -79,12 +80,7 @@ This step is only needed if configure.ac has been changed, or if configure
 does not exist (for example, when building from a git clone).  The
 configure script and config.h.in can be built by running:
 
-    autoheader
-    autoconf
-
-If you have a full GNU autotools install, you can alternatively run:
-
-    autoreconf
+    autoreconf -i
 
 Basic Installation
 ==================

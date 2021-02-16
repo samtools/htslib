@@ -28,8 +28,7 @@ committed to this repository, so building the code from a Git repository
 requires extra steps:
 
 ```sh
-autoheader     # If using configure, generate the header template...
-autoconf       # ...and configure script (or use autoreconf to do both)
+autoreconf -i  # Build the configure script and install files it uses
 ./configure    # Optional but recommended, for choosing extra functionality
 make
 make install

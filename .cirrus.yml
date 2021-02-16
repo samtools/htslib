@@ -33,7 +33,7 @@ compile_template: &COMPILE
     fi
     if test "$USE_CONFIG" = "yes"; then
       MAKE_OPTS=
-      autoreconf
+      autoreconf -i
       eval ./configure --enable-plugins --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
         ( cat config.log; false )
     else
