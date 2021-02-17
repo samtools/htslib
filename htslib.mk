@@ -188,8 +188,8 @@ $(HTSDIR)/htslib.pc.tmp:
 #
 #	clean: clean-htslib
 
-all-htslib check-htslib clean-htslib distclean-htslib install-htslib plugins-htslib test-htslib:
+all-htslib check-htslib clean-htslib distclean-htslib install-htslib mostlyclean-htslib plugins-htslib test-htslib testclean-htslib:
 	+cd $(HTSDIR) && $(MAKE) $(@:-htslib=)
 
 .PHONY: all-htslib check-htslib clean-htslib distclean-htslib install-htslib
-.PHONY: plugins-htslib test-htslib
+.PHONY: mostlyclean-htslib plugins-htslib test-htslib testclean-htslib
