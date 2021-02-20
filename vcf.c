@@ -426,11 +426,23 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         if (bcf_hrec_add_key(hrec, p, q-p-m) < 0) goto fail;
         p = ++q;
         while ( *q && *q==' ' ) { p++; q++; }
-        int quoted = *p=='"' ? 1 : 0;
+
+        int quoted = 0;
+        char ending;
+        switch (*p) {
+        case '"':
+            quoted = 1;
+            ending = '"';
+            break;
+        case '[':
+            quoted = 1;
+            ending = ']';
+            break;
+        }
         if ( quoted ) p++, q++;
         while ( *q && *q != '\n' )
         {
-            if ( quoted ) { if ( *q=='"' && !is_escaped(p,q) ) break; }
+            if ( quoted ) { if ( *q==ending && !is_escaped(p,q) ) break; }
             else
             {
                 if ( *q=='<' ) nopen++;
@@ -444,7 +456,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         while ( r > p && r[-1] == ' ' ) r--;
         if (bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p, quoted) < 0)
             goto fail;
-        if ( quoted && *q=='"' ) q++;
+        if ( quoted && *q==ending ) q++;
         if ( *q=='>' ) { nopen--; q++; }
     }
 
