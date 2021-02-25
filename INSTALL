@@ -73,6 +73,10 @@ either clone the project using "git clone --recurse-submodules", or run:
 
 to ensure the correct version of the submodule is present.
 
+It is also possible to link against an external libhtscodecs library
+by using the '--with-external-htscodecs' configure option.  When
+this is used, the submodule files will be ignored.
+
 Building Configure
 ==================
 
@@ -139,6 +143,10 @@ various features and specify further optional external requirements:
     By default, only the directory specified via --with-plugin-dir will be
     searched; you can use --with-plugin-path='DIR:$(plugindir):DIR' and so
     on to cause additional directories to be searched.
+
+--with-external-htscodecs
+    Build and link against an external copy of the htscodecs library
+    instead of using the source files in the htscodecs directory.
 
 --enable-libcurl
     Use libcurl (<http://curl.se/>) to implement network access to

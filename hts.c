@@ -58,6 +58,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/ksort.h"
 #include "htslib/tbx.h"
+#if defined(HAVE_EXTERNAL_LIBHTSCODECS)
+#include <htscodecs/htscodecs.h>
+#else
+#include "htscodecs/htscodecs/htscodecs.h"
+#endif
 
 #ifndef EFTYPE
 #define EFTYPE ENOEXEC
@@ -74,7 +79,7 @@ const char *hts_version()
 }
 
 unsigned int hts_features(void) {
-    unsigned int feat = 0;
+    unsigned int feat = HTS_FEATURE_HTSCODECS; // Always present
 
 #ifdef PACKAGE_URL
     feat |= HTS_FEATURE_CONFIGURE;
@@ -132,6 +137,9 @@ const char *hts_test_feature(unsigned int id) {
     case HTS_FEATURE_LZMA:
         return feat & HTS_FEATURE_LZMA ? "yes" : NULL;
 
+    case HTS_FEATURE_HTSCODECS:
+        return htscodecs_version();
+
     case HTS_FEATURE_CC:
         return HTS_CC;
     case HTS_FEATURE_CFLAGS:
@@ -151,6 +159,7 @@ const char *hts_test_feature(unsigned int id) {
 // Note this implementation also means we can just "strings" the library
 // to find the configuration parameters.
 const char *hts_feature_string(void) {
+    static char config[1200];
     const char *fmt=
 
 #ifdef PACKAGE_URL
@@ -196,18 +205,20 @@ const char *hts_feature_string(void) {
 #endif
 
 #ifdef HAVE_LIBBZ2
-    "bzip2=yes ";
+    "bzip2=yes "
 #else
-    "bzip2=no ";
+    "bzip2=no "
 #endif
 
+    "htscodecs=%.40s";
+
 #ifdef ENABLE_PLUGINS
-    static char config[1200];
-    sprintf(config, fmt, hts_plugin_path());
-    return config;
+    snprintf(config, sizeof(config), fmt,
+             hts_plugin_path(), htscodecs_version());
 #else
-    return fmt;
+    snprintf(config, sizeof(config), fmt, htscodecs_version());
 #endif
+    return config;
 }
 
 

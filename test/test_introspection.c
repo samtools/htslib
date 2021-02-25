@@ -31,6 +31,8 @@ DEALINGS IN THE SOFTWARE.  */
 int main(void) {
     printf("Version string: %s\n", hts_version());
     printf("Version number: %d\n", HTS_VERSION);
+    printf("\nhtscodecs version: %s\n",
+           hts_test_feature(HTS_FEATURE_HTSCODECS));
 
     printf("\nCC:             %s\n", hts_test_feature(HTS_FEATURE_CC));
     printf("CPPFLAGS:       %s\n", hts_test_feature(HTS_FEATURE_CPPFLAGS));
@@ -55,6 +57,8 @@ int main(void) {
         printf("                HTS_FEATURE_LZMA\n");
     if (feat & HTS_FEATURE_BZIP2)
         printf("                HTS_FEATURE_BZIP2\n");
+    if (feat & HTS_FEATURE_HTSCODECS)
+        printf("                HTS_FEATURE_HTSCODECS\n");
 
     printf("\nFeature string: %s\n", hts_feature_string());
 

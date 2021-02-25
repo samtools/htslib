@@ -483,6 +483,7 @@ const char *hts_feature_string(void);
 #define HTS_FEATURE_LIBDEFLATE   (1u<<20)
 #define HTS_FEATURE_LZMA         (1u<<21)
 #define HTS_FEATURE_BZIP2        (1u<<22)
+#define HTS_FEATURE_HTSCODECS    (1u<<23) // htscodecs library version
 
 // Build params
 #define HTS_FEATURE_CC           (1u<<27)

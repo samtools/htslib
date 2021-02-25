@@ -25,6 +25,7 @@
 
 HTSCODECS_SOURCES = $(HTSPREFIX)htscodecs/htscodecs/arith_dynamic.c \
         $(HTSPREFIX)htscodecs/htscodecs/fqzcomp_qual.c \
+        $(HTSPREFIX)htscodecs/htscodecs/htscodecs.c \
         $(HTSPREFIX)htscodecs/htscodecs/pack.c \
         $(HTSPREFIX)htscodecs/htscodecs/rANS_static4x16pr.c \
         $(HTSPREFIX)htscodecs/htscodecs/rANS_static.c \
@@ -36,6 +37,7 @@ HTSCODECS_OBJS = $(HTSCODECS_SOURCES:.c=.o)
 # htscodecs public headers
 htscodecs_arith_dynamic_h = htscodecs/htscodecs/arith_dynamic.h
 htscodecs_fqzcomp_qual_h = htscodecs/htscodecs/fqzcomp_qual.h
+htscodecs_htscodecs_h = htscodecs/htscodecs/htscodecs.h $(htscodecs_version_h)
 htscodecs_pack_h = htscodecs/htscodecs/pack.h
 htscodecs_rANS_static_h = htscodecs/htscodecs/rANS_static.h
 htscodecs_rANS_static4x16_h = htscodecs/htscodecs/rANS_static4x16.h
@@ -51,6 +53,7 @@ htscodecs_pooled_alloc_h = htscodecs/htscodecs/pooled_alloc.h
 htscodecs_rANS_byte_h = htscodecs/htscodecs/rANS_byte.h
 htscodecs_rANS_word_h = htscodecs/htscodecs/rANS_word.h $(htscodecs_htscodecs_endian_h)
 htscodecs_utils_h = htscodecs/htscodecs/utils.h
+htscodecs_version_h = htscodecs/htscodecs/version.h
 
 # Add htscodecs tests into the HTSlib test framework
 

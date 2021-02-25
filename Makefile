@@ -358,7 +358,7 @@ hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstrin
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
-hts.o hts.pico: hts.c config.h $(htslib_hts_expr_h) $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h)
+hts.o hts.pico: hts.c config.h $(htslib_hts_expr_h) $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
@@ -394,6 +394,7 @@ thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
 
 htscodecs/htscodecs/arith_dynamic.o htscodecs/htscodecs/arith_dynamic.pico: htscodecs/htscodecs/arith_dynamic.c config.h $(htscodecs_arith_dynamic_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_utils_h) $(htscodecs_c_simple_model_h)
 htscodecs/htscodecs/fqzcomp_qual.o htscodecs/htscodecs/fqzcomp_qual.pico: htscodecs/htscodecs/fqzcomp_qual.c config.h $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htscodecs_c_simple_model_h)
+htscodecs/htscodecs/htscodecs.o htscodecs/htscodecs/htscodecs.pico: htscodecs/htscodecs/htscodecs.c $(htscodecs_htscodecs_h) $(htscodecs_version_h)
 htscodecs/htscodecs/pack.o htscodecs/htscodecs/pack.pico: htscodecs/htscodecs/pack.c config.h $(htscodecs_pack_h)
 htscodecs/htscodecs/rANS_static4x16pr.o htscodecs/htscodecs/rANS_static4x16pr.pico: htscodecs/htscodecs/rANS_static4x16pr.c config.h $(htscodecs_rANS_word_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(htscodecs_utils_h)
 htscodecs/htscodecs/rANS_static.o htscodecs/htscodecs/rANS_static.pico: htscodecs/htscodecs/rANS_static.c config.h $(htscodecs_rANS_byte_h) $(htscodecs_utils_h) $(htscodecs_rANS_static_h)
@@ -417,9 +418,19 @@ tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htsl
 # Runes to check that the htscodecs submodule is present
 ifdef HTSCODECS_SOURCES
 htscodecs/htscodecs/%.c: | htscodecs/htscodecs
-	;
+	@if test -e htscodecs/.git && test ! -e "$@" ; then \
+	  echo "Missing file '$@'" ; \
+	  echo "  - Do you need to update the htscodecs submodule?" ; \
+	  false ; \
+	fi
+
 htscodecs/htscodecs/%.h: | htscodecs/htscodecs
-	;
+	@if test -e htscodecs/.git && test ! -e "$@" ; then \
+	  echo "Missing file '$@'" ; \
+	  echo "  - Do you need to update the htscodecs submodule?" ; \
+	  false ; \
+	fi
+
 htscodecs/htscodecs:
 	@if test -e .git ; then \
 	printf "\\n\\nError: htscodecs submodule files not present for htslib.\\n\
@@ -432,6 +443,21 @@ htscodecs/htscodecs:
 	  official releases from https://www.htslib.org/\\n" ; \
 	fi
 	@false
+
+# Build the htscodecs/htscodecs/version.h file if necessary
+htscodecs/htscodecs/version.h: force
+	@if test -e htscodecs/.git && test -e htscodecs/configure.ac ; then \
+	  cd htscodecs && \
+	  vers=`git describe --always --dirty --match 'v[0-9]\.[0-9]*'` && \
+	  case "$$vers" in \
+	    v*) vers=$${vers#v} ;; \
+	    *) iv=`awk '/^AC_INIT/ { match($$0, /^AC_INIT\(htscodecs, *([0-9](\.[0-9])*)\)/, m); print substr($$0, m[1, "start"], m[1, "length"]) }' configure.ac` ; vers="$$iv$${vers:+-g$$vers}" ;; \
+	  esac ; \
+	  if ! grep -s -q '"'"$$vers"'"' htscodecs/version.h ; then \
+	    echo 'Updating $@ : #define HTSCODECS_VERSION_TEXT "'"$$vers"'"' ; \
+	    echo '#define HTSCODECS_VERSION_TEXT "'"$$vers"'"' > htscodecs/version.h ; \
+	  fi ; \
+	fi
 endif
 
 # Maintainer source code checks
@@ -705,9 +731,12 @@ testclean:
 	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	-rm -rf htscodecs/tests/test.out
 
+# Only remove this in git checkouts
+DEL_HTSCODECS_VERSION := $(if $(wildcard htscodecs/.git),htscodecs/htscodecs/version.h)
+
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM config_vars.h version.h
-	-rm -f htscodecs/htscodecs/*.o htscodecs/htscodecs/*.pico
+	-rm -f htscodecs/htscodecs/*.o htscodecs/htscodecs/*.pico $(DEL_HTSCODECS_VERSION)
 	-rm -f hts-object-files
 	-rm -f htscodecs/tests/*.o
 
