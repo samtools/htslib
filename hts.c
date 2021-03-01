@@ -468,8 +468,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     if (len >= 2 && s[0] == 0x1f && s[1] == 0x8b) {
         // The stream is either gzip-compressed or BGZF-compressed.
         // Determine which, and decompress the first few records or lines.
-        fmt->compression = (len >= 18 && (s[3] & 4) &&
-                            memcmp(&s[12], "BC\2\0", 4) == 0)? bgzf : gzip;
+        fmt->compression = gzip;
+        if (len >= 18 && (s[3] & 4)) {
+            if (memcmp(&s[12], "BC\2\0", 4) == 0)
+                fmt->compression = bgzf;
+            else if (memcmp(&s[12], "RAZF", 4) == 0)
+                fmt->compression = razf_compression;
+        }
         if (len >= 9 && s[2] == 8)
             fmt->compression_level = (s[8] == 2)? 9 : (s[8] == 4)? 1 : -1;
 
@@ -664,6 +669,7 @@ char *hts_format_description(const htsFormat *format)
 
     switch (format->compression) {
     case bzip2_compression:  kputs(" bzip2-compressed", &str); break;
+    case razf_compression:   kputs(" legacy-RAZF-compressed", &str); break;
     case custom: kputs(" compressed", &str); break;
     case gzip:   kputs(" gzip-compressed", &str); break;
     case bgzf:
