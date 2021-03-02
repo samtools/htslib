@@ -49,6 +49,10 @@
 #include "cram/pooled_alloc.h"
 #include "hts_internal.h"
 
+#ifndef EFTYPE
+#define EFTYPE ENOEXEC
+#endif
+
 #define BGZF_CACHE
 #define BGZF_MT
 
@@ -315,6 +319,37 @@ static inline void packInt32(uint8_t *buffer, uint32_t value)
     buffer[3] = value >> 24;
 }
 
+static void razf_info(hFILE *hfp, const char *filename)
+{
+    uint64_t usize, csize;
+    off_t sizes_pos;
+
+    if (filename == NULL || strcmp(filename, "-") == 0) filename = "FILE";
+
+    // RAZF files end with USIZE,CSIZE stored as big-endian uint64_t
+    if ((sizes_pos = hseek(hfp, -16, SEEK_END)) < 0) goto no_sizes;
+    if (hread(hfp, &usize, 8) != 8 || hread(hfp, &csize, 8) != 8) goto no_sizes;
+    if (!ed_is_big()) ed_swap_8p(&usize), ed_swap_8p(&csize);
+    if (csize >= sizes_pos) goto no_sizes; // Very basic validity check
+
+    hts_log_error(
+"To decompress this file, use the following commands:\n"
+"    truncate -s %" PRIu64 " %s\n"
+"    gunzip %s\n"
+"The resulting uncompressed file should be %" PRIu64 " bytes in length.\n"
+"If you do not have a truncate command, skip that step (though gunzip will\n"
+"likely produce a \"trailing garbage ignored\" message, which can be ignored).",
+                  csize, filename, filename, usize);
+    return;
+
+no_sizes:
+    hts_log_error(
+"To decompress this file, use the following command:\n"
+"    gunzip %s\n"
+"This will likely produce a \"trailing garbage ignored\" message, which can\n"
+"usually be safely ignored.", filename);
+}
+
 static const char *bgzf_zerr(int errnum, z_stream *zs)
 {
     static char buffer[32];
@@ -352,7 +387,7 @@ static const char *bgzf_zerr(int errnum, z_stream *zs)
     }
 }
 
-static BGZF *bgzf_read_init(hFILE *hfpr)
+static BGZF *bgzf_read_init(hFILE *hfpr, const char *filename)
 {
     BGZF *fp;
     uint8_t magic[18];
@@ -368,6 +403,13 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
     fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b);
     fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
+    if (fp->is_compressed && (magic[3]&4) && memcmp(&magic[12], "RAZF", 4)==0) {
+        hts_log_error("Cannot decompress legacy RAZF format");
+        razf_info(hfpr, filename);
+        free(fp);
+        errno = EFTYPE;
+        return NULL;
+    }
 #ifdef BGZF_CACHE
     if (!(fp->cache = malloc(sizeof(*fp->cache)))) {
         free(fp);
@@ -450,7 +492,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
     if (strchr(mode, 'r')) {
         hFILE *fpr;
         if ((fpr = hopen(path, mode)) == 0) return 0;
-        fp = bgzf_read_init(fpr);
+        fp = bgzf_read_init(fpr, path);
         if (fp == 0) { hclose_abruptly(fpr); return NULL; }
         fp->fp = fpr;
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
@@ -473,7 +515,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
     if (strchr(mode, 'r')) {
         hFILE *fpr;
         if ((fpr = hdopen(fd, mode)) == 0) return 0;
-        fp = bgzf_read_init(fpr);
+        fp = bgzf_read_init(fpr, NULL);
         if (fp == 0) { hclose_abruptly(fpr); return NULL; } // FIXME this closes fd
         fp->fp = fpr;
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
@@ -494,7 +536,7 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
     BGZF *fp = NULL;
     assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
     if (strchr(mode, 'r')) {
-        fp = bgzf_read_init(hfp);
+        fp = bgzf_read_init(hfp, NULL);
         if (fp == NULL) return NULL;
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
         fp = bgzf_write_init(mode);
