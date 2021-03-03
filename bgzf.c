@@ -406,16 +406,19 @@ static BGZF *bgzf_read_init(hFILE *hfpr, const char *filename)
     if (fp->is_compressed && (magic[3]&4) && memcmp(&magic[12], "RAZF", 4)==0) {
         hts_log_error("Cannot decompress legacy RAZF format");
         razf_info(hfpr, filename);
+        free(fp->uncompressed_block);
         free(fp);
         errno = EFTYPE;
         return NULL;
     }
 #ifdef BGZF_CACHE
     if (!(fp->cache = malloc(sizeof(*fp->cache)))) {
+        free(fp->uncompressed_block);
         free(fp);
         return NULL;
     }
     if (!(fp->cache->h = kh_init(cache))) {
+        free(fp->uncompressed_block);
         free(fp->cache);
         free(fp);
         return NULL;
