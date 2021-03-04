@@ -575,7 +575,8 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
                   "aws_secret_access_key", &ad->secret,
                   "aws_session_token", &ad->token,
                   "region", &ad->region,
-                  "addressing_style", &url_style, NULL);
+                  "addressing_style", &url_style,
+                  NULL);
 
         if (url_style.l) {
             if (strcmp(url_style.s, "virtual") == 0) {
@@ -597,7 +598,8 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
                   "secret_key", &ad->secret, "access_token", &ad->token,
                   "host_base", &ad->host,
                   "bucket_location", &ad->region,
-                  "host_bucket", &url_style, NULL);
+                  "host_bucket", &url_style,
+                  NULL);
 
         if (url_style.l) {
             // Conforming to s3cmd's GitHub PR#416, host_bucket without the "%(bucket)s" string
