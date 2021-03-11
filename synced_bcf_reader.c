@@ -614,7 +614,7 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         reader->nbuffer++;
 
-        if ( files->require_index==ALLOW_NO_IDX_ && reader->buffer[reader->nbuffer]->rid != reader->buffer[1]->rid ) break;
+        if ( reader->buffer[reader->nbuffer]->rid != reader->buffer[1]->rid ) break;
         if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;    // the buffer is full
     }
     if ( ret<0 )
@@ -638,11 +638,12 @@ static void _reader_shift_buffer(bcf_sr_t *reader)
 {
     int i;
     for (i=2; i<=reader->nbuffer; i++)
-        if ( reader->buffer[i]->pos!=reader->buffer[1]->pos ) break;
+        if ( reader->buffer[i]->rid!=reader->buffer[1]->rid || reader->buffer[i]->pos!=reader->buffer[1]->pos ) break;
     if ( i<=reader->nbuffer )
     {
         // A record with a different position follows, swap it. Because of the reader's logic,
         // only one such line can be present.
+        assert( i==reader->nbuffer );
         bcf1_t *tmp = reader->buffer[1]; reader->buffer[1] = reader->buffer[i]; reader->buffer[i] = tmp;
         reader->nbuffer = 1;
     }
