@@ -121,6 +121,10 @@ Bug fixes
 * Fixed a crash reported in `bcf_sr_sort_set`, which expects REF to be present.
   (#1204; fixed samtools/bcftools#1361)
 
+* Fixed a bcf synced reader bug when filtering with a region list, and
+  the first record for a chromosome had the same position as the last
+  record for the previous chromosome. (#1254; fixed samtools/bcftools#1441)
+
 * Fixed a bug in the overlapping logic of mpileup, dealing with iterating over
   CIGAR segments. Thanks to `@wulj2` for the analysis. (#1202; fixed #1196)
 
