@@ -2115,17 +2115,11 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
     lidx_t *lidx = &idx->lidx[i];
     khint_t k;
     int l;
-    uint64_t offset0 = 0;
-    if (bidx) {
-        k = kh_get(bin, bidx, META_BIN(idx));
-        if (k != kh_end(bidx))
-            offset0 = kh_val(bidx, k).list[0].u;
-        for (l = 0; l < lidx->n && lidx->offset[l] == (uint64_t)-1; ++l)
-            lidx->offset[l] = offset0;
-    } else l = 1;
-    for (; l < lidx->n; ++l) // fill missing values
-        if (lidx->offset[l] == (uint64_t)-1)
-            lidx->offset[l] = lidx->offset[l-1];
+    // the last entry is always valid
+    for (l=lidx->n-2; l >= 0; l--) {
+	if (lidx->offset[l] == (uint64_t)-1)
+            lidx->offset[l] = lidx->offset[l+1];
+    }
     if (bidx == 0) return;
     for (k = kh_begin(bidx); k != kh_end(bidx); ++k) // set loff
         if (kh_exist(bidx, k))
@@ -2429,7 +2423,7 @@ static inline void swap_bins(bins_t *p)
     }
 }
 
-static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
+static int idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 {
     int32_t i, j;
 
@@ -2482,6 +2476,10 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
     }
 
     check(idx_write_uint64(fp, idx->n_no_coor));
+#ifdef DEBUG_INDEX
+    idx_dump(idx);
+#endif
+
     return 0;
     #undef check
 }
@@ -2531,7 +2529,7 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
         check(bgzf_write(fp, "BAI\1", 4));
     } else abort();
 
-    check(hts_idx_save_core(idx, fp, fmt));
+    check(idx_save_core(idx, fp, fmt));
 
     return bgzf_close(fp);
     #undef check
