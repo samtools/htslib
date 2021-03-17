@@ -1,0 +1,5 @@
+# This is @configure_input@
+
+# This file selects Makefile rules for htscodecs
+
+include $(HTSPREFIX)@selected_htscodecs_mk@

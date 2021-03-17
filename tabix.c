@@ -52,7 +52,8 @@ typedef struct
 }
 args_t;
 
-HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error(const char *format, ...)
 {
     va_list ap;
     fflush(stdout);
@@ -63,7 +64,8 @@ HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
-HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error_errno(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error_errno(const char *format, ...)
 {
     va_list ap;
     int eno = errno;
@@ -496,6 +498,7 @@ int main(int argc, char *argv[])
     memset(&args,0,sizeof(args_t));
     args.cache_megs = 10;
     args.download_index = 1;
+    int32_t new_line_skip = -1;
 
     static const struct option loptions[] =
     {
@@ -568,7 +571,7 @@ int main(int argc, char *argv[])
                 detect = 0;
                 break;
             case 'S':
-                conf.line_skip = strtol(optarg,&tmp,10);
+                new_line_skip = strtol(optarg,&tmp,10);
                 if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
                 detect = 0;
                 break;
@@ -578,7 +581,7 @@ int main(int argc, char *argv[])
             case 1:
                 printf(
 "tabix (htslib) %s\n"
-"Copyright (C) 2020 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2021 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
             case 2:
                 return usage(stdout, EXIT_SUCCESS);
@@ -602,6 +605,9 @@ int main(int argc, char *argv[])
             default: return usage(stderr, EXIT_FAILURE);
         }
     }
+
+    if (new_line_skip >= 0)
+        conf.line_skip = new_line_skip;
 
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 

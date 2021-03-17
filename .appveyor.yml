@@ -18,6 +18,9 @@ skip_tags: true
 #    - docs/*
 #    - '**/*.html'
 
+# Appveyor Windows images are based on Visual studio version
+image: Visual Studio 2019
+
 # We use Mingw/Msys, so use pacman for installs
 install:
   - set HOME=.
@@ -30,7 +33,8 @@ build_script:
   - set HOME=.
   - set MSYSTEM=MINGW64
   - set PATH=C:/msys64/usr/bin;C:/msys64/mingw64/bin;%PATH%
-  - "sh -lc \"autoheader && autoconf && ./configure --enable-werror CFLAGS='-g -O3' && make -j2\""
+  - git submodule update --init --recursive
+  - "sh -lc \"autoreconf -i && ./configure --enable-werror CFLAGS='-g -O3' && make -j2\""
 
 #build_script:
 #  - make

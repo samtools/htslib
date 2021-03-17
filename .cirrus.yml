@@ -1,0 +1,167 @@
+# Note we have a maximum of 16 CPUs available, so adjust our
+# builds so we can start all concurrently without needing to schedule.
+
+# Sadly though there is still a finite limit to macOS of one instance.
+# Can we cull our Mac test to just one instance?
+
+timeout_in: 20m
+
+#--------------------------------------------------
+# Template: build libdeflate dependency
+
+libdeflate_template: &LIBDEFLATE
+  libdeflate_script: |
+    if test "x$USE_LIBDEFLATE" == "xyes"; then
+      pushd "$HOME"
+      git clone --depth 1 https://github.com/ebiggers/libdeflate.git
+      pushd libdeflate
+      make -j 4 CFLAGS='-fPIC -O3' libdeflate.a
+      popd
+      popd
+    fi
+
+#--------------------------------------------------
+# Template: compile and test
+
+compile_template: &COMPILE
+  compile_script: |
+    git submodule update --init --recursive
+    if test "x$USE_LIBDEFLATE" = "xyes"; then
+      CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="$LDFLAGS -L$HOME/libdeflate" --with-libdeflate'
+    else
+      CONFIG_OPTS='--without-libdeflate'
+    fi
+    if test "$USE_CONFIG" = "yes"; then
+      MAKE_OPTS=
+      autoreconf -i
+      eval ./configure --enable-plugins --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
+        ( cat config.log; false )
+    else
+      MAKE_OPTS=-e
+    fi
+    if test "x$DO_MAINTAINER_CHECKS" = "xyes"; then
+      make maintainer-check
+    fi
+    make -j 4 $MAKE_OPTS
+
+test_template: &TEST
+  test_script: |
+    make test-shlib-exports
+    make test
+
+
+#--------------------------------------------------
+# Task: linux builds.
+
+# Debian + latest GCC
+gcc_task:
+  name: debian-gcc
+  container:
+    image: gcc:latest
+    cpu: 2
+    memory: 1G
+
+  environment:
+    LC_ALL: C
+    CIRRUS_CLONE_DEPTH: 1
+
+  matrix:
+    - environment:
+       DO_MAINTAINER_CHECKS: yes
+       USE_CONFIG: no
+    - environment:
+       USE_CONFIG: yes
+       CFLAGS: -std=c99 -pedantic
+       USE_LIBDEFLATE: yes
+
+  << : *LIBDEFLATE
+  << : *COMPILE
+  << : *TEST
+
+
+# Ubuntu + Clang
+ubuntu_task:
+  name: ubuntu-clang
+  container:
+    #image: ubuntu:latest   # use << : *LIBDEFLATE
+    image: ubuntu:devel
+    cpu: 2
+    memory: 1G
+
+  environment:
+    CC: clang
+    LC_ALL: C
+    CIRRUS_CLONE_DEPTH: 1
+
+  matrix:
+    - environment:
+       USE_CONFIG: yes
+    - environment:
+       USE_CONFIG: yes
+       CFLAGS: -g -Wall -O3 -fsanitize=address
+       LDFLAGS: -fsanitize=address
+       USE_LIBDEFLATE: yes
+
+  # NB: we could consider building a docker image with these
+  # preinstalled and specifying that instead, to speed up testing.
+  install_script: |
+    apt-get update
+    apt-get install -y --no-install-suggests --no-install-recommends     \
+        ca-certificates clang libc-dev make git autoconf automake        \
+        zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev \
+        libdeflate-dev
+
+  << : *COMPILE
+  << : *TEST
+
+
+# CentOS
+centos_task:
+  name: centos-gcc
+  container:
+    image: centos:latest
+    cpu: 2
+    memory: 1G
+
+  environment:
+    LC_ALL: C
+    CIRRUS_CLONE_DEPTH: 1
+    USE_CONFIG: yes
+
+  # NB: we could consider building a docker image with these
+  # preinstalled and specifying that instead, to speed up testing.
+  install_script: |
+    yum install -y autoconf automake make gcc perl-Data-Dumper zlib-devel \
+        bzip2 bzip2-devel xz-devel curl-devel openssl-devel ncurses-devel \
+        diffutils git
+
+  << : *COMPILE
+  << : *TEST
+
+#--------------------------------------------------
+# Task: macOS builds
+
+macosx_task:
+  name: macosx + clang
+  osx_instance:
+    image: catalina-base
+
+  environment:
+    CC: clang
+    LC_ALL: C
+    CIRRUS_CLONE_DEPTH: 1
+
+  matrix:
+    - environment:
+       USE_CONFIG: no
+    - environment:
+       USE_CONFIG: yes
+       USE_LIBDEFLATE: yes
+
+  package_install_script:
+    - HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool xz git
+
+  << : *LIBDEFLATE
+  << : *COMPILE
+  << : *TEST
+

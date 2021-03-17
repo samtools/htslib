@@ -43,6 +43,9 @@ sub check {
     # Only check C, perl and shell files
     return unless (/(?:\.[ch]|\.pl|\.sh)$/);
 
+    # Exclude htscodecs submodule
+    return if (/\/htscodecs\//);
+
     # Exclusions:
     my %exclude = map { ("$root/$_", 1) } (
 'config.h',         # Auto-generated

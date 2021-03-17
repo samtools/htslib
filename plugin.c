@@ -153,7 +153,7 @@ plugin_void_func *load_plugin(void **pluginp, const char *filename, const char *
         const char *basename = slash? slash+1 : filename;
         kputsn(basename, strcspn(basename, ".-+"), &symbolg);
 
-        *(void **) &sym = dlsym(lib, symbol);
+        *(void **) &sym = dlsym(lib, symbolg.s);
         free(symbolg.s);
         if (sym == NULL) goto error;
     }
@@ -190,4 +190,31 @@ void close_plugin(void *plugin)
             fprintf(stderr, "[W::%s] dlclose() failed: %s\n",
                     __func__, dlerror());
     }
+}
+
+const char *hts_plugin_path(void) {
+#ifdef ENABLE_PLUGINS
+    char *path = getenv("HTS_PATH");
+    if (!path) path = "";
+
+    kstring_t ks = {0};
+    while(1) {
+        size_t len = strcspn(path, HTS_PATH_SEPARATOR_STR);
+        if (len == 0) kputs(PLUGINPATH, &ks);
+        else kputsn(path, len, &ks);
+        kputc(HTS_PATH_SEPARATOR_CHAR, &ks);
+
+        path += len;
+        if (*path == HTS_PATH_SEPARATOR_CHAR) path++;
+        else break;
+    }
+
+    static char s_path[1024];
+    sprintf(s_path, "%.1023s", ks.s ? ks.s : "");
+    free(ks.s);
+
+    return s_path;
+#else
+    return NULL;
+#endif
 }

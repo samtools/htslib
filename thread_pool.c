@@ -42,6 +42,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "thread_pool_internal.h"
 #include "htslib/hts_log.h"
 
+// Minimum stack size for threads.  Required for some rANS codecs
+// that use over 2Mbytes of stack for encoder / decoder state
+#define HTS_MIN_THREAD_STACK (3 * 1024 * 1024)
+
 static void hts_tpool_process_detach_locked(hts_tpool *p,
                                             hts_tpool_process *q);
 
@@ -716,6 +720,9 @@ static void wake_next_worker(hts_tpool_process *q, int locked) {
  */
 hts_tpool *hts_tpool_init(int n) {
     int t_idx = 0;
+    size_t stack_size = 0;
+    pthread_attr_t pattr;
+    int pattr_init_done = 0;
     hts_tpool *p = malloc(sizeof(*p));
     if (!p)
         return NULL;
@@ -748,18 +755,32 @@ hts_tpool *hts_tpool_init(int n) {
 
     pthread_mutex_lock(&p->pool_m);
 
+    // Ensure new threads have a reasonably large stack.  On some platforms,
+    // for example MacOS which defaults to 512Kb, this is not big enough
+    // for some of the rANS codecs.
+
+    if (pthread_attr_init(&pattr) < 0)
+        goto cleanup;
+    pattr_init_done = 1;
+    if (pthread_attr_getstacksize(&pattr, &stack_size) < 0)
+        goto cleanup;
+    if (stack_size < HTS_MIN_THREAD_STACK) {
+        if (pthread_attr_setstacksize(&pattr, HTS_MIN_THREAD_STACK) < 0)
+            goto cleanup;
+    }
+
     for (t_idx = 0; t_idx < n; t_idx++) {
         hts_tpool_worker *w = &p->t[t_idx];
         p->t_stack[t_idx] = 0;
         w->p = p;
         w->idx = t_idx;
         pthread_cond_init(&w->pending_c, NULL);
-        if (0 != pthread_create(&w->tid, NULL, tpool_worker, w)) {
+        if (0 != pthread_create(&w->tid, &pattr, tpool_worker, w))
             goto cleanup;
-        }
     }
 
     pthread_mutex_unlock(&p->pool_m);
+    pthread_attr_destroy(&pattr);
 
     return p;
 
@@ -778,6 +799,8 @@ hts_tpool *hts_tpool_init(int n) {
             pthread_cond_destroy(&p->t[j].pending_c);
         }
         pthread_mutex_destroy(&p->pool_m);
+        if (pattr_init_done)
+            pthread_attr_destroy(&pattr);
         free(p->t_stack);
         free(p->t);
         free(p);

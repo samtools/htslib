@@ -182,7 +182,7 @@ typedef struct bcf_dec_t {
     int m_fmt, m_info, m_id, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
     int n_flt;  // Number of FILTER fields
     int *flt;   // FILTER keys in the dictionary
-    char *id, *als;     // ID and REF+ALT block (\0-seperated)
+    char *id, *als;     // ID and REF+ALT block (\0-separated)
     char **allele;      // allele[0] is the REF (allele[] pointers to the als block); all null terminated
     bcf_info_t *info;   // INFO
     bcf_fmt_t *fmt;     // FORMAT and individual sample
@@ -1023,7 +1023,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *      int max_ploidy = ngt/nsmpl;
      *      for (i=0; i<nsmpl; i++)
      *      {
-     *        int32_t *ptr = gt + i*max_ploidy;
+     *        int32_t *ptr = gt_arr + i*max_ploidy;
      *        for (j=0; j<max_ploidy; j++)
      *        {
      *           // if true, the sample has smaller ploidy

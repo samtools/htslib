@@ -7,16 +7,20 @@
 *.dll.a
 *.pc.tmp
 *-uninstalled.pc
+config_vars.h
 /version.h
 
 autom4te.cache
 config.cache
+config.guess
 config.h
 config.h.in
 config.log
 config.mk
 config.status
+config.sub
 configure
+install-sh
 
 hfile_*.bundle
 hfile_*.cygdll
@@ -25,6 +29,7 @@ hfile_*.so
 
 hts-object-files
 htslib_static.mk
+htscodecs.mk
 
 cyg*.dll
 lib*.a
@@ -51,7 +56,9 @@ shlib-exports-*.txt
 /test/test-bcf-sr
 /test/test-bcf-translate
 /test/test_bgzf
+/test/test_expr
 /test/test_index
+/test/test_introspection
 /test/test_kfunc
 /test/test_kstring
 /test/test-parse-reg

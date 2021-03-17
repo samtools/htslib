@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (c) 2008, 2012, 2014 Genome Research Ltd (GRL).
+   Copyright (c) 2008, 2012, 2014, 2021 Genome Research Ltd (GRL).
                  2010 by Attractive Chaos <attractor@live.co.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -50,19 +50,20 @@
 #define KNF_TYPE_FTP   2
 #define KNF_TYPE_HTTP  3
 
+// Kept for API/ABI compatability only.  Do not use directly!
 typedef struct knetFile_s {
-	int type, fd;
-	int64_t offset;
-	char *host, *port;
+        int type, fd;
+        int64_t offset;
+        char *host, *port;
 
-	// the following are for FTP only
-	int ctrl_fd, pasv_ip[4], pasv_port, max_response, no_reconnect, is_ready;
-	char *response, *retr, *size_cmd;
-	int64_t seek_offset; // for lazy seek
-    int64_t file_size;
+        // the following are for FTP only
+        int ctrl_fd, pasv_ip[4], pasv_port, max_response, no_reconnect, is_ready;
+        char *response, *retr, *size_cmd;
+        int64_t seek_offset; // for lazy seek
+        int64_t file_size;
 
-	// the following are for HTTP only
-	char *path, *http_host;
+        // the following are for HTTP only
+        char *path, *http_host;
 } knetFile;
 
 #define knet_tell(fp) ((fp)->offset)
@@ -72,35 +73,30 @@ typedef struct knetFile_s {
 extern "C" {
 #endif
 
-#ifdef _WIN32
-	int knet_win32_init();
-	void knet_win32_destroy();
-#endif
+    HTSLIB_EXPORT
+        knetFile *knet_open(const char *fn, const char *mode) HTS_DEPRECATED("Please use hopen instead");
 
+        /*
+           This only works with local files.
+         */
     HTSLIB_EXPORT
-	knetFile *knet_open(const char *fn, const char *mode);
+        knetFile *knet_dopen(int fd, const char *mode) HTS_DEPRECATED("Please use hdopen instead");
 
-	/*
-	   This only works with local files.
-	 */
+        /*
+          If ->is_ready==0, this routine updates ->fd; otherwise, it simply
+          reads from ->fd.
+         */
     HTSLIB_EXPORT
-	knetFile *knet_dopen(int fd, const char *mode);
+        ssize_t knet_read(knetFile *fp, void *buf, size_t len) HTS_DEPRECATED("Please use hread instead");
 
-	/*
-	  If ->is_ready==0, this routine updates ->fd; otherwise, it simply
-	  reads from ->fd.
-	 */
+        /*
+          This routine only sets ->offset and ->is_ready=0. It does not
+          communicate with the FTP server.
+         */
     HTSLIB_EXPORT
-	ssize_t knet_read(knetFile *fp, void *buf, size_t len);
-
-	/*
-	  This routine only sets ->offset and ->is_ready=0. It does not
-	  communicate with the FTP server.
-	 */
+        off_t knet_seek(knetFile *fp, off_t off, int whence) HTS_DEPRECATED("Please use hseek instead");
     HTSLIB_EXPORT
-	off_t knet_seek(knetFile *fp, off_t off, int whence);
-    HTSLIB_EXPORT
-	int knet_close(knetFile *fp);
+        int knet_close(knetFile *fp) HTS_DEPRECATED("Please use hclose instead");
 
 #ifdef __cplusplus
 }

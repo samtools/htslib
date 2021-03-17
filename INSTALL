@@ -17,6 +17,7 @@ In addition, building the configure script requires:
 
     autoheader
     autoconf
+    autoreconf
 
 Running the configure script uses awk, along with a number of
 standard UNIX tools (cat, cp, grep, mv, rm, sed, among others).  Almost
@@ -41,9 +42,10 @@ a development ('-dev' or '-devel') package separate from the main library.
 Disabling libbzip2 and liblzma will make some CRAM files unreadable, so
 is not recommended.
 
-Using libcurl provides HTSlib with better network protocol support, for
-example it enables the use of https:// URLs.  It is also required if
-direct access to Amazon S3 or Google Cloud Storage is enabled.
+Using libcurl provides HTSlib with network protocol support, for
+example it enables the use of ftp://, http://, and https:// URLs.
+It is also required if direct access to Amazon S3 or Google Cloud
+Storage is enabled.
 
 Amazon S3 support requires an HMAC function to calculate a message
 authentication code.  On MacOS, the CCHmac function from the standard
@@ -57,6 +59,24 @@ test temporary directory with e.g.: make check TEST_OPTS="-t C:/msys64/tmp/_"
 Whilst the code may work on Windows with other environments, these have
 not be verified.
 
+Update htscodecs submodule
+==========================
+
+Note that this section only applies to git checkouts.  If you're building
+from a release tar file, you can skip this section.
+
+Some parts of HTSlib are provided by the external "htscodecs" project.  This
+is included as a submodule.  When building from the git repository,
+either clone the project using "git clone --recurse-submodules", or run:
+
+    git submodule update --init --recursive
+
+to ensure the correct version of the submodule is present.
+
+It is also possible to link against an external libhtscodecs library
+by using the '--with-external-htscodecs' configure option.  When
+this is used, the submodule files will be ignored.
+
 Building Configure
 ==================
 
@@ -64,12 +84,7 @@ This step is only needed if configure.ac has been changed, or if configure
 does not exist (for example, when building from a git clone).  The
 configure script and config.h.in can be built by running:
 
-    autoheader
-    autoconf
-
-If you have a full GNU autotools install, you can alternatively run:
-
-    autoreconf
+    autoreconf -i
 
 Basic Installation
 ==================
@@ -129,10 +144,13 @@ various features and specify further optional external requirements:
     searched; you can use --with-plugin-path='DIR:$(plugindir):DIR' and so
     on to cause additional directories to be searched.
 
+--with-external-htscodecs
+    Build and link against an external copy of the htscodecs library
+    instead of using the source files in the htscodecs directory.
+
 --enable-libcurl
-    Use libcurl (<http://curl.haxx.se/>) to implement network access to
-    remote files via FTP, HTTP, HTTPS, etc.  By default, HTSlib uses its
-    own simple networking code to provide access via FTP and HTTP only.
+    Use libcurl (<http://curl.se/>) to implement network access to
+    remote files via FTP, HTTP, HTTPS, etc.
 
 --enable-gcs
     Implement network access to Google Cloud Storage.  By default or with

@@ -29,7 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
-#include <getopt.h>
+#include <unistd.h>
 
 #include "../textutils_internal.h"
 

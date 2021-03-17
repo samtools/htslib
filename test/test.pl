@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2019 Genome Research Ltd.
+#    Copyright (C) 2012-2020 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -57,6 +57,7 @@ test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 test_convert_padded_header($opts);
 test_rebgzip($opts);
 test_logging($opts);
+test_plugin_loading($opts);
 test_realn($opts);
 
 print "\nNumber of tests:\n";
@@ -581,6 +582,62 @@ sub test_view
         testv $opts, "./test_view $tv_args $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
+        ## Experimental CRAM 3.1 support.
+        # SAM -> CRAM31u -> SAM
+        foreach my $profile (qw/fast normal small archive/) {
+            $cram = "$base.tmp.cram";
+            testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=3.1 -o $profile $sam > $cram";
+            testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+            testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+        }
+
+        # BAM -> CRAM31 -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 $bam > $cram";
+        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
+
+        # CRAM31 -> CRAM30
+        $cram = "$base.tmp.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram > $cram.cram";
+
+        # CRAM30 -> CRAM31
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 $cram.cram > $cram";
+
+        # CRAM31 -> CRAM31 + multi-slice
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
+        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+
+        ## Experimental CRAM 4.0 support.
+        # SAM -> CRAM40u -> SAM
+        foreach my $profile (qw/fast normal small archive/) {
+            $cram = "$base.tmp.cram";
+            testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=4.0 -o $profile $sam > $cram";
+            testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+            testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+        }
+
+        # BAM -> CRAM40 -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=4.0 $bam > $cram";
+        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
+
+        # CRAM40 -> CRAM30
+        $cram = "$base.tmp.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram > $cram.cram";
+
+        # CRAM30 -> CRAM40
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=4.0 $cram.cram > $cram";
+
+        # CRAM40 -> CRAM40 + multi-slice
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=4.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
+        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {
@@ -762,6 +819,14 @@ sub test_index
     unlink("$$opts{tmp}/index.sam.gz.bai");
     test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
 
+    # SAM DOS LINE ENDINGS (\r\n)
+    test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -z -m 14 -x $$opts{tmp}/index.sam.gz.csi $$opts{path}/index_dos.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.csi", "$$opts{path}/index.sam.gz.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bam.bai");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.csi", "$$opts{path}/index.sam.gz.csi", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -z -m 0 -x $$opts{tmp}/index.sam.gz.bai $$opts{path}/index_dos.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
+    unlink("$$opts{tmp}/index.sam.gz.bai");
+    test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
+
     # CRAM
     local $ENV{REF_PATH} = $$opts{m5_dir};
     test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
@@ -926,6 +991,26 @@ sub test_logging
       failed($opts,$test);
   }
   else { passed($opts,$test); }
+}
+
+sub test_plugin_loading {
+    my ($opts) = @_;
+
+    my $test = "test_plugin_loading";
+
+    unless (-e "$$opts{bin}/hfile_libcurl.so" || -e "$$opts{bin}/hfile_libcurl.bundle") {
+        print "$test: .. skipping\n\n";
+        return;
+    }
+
+    # Test that plugins can be loaded from an executable statically linked to libhts.a
+    my $url = "https://localhost:99999/invalid_port";
+    my $cmd = "HTS_PATH=$$opts{bin} $$opts{path}/with-shlib.sh $$opts{bin}/htsfile $url";
+    print "$test:\n\t$cmd\n";
+    my ($ret, $out) = _cmd("$cmd 2>&1");
+    if ($ret == 0) { failed($opts, $test, "successful exit status"); }
+    elsif ($out =~ /couldn't register/i || $out =~ /not supported/i) { failed($opts, $test, $out); }
+    else { passed($opts, $test); }
 }
 
 sub test_realn {

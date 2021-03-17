@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
 #include "../htslib/hts_defs.h"
@@ -67,6 +68,11 @@ static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) fail(const char *fmt, ...)
     fprintf(stderr, "\n");
 
     status = EXIT_FAILURE;
+}
+
+#define VERIFY(test, message) if (!(test)) { \
+    fail("%s: %s", __func__, (message)); \
+    goto cleanup; \
 }
 
 uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
@@ -1837,6 +1843,334 @@ static void test_mempolicy(void)
     }
 }
 
+static void test_bam_set1_minimal()
+{
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, 0);
+    // expected number of bytes written is qname: 4, cigar: 0, sequence: 0, qual: 0, aux: 0.
+    VERIFY(r == 4, "call to bam_set1() failed or did not write the correct number of bytes.");
+
+    VERIFY(bam->core.l_qname == 4, "l_qname should include terminating null and be padded to the nearest 32-bit boundary.");
+    VERIFY(bam->core.l_extranul == 2, "l_extranul not set correctly");
+    VERIFY(strcmp(bam_get_qname(bam), "*") == 0, "qname not set correctly.");
+
+    VERIFY(bam->core.pos == 0, "pos not set correctly.");
+    VERIFY(bam->core.tid == -1, "tid not set correctly.");
+    VERIFY(bam->core.bin == hts_reg2bin(0, 1, 14, 5), "bin not set correctly.");
+    VERIFY(bam->core.qual == 0xff, "mapq not set correctly.");
+    VERIFY(bam->core.flag == BAM_FUNMAP, "flag not set correctly.");
+    VERIFY(bam->core.n_cigar == 0, "n_cigar not set correctly.");
+    VERIFY(bam->core.mtid == -1, "mtid not set correctly.");
+    VERIFY(bam->core.mpos == 0, "mpos not set correctly.");
+    VERIFY(bam->core.isize == 0, "isize not set correctly.");
+    VERIFY(bam->core.l_qseq == 0, "l_seq not set correctly.");
+    VERIFY(bam_get_l_aux(bam) == 0, "l_aux not set correctly.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_full()
+{
+    const char *qname = "!??AAA~~~~";
+    const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
+    const char *seq = "TGGACTACGA";
+    const char *qual = "DBBBB+=7=0";
+
+    int r, i;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    r = bam_set1(bam, strlen(qname), qname,
+                 BAM_FREVERSE, 1, 1000, 42,
+                 sizeof(cigar) / 4, cigar, 2, 2000, 3000,
+                 strlen(seq), seq, qual, 64);
+    // expected number of bytes written is qname: 12, cigar: 12, sequence: 5, qual: 10, aux: 0.
+    VERIFY(r == 39, "call to bam_set1() failed or did not write the correct number of bytes.");
+
+    VERIFY(bam->core.l_qname == 12, "l_qname should include terminating null and be padded to the nearest 32-bit boundary.");
+    VERIFY(bam->core.l_extranul == 1, "l_extranul not set correctly");
+    VERIFY(strcmp(bam_get_qname(bam), qname) == 0, "qname not set correctly.");
+
+    VERIFY(bam->core.n_cigar == sizeof(cigar) / 4, "n_cigar not set correctly.");
+    VERIFY(memcmp(bam_get_cigar(bam), cigar, sizeof(cigar)) == 0, "cigar not set correctly.");
+
+    VERIFY(bam->core.l_qseq == strlen(seq), "l_seq not set correctly.");
+    for (i = 0; i < strlen(seq); i++) {
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq[i]], "seq not set correctly.");
+    }
+    VERIFY(memcmp(bam_get_qual(bam), qual, strlen(seq)) == 0, "qual not set correctly.");
+
+    VERIFY(bam->core.pos == 1000, "pos not set correctly.");
+    VERIFY(bam->core.tid == 1, "tid not set correctly.");
+    VERIFY(bam->core.bin == hts_reg2bin(1000, 1010, 14, 5), "bin not set correctly.");
+    VERIFY(bam->core.qual == 42, "mapq not set correctly.");
+    VERIFY(bam->core.flag == BAM_FREVERSE, "flag not set correctly.");
+    VERIFY(bam->core.mtid == 2, "mtid not set correctly.");
+    VERIFY(bam->core.mpos == 2000, "mpos not set correctly.");
+    VERIFY(bam->core.isize == 3000, "isize not set correctly.");
+    VERIFY(bam_get_l_aux(bam) == 0, "l_aux not set correctly.");
+    VERIFY(bam->m_data - bam->l_data >= 64, "not enough memory allocated for aux data.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_even_and_odd_seq_len()
+{
+    const char *seq_even = "TGGACTACGA";
+    const char *seq_odd  = "TGGACTACGAC";
+
+    int r, i;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, 0, 0, 0, 0, NULL, 0, 0, 0,
+                 strlen(seq_even), seq_even, NULL, 0);
+    VERIFY(r >= 0, "call to bam_set1() failed.");
+    VERIFY(bam->core.l_qseq == strlen(seq_even), "l_seq not set correctly.");
+    for (i = 0; i < strlen(seq_even); i++) {
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq_even[i]], "seq not set correctly.");
+    }
+
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, 0, 0, 0, 0, NULL, 0, 0, 0,
+                 strlen(seq_odd), seq_odd, NULL, 0);
+    VERIFY(r >= 0, "call to bam_set1() failed.");
+    VERIFY(bam->core.l_qseq == strlen(seq_odd), "l_seq not set correctly.");
+    for (i = 0; i < strlen(seq_odd); i++) {
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq_odd[i]], "seq not set correctly.");
+    }
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_with_seq_but_no_qual()
+{
+    const char *seq = "TGGACTACGA";
+
+    int r, i;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    r = bam_set1(bam, 0, NULL,
+                 BAM_FUNMAP, 0, 0, 0,
+                 0, NULL, 0, 0, 0,
+                 strlen(seq), seq, NULL, 0);
+    VERIFY(r >= 0, "call to bam_set1() failed.");
+    VERIFY(bam->core.l_qseq == strlen(seq), "l_seq not set correctly.");
+    for (i = 0; i < strlen(seq); i++) {
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq[i]], "seq not set correctly.");
+        VERIFY(bam_get_qual(bam)[i] == 0xff, "qual not set correctly");
+    }
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_validate_qname()
+{
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    // qname too long
+    const char too_long[255] = { 'A' };
+    r = bam_set1(bam, sizeof(too_long), too_long, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_validate_seq()
+{
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    // seq too long
+    const char *sequence = "C";
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, (size_t)INT32_MAX + 1, sequence, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_validate_cigar()
+{
+    const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
+    const char *seq = "TGGACTACGA";
+
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    // mapped query must have a CIGAR
+    r = bam_set1(bam, 0, NULL, 0, -1, 0, 0xff, 0, NULL, -1, 0, 0, strlen(seq), seq, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+    // pos + ref len from CIGAR should be <= HTS_POS_MAX
+    r = bam_set1(bam, 0, NULL, 0, -1, HTS_POS_MAX - 10, 0xff, sizeof(cigar) / 4, cigar, -1, 0, 0, 0, NULL, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+    // query len from CIGAR should match the sequence length
+    r = bam_set1(bam, 0, NULL, 0, -1, 0, 0xff, sizeof(cigar) / 4, cigar, -1, 0, 0, strlen(seq), seq, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_validate_size_limits()
+{
+    const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
+    const char *seq = "TGGACTACGA";
+
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    // very long sequence. each base counts for 1/2 byte of sequence data and
+    // 1 byte of sequence quality data. the sum of all components may not exceed
+    // INT32_MAX, which is the maximum possible value that can be stored in l_data.
+    // In this case the 4 bytes of qname will cause it to overflow.
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 2 * (size_t)INT32_MAX / 3, seq, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+    // very long CIGAR
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, (size_t)INT32_MAX / 4, cigar, -1, 0, 0, 0, NULL, NULL, 0);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+    // very long aux
+    r = bam_set1(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, INT32_MAX);
+    VERIFY(r < 0, "call to bam_set1() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
+static void test_bam_set1_write_and_read_back()
+{
+    const char *qname = "q1";
+    const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
+    const char *seq = "TGGACTACGA";
+    const char *qual = "DBBBB+=7=0";
+    const char *temp_fname = "test/test_bam_set1_write_and_read_back.tmp.bam";
+
+    int r;
+    htsFile *writer = NULL, *reader = NULL;
+    sam_hdr_t *w_header = NULL, *r_header = NULL;
+    bam1_t *w_bam = NULL, *r_bam = NULL;
+    kstring_t ks = KS_INITIALIZE;
+
+    // open file for writing
+    writer = hts_open(temp_fname, "wb");
+    VERIFY(writer != NULL, "failed to open bam file for writing.");
+
+    // write header
+    w_header = bam_hdr_init();
+    VERIFY(w_header != NULL, "failed to initialize bam header.");
+    r = sam_hdr_add_line(w_header, "SQ", "SN", "t1", "LN", "5000", NULL);
+    VERIFY(r == 0, "failed to add SQ header line.");
+    r = sam_hdr_write(writer, w_header);
+    VERIFY(r == 0, "failed to write bam header.");
+
+    // write alignments
+    w_bam = bam_init1();
+    VERIFY(w_bam != NULL, "failed to initialize BAM struct.");
+    r = bam_set1(w_bam, strlen(qname), qname,
+                 BAM_FREVERSE, 0, 1000, 42,
+                 sizeof(cigar) / 4, cigar, 0, 2000, 3000,
+                 strlen(seq), seq, qual, 64);
+    VERIFY(r >= 0, "call to bam_set1() failed.");
+    r = sam_write1(writer, w_header, w_bam);
+    VERIFY(r >= 0, "failed to write alignment.");
+    bam_destroy1(w_bam);
+
+    // close file
+    r = hts_close(writer);
+    VERIFY(r == 0, "failed to close bam file for writing.");
+    sam_hdr_destroy(w_header);
+
+    // open file for reading
+    reader = hts_open(temp_fname, "rb");
+    VERIFY(reader != NULL, "failed to open bam file for reading.");
+
+    // read header
+    r_header = sam_hdr_read(reader);
+    VERIFY(r_header != NULL, "failed to read bam header.");
+    r = sam_hdr_find_tag_id(r_header, "SQ", NULL, NULL, "SN", &ks);
+    VERIFY(r == 0, "failed to read SQ/SN value");
+    VERIFY(strcmp(ks_c_str(&ks), "t1") == 0, "expected reference sequence name in the header == 't1'");
+    VERIFY(r_header->n_targets == 1, "expected number of reference sequences == 1");
+    VERIFY(strcmp(r_header->target_name[0], "t1") == 0, "expected reference sequence name == 't1'");
+    VERIFY(r_header->target_len[0] == 5000, "expected reference sequence length == 5000");
+
+    // read alignments
+    r_bam = bam_init1();
+    VERIFY(r_bam != NULL, "failed to initialize BAM struct.");
+    r = sam_read1(reader, r_header, r_bam);
+    VERIFY(r >= 0, "failed to read alignment.");
+    VERIFY(strcmp(bam_get_qname(r_bam), qname) == 0, "qname does not match.");
+    VERIFY(r_bam->core.n_cigar == sizeof(cigar) / 4, "cigar length does not match.");
+    VERIFY(memcmp(bam_get_cigar(r_bam), cigar, sizeof(cigar)) == 0, "cigar data does not match.");
+    VERIFY(r_bam->core.l_qseq == strlen(seq), "sequence length does not match.");
+
+    r = sam_read1(reader, r_header, r_bam);
+    VERIFY(r < 0, "expected no more alignments.");
+    bam_destroy1(r_bam);
+
+    // close file
+    r = hts_close(reader);
+    VERIFY(r == 0, "failed to close bam file for reading.");
+    sam_hdr_destroy(r_header);
+
+cleanup:
+    ks_free(&ks);
+}
+
+static void test_cigar_api(void)
+{
+    uint32_t *buf = NULL;
+    char *cig = "*";
+    char *end;
+    size_t m = 0;
+    int n;
+    n = sam_parse_cigar(cig, &end, &buf, &m);
+    VERIFY(n == 0 && m == 0 && (end-cig) == 1, "failed to parse undefined CIGAR");
+    cig = "2M3X1I10M5D";
+    n = sam_parse_cigar(cig, &end, &buf, &m);
+    VERIFY(n == 5 && m > 0 && (end-cig) == 11, "failed to parse CIGAR string: 2M3X1I10M5D");
+    n = sam_parse_cigar("722M15D187217376188323783284M67I", NULL, &buf, &m);
+    VERIFY(n == -1, "failed to flag CIGAR string with long op length: 722M15D187217376188323783284M67I");
+    n = sam_parse_cigar("53I722MD8X", NULL, &buf, &m);
+    VERIFY(n == -1, "failed to flag CIGAR string with no op length: 53I722MD8X");
+
+cleanup:
+    free(buf);
+}
+
 int main(int argc, char **argv)
 {
     int i;
@@ -1863,6 +2197,18 @@ int main(int argc, char **argv)
     test_mempolicy();
     set_qname();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
+
+    hts_set_log_level(HTS_LOG_OFF);
+    test_bam_set1_minimal();
+    test_bam_set1_full();
+    test_bam_set1_even_and_odd_seq_len();
+    test_bam_set1_with_seq_but_no_qual();
+    test_bam_set1_validate_qname();
+    test_bam_set1_validate_seq();
+    test_bam_set1_validate_cigar();
+    test_bam_set1_validate_size_limits();
+    test_bam_set1_write_and_read_back();
+    test_cigar_api();
 
     return status;
 }

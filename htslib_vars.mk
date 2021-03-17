@@ -1,6 +1,6 @@
 # Makefile variables useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2017, 2019 Genome Research Ltd.
+#    Copyright (C) 2013-2017, 2019-2020 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -32,6 +32,7 @@ htslib_hfile_h = $(HTSPREFIX)htslib/hfile.h $(htslib_hts_defs_h)
 htslib_hts_h = $(HTSPREFIX)htslib/hts.h $(htslib_hts_defs_h) $(htslib_hts_log_h) $(htslib_kstring_h) $(htslib_kroundup_h)
 htslib_hts_defs_h = $(HTSPREFIX)htslib/hts_defs.h
 htslib_hts_endian_h = $(HTSPREFIX)htslib/hts_endian.h
+htslib_hts_expr_h = $(HTSPREFIX)htslib/hts_expr.h $(htslib_kstring_h) $(htslib_hts_defs_h)
 htslib_hts_log_h = $(HTSPREFIX)htslib/hts_log.h $(htslib_hts_defs_h)
 htslib_hts_os_h = $(HTSPREFIX)htslib/hts_os.h $(htslib_hts_defs_h)
 htslib_kbitset_h = $(HTSPREFIX)htslib/kbitset.h
@@ -39,7 +40,6 @@ htslib_kfunc_h = $(HTSPREFIX)htslib/kfunc.h $(htslib_hts_defs_h)
 htslib_khash_h = $(HTSPREFIX)htslib/khash.h $(htslib_kstring_h) $(htslib_kroundup_h)
 htslib_khash_str2int_h = $(HTSPREFIX)htslib/khash_str2int.h $(htslib_khash_h)
 htslib_klist_h = $(HTSPREFIX)htslib/klist.h
-htslib_knetfile_h = $(HTSPREFIX)htslib/knetfile.h $(htslib_hts_defs_h)
 htslib_kroundup_h = $(HTSPREFIX)htslib/kroundup.h
 htslib_kseq_h = $(HTSPREFIX)htslib/kseq.h
 htslib_ksort_h = $(HTSPREFIX)htslib/ksort.h

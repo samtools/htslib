@@ -27,7 +27,9 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_SAM_H
 #define HTSLIB_SAM_H
 
+#include <errno.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include "hts.h"
 #include "hts_endian.h"
 
@@ -1002,6 +1004,37 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc) HTS_RESULT_USED;
 HTSLIB_EXPORT
 bam1_t *bam_dup1(const bam1_t *bsrc);
 
+/// Sets all components of an alignment structure
+/**
+   @param bam      Target alignment structure. Must be initialized by a call to bam_init1().
+                   The data field will be reallocated automatically as needed.
+   @param l_qname  Length of the query name. If set to 0, the placeholder query name "*" will be used.
+   @param qname    Query name, may be NULL if l_qname = 0
+   @param flag     Bitwise flag, a combination of the BAM_F* constants.
+   @param tid      Chromosome ID, defined by sam_hdr_t (a.k.a. RNAME).
+   @param pos      0-based leftmost coordinate.
+   @param mapq     Mapping quality.
+   @param n_cigar  Number of CIGAR operations.
+   @param cigar    CIGAR data, may be NULL if n_cigar = 0.
+   @param mtid     Chromosome ID of next read in template, defined by sam_hdr_t (a.k.a. RNEXT).
+   @param mpos     0-based leftmost coordinate of next read in template (a.k.a. PNEXT).
+   @param isize    Observed template length ("insert size") (a.k.a. TLEN).
+   @param l_seq    Length of the query sequence (read) and sequence quality string.
+   @param seq      Sequence, may be NULL if l_seq = 0.
+   @param qual     Sequence quality, may be NULL.
+   @param l_aux    Length to be reserved for auxiliary field data, may be 0.
+
+   @return >= 0 on success (number of bytes written to bam->data), negative (with errno set) on failure.
+*/
+HTSLIB_EXPORT
+int bam_set1(bam1_t *bam,
+             size_t l_qname, const char *qname,
+             uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
+             size_t n_cigar, const uint32_t *cigar,
+             int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
+             size_t l_seq, const char *seq, const char *qual,
+             size_t l_aux);
+
 /// Calculate query length from CIGAR data
 /**
    @param n_cigar   Number of items in @p cigar
@@ -1071,6 +1104,29 @@ char *bam_flag2str(int flag);   /** The string must be freed by the user */
 HTSLIB_EXPORT
 int bam_set_qname(bam1_t *b, const char *qname);
 
+/*! @function
+ @abstract  Parse a CIGAR string into a uint32_t array
+ @param  in      [in]  pointer to the source string
+ @param  end     [out] address of the pointer to the new end of the input string
+                       can be NULL
+ @param  a_cigar [in/out]  address of the destination uint32_t buffer
+ @param  a_mem   [in/out]  address of the allocated number of buffer elements
+ @return         number of processed CIGAR operators; -1 on error
+ */
+HTSLIB_EXPORT
+ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *a_mem);
+
+/*! @function
+ @abstract  Parse a CIGAR string into a bam1_t struct
+ @param  in      [in]  pointer to the source string
+ @param  end     [out] address of the pointer to the new end of the input string
+                       can be NULL
+ @param  b       [in/out]  address of the destination bam1_t struct
+ @return         number of processed CIGAR operators; -1 on error
+ */
+HTSLIB_EXPORT
+ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
+
 /*************************
  *** BAM/CRAM indexing ***
  *************************/
@@ -1080,7 +1136,7 @@ int bam_set_qname(bam1_t *b, const char *qname);
 #define bam_itr_destroy(iter) hts_itr_destroy(iter)
 #define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
 #define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
-#define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+#define bam_itr_next(htsfp, itr, r) sam_itr_next((htsfp), (itr), (r))
 
 // Load/build .csi or .bai BAM index file.  Does not work with CRAM.
 // It is recommended to use the sam_index_* functions below instead.
@@ -1351,6 +1407,19 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
  */
     HTSLIB_EXPORT
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
+
+// Forward declaration, see hts_expr.h for full.
+struct hts_filter_t;
+
+/// sam_passes_filter - Checks whether a record passes an hts_filter.
+/** @param h      Pointer to the header structure previously read
+ *  @param b      Pointer to the BAM record to be checked
+ *  @param filt   Pointer to the filter, created from hts_filter_init.
+ *  @return       1 if passes, 0 if not, and <0 on error.
+ */
+HTSLIB_EXPORT
+int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b,
+                      struct hts_filter_t *filt);
 
     /*************************************
      *** Manipulating auxiliary fields ***

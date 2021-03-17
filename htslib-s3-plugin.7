@@ -1,8 +1,8 @@
-.TH htslib-s3-plugin 7 "22 September 2020" "htslib-1.11" "Bioinformatics tools"
+.TH htslib-s3-plugin 7 "17 March 2021" "htslib-1.12" "Bioinformatics tools"
 .SH NAME
 s3 plugin \- htslib AWS S3 plugin
 .\"
-.\" Copyright (C) 2019 Genome Research Ltd.
+.\" Copyright (C) 2021 Genome Research Ltd.
 .\"
 .\" Author: Andrew Whitwham <aw7@sanger.ac.uk>
 .\"
@@ -105,15 +105,32 @@ Sets the upload part size in Mb, the minimum being 5Mb.
 By default the part size starts at 5Mb and expands at regular intervals to
 accommodate bigger files (up to 2.5 Tbytes with the current rate).
 Using this setting disables the automatic part size expansion.
+.TP
+.B HTS_S3_ADDRESS_STYLE
+Sets the URL style.  Options are auto (default), virtual or path.  
 .LP
 In the absence of an ID from the previous two methods the credential/config
 files will be used.  The default file locations are either
 \fI~/.aws/credentials\fR or \fI~/.s3cfg\fR (in that order).
+
+Entries used in aws style credentials file are aws_access_key_id, 
+aws_secret_access_key, aws_session_token, region and addressing_style.  Only the
+first two are usually needed.
+
+Entries used in s3cmd style config files are access_key, secret_key,
+access_token, host_base, bucket_location and host_bucket. Again only the first
+two are usually needed. The host_bucket option is only used to set a path-style
+URL, see below.
+
 .SH NOTES
 In most cases this plugin transforms the given URL into a virtual host-style
 format e.g. \fIhttps://bucket.host/path/to/file\fR.  A path-style format is used
 where the URL is not DNS compliant or the bucket name contains a dot e.g.
 \fIhttps://host/bu.cket/path/to/file\fR.
+
+Path-style can be forced by setting one either HTS_S3_ADDRESS_STYLE,
+addressing_style or host_bucket.  The first two can be set to \fBpath\fR while
+host_bucket must \fBnot\fR include the \fB%(bucket).s\fR string.
 
 .SH "SEE ALSO"
 .BR htsfile (1)

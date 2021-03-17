@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/samtools/htslib.svg?branch=develop)](https://travis-ci.org/samtools/htslib)
+[![Build Status](https://api.cirrus-ci.com/github/samtools/htslib.svg?branch=develop)](https://api.cirrus-ci.com/github/samtools/htslib)
 [![Build status](https://ci.appveyor.com/api/projects/status/v46hkwyfjp3l8nd3/branch/develop?svg=true)](https://ci.appveyor.com/project/samtools/htslib/branch/develop)
 [![Github All Releases](https://img.shields.io/github/downloads/samtools/htslib/total.svg)](https://github.com/samtools/htslib)
 
@@ -28,8 +28,7 @@ committed to this repository, so building the code from a Git repository
 requires extra steps:
 
 ```sh
-autoheader     # If using configure, generate the header template...
-autoconf       # ...and configure script (or use autoreconf to do both)
+autoreconf -i  # Build the configure script and install files it uses
 ./configure    # Optional but recommended, for choosing extra functionality
 make
 make install

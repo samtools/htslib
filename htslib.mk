@@ -35,6 +35,13 @@
 HTSPREFIX = $(HTSDIR)/
 include $(HTSDIR)/htslib_vars.mk
 
+# This file provides the HTSCODECS_SOURCES variable.  It may not be present
+# in a freshly checked-out htslib, so is only included if available.  The
+# absence is unlikely to cause a problem as there will be plenty of other
+# missing files that will trigger a build in htslib, and when that happens
+# htslib's makefile will create it.
+-include $(HTSDIR)/htscodecs.mk
+
 # Rules for rebuilding an in-development htslib's static and shared libraries.
 # If your program foo links with libhts, adding the appropriate prerequisite
 # will cause the library to be rebuilt as necessary:
@@ -54,6 +61,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/hts.h \
 	$(HTSDIR)/htslib/hts_defs.h \
 	$(HTSDIR)/htslib/hts_endian.h \
+	$(HTSDIR)/htslib/hts_expr.h \
 	$(HTSDIR)/htslib/hts_log.h \
 	$(HTSDIR)/htslib/hts_os.h \
 	$(HTSDIR)/htslib/kbitset.h \
@@ -61,7 +69,6 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/khash.h \
 	$(HTSDIR)/htslib/khash_str2int.h \
 	$(HTSDIR)/htslib/klist.h \
-	$(HTSDIR)/htslib/knetfile.h \
 	$(HTSDIR)/htslib/kseq.h \
 	$(HTSDIR)/htslib/ksort.h \
 	$(HTSDIR)/htslib/kstring.h \
@@ -88,14 +95,13 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_gcs.c \
 	$(HTSDIR)/hfile_libcurl.c \
-	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hfile_s3.c \
 	$(HTSDIR)/hfile_s3_write.c \
 	$(HTSDIR)/hts.c \
+	$(HTSDIR)/hts_expr.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/hts_os.c \
 	$(HTSDIR)/kfunc.c \
-	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
 	$(HTSDIR)/multipart.c \
@@ -127,7 +133,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/cram_index.h \
 	$(HTSDIR)/cram/cram_io.c \
 	$(HTSDIR)/cram/cram_io.h \
-	$(HTSDIR)/cram/cram_samtools.c \
 	$(HTSDIR)/cram/cram_samtools.h \
 	$(HTSDIR)/cram/cram_stats.c \
 	$(HTSDIR)/cram/cram_stats.h \
@@ -140,13 +145,11 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/os.h \
 	$(HTSDIR)/cram/pooled_alloc.c \
 	$(HTSDIR)/cram/pooled_alloc.h \
-	$(HTSDIR)/cram/rANS_byte.h \
-	$(HTSDIR)/cram/rANS_static.c \
-	$(HTSDIR)/cram/rANS_static.h \
 	$(HTSDIR)/cram/string_alloc.c \
 	$(HTSDIR)/cram/string_alloc.h \
 	$(HTSDIR)/os/lzma_stub.h \
-	$(HTSDIR)/os/rand.c
+	$(HTSDIR)/os/rand.c \
+	$(HTSCODECS_SOURCES)
 
 $(HTSDIR)/config.h:
 	+cd $(HTSDIR) && $(MAKE) config.h
@@ -185,7 +188,8 @@ $(HTSDIR)/htslib.pc.tmp:
 #
 #	clean: clean-htslib
 
-all-htslib clean-htslib install-htslib plugins-htslib:
+all-htslib check-htslib clean-htslib distclean-htslib install-htslib mostlyclean-htslib plugins-htslib test-htslib testclean-htslib:
 	+cd $(HTSDIR) && $(MAKE) $(@:-htslib=)
 
-.PHONY: all-htslib clean-htslib install-htslib plugins-htslib
+.PHONY: all-htslib check-htslib clean-htslib distclean-htslib install-htslib
+.PHONY: mostlyclean-htslib plugins-htslib test-htslib testclean-htslib

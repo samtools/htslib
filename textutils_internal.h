@@ -355,7 +355,7 @@ static inline double hts_str2dbl(const char *in, char **end, int *failed) {
 
     case '0':
         if (v[1] != 'x' && v[1] != 'X') break;
-        // else fall through (hex number)
+        // else fall through - hex number
 
     default:
         // Non numbers, like NaN, Inf

@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2019 Genome Research Ltd.
+#    Copyright (C) 2015-2021 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -34,7 +34,7 @@ m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2018 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2020-2021 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
@@ -108,6 +108,12 @@ AC_ARG_ENABLE([plugins],
   [], [enable_plugins=no])
 AC_SUBST(enable_plugins)
 
+AC_ARG_WITH([external-htscodecs],
+  [AS_HELP_STRING([--with-external-htscodecs],
+                  [get htscodecs functions from a shared library])],
+  [], [with_external_htscodecs=no])
+AC_SUBST(with_external_htscodecs)
+
 AC_ARG_WITH([libdeflate],
   [AS_HELP_STRING([--with-libdeflate],
                   [use libdeflate for faster crc and deflate algorithms])],
@@ -137,9 +143,9 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
-test -n "$host_alias" || host_alias=unknown-`uname -s`
-AC_MSG_CHECKING([shared library type for $host_alias])
-case $host_alias in
+basic_host=${host_alias:-unknown-`uname -s`}
+AC_MSG_CHECKING([shared library type for $basic_host])
+case $basic_host in
   *-cygwin* | *-CYGWIN*)
     host_result="Cygwin DLL"
     PLATFORM=CYGWIN
@@ -157,7 +163,7 @@ case $host_alias in
     # This also sets __USE_MINGW_ANSI_STDIO which in turn makes PRId64,
     # %lld and %z printf formats work.  It also enforces the snprintf to
     # be C99 compliant so it returns the correct values (in kstring.c).
-    CPPFLAGS="$CPPCFLAGS -D_XOPEN_SOURCE=600"
+    CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE=600"
     ;;
   *)
     host_result="plain .so"
@@ -280,6 +286,48 @@ produced elsewhere unreadable) or resolve this error to build HTSlib.])
   static_LIBS="$static_LIBS -llzma"
 fi
 
+AS_IF([test "x$with_external_htscodecs" != "xno"],
+  [libhtscodecs=ok
+   AC_CHECK_HEADER([htscodecs/rANS_static4x16.h],[],
+                   [libhtscodecs='missing header'],[;])
+   AC_CHECK_LIB([htscodecs],[rans_compress_bound_4x16],
+                [:],[libhtscodecs='missing library'])
+   AS_IF([test "$libhtscodecs" = "ok"],
+     [AC_DEFINE([HAVE_EXTERNAL_LIBHTSCODECS], 1, [Define if using an external libhtscodecs])
+      LIBS="-lhtscodecs $LIBS"
+      private_LIBS="-lhtscodecs $private_LIBS"
+      static_LIBS="-lhtscodecs $static_LIBS"
+      selected_htscodecs_mk="htscodecs_external.mk"],
+      [MSG_ERROR([libhtscodecs development files not found: $libhtscodecs
+
+You asked to use an external htscodecs library, but do not have the
+required header / library files.  You either need to supply these and
+if necessary set CPPFLAGS and LDFLAGS so the compiler can find them;
+or configure using --without-external-htscodecs to build the required
+functions from the htscodecs submodule.
+])])],
+  [AC_MSG_CHECKING([whether htscodecs files are present])
+   AS_IF([test -e "$srcdir/htscodecs/htscodecs/rANS_static4x16.h"],
+     [AC_MSG_RESULT([yes])
+      selected_htscodecs_mk="htscodecs_bundled.mk"],
+     [AC_MSG_RESULT([no])
+      AS_IF([test -e "$srcdir/.git"],
+        [MSG_ERROR([htscodecs submodule files not present.
+
+HTSlib uses some functions from the htscodecs project, which is normally
+included as a submodule.  Try running:
+
+  git submodule update --init --recursive
+
+in  the top-level htslib directory to update it, and then re-run configure.
+])],
+        [MSG_ERROR([htscodecs submodule files not present.
+
+You have an incomplete distribution.  Please try downloading one of the
+official releases from https://www.htslib.org
+])])])])
+AC_SUBST([selected_htscodecs_mk])
+
 AS_IF([test "x$with_libdeflate" != "xno"],
   [libdeflate=ok
    AC_CHECK_HEADER([libdeflate.h],[],[libdeflate='missing header'],[;])
@@ -314,7 +362,7 @@ if test "$enable_libcurl" != no; then
        *) MSG_ERROR([libcurl $message
 
 Support for HTTPS and other SSL-based URLs requires routines from the libcurl
-library <http://curl.haxx.se/libcurl/>.  Building HTSlib with libcurl enabled
+library <http://curl.se/libcurl/>.  Building HTSlib with libcurl enabled
 requires libcurl development files to be installed on the build machine; you
 may need to ensure a package such as libcurl4-{gnutls,nss,openssl}-dev (on
 Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions
@@ -399,6 +447,9 @@ dnl Only need to add to static_LIBS if not building as a plugin
   fi
 fi
 
+dnl Look for regcomp in various libraries (needed on windows/mingw).
+AC_SEARCH_LIBS(regcomp, regex, [libregex=needed], [])
+
 dnl Look for PTHREAD_MUTEX_RECURSIVE.
 dnl This is normally in pthread.h except on some broken glibc implementations.
 AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Needed for PTHREAD_MUTEX_RECURSIVE])], [[#include <pthread.h>]])
@@ -418,5 +469,5 @@ AC_SUBST([private_LIBS])
 AC_SUBST([static_LDFLAGS])
 AC_SUBST([static_LIBS])
 
-AC_CONFIG_FILES([config.mk htslib.pc.tmp:htslib.pc.in])
+AC_CONFIG_FILES([config.mk htscodecs.mk htslib.pc.tmp:htslib.pc.in])
 AC_OUTPUT

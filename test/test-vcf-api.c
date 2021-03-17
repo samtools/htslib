@@ -24,7 +24,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../htslib/hts.h"
 #include "../htslib/vcf.h"
@@ -43,6 +45,65 @@ void error(const char *format, ...)
 
 #define STRINGIFY(x) #x
 #define check0(x) ((x) == 0 ? (void) 0 : error("Failed: %s", STRINGIFY(x)))
+
+static int check_alleles(bcf1_t *rec, const char **alleles, int num) {
+    int i;
+    if (rec->n_allele !=  num) {
+        fprintf(stderr, "Wrong number of alleles - expected %d, got %d\n",
+                num, rec->n_allele);
+        return -1;
+    }
+    if (bcf_unpack(rec, BCF_UN_STR) != 0)
+        return -1;
+    for (i = 0; i < num; i++) {
+        if (0 != strcmp(alleles[i], rec->d.allele[i])) {
+            fprintf(stderr,
+                    "Mismatch for allele %d : expected '%s' got '%s'\n",
+                    i, alleles[i], rec->d.allele[i]);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void test_update_alleles(bcf_hdr_t *hdr, bcf1_t *rec)
+{
+    // Exercise bcf_update_alleles() a bit
+    const char *alleles1[2] = { "G", "A" };
+    const char *alleles2[3] = { "C", "TGCA", "CATG" };
+#define rep10(x) x x x x x x x x x x
+    const char *alleles3[3] = { rep10("ATTCTAGATC"), "TGCA",
+                                rep10("CTATTATCTCTAATGACATG") };
+#undef rep10
+    const char *alleles4[3] = { alleles3[2], NULL, alleles3[0] };
+    // Add some alleles
+    check0(bcf_update_alleles(hdr, rec, alleles1, 2));
+    check0(check_alleles(rec, alleles1, 2));
+    // Erase them
+    check0(bcf_update_alleles(hdr, rec, NULL, 0));
+    check0(check_alleles(rec, NULL, 0));
+    // Expand to three
+    check0(bcf_update_alleles(hdr, rec, alleles2, 3));
+    check0(check_alleles(rec, alleles2, 3));
+    // Now try some bigger ones (should force a realloc)
+    check0(bcf_update_alleles(hdr, rec, alleles3, 3));
+    check0(check_alleles(rec, alleles3, 3));
+    // Ensure it works even if one of the alleles points into the
+    // existing structure
+    alleles4[1] = rec->d.allele[1];
+    check0(bcf_update_alleles(hdr, rec, alleles4, 3));
+    alleles4[1] = alleles3[1]; // Will have been clobbered by the update
+    check0(check_alleles(rec, alleles4, 3));
+    // Ensure it works when the alleles point into the existing data,
+    // rec->d.allele is used to define the input array and the
+    // order of the entries is changed.  The result of this should
+    // be the same as alleles2.
+    char *tmp = rec->d.allele[0] + strlen(rec->d.allele[0]) - 4;
+    rec->d.allele[0] = rec->d.allele[2] + strlen(rec->d.allele[2]) - 1;
+    rec->d.allele[2] = tmp;
+    check0(bcf_update_alleles(hdr, rec, (const char **) rec->d.allele, 3));
+    check0(check_alleles(rec, alleles2, 3));
+}
 
 void write_bcf(char *fname)
 {
@@ -112,10 +173,10 @@ void write_bcf(char *fname)
     // .. ID
     check0(bcf_update_id(hdr, rec, "rs6054257"));
     // .. REF and ALT
+    test_update_alleles(hdr, rec);
     const char *alleles[2] = { "G", "A" };
-    check0(bcf_update_alleles(hdr, rec, alleles, 2));
-    check0(bcf_update_alleles(hdr, rec, NULL, 0));
     check0(bcf_update_alleles_str(hdr, rec, "G,A"));
+    check0(check_alleles(rec, alleles, 2));
     // .. QUAL
     rec->qual = 29;
     // .. FILTER

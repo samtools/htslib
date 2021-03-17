@@ -150,7 +150,7 @@ int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
     const char *p, *q;
     // add samples
     for (p = q = str;; ++q) {
-        if (*q > '\n') continue;
+        if ((unsigned char) *q > '\n') continue;
         if (++i > 9) {
             if ( bcf_hdr_add_sample_len(h, p, q - p) < 0 ) ret = -1;
         }
@@ -1236,9 +1236,9 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     shared_len = le_to_u32(x);
     if (shared_len < 24) return -2;
     shared_len -= 24; // to exclude six 32-bit integers
-    if (ks_resize(&v->shared, shared_len) != 0) return -2;
+    if (ks_resize(&v->shared, shared_len ? shared_len : 1) != 0) return -2;
     indiv_len = le_to_u32(x + 4);
-    if (ks_resize(&v->indiv, indiv_len) != 0) return -2;
+    if (ks_resize(&v->indiv, indiv_len ? indiv_len : 1) != 0) return -2;
     v->rid  = le_to_i32(x + 8);
     v->pos  = le_to_u32(x + 12);
     v->rlen = le_to_i32(x + 16);
@@ -1368,6 +1368,12 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     ptr += bytes;
 
     // Check REF and ALT
+    if (rec->n_allele < 1) {
+        hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": No REF allele",
+                        bcf_seqname_safe(hdr,rec), rec->pos+1);
+        err |= BCF_ERR_TAG_UNDEF;
+    }
+
     reports = 0;
     for (i = 0; i < rec->n_allele; i++) {
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
@@ -2709,7 +2715,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
             hts_log_error("Too many INFO entries at %s:%"PRIhts_pos,
                           bcf_seqname_safe(h,v), v->pos+1);
             v->errcode |= BCF_ERR_LIMITS;
-            return -1;
+            goto fail;
         }
         val = end = 0;
         c = *r; *r = 0;
@@ -2736,7 +2742,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
             if (res || k == kh_end(d)) {
                 hts_log_error("Could not add dummy header for INFO '%s' at %s:%"PRIhts_pos, key, bcf_seqname_safe(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_TAG_INVALID;
-                return -1;
+                goto fail;
             }
         }
         uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
@@ -2757,7 +2763,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if (!a_tmp) {
                     hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
                     v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
-                    return -1;
+                    goto fail;
                 }
                 a_val = a_tmp;
                 max_n_val = n_val;
@@ -2854,6 +2860,10 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     free(a_val);
     return 0;
+
+ fail:
+    free(a_val);
+    return -1;
 }
 
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
@@ -4155,7 +4165,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     if ( inf )
     {
         // Is it big enough to accommodate new block?
-        if ( str.l <= inf->vptr_len + inf->vptr_off )
+        if ( inf->vptr && str.l <= inf->vptr_len + inf->vptr_off )
         {
             if ( str.l != inf->vptr_len + inf->vptr_off ) line->d.shared_dirty |= BCF1_DIRTY_INF;
             uint8_t *ptr = inf->vptr - inf->vptr_off;
@@ -4312,7 +4322,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     else
     {
         // The tag is already present, check if it is big enough to accommodate the new block
-        if ( str.l <= fmt->p_len + fmt->p_off )
+        if ( fmt->p && str.l <= fmt->p_len + fmt->p_off )
         {
             // good, the block is big enough
             if ( str.l != fmt->p_len + fmt->p_off ) line->d.indiv_dirty = 1;
@@ -4433,28 +4443,64 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
 int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
     if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
-    kstring_t tmp = {0,0,0};
     char *free_old = NULL;
+    char buffer[256];
+    size_t used = 0;
 
-    // If the supplied alleles are not pointers to line->d.als, the existing block can be reused.
+    // The pointers in alleles may point into the existing line->d.als memory,
+    // so care needs to be taken not to clobber them while updating.  Usually
+    // they will be short so we can copy through an intermediate buffer.
+    // If they're longer, or won't fit in the existing allocation we
+    // can allocate a new buffer to write into.  Note that in either case
+    // pointers to line->d.als memory in alleles may not be valid when we've
+    // finished.
     int i;
-    for (i=0; i<nals; i++)
-        if ( alleles[i]>=line->d.als && alleles[i]<line->d.als+line->d.m_als ) break;
-    if ( i==nals )
-    {
-        // all alleles point elsewhere, reuse the existing block
-        tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
+    size_t avail = line->d.m_als < sizeof(buffer) ? line->d.m_als : sizeof(buffer);
+    for (i=0; i<nals; i++) {
+        size_t sz = strlen(alleles[i]) + 1;
+        if (avail - used < sz)
+            break;
+        memcpy(buffer + used, alleles[i], sz);
+        used += sz;
     }
-    else
-        free_old = line->d.als;
 
-    for (i=0; i<nals; i++)
-    {
-        kputs(alleles[i], &tmp);
-        kputc(0, &tmp);
+    // Did we miss anything?
+    if (i < nals) {
+        int j;
+        size_t needed = used;
+        char *new_als;
+        for (j = i; j < nals; j++)
+            needed += strlen(alleles[j]) + 1;
+        if (needed < line->d.m_als) // Don't shrink the buffer
+            needed = line->d.m_als;
+        if (needed > INT_MAX) {
+            hts_log_error("REF + alleles too long to fit in a BCF record");
+            return -1;
+        }
+        new_als = malloc(needed);
+        if (!new_als)
+            return -1;
+        free_old = line->d.als;
+        line->d.als = new_als;
+        line->d.m_als = needed;
     }
-    line->d.als = tmp.s; line->d.m_als = tmp.m;
-    free(free_old);
+
+    // Copy from the temp buffer to the destination
+    if (used) {
+        assert(used <= line->d.m_als);
+        memcpy(line->d.als, buffer, used);
+    }
+
+    // Add in any remaining entries - if this happens we will always be
+    // writing to a newly-allocated buffer.
+    for (; i < nals; i++) {
+        size_t sz = strlen(alleles[i]) + 1;
+        memcpy(line->d.als + used, alleles[i], sz);
+        used += sz;
+    }
+
+    if (free_old)
+        free(free_old);
     return _bcf1_sync_alleles(hdr,line,nals);
 }
 

@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #include <errno.h>
@@ -503,6 +504,7 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
     ptrdiff_t bucket_len;
     int is_https = 1, dns_compliant;
     char *query_start;
+    enum {s3_auto, s3_virtual, s3_path} address_style = s3_auto;
 
     if (!ad)
         return NULL;
@@ -555,29 +557,75 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
         if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &profile);
         else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
         else kputs("default", &profile);
+
+        if ((v = getenv("HTS_S3_ADDRESS_STYLE")) != NULL) {
+            if (strcasecmp(v, "virtual") == 0) {
+                address_style = s3_virtual;
+            } else if (strcasecmp(v, "path") == 0) {
+                address_style = s3_path;
+            }
+        }
     }
 
     if (ad->id.l == 0) {
+        kstring_t url_style = KS_INITIALIZE;
         const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
         parse_ini(v? v : "~/.aws/credentials", profile.s,
                   "aws_access_key_id", &ad->id,
                   "aws_secret_access_key", &ad->secret,
                   "aws_session_token", &ad->token,
-                  "region", &ad->region, NULL);
+                  "region", &ad->region,
+                  "addressing_style", &url_style,
+                  NULL);
+
+        if (url_style.l) {
+            if (strcmp(url_style.s, "virtual") == 0) {
+                address_style = s3_virtual;
+            } else if (strcmp(url_style.s, "path") == 0) {
+                address_style = s3_path;
+            } else {
+                address_style = s3_auto;
+            }
+        }
+
+        ks_free(&url_style);
     }
 
     if (ad->id.l == 0) {
+        kstring_t url_style = KS_INITIALIZE;
         const char *v = getenv("HTS_S3_S3CFG");
         parse_ini(v? v : "~/.s3cfg", profile.s, "access_key", &ad->id,
                   "secret_key", &ad->secret, "access_token", &ad->token,
                   "host_base", &ad->host,
-                  "bucket_location", &ad->region, NULL);
+                  "bucket_location", &ad->region,
+                  "host_bucket", &url_style,
+                  NULL);
+
+        if (url_style.l) {
+            // Conforming to s3cmd's GitHub PR#416, host_bucket without the "%(bucket)s" string
+            // indicates use of path style adressing.
+            if (strstr(url_style.s, "%(bucket)s") == NULL) {
+                address_style = s3_path;
+            } else {
+                address_style = s3_auto;
+            }
+        }
+
+        ks_free(&url_style);
     }
 
     if (ad->id.l == 0)
         parse_simple("~/.awssecret", &ad->id, &ad->secret);
 
-    dns_compliant = is_dns_compliant(bucket, path, is_https);
+
+    // if address_style is set, force the dns_compliant setting
+    if (address_style == s3_virtual) {
+        dns_compliant = 1;
+    } else if (address_style == s3_path) {
+        dns_compliant = 0;
+    } else {
+        dns_compliant = is_dns_compliant(bucket, path, is_https);
+    }
 
     if (ad->host.l == 0)
         kputs("s3.amazonaws.com", &ad->host);

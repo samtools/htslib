@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2020 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2021 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <assert.h>
 #include <signal.h>
 #include <inttypes.h>
+#include <unistd.h>
 
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
@@ -48,6 +49,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "sam_internal.h"
 #include "htslib/hfile.h"
 #include "htslib/hts_endian.h"
+#include "htslib/hts_expr.h"
 #include "header.h"
 
 #include "htslib/khash.h"
@@ -482,6 +484,128 @@ static void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar,
         if (type & 1) *qlen += len;
         if (type & 2) *rlen += len;
     }
+}
+
+static int subtract_check_underflow(size_t length, size_t *limit)
+{
+    if (length <= *limit) {
+        *limit -= length;
+        return 0;
+    }
+
+    return -1;
+}
+
+int bam_set1(bam1_t *bam,
+             size_t l_qname, const char *qname,
+             uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
+             size_t n_cigar, const uint32_t *cigar,
+             int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
+             size_t l_seq, const char *seq, const char *qual,
+             size_t l_aux)
+{
+    // use a default qname "*" if none is provided
+    if (l_qname == 0) {
+        l_qname = 1;
+        qname = "*";
+    }
+
+    // note: the qname is stored nul terminated and padded as described in the
+    // documentation for the bam1_t struct.
+    size_t qname_nuls = 4 - l_qname % 4;
+
+    // the aligment length, needed for bam_reg2bin(), is calculated as in bam_endpos().
+    // can't use bam_endpos() directly as some fields not yet set up.
+    hts_pos_t rlen = 0, qlen = 0;
+    if (!(flag & BAM_FUNMAP)) {
+        bam_cigar2rqlens((int)n_cigar, cigar, &rlen, &qlen);
+    }
+    if (rlen == 0) {
+        rlen = 1;
+    }
+
+    // validate parameters
+    if (l_qname > 254) {
+        hts_log_error("Query name too long");
+        errno = EINVAL;
+        return -1;
+    }
+    if (HTS_POS_MAX - rlen <= pos) {
+        hts_log_error("Read ends beyond highest supported position");
+        errno = EINVAL;
+        return -1;
+    }
+    if (!(flag & BAM_FUNMAP) && l_seq > 0 && n_cigar == 0) {
+        hts_log_error("Mapped query must have a CIGAR");
+        errno = EINVAL;
+        return -1;
+    }
+    if (!(flag & BAM_FUNMAP) && l_seq > 0 && l_seq != qlen) {
+        hts_log_error("CIGAR and query sequence are of different length");
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t limit = INT32_MAX;
+    int u = subtract_check_underflow(l_qname + qname_nuls, &limit);
+    u    += subtract_check_underflow(n_cigar * 4, &limit);
+    u    += subtract_check_underflow((l_seq + 1) / 2, &limit);
+    u    += subtract_check_underflow(l_seq, &limit);
+    u    += subtract_check_underflow(l_aux, &limit);
+    if (u != 0) {
+        hts_log_error("Size overflow");
+        errno = EINVAL;
+        return -1;
+    }
+
+    // re-allocate the data buffer as needed.
+    size_t data_len = l_qname + qname_nuls + n_cigar * 4 + (l_seq + 1) / 2 + l_seq;
+    if (realloc_bam_data(bam, data_len + l_aux) < 0) {
+        return -1;
+    }
+
+    bam->l_data = (int)data_len;
+    bam->core.pos = pos;
+    bam->core.tid = tid;
+    bam->core.bin = bam_reg2bin(pos, pos + rlen);
+    bam->core.qual = mapq;
+    bam->core.l_extranul = (uint8_t)(qname_nuls - 1);
+    bam->core.flag = flag;
+    bam->core.l_qname = (uint16_t)(l_qname + qname_nuls);
+    bam->core.n_cigar = (uint32_t)n_cigar;
+    bam->core.l_qseq = (int32_t)l_seq;
+    bam->core.mtid = mtid;
+    bam->core.mpos = mpos;
+    bam->core.isize = isize;
+
+    uint8_t *cp = bam->data;
+    strncpy((char *)cp, qname, l_qname);
+    int i;
+    for (i = 0; i < qname_nuls; i++) {
+        cp[l_qname + i] = '\0';
+    }
+    cp += l_qname + qname_nuls;
+
+    if (n_cigar > 0) {
+        memcpy(cp, cigar, n_cigar * 4);
+    }
+    cp += n_cigar * 4;
+
+    for (i = 0; i + 1 < l_seq; i += 2) {
+        *cp++ = (seq_nt16_table[(unsigned char)seq[i]] << 4) | seq_nt16_table[(unsigned char)seq[i + 1]];
+    }
+    for (; i < l_seq; i++) {
+        *cp++ = seq_nt16_table[(unsigned char)seq[i]] << 4;
+    }
+
+    if (qual) {
+        memcpy(cp, qual, l_seq);
+    }
+    else {
+        memset(cp, '\xff', l_seq);
+    }
+
+    return (int)data_len;
 }
 
 hts_pos_t bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
@@ -975,20 +1099,353 @@ static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, hts_po
     return ret;
 }
 
+// Internal (for now) func used by bam_sym_lookup.  This is copied from
+// samtools/bam.c.
+static const char *bam_get_library(const bam_hdr_t *h, const bam1_t *b)
+{
+    const char *rg;
+    kstring_t lib = { 0, 0, NULL };
+    rg = (char *)bam_aux_get(b, "RG");
+
+    if (!rg)
+        return NULL;
+    else
+        rg++;
+
+    if (sam_hdr_find_tag_id((bam_hdr_t *)h, "RG", "ID", rg, "LB", &lib)  < 0)
+        return NULL;
+
+    static char LB_text[1024];
+    int len = lib.l < sizeof(LB_text) - 1 ? lib.l : sizeof(LB_text) - 1;
+
+    memcpy(LB_text, lib.s, len);
+    LB_text[len] = 0;
+
+    free(lib.s);
+
+    return LB_text;
+}
+
+
+// Bam record pointer and SAM header combined
+typedef struct {
+    const sam_hdr_t *h;
+    const bam1_t *b;
+} hb_pair;
+
+// Looks up variable names in str and replaces them with their value.
+// Also supports aux tags.
+//
+// Note the expression parser deliberately overallocates str size so it
+// is safe to use memcmp over strcmp.
+static int bam_sym_lookup(void *data, char *str, char **end,
+                          hts_expr_val_t *res) {
+    hb_pair *hb = (hb_pair *)data;
+    const bam1_t *b = hb->b;
+
+    res->is_str = 0;
+    switch(*str) {
+    case 'c':
+        if (memcmp(str, "cigar", 5) == 0) {
+            *end = str+5;
+            res->is_str = 1;
+            ks_clear(&res->s);
+            uint32_t *cigar = bam_get_cigar(b);
+            int i, n = b->core.n_cigar, r = 0;
+            for (i = 0; i < n; i++) {
+                r |= kputw (bam_cigar_oplen(cigar[i]), &res->s);
+                r |= kputc_(bam_cigar_opchr(cigar[i]), &res->s);
+            }
+            kputs("", &res->s);
+            return r ? 0 : -1;
+        }
+        break;
+
+    case 'f':
+        if (memcmp(str, "flag", 4) == 0) {
+            str = *end = str+4;
+            if (*str != '.') {
+                res->d = b->core.flag;
+                return 0;
+            } else {
+                str++;
+                if (!memcmp(str, "paired", 6)) {
+                    *end = str+6;
+                    res->d = b->core.flag & BAM_FPAIRED;
+                    return 0;
+                } else if (!memcmp(str, "proper_pair", 11)) {
+                    *end = str+11;
+                    res->d = b->core.flag & BAM_FPROPER_PAIR;
+                    return 0;
+                } else if (!memcmp(str, "unmap", 5)) {
+                    *end = str+5;
+                    res->d = b->core.flag & BAM_FUNMAP;
+                    return 0;
+                } else if (!memcmp(str, "munmap", 6)) {
+                    *end = str+6;
+                    res->d = b->core.flag & BAM_FMUNMAP;
+                    return 0;
+                } else if (!memcmp(str, "reverse", 7)) {
+                    *end = str+7;
+                    res->d = b->core.flag & BAM_FREVERSE;
+                    return 0;
+                } else if (!memcmp(str, "mreverse", 8)) {
+                    *end = str+8;
+                    res->d = b->core.flag & BAM_FMREVERSE;
+                    return 0;
+                } else if (!memcmp(str, "read1", 5)) {
+                    *end = str+5;
+                    res->d = b->core.flag & BAM_FREAD1;
+                    return 0;
+                } else if (!memcmp(str, "read2", 6)) {
+                    *end = str+5;
+                    res->d = b->core.flag & BAM_FREAD2;
+                    return 0;
+                } else if (!memcmp(str, "secondary", 9)) {
+                    *end = str+9;
+                    res->d = b->core.flag & BAM_FSECONDARY;
+                    return 0;
+                } else if (!memcmp(str, "qcfail", 6)) {
+                    *end = str+6;
+                    res->d = b->core.flag & BAM_FQCFAIL;
+                    return 0;
+                } else if (!memcmp(str, "dup", 3)) {
+                    *end = str+3;
+                    res->d = b->core.flag & BAM_FDUP;
+                    return 0;
+                } else if (!memcmp(str, "supplementary", 13)) {
+                    *end = str+13;
+                    res->d = b->core.flag & BAM_FSUPPLEMENTARY;
+                    return 0;
+                } else {
+                    hts_log_error("Unrecognised flag string");
+                    return -1;
+                }
+            }
+        }
+        break;
+
+    case 'l':
+        if (memcmp(str, "library", 7) == 0) {
+            *end = str+7;
+            res->is_str = 1;
+            const char *lib = bam_get_library(hb->h, b);
+            kputs(lib ? lib : "", ks_clear(&res->s));
+            return 0;
+        }
+        break;
+
+    case 'm':
+        if (memcmp(str, "mapq", 4) == 0) {
+            *end = str+4;
+            res->d = b->core.qual;
+            return 0;
+        } else if (memcmp(str, "mpos", 4) == 0) {
+            *end = str+4;
+            res->d = b->core.mpos+1;
+            return 0;
+        } else if (memcmp(str, "mrname", 6) == 0) {
+            *end = str+6;
+            res->is_str = 1;
+            const char *rn = sam_hdr_tid2name(hb->h, b->core.mtid);
+            kputs(rn ? rn : "*", ks_clear(&res->s));
+            return 0;
+        } else if (memcmp(str, "mrefid", 6) == 0) {
+            *end = str+6;
+            res->d = b->core.mtid;
+            return 0;
+        }
+        break;
+
+    case 'n':
+        if (memcmp(str, "ncigar", 6) == 0) {
+            *end = str+6;
+            res->d = b->core.n_cigar;
+            return 0;
+        }
+        break;
+
+    case 'p':
+        if (memcmp(str, "pos", 3) == 0) {
+            *end = str+3;
+            res->d = b->core.pos+1;
+            return 0;
+        } else if (memcmp(str, "pnext", 5) == 0) {
+            *end = str+5;
+            res->d = b->core.mpos+1;
+            return 0;
+        }
+        break;
+
+    case 'q':
+        if (memcmp(str, "qlen", 4) == 0) {
+            *end = str+4;
+            res->d = bam_cigar2qlen(b->core.n_cigar, bam_get_cigar(b));
+            return 0;
+        } else if (memcmp(str, "qname", 5) == 0) {
+            *end = str+5;
+            res->is_str = 1;
+            kputs(bam_get_qname(b), ks_clear(&res->s));
+            return 0;
+        } else if (memcmp(str, "qual", 4) == 0) {
+            *end = str+4;
+            ks_clear(&res->s);
+            if (ks_resize(&res->s, b->core.l_qseq+1) < 0)
+                return -1;
+            memcpy(res->s.s, bam_get_qual(b), b->core.l_qseq);
+            res->s.l = b->core.l_qseq;
+            res->is_str = 1;
+            return 0;
+        }
+        break;
+
+    case 'r':
+        if (memcmp(str, "rlen", 4) == 0) {
+            *end = str+4;
+            res->d = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+            return 0;
+        } else if (memcmp(str, "rname", 5) == 0) {
+            *end = str+5;
+            res->is_str = 1;
+            const char *rn = sam_hdr_tid2name(hb->h, b->core.tid);
+            kputs(rn ? rn : "*", ks_clear(&res->s));
+            return 0;
+        } else if (memcmp(str, "rnext", 5) == 0) {
+            *end = str+5;
+            res->is_str = 1;
+            const char *rn = sam_hdr_tid2name(hb->h, b->core.mtid);
+            kputs(rn ? rn : "*", ks_clear(&res->s));
+            return 0;
+        } else if (memcmp(str, "refid", 5) == 0) {
+            *end = str+5;
+            res->d = b->core.tid;
+            return 0;
+        }
+        break;
+
+    case 's':
+        if (memcmp(str, "seq", 3) == 0) {
+            *end = str+3;
+            ks_clear(&res->s);
+            if (ks_resize(&res->s, b->core.l_qseq+1) < 0)
+                return -1;
+            nibble2base(bam_get_seq(b), res->s.s, b->core.l_qseq);
+            res->s.s[b->core.l_qseq] = 0;
+            res->s.l = b->core.l_qseq;
+            res->is_str = 1;
+            return 0;
+        }
+        break;
+
+    case 't':
+        if (memcmp(str, "tlen", 4) == 0) {
+            *end = str+4;
+            res->d = b->core.isize;
+            return 0;
+        }
+        break;
+
+    case '[':
+        if (*str == '[' && str[1] && str[2] && str[3] == ']') {
+            /* aux tags */
+            *end = str+4;
+
+            uint8_t *aux = bam_aux_get(b, str+1);
+            if (aux) {
+                // we define the truth of a tag to be its presence, even if 0.
+                res->is_true = 1;
+                switch (*aux) {
+                case 'Z':
+                case 'H':
+                    res->is_str = 1;
+                    kputs((char *)aux+1, ks_clear(&res->s));
+                    break;
+
+                case 'A':
+                    res->is_str = 1;
+                    kputsn((char *)aux+1, 1, ks_clear(&res->s));
+                    break;
+
+                case 'i': case 'I':
+                case 's': case 'S':
+                case 'c': case 'C':
+                    res->is_str = 0;
+                    res->d = bam_aux2i(aux);
+                    break;
+
+                case 'f':
+                case 'd':
+                    res->is_str = 0;
+                    res->d = bam_aux2f(aux);
+                    break;
+
+                default:
+                    hts_log_error("Aux type '%c not yet supported by filters",
+                                  *aux);
+                    return -1;
+                }
+                return 0;
+
+            } else {
+                // hence absent tags are always false (and strings)
+                res->is_str = 1;
+                res->s.l = 0;
+                res->d = 0;
+                res->is_true = 0;
+                return 0;
+            }
+        }
+        break;
+    }
+
+    // All successful matches in switch should return 0.
+    // So if we didn't match, it's a parse error.
+    return -1;
+}
+
+// Returns 1 when accepted by the filter, 0 if not, -1 on error.
+int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b, hts_filter_t *filt)
+{
+    hb_pair hb = {h, b};
+    hts_expr_val_t res;
+    if (hts_filter_eval(filt, &hb, bam_sym_lookup, &res)) {
+        hts_log_error("Couldn't process filter expression");
+        hts_expr_val_free(&res);
+        return -1;
+    }
+
+    int t = res.is_true;
+    hts_expr_val_free(&res);
+
+    return t;
+}
+
 static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
-    int ret = cram_get_bam_seq(fp->fp.cram, &b);
-    if (ret < 0)
-        return cram_eof(fp->fp.cram) ? -1 : -2;
+    int pass_filter, ret;
 
-    if (bam_tag2cigar(b, 1, 1) < 0)
-        return -2;
+    do {
+        ret = cram_get_bam_seq(fp->fp.cram, &b);
+        if (ret < 0)
+            return cram_eof(fp->fp.cram) ? -1 : -2;
 
-    *tid = b->core.tid;
-    *beg = b->core.pos;
-    *end = bam_endpos(b);
+        if (bam_tag2cigar(b, 1, 1) < 0)
+            return -2;
+
+        *tid = b->core.tid;
+        *beg = b->core.pos;
+        *end = bam_endpos(b);
+
+        if (fp->filter) {
+            pass_filter = sam_passes_filter(fp->bam_header, b, fp->filter);
+            if (pass_filter < 0)
+                return -2;
+        } else {
+            pass_filter = 1;
+        }
+    } while (pass_filter == 0);
 
     return ret;
 }
@@ -2025,22 +2482,13 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (*p++ != '\t') goto err_ret;
     // cigar
     if (*p != '*') {
-        uint32_t *cigar;
-        size_t n_cigar = 0;
-        for (q = p; *p && *p != '\t'; ++p)
-            if (!isdigit_c(*p)) ++n_cigar;
-        if (*p++ != '\t') goto err_ret;
-        _parse_err(n_cigar == 0, "no CIGAR operations");
-        _parse_err(n_cigar >= 2147483647, "too many CIGAR operations");
+        uint32_t *cigar = NULL;
+        int old_l_data = b->l_data;
+        int n_cigar = bam_parse_cigar(p, &p, b);
+        if (n_cigar < 1 || *p++ != '\t') goto err_ret;
+        cigar = (uint32_t *)(b->data + old_l_data);
         c->n_cigar = n_cigar;
-        _get_mem(uint32_t, &cigar, b, c->n_cigar * sizeof(uint32_t));
-        for (i = 0; i < c->n_cigar; ++i) {
-            int op;
-            cigar[i] = hts_str2uint(q, &q, 28, &overflow)<<BAM_CIGAR_SHIFT;
-            op = bam_cigar_table[(unsigned char)*q++];
-            _parse_err(op < 0, "unrecognized CIGAR operator");
-            cigar[i] |= op;
-        }
+
         // can't use bam_endpos() directly as some fields not yet set up
         cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
         if (cigreflen == 0) cigreflen = 1;
@@ -2205,6 +2653,118 @@ err_ret:
     return -2;
 }
 
+static uint32_t read_ncigar(const char *q) {
+    uint32_t n_cigar = 0;
+    for (; *q && *q != '\t'; ++q)
+        if (!isdigit_c(*q)) ++n_cigar;
+    if (!n_cigar) {
+        hts_log_error("No CIGAR operations");
+        return 0;
+    }
+    if (n_cigar >= 2147483647) {
+        hts_log_error("Too many CIGAR operations");
+        return 0;
+    }
+
+    return n_cigar;
+}
+
+/*! @function
+ @abstract  Parse a CIGAR string into preallocated a uint32_t array
+ @param  in      [in]  pointer to the source string
+ @param  a_cigar [out]  address of the destination uint32_t buffer
+ @return         number of processed input characters; 0 on error
+ */
+static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
+    int i, overflow = 0;
+    const char *p = in;
+    for (i = 0; i < n_cigar; i++) {
+        uint32_t len;
+        int op;
+        char *q;
+        len = hts_str2uint(p, &q, 28, &overflow)<<BAM_CIGAR_SHIFT;
+        if (q == p) {
+            hts_log_error("CIGAR length invalid at position %d (%s)", (int)(i+1), p);
+            return 0;
+        }
+        if (overflow) {
+            hts_log_error("CIGAR length too long at position %d (%.*s)", (int)(i+1), (int)(q-p+1), p);
+            return 0;
+        }
+        p = q;
+        op = bam_cigar_table[(unsigned char)*p++];
+        if (op < 0) {
+            hts_log_error("Unrecognized CIGAR operator");
+            return 0;
+        }
+        a_cigar[i] = len;
+        a_cigar[i] |= op;
+    }
+
+    return p-in;
+}
+
+ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *a_mem) {
+    size_t n_cigar = 0;
+    int diff;
+
+    if (!in || !a_cigar || !a_mem) {
+        hts_log_error("NULL pointer arguments");
+        return -1;
+    }
+    if (end) *end = (char *)in;
+
+    if (*in == '*') {
+        if (end) (*end)++;
+        return 0;
+    }
+    n_cigar = read_ncigar(in);
+    if (!n_cigar) return 0;
+    if (n_cigar > *a_mem) {
+        uint32_t *a_tmp = realloc(*a_cigar, n_cigar*sizeof(**a_cigar));
+        if (a_tmp) {
+            *a_cigar = a_tmp;
+            *a_mem = n_cigar;
+        } else {
+            hts_log_error("Memory allocation error");
+            return -1;
+        }
+    }
+
+    if (!(diff = parse_cigar(in, *a_cigar, n_cigar))) return -1;
+    if (end) *end = (char *)in+diff;
+
+    return n_cigar;
+}
+
+ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
+    size_t n_cigar = 0;
+    int diff;
+
+    if (!in || !b) {
+        hts_log_error("NULL pointer arguments");
+        return -1;
+    }
+    if (end) *end = (char *)in;
+
+    if (*in == '*') {
+        if (end) (*end)++;
+        return 0;
+    }
+    n_cigar = read_ncigar(in);
+    if (!n_cigar) return 0;
+    if (possibly_expand_bam_data(b, n_cigar * sizeof(uint32_t)) < 0) {
+        hts_log_error("Memory allocation error");
+        return -1;
+    }
+
+    if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return -1;
+    b->l_data += (n_cigar * sizeof(uint32_t));
+    if (end) *end = (char *)in+diff;
+
+    return n_cigar;
+}
+
 /*
  * -----------------------------------------------------------------------------
  * SAM threading
@@ -2254,6 +2814,7 @@ typedef struct SAM_state {
     pthread_mutex_t lines_m;
     hts_tpool_process *q;
     pthread_t dispatcher;
+    int dispatcher_set;
 
     sp_lines *lines;
     sp_bams *bams;
@@ -2339,7 +2900,7 @@ int sam_state_destroy(htsFile *fp) {
             if (fd->q)
                 hts_tpool_wake_dispatch(fd->q); // unstick the reader
 
-            if (!fp->is_write && fd->q && fd->dispatcher) {
+            if (!fp->is_write && fd->q && fd->dispatcher_set) {
                 for (;;) {
                     // Avoid deadlocks with dispatcher
                     if (fd->command == SAM_CLOSE_DONE)
@@ -2379,7 +2940,8 @@ int sam_state_destroy(htsFile *fp) {
             }
 
             // Wait for it to acknowledge
-            pthread_join(fd->dispatcher, NULL);
+            if (fd->dispatcher_set)
+                pthread_join(fd->dispatcher, NULL);
             if (!ret) ret = -fd->errcode;
         }
 
@@ -2507,9 +3069,17 @@ static void *sam_parse_worker(void *arg) {
         // However this is an API change so for now we copy.
 
         char *nl = strchr(cp, '\n');
-        if (!nl)  nl = cp_end;
-        if (*nl) *nl++ = '\0';
-        kstring_t ks = {nl-cp, gl->alloc, cp};
+        char *line_end;
+        if (nl) {
+            line_end = nl;
+            if (line_end > cp && *(line_end - 1) == '\r')
+                line_end--;
+            nl++;
+        } else {
+            nl = line_end = cp_end;
+        }
+        *line_end = '\0';
+        kstring_t ks = { line_end - cp, gl->alloc, cp };
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
             sam_state_err(fd, errno ? errno : EIO);
             cleanup_sp_lines(gl);
@@ -2918,132 +3488,161 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     return 0;
 }
 
+// Internal component of sam_read1 below
+static inline int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
+    int ret = bam_read1(fp->fp.bgzf, b);
+    if (h && ret >= 0) {
+        if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
+            b->core.mtid >= h->n_targets || b->core.mtid < -1) {
+            errno = ERANGE;
+            return -3;
+        }
+    }
+    return ret;
+}
+
+// Internal component of sam_read1 below
+static inline int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
+    int ret = cram_get_bam_seq(fp->fp.cram, b);
+    if (ret < 0)
+        return cram_eof(fp->fp.cram) ? -1 : -2;
+
+    if (bam_tag2cigar(*b, 1, 1) < 0)
+        return -2;
+
+    return ret;
+}
+
+// Internal component of sam_read1 below
+static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
+    int ret;
+
+    // Consume 1st line after header parsing as it wasn't using peek
+    if (fp->line.l != 0) {
+        ret = sam_parse1(&fp->line, h, b);
+        fp->line.l = 0;
+        return ret;
+    }
+
+    if (fp->state) {
+        SAM_state *fd = (SAM_state *)fp->state;
+
+        if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
+            // We don't support multi-threaded SAM parsing with seeks yet.
+            int ret;
+            if ((ret = sam_state_destroy(fp)) < 0) {
+                errno = -ret;
+                return -2;
+            }
+            if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
+                return -1;
+            fp->fp.bgzf->seeked = 0;
+            goto err_recover;
+        }
+
+        if (!fd->h) {
+            fd->h = h;
+            fd->h->ref_count++;
+            // Ensure hrecs is initialised now as we don't want multiple
+            // threads trying to do this simultaneously.
+            if (!fd->h->hrecs && sam_hdr_fill_hrecs(fd->h) < 0)
+                return -2;
+
+            // We can only do this once we've got a header
+            if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read,
+                               fp) != 0)
+                return -2;
+            fd->dispatcher_set = 1;
+        }
+
+        if (fd->h != h) {
+            hts_log_error("SAM multi-threaded decoding does not support changing header");
+            return -1;
+        }
+
+        sp_bams *gb = fd->curr_bam;
+        if (!gb) {
+            if (fd->errcode) {
+                // In case reader failed
+                errno = fd->errcode;
+                return -2;
+            }
+            hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
+            if (!r)
+                return -2;
+            fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
+            hts_tpool_delete_result(r, 0);
+        }
+        if (!gb)
+            return fd->errcode ? -2 : -1;
+        bam1_t *b_array = (bam1_t *)gb->bams;
+        if (fd->curr_idx < gb->nbams)
+            if (!bam_copy1(b, &b_array[fd->curr_idx++]))
+                return -2;
+        if (fd->curr_idx == gb->nbams) {
+            pthread_mutex_lock(&fd->lines_m);
+            gb->next = fd->bams;
+            fd->bams = gb;
+            pthread_mutex_unlock(&fd->lines_m);
+
+            fd->curr_bam = NULL;
+            fd->curr_idx = 0;
+        }
+
+        ret = 0;
+
+    } else  {
+    err_recover:
+        ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
+        if (ret < 0) return ret;
+
+        ret = sam_parse1(&fp->line, h, b);
+        fp->line.l = 0;
+        if (ret < 0) {
+            hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
+            if (h->ignore_sam_err) goto err_recover;
+        }
+    }
+
+    return ret;
+}
+
 // Returns 0 on success,
 //        -1 on EOF,
 //       <-1 on error
 int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
 {
-    switch (fp->format.format) {
-    case bam: {
-        int r = bam_read1(fp->fp.bgzf, b);
-        if (h && r >= 0) {
-            if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
-                b->core.mtid >= h->n_targets || b->core.mtid < -1) {
-                errno = ERANGE;
-                return -3;
-            }
-        }
-        return r;
-        }
+    int ret, pass_filter;
 
-    case cram: {
-        int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        if (ret < 0)
-            return cram_eof(fp->fp.cram) ? -1 : -2;
+    do {
+        switch (fp->format.format) {
+        case bam:
+            ret = sam_read1_bam(fp, h, b);
+            break;
 
-        if (bam_tag2cigar(b, 1, 1) < 0)
-            return -2;
-        return ret;
-    }
+        case cram:
+            ret = sam_read1_cram(fp, h, &b);
+            break;
 
-    case sam: {
-        // Consume 1st line after header parsing as it wasn't using peek
-        if (fp->line.l != 0) {
-            int ret = sam_parse1(&fp->line, h, b);
-            fp->line.l = 0;
-            return ret;
+        case sam:
+            ret = sam_read1_sam(fp, h, b);
+            break;
+
+        case empty_format:
+            errno = EPIPE;
+            return -3;
+
+        default:
+            errno = EFTYPE;
+            return -3;
         }
 
-        if (fp->state) {
-            SAM_state *fd = (SAM_state *)fp->state;
+        pass_filter = (ret >= 0 && fp->filter)
+            ? sam_passes_filter(h, b, fp->filter)
+            : 1;
+    } while (pass_filter == 0);
 
-            if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
-                // We don't support multi-threaded SAM parsing with seeks yet.
-                int ret;
-                if ((ret = sam_state_destroy(fp)) < 0) {
-                    errno = -ret;
-                    return -2;
-                }
-                if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
-                    return -1;
-                fp->fp.bgzf->seeked = 0;
-                goto err_recover;
-            }
-
-            if (!fd->h) {
-                fd->h = h;
-                fd->h->ref_count++;
-                // Ensure hrecs is initialised now as we don't want multiple
-                // threads trying to do this simultaneously.
-                if (!fd->h->hrecs && sam_hdr_fill_hrecs(fd->h) < 0)
-                    return -2;
-
-                // We can only do this once we've got a header
-                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0)
-                    return -2;
-            }
-
-            if (fd->h != h) {
-                hts_log_error("SAM multi-threaded decoding does not support changing header");
-                return -1;
-            }
-
-            sp_bams *gb = fd->curr_bam;
-            if (!gb) {
-                if (fd->errcode) {
-                    // In case reader failed
-                    errno = fd->errcode;
-                    return -2;
-                }
-                hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
-                if (!r)
-                    return -2;
-                fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
-                hts_tpool_delete_result(r, 0);
-            }
-            if (!gb)
-                return fd->errcode ? -2 : -1;
-            bam1_t *b_array = (bam1_t *)gb->bams;
-            if (fd->curr_idx < gb->nbams)
-                if (!bam_copy1(b, &b_array[fd->curr_idx++]))
-                    return -2;
-            if (fd->curr_idx == gb->nbams) {
-                pthread_mutex_lock(&fd->lines_m);
-                gb->next = fd->bams;
-                fd->bams = gb;
-                pthread_mutex_unlock(&fd->lines_m);
-
-                fd->curr_bam = NULL;
-                fd->curr_idx = 0;
-            }
-
-            return 0;
-
-        } else  {
-            int ret;
-        err_recover:
-
-            ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
-            if (ret < 0) return ret;
-
-            ret = sam_parse1(&fp->line, h, b);
-            fp->line.l = 0;
-            if (ret < 0) {
-                hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
-                if (h->ignore_sam_err) goto err_recover;
-            }
-            return ret;
-        }
-    }
-
-    case empty_format:
-        errno = EPIPE;
-        return -3;
-
-    default:
-        errno = EFTYPE;
-        return -3;
-    }
+    return pass_filter < 0 ? -2 : ret;
 }
 
 
@@ -3168,13 +3767,15 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                 // destroy it later on and sam_hdr_destroy takes non-const.
                 //
                 // We do this because some tools do sam_hdr_destroy; sam_close
-                // while others do sam_close; sam_hdr_destroy.  The former is an
-                // issue as we need the header still when flushing.
+                // while others do sam_close; sam_hdr_destroy.  The former is
+                // an issue as we need the header still when flushing.
                 fd->h = (sam_hdr_t *)h;
                 fd->h->ref_count++;
 
-                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0)
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write,
+                                   fp) != 0)
                     return -2;
+                fd->dispatcher_set = 1;
             }
 
             if (fd->h != h) {
@@ -4171,7 +4772,11 @@ void bam_plp_destructor(bam_plp_t plp,
  *  Returns BAM_CMATCH, -1 when there is no more cigar to process or the requested position is not covered,
  *  or -2 on error.
  */
-static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
+static inline int cigar_iref2iseq_set(const uint32_t **cigar,
+                                      const uint32_t *cigar_max,
+                                      hts_pos_t *icig,
+                                      hts_pos_t *iseq,
+                                      hts_pos_t *iref)
 {
     hts_pos_t pos = *iref;
     if ( pos < 0 ) return -1;
@@ -4206,7 +4811,11 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, hts
     *iseq = -1;
     return -1;
 }
-static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
+static inline int cigar_iref2iseq_next(const uint32_t **cigar,
+                                       const uint32_t *cigar_max,
+                                       hts_pos_t *icig,
+                                       hts_pos_t *iseq,
+                                       hts_pos_t *iref)
 {
     while ( *cigar < cigar_max )
     {
@@ -4215,14 +4824,14 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, ht
 
         if ( cig==BAM_CMATCH || cig==BAM_CEQUAL || cig==BAM_CDIFF )
         {
-            if ( *icig >= ncig - 1 ) { *icig = 0;  (*cigar)++; continue; }
+            if ( *icig >= ncig - 1 ) { *icig = -1;  (*cigar)++; continue; }
             (*iseq)++; (*icig)++; (*iref)++;
             return BAM_CMATCH;
         }
-        if ( cig==BAM_CDEL || cig==BAM_CREF_SKIP ) { (*cigar)++; (*iref) += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CINS ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { (*cigar)++; *icig = 0; continue; }
+        if ( cig==BAM_CDEL || cig==BAM_CREF_SKIP ) { (*cigar)++; (*iref) += ncig; *icig = -1; continue; }
+        if ( cig==BAM_CINS ) { (*cigar)++; *iseq += ncig; *icig = -1; continue; }
+        if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = -1; continue; }
+        if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { (*cigar)++; *icig = -1; continue; }
         hts_log_error("Unexpected cigar %d", cig);
         return -2;
     }
@@ -4233,8 +4842,8 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, ht
 
 static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
 {
-    uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
-    uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
+    const uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
+    const uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
     hts_pos_t a_icig = 0, a_iseq = 0;
     hts_pos_t b_icig = 0, b_iseq = 0;
     uint8_t *a_qual = bam_get_qual(a), *b_qual = bam_get_qual(b);
@@ -4344,8 +4953,6 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
         int err = tweak_overlap_quality(&a->b, &node->b);
         kh_del(olap_hash, iter->overlaps, kitr);
         assert(a->end-1 == a->s.end);
-        a->end = bam_endpos(&a->b);
-        a->s.end = a->end - 1;
         return err;
     }
     return 0;

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2015, 2018 Genome Research Ltd.
+Copyright (c) 2012-2015, 2018, 2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -58,6 +58,7 @@ typedef struct {
 typedef struct {
     int ncodes;
     cram_huffman_code *codes;
+    int option;
 } cram_huffman_decoder;
 
 #define MAX_HUFF 128
@@ -73,6 +74,46 @@ typedef struct {
     int32_t nbits;
 } cram_beta_decoder;
 
+// A PACK transform, packing multiple values into a single byte
+typedef struct {
+    int32_t nbits;
+    enum cram_encoding sub_encoding;
+    void *sub_codec_dat;
+    struct cram_codec *sub_codec;
+    int nval;  // number of items in maps
+    uint32_t rmap[256]; // 0,1,2,3 -> P,A,C,K
+    int map[256];       // P,A,C,K -> 0,1,2,3 // NB: max input is uint8_tb? Or use hash?
+} cram_xpack_decoder;
+typedef cram_xpack_decoder cram_xpack_encoder;
+
+// Transforms symbols X,Y,Z to bytes 0,1,2.
+typedef struct {
+    enum cram_encoding len_encoding;
+    enum cram_encoding lit_encoding;
+    void *len_dat;
+    void *lit_dat;
+    struct cram_codec *len_codec;
+    struct cram_codec *lit_codec;
+    int cur_len;
+    int cur_lit;
+    int rep_score[256];
+    char *to_flush;
+    size_t to_flush_size;
+} cram_xrle_decoder;
+typedef cram_xrle_decoder cram_xrle_encoder;
+
+// DELTA + zigzag + varint encoding
+typedef struct {
+    // FIXME: define endian here too.  Require little endian?
+    int64_t last;
+    uint8_t word_size; // 1, 2, 4, 8
+    //uint8_t sign;      // true if input data is already signed
+    enum cram_encoding sub_encoding;
+    void *sub_codec_dat;
+    struct cram_codec *sub_codec;
+} cram_xdelta_decoder;
+typedef cram_xdelta_decoder cram_xdelta_encoder;
+
 typedef struct {
     int32_t offset;
 } cram_gamma_decoder;
@@ -86,6 +127,12 @@ typedef struct {
     int32_t content_id;
     enum cram_external_type type;
 } cram_external_decoder;
+
+typedef struct {
+    int32_t content_id;
+    int64_t offset;
+    enum cram_external_type type;
+} cram_varint_decoder;
 
 typedef struct {
     struct cram_codec *len_codec;
@@ -106,12 +153,18 @@ typedef struct {
     struct cram_codec *val_codec;
 } cram_byte_array_len_encoder;
 
+typedef struct {
+    int64_t val;
+} cram_const_codec;
+
 /*
  * A generic codec structure.
  */
 typedef struct cram_codec {
     enum cram_encoding codec;
     cram_block *out;
+    varint_vec *vv;
+    int codec_id;
     void (*free)(struct cram_codec *codec);
     int (*decode)(cram_slice *slice, struct cram_codec *codec,
                   cram_block *in, char *out, int *out_size);
@@ -119,6 +172,9 @@ typedef struct cram_codec {
                   char *in, int in_size);
     int (*store)(struct cram_codec *codec, cram_block *b, char *prefix,
                  int version);
+    int (*size)(cram_slice *slice, struct cram_codec *codec);
+    int (*flush)(struct cram_codec *codec);
+    cram_block *(*get_block)(cram_slice *slice, struct cram_codec *codec);
 
     union {
         cram_huffman_decoder         huffman;
@@ -128,23 +184,34 @@ typedef struct cram_codec {
         cram_subexp_decoder          subexp;
         cram_byte_array_len_decoder  byte_array_len;
         cram_byte_array_stop_decoder byte_array_stop;
+        cram_xpack_decoder           xpack;
+        cram_xrle_decoder            xrle;
+        cram_xdelta_decoder          xdelta;
+        cram_const_codec             xconst;
+        cram_varint_decoder          varint;
 
         cram_huffman_encoder         e_huffman;
         cram_external_decoder        e_external;
         cram_byte_array_stop_decoder e_byte_array_stop;
         cram_byte_array_len_encoder  e_byte_array_len;
         cram_beta_decoder            e_beta;
+        cram_xpack_decoder           e_xpack;
+        cram_xrle_decoder            e_xrle;
+        cram_xdelta_decoder          e_xdelta;
+        cram_const_codec             e_xconst;
+        cram_varint_decoder          e_varint;
     } u;
 } cram_codec;
 
 const char *cram_encoding2str(enum cram_encoding t);
 
-cram_codec *cram_decoder_init(enum cram_encoding codec, char *data, int size,
+cram_codec *cram_decoder_init(cram_block_compression_hdr *hdr,
+                              enum cram_encoding codec, char *data, int size,
                               enum cram_external_type option,
-                              int version);
+                              int version, varint_vec *vv);
 cram_codec *cram_encoder_init(enum cram_encoding codec, cram_stats *st,
                               enum cram_external_type option, void *dat,
-                              int version);
+                              int version, varint_vec *vv);
 
 //int cram_decode(void *codes, char *in, int in_size, char *out, int *out_size);
 //void cram_decoder_free(void *codes);

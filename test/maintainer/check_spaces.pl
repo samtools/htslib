@@ -43,16 +43,17 @@ sub check {
     # Only check C, perl and shell files
     return unless (/(?:\.[ch]|\.pl|\.sh)$/);
 
+    # Exclude htscodecs submodule
+    return if (/\/htscodecs\//);
+
     my %allow_tabs = map { ("$root/$_", 1) } (
 'kfunc.c',
-'knetfile.c',
 'kstring.c',
 'md5.c',
 'htslib/khash.h',
 'htslib/kseq.h',
 'htslib/ksort.h',
 'htslib/kstring.h',
-'htslib/knetfile.h',
 'htslib/klist.h',
 'htslib/kbitset.h',
 'os/rand.c',

@@ -94,7 +94,7 @@ pluginpath = @pluginpath@
 LIBHTS_OBJS += plugin.o
 PLUGIN_OBJS += $(plugin_OBJS)
 
-plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
+plugin.o plugin.pico: ALL_CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
 
 # When built as separate plugins, these record their version themselves.
 hfile_gcs.o hfile_gcs.pico: version.h

@@ -209,7 +209,7 @@ enum htsExactFormat {
 };
 
 enum htsCompression {
-    no_compression, gzip, bgzf, custom, bzip2_compression,
+    no_compression, gzip, bgzf, custom, bzip2_compression, razf_compression,
     compression_maximum = 32767
 };
 
@@ -224,6 +224,7 @@ typedef struct htsFormat {
 
 struct hts_idx_t;
 typedef struct hts_idx_t hts_idx_t;
+struct hts_filter_t;
 
 /**
  * @brief File handle returned by hts_open() etc.
@@ -256,6 +257,7 @@ typedef struct htsFile {
     hts_idx_t *idx;
     const char *fnidx;
     struct sam_hdr_t *bam_header;
+    struct hts_filter_t *filter;
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -314,6 +316,10 @@ enum hts_fmt_option {
     CRAM_OPT_STORE_MD,
     CRAM_OPT_STORE_NM,
     CRAM_OPT_RANGE_NOSEEK, // CRAM_OPT_RANGE minus the seek
+    CRAM_OPT_USE_TOK,
+    CRAM_OPT_USE_FQZ,
+    CRAM_OPT_USE_ARITH,
+    CRAM_OPT_POS_DELTA,  // force delta for AP, even on non-pos sorted data
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
@@ -321,6 +327,17 @@ enum hts_fmt_option {
     HTS_OPT_THREAD_POOL,
     HTS_OPT_CACHE_SIZE,
     HTS_OPT_BLOCK_SIZE,
+    HTS_OPT_FILTER,
+    HTS_OPT_PROFILE,
+};
+
+// Profile options for encoding; primarily used at present in CRAM
+// but also usable in BAM as a synonym for deflate compression levels.
+enum hts_profile_option {
+    HTS_PROFILE_FAST,
+    HTS_PROFILE_NORMAL,
+    HTS_PROFILE_SMALL,
+    HTS_PROFILE_ARCHIVE,
 };
 
 // For backwards compatibility
@@ -432,7 +449,48 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 101100
+#define HTS_VERSION 101200
+
+/*! @abstract Introspection on the features enabled in htslib
+ *
+ * @return a bitfield of HTS_FEATURE_* macros.
+ */
+HTSLIB_EXPORT
+unsigned int hts_features(void);
+
+HTSLIB_EXPORT
+const char *hts_test_feature(unsigned int id);
+
+/*! @abstract Introspection on the features enabled in htslib, string form
+ *
+ * @return a string describing htslib build features
+ */
+HTSLIB_EXPORT
+const char *hts_feature_string(void);
+
+// Whether ./configure was used or vanilla Makefile
+#define HTS_FEATURE_CONFIGURE    1
+
+// Whether --enable-plugins was used
+#define HTS_FEATURE_PLUGINS      2
+
+// Transport specific
+#define HTS_FEATURE_LIBCURL      (1u<<10)
+#define HTS_FEATURE_S3           (1u<<11)
+#define HTS_FEATURE_GCS          (1u<<12)
+
+// Compression options
+#define HTS_FEATURE_LIBDEFLATE   (1u<<20)
+#define HTS_FEATURE_LZMA         (1u<<21)
+#define HTS_FEATURE_BZIP2        (1u<<22)
+#define HTS_FEATURE_HTSCODECS    (1u<<23) // htscodecs library version
+
+// Build params
+#define HTS_FEATURE_CC           (1u<<27)
+#define HTS_FEATURE_CFLAGS       (1u<<28)
+#define HTS_FEATURE_CPPFLAGS     (1u<<29)
+#define HTS_FEATURE_LDFLAGS      (1u<<30)
+
 
 /*!
   @abstract    Determine format by peeking at the start of a file
@@ -606,6 +664,15 @@ void hts_set_cache_size(htsFile *fp, int n);
 HTSLIB_EXPORT
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 
+
+/*!
+  @abstract  Sets a filter expression
+  @return    0 for success, negative on failure
+  @discussion
+      To clear an existing filter, specifying expr as NULL.
+*/
+HTSLIB_EXPORT
+int hts_set_filter_expression(htsFile *fp, const char *expr);
 
 /*!
   @abstract  Determine whether a given htsFile contains a valid EOF block
