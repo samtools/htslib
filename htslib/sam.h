@@ -2031,6 +2031,21 @@ typedef struct bam_mplp_s *bam_mplp_t;
 HTSLIB_EXPORT
 int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres);
 
+// Used as flag parameter in sam_prob_realn.
+enum htsRealnFlags {
+    BAQ_APPLY = 1,
+    BAQ_EXTEND = 2,
+    BAQ_REDO = 4,
+
+    // Platform subfield, in bit position 3 onwards
+    BAQ_AUTO = 0<<3,
+    BAQ_ILLUMINA = 1<<3,
+    BAQ_PACBIOCCS = 2<<3,
+    BAQ_PACBIO = 3<<3,
+    BAQ_ONT = 4<<3,
+    BAQ_GENAPSYS = 5<<3
+};
+
 /// Calculate BAQ scores
 /** @param b   BAM record
     @param ref     Reference sequence
@@ -2045,9 +2060,15 @@ This function calculates base alignment quality (BAQ) values using the method
 described in "Improving SNP discovery by base alignment quality", Heng Li,
 Bioinformatics, Volume 27, Issue 8 (https://doi.org/10.1093/bioinformatics/btr076).
 
+The @param flag value can be generated using the htsRealnFlags enum, but for
+backwards compatibilty reasons is retained as an "int".  An example usage
+of the enum could be this, equivalent to flag 19:
+
+    sam_prob_realn(b, ref, len, BAQ_APPLY | BAQ_EXTEND | BAQ_PACBIOCCS);
+
 The following @param flag bits can be used:
 
-Bit 0: Adjust the quality values using the BAQ values
+Bit 0 (BAQ_APPLY): Adjust the quality values using the BAQ values
 
  If set, the data in the BQ:Z tag is used to adjust the quality values, and
  the BQ:Z tag is renamed to ZQ:Z.
@@ -2055,22 +2076,28 @@ Bit 0: Adjust the quality values using the BAQ values
  If clear, and a ZQ:Z tag is present, the quality values are reverted using
  the data in the tag, and the tag is renamed to BQ:Z.
 
-Bit 1: Use "extended" BAQ.
+Bit 1 (BAQ_EXTEND): Use "extended" BAQ.
 
  Changes the BAQ calculation to increase sensitivity at the expense of
  reduced specificity.
 
-Bit 2: Recalculate BAQ, even if a BQ tag is present.
+Bit 2 (BAQ_REDO): Recalculate BAQ, even if a BQ tag is present.
 
  Force BAQ to be recalculated.  Note that a ZQ:Z tag will always disable
  recalculation.
+
+Bits 3-10: Choose parameters tailored to a specific instrument type.
+
+ One of BAQ_AUTO, BAQ_ILLUMINA, BAQ_PACBIOCCS, BAQ_PACBIO, BAQ_ONT and
+ BAQ_GENAPSYS.  The BAQ parameter tuning are still a work in progress and
+ at the time of writing mainly consist of Illumina vs long-read technology
+ adjustments.
 
 @bug
 If the input read has both BQ:Z and ZQ:Z tags, the ZQ:Z one will be removed.
 Depending on what previous processing happened, this may or may not be the
 correct thing to do.  It would be wise to avoid this situation if possible.
 */
-
 HTSLIB_EXPORT
 int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag);
 

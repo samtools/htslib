@@ -103,13 +103,32 @@ static int realn_check_tag(const uint8_t *tg, enum htsLogLevel severity,
     return 0;
 }
 
-int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag)
-{
-    int k, bw, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4, fix_bq = 0;
+int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
+    int k, bw, y, yb, ye, xb, xe, fix_bq = 0, apply_baq = flag & BAQ_APPLY,
+        extend_baq = flag & BAQ_EXTEND, redo_baq = flag & BAQ_REDO;
+    enum htsRealnFlags system = flag & (0xff << 3);
     hts_pos_t i, x;
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
-    probaln_par_t conf = { 0.001, 0.1, 10 };
+
+    // d(I) e(M) band
+    probaln_par_t conf = { 0.001, 0.1, 10 }; // Illumina
+
+    if (b->core.l_qseq > 1000 || system > BAQ_ILLUMINA) {
+        // Params that work well on PacBio CCS 15k.  Unknown if they
+        // help other long-read platforms yet, but likely better than
+        // the short-read tuned ones.
+        //
+        // This function has no access to the SAM header.
+        // Ideally the calling function would check for e.g.
+        // @RG PL = "PACBIO" and DS contains "READTYPE=CCS".
+        //
+        // In the absense of this, we simply auto-detect via a crude
+        // short vs long strategy.
+        conf.d = 1e-7;
+        conf.e = 1e-1;
+    }
+
     uint8_t *bq = NULL, *zq = NULL, *qual = bam_get_qual(b);
     int *state = NULL;
     if ((c->flag & BAM_FUNMAP) || b->core.l_qseq == 0 || qual[0] == (uint8_t)-1)
@@ -177,6 +196,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag)
     if (abs((xe - xb) - (ye - yb)) > bw)
         bw = abs((xe - xb) - (ye - yb)) + 3;
     conf.bw = bw;
+
     xb -= yb + bw/2; if (xb < 0) xb = 0;
     xe += c->l_qseq - ye + bw/2;
     if (xe - xb - c->l_qseq > bw)
@@ -282,6 +302,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag)
         } else bam_aux_append(b, "BQ", 'Z', c->l_qseq + 1, bq);
         free(bq); free(state);
     }
+
     return 0;
 
  fail:
