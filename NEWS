@@ -1,6 +1,13 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Features and Updates
+--------------------
+
+* In case a PG header line has multiple ID tags supplied by other applications,
+  the header API now selects the first one encountered as the identifying tag
+  and issues a warning when detecting subsequent ID tags.
+
 Noteworthy changes in release 1.12 (17th March 2021)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
