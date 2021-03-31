@@ -129,7 +129,7 @@ static int bcf_hdr_add_sample_len(bcf_hdr_t *h, const char *s, size_t len)
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = n;
     } else {
-        hts_log_error("Duplicated sample name '%s'", s);
+        hts_log_error("Duplicated sample name '%s'", sdup);
         free(sdup);
         return -1;
     }
