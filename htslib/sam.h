@@ -239,7 +239,7 @@ typedef struct bam1_core_t {
     See the bam_cigar_* macros for manipulation.
  4. seq is nibble-encoded according to bam_nt16_table.
     See the bam_seqi macro for retrieving individual bases.
- 5. Per base qualilties are stored in the Phred scale with no +33 offset.
+ 5. Per base qualities are stored in the Phred scale with no +33 offset.
     Ie as per the BAM specification and not the SAM ASCII printable method.
  */
 typedef struct bam1_t {
@@ -904,7 +904,7 @@ void bam_destroy1(bam1_t *b);
 
    if (!recs || !buffer) goto cleanup;
    for (nrecs = 0; nrecs < MAX_RECS; nrecs++) {
-      bam_set_mempolicy(BAM_USER_OWNS_STRUCT|BAM_USER_OWNS_DATA);
+      bam_set_mempolicy(&recs[nrecs], BAM_USER_OWNS_STRUCT|BAM_USER_OWNS_DATA);
 
       // Set data pointer to unused part of buffer
       recs[nrecs].data = &buffer[buff_used];
@@ -1159,7 +1159,7 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx);
 
 /// Writes the index initialised with sam_idx_init to disk.
 /** @param fp        File handle for the data file being written.
-    @return          0 on success, <0 on filaure.
+    @return          0 on success, <0 on failure.
 */
 HTSLIB_EXPORT
 int sam_idx_save(htsFile *fp) HTS_RESULT_USED;
@@ -1432,7 +1432,7 @@ int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b,
  * @param type Single letter type code: ACcSsIifHZB.
  * @param tag  Tag data pointer, in BAM format
  * @param end  Pointer to end of bam record (largest extent of tag)
- * @param ks   Kstring to write the formatted tag to
+ * @param ks   kstring to write the formatted tag to
  *
  * @return pointer to end of tag on success,
  *         NULL on failure.
