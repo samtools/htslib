@@ -351,15 +351,20 @@ HTSlib.])])])])
 
 libcurl=disabled
 if test "$enable_libcurl" != no; then
-  AC_CHECK_LIB([curl], [curl_easy_pause],
-    [AC_DEFINE([HAVE_LIBCURL], 1, [Define if libcurl file access is enabled.])
-     libcurl=enabled],
+  libcurl_devel=ok
+  AC_CHECK_HEADER([curl/curl.h], [], [libcurl_devel="headers not found"], [;])
+  AC_CHECK_LIB([curl], [curl_easy_pause], [:],
     [AC_CHECK_LIB([curl], [curl_easy_init],
-       [message="library is too old (7.18+ required)"],
-       [message="library not found"])
-     case "$enable_libcurl" in
-       check) AC_MSG_WARN([libcurl not enabled: $message]) ;;
-       *) MSG_ERROR([libcurl $message
+       [libcurl_devel="library is too old (7.18+ required)"],
+       [libcurl_devel="library not found"])])
+
+  if test "$libcurl_devel" = ok; then
+    AC_DEFINE([HAVE_LIBCURL], 1, [Define if libcurl file access is enabled.])
+    libcurl=enabled
+  elif test "$enable_libcurl" = check; then
+    AC_MSG_WARN([libcurl not enabled: $libcurl_devel])
+  else
+    MSG_ERROR([libcurl $libcurl_devel
 
 Support for HTTPS and other SSL-based URLs requires routines from the libcurl
 library <http://curl.se/libcurl/>.  Building HTSlib with libcurl enabled
@@ -369,8 +374,8 @@ Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions
 or Cygwin) is installed.
 
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])
-       ;;
-     esac])
+  fi
+
 dnl -lcurl is only needed for static linking if hfile_libcurl is not a plugin
   if test "$libcurl" = enabled ; then
     if test "$enable_plugins" != yes ; then
