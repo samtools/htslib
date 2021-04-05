@@ -150,7 +150,10 @@ various features and specify further optional external requirements:
 
 --enable-libcurl
     Use libcurl (<http://curl.se/>) to implement network access to
-    remote files via FTP, HTTP, HTTPS, etc.
+    remote files via FTP, HTTP, HTTPS, etc.  By default or with
+    --enable-libcurl=check, configure will probe for libcurl and include
+    this functionality if libcurl is available.  Use --disable-libcurl
+    to prevent this.
 
 --enable-gcs
     Implement network access to Google Cloud Storage.  By default or with
@@ -175,6 +178,12 @@ various features and specify further optional external requirements:
     and decompression.  It also includes a fast crc32 implementation.
     By default, ./configure will probe for libdeflate and use it if
     available.  To prevent this, use --without-libdeflate.
+
+Each --enable-FEATURE/--disable-FEATURE/--with-PACKAGE/--without-PACKAGE
+option listed also has an opposite, e.g., --without-external-htscodecs
+or --disable-plugins.  However, apart from those options for which the
+default is to probe for related facilities, using these opposite options
+is mostly unnecessary as they just select the default configure behaviour.
 
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
