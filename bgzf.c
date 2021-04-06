@@ -636,17 +636,21 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
             return -1;
         }
         if ((ret = deflate(&zs, Z_FINISH)) != Z_STREAM_END) {
-            if (ret == Z_OK && zs.avail_out == 0)
+            if (ret == Z_OK && zs.avail_out == 0) {
+                deflateEnd(&zs);
                 goto uncomp;
-            else
+            } else {
                 hts_log_error("Deflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
+            }
             return -1;
         }
         // If we used up the entire output buffer, then we either ran out of
         // room or we *just* fitted, but either way we may as well store
         // uncompressed for faster decode.
-        if (zs.avail_out == 0)
+        if (zs.avail_out == 0) {
+            deflateEnd(&zs);
             goto uncomp;
+        }
         if ((ret = deflateEnd(&zs)) != Z_OK) {
             hts_log_error("Call to deflateEnd failed: %s", bgzf_zerr(ret, NULL));
             return -1;
