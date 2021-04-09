@@ -428,18 +428,19 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         while ( *q && *q==' ' ) { p++; q++; }
 
         int quoted = 0;
-        char ending;
+        char ending = '\0';
         switch (*p) {
         case '"':
             quoted = 1;
             ending = '"';
+            p++;
             break;
         case '[':
             quoted = 1;
             ending = ']';
             break;
         }
-        if ( quoted ) p++, q++;
+        if ( quoted ) q++;
         while ( *q && *q != '\n' )
         {
             if ( quoted ) { if ( *q==ending && !is_escaped(p,q) ) break; }
@@ -453,6 +454,19 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             q++;
         }
         const char *r = q;
+        if (quoted && ending == ']') {
+            if (*q == ending) {
+                r++;
+                q++;
+                quoted = 0;
+            } else {
+                char buffer[320];
+                hts_log_error("Missing ']' in header line %s",
+                              hts_strprint(buffer, sizeof(buffer), '"',
+                                           line, q-line));
+                goto fail;
+            }
+        }
         while ( r > p && r[-1] == ' ' ) r--;
         if (bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p, quoted) < 0)
             goto fail;
