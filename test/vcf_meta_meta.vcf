@@ -1,0 +1,9 @@
+##fileformat=VCFv4.3
+##FILTER=<ID=PASS,Description="All filters passed">
+##META=<ID=Assay,Number=.,Type=String,Values=[WholeGenome, Exome]>
+##META=<ID=Disease,Number=.,Type=String,Values=[None, Cancer]>
+##META=<ID=Ethnicity,Number=.,Type=String,Values=[AFR, CEU, ASN, MEX]>
+##META=<ID=Tissue,Number=.,Type=String,Values=[Blood, Breast, Colon, Lung, ?]>
+##contig=<ID=1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+1	123	.	TC	T	.	.	.
