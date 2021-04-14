@@ -326,7 +326,6 @@ in  the top-level htslib directory to update it, and then re-run configure.
 You have an incomplete distribution.  Please try downloading one of the
 official releases from https://www.htslib.org
 ])])])])
-AC_SUBST([selected_htscodecs_mk])
 
 AS_IF([test "x$with_libdeflate" != "xno"],
   [libdeflate=ok
@@ -474,5 +473,28 @@ AC_SUBST([private_LIBS])
 AC_SUBST([static_LDFLAGS])
 AC_SUBST([static_LIBS])
 
-AC_CONFIG_FILES([config.mk htscodecs.mk htslib.pc.tmp:htslib.pc.in])
+AC_CONFIG_FILES([config.mk htslib.pc.tmp:htslib.pc.in])
+AC_CONFIG_LINKS([htscodecs.mk:$selected_htscodecs_mk])
+
+if test "$srcdir" != .; then
+  # Set up for a separate build directory. As HTSlib uses a non-recursive
+  # makefile, we need to create additional build subdirectories explicitly.
+  AC_CONFIG_LINKS([Makefile:Makefile htslib.mk:htslib.mk])
+  AC_CONFIG_FILES([htslib_vars.mk:builddir_vars.mk.in])
+  AC_CONFIG_COMMANDS([mkdir],
+    [AS_MKDIR_P([cram])
+     AS_MKDIR_P([htscodecs/htscodecs])
+     AS_MKDIR_P([htscodecs/tests])
+     AS_MKDIR_P([test/fuzz])
+     AS_MKDIR_P([test/longrefs])
+     AS_MKDIR_P([test/tabix])])
+fi
+
+# @HTSDIRslash_if_relsrcdir@ will be empty when $srcdir is absolute
+case "$srcdir" in
+  /*) HTSDIRslash_if_relsrcdir= ;;
+  *)  HTSDIRslash_if_relsrcdir='$(HTSDIR)/' ;;
+esac
+AC_SUBST([HTSDIRslash_if_relsrcdir])
+
 AC_OUTPUT
