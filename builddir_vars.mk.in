@@ -1,0 +1,58 @@
+# Separate build directory Makefile overrides for htslib.
+#
+#    Copyright (C) 2021 University of Glasgow.
+#
+#    Author: John Marshall <jmarshall@hey.com>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
+# This is @configure_input@
+#
+# When building from a separate build directory, this file is included by
+# HTSlib's Makefile or htslib.mk instead of htslib_vars.mk. It adjusts
+# variables to account for a separate source directory and then includes
+# the real makefile fragment.
+
+ifneq "$(HTSPREFIX)" ""
+# When included externally via htslib.mk, just update $(HTSSRCDIR) and hence
+# $(HTSPREFIX) to point to the source directory (without using any extra
+# unprefixed variables, which would be in the external project's namespace).
+
+# Set to $(HTSDIR)/$(srcdir) (or just $(srcdir) if that's absolute)
+HTSSRCDIR = @HTSDIRslash_if_relsrcdir@@srcdir@
+
+include $(HTSSRCDIR)/htslib_vars.mk
+
+else
+# When included from HTSlib's Makefile, override $(srcdir) and set VPATH,
+# and make any other adjustments required. ($(HTSPREFIX) remains empty as
+# the items it prefixes will be found via VPATH instead.)
+
+srcdir = @srcdir@
+VPATH  = @srcdir@
+
+srcprefix = $(srcdir)/
+
+# Ensure that htscodecs.c can include its version.h. This -I option must come
+# before -I. so that these targets get this version.h rather than HTSlib's.
+htscodecs/htscodecs/htscodecs.o htscodecs/htscodecs/htscodecs.pico: ALL_CPPFLAGS = -Ihtscodecs/htscodecs -I. $(CPPFLAGS)
+
+include $(srcdir)/htslib_vars.mk
+
+endif
