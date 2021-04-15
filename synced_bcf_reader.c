@@ -171,12 +171,14 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
 
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 {
-    assert( !readers->regions );
     if ( readers->nreaders )
     {
         hts_log_error("Must call bcf_sr_set_regions() before bcf_sr_add_reader()");
         return -1;
     }
+
+    assert( !readers->regions );
+
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
