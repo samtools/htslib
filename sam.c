@@ -3710,7 +3710,8 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         if (*fp->line.s == (fp->format.format == fastq_format ? '+' : '>')
             || ret == -1)
             break;
-        kputsn(fp->line.s, fp->line.l, &x->seq);
+        if (kputsn(fp->line.s, fp->line.l, &x->seq) < 0)
+            return -2;
     }
 
     // Qual
@@ -3720,7 +3721,10 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         do {
             if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0)
                 return -2;
-            kputsn(fp->line.s, fp->line.l, &x->qual);
+            if (fp->line.l > remainder)
+                return -2;
+            if (kputsn(fp->line.s, fp->line.l, &x->qual) < 0)
+                return -2;
             remainder -= fp->line.l;
         } while (remainder > 0);
 
@@ -3787,14 +3791,14 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
 
     if (ret >= 0 && barcode_len)
         if (bam_aux_append(b, x->BC, 'Z', barcode_len, (uint8_t *)barcode) < 0)
-            ret = -1;
+            ret = -2;
 
     if (!x->aux)
         return ret;
 
     // Identify any SAM style aux tags in comments too.
     if (aux_parse(&kc->s[barcode_len], kc->s + kc->l, b, 1, x->tags) < 0)
-        ret = -1;
+        ret = -2;
 
     return ret;
 }
