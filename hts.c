@@ -1576,7 +1576,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     case FASTQ_OPT_RNUM:
         if (fp->format.format == fastq_format ||
             fp->format.format == fasta_format)
-            fastq_state_set(fp, opt);
+            return fastq_state_set(fp, opt);
         return 0;
 
     case FASTQ_OPT_AUX:
@@ -1585,7 +1585,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
             va_start(args, opt);
             char *list = va_arg(args, char *);
             va_end(args);
-            fastq_state_set(fp, opt, list);
+            return fastq_state_set(fp, opt, list);
         }
         return 0;
 
@@ -1595,7 +1595,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
             va_start(args, opt);
             char *bc = va_arg(args, char *);
             va_end(args);
-            fastq_state_set(fp, opt, bc);
+            return fastq_state_set(fp, opt, bc);
         }
         return 0;
 

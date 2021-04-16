@@ -3596,15 +3596,15 @@ void fastq_state_destroy(htsFile *fp) {
     }
 }
 
-void fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
+int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
     va_list args;
 
     if (!fp)
-        return;
+        return -1;
     if (!fp->state)
         if (!(fp->state = fastq_state_init(fp->format.format == fastq_format
                                            ? '@' : '>')))
-            return;
+            return -1;
 
     fastq_state *x = (fastq_state *)fp->state;
 
@@ -3621,17 +3621,19 @@ void fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
         if (tag && strcmp(tag, "1") != 0) {
             if (!x->tags)
                 if (!(x->tags = kh_init(tag)))
-                    return;
+                    return -1;
 
             size_t i, tlen = strlen(tag);
             for (i = 0; i+3 <= tlen+1; i += 3) {
                 if (tag[i+0] == ',' || tag[i+1] == ',' ||
                     !(tag[i+2] == ',' || tag[i+2] == '\0')) {
-                    hts_log_error("Bad tag format '%.3s'; skipping option", tag+i);
+                    hts_log_warning("Bad tag format '%.3s'; skipping option", tag+i);
                     break;
                 }
                 int ret, tcode = tag[i+0]*256 + tag[i+1];
                 kh_put(tag, x->tags, tcode, &ret);
+                if (ret < 0)
+                    return -1;
             }
         }
         break;
@@ -3653,6 +3655,7 @@ void fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
     default:
         break;
     }
+    return 0;
 }
 
 static int fastq_parse1(htsFile *fp, bam1_t *b) {
