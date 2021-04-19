@@ -302,6 +302,9 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *  file are currently not supported.
  *  Targets (but not regions) can be prefixed with "^" to request logical complement,
  *  for example "^X,Y,MT" indicates that sequences X, Y and MT should be skipped.
+ *
+ *  API note: bcf_sr_set_regions/bcf_sr_set_targets MUST be called before the
+ *  first call to bcf_sr_add_reader().
  */
 HTSLIB_EXPORT
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
