@@ -4840,10 +4840,18 @@ static inline int cigar_iref2iseq_next(const uint32_t **cigar,
     return -1;
 }
 
+// Given overlapping read 'a' (left) and 'b' (right) on the same
+// template, adjust quality values to zero for either a or b.
+// Note versions 1.12 and earlier always removed quality from 'b' for
+// matching bases.  Now we select a or b semi-randomly based on name hash.
+// Returns 0 on success,
+//        -1 on failure
 static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
 {
-    const uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
-    const uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
+    const uint32_t *a_cigar = bam_get_cigar(a),
+        *a_cigar_max = a_cigar + a->core.n_cigar;
+    const uint32_t *b_cigar = bam_get_cigar(b),
+        *b_cigar_max = b_cigar + b->core.n_cigar;
     hts_pos_t a_icig = 0, a_iseq = 0;
     hts_pos_t b_icig = 0, b_iseq = 0;
     uint8_t *a_qual = bam_get_qual(a), *b_qual = bam_get_qual(b);
@@ -4852,69 +4860,92 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
     hts_pos_t iref   = b->core.pos;
     hts_pos_t a_iref = iref - a->core.pos;
     hts_pos_t b_iref = iref - b->core.pos;
-    int a_ret = cigar_iref2iseq_set(&a_cigar, a_cigar_max, &a_icig, &a_iseq, &a_iref);
-    if ( a_ret<0 ) return a_ret<-1 ? -1:0;  // no overlap or error
-    int b_ret = cigar_iref2iseq_set(&b_cigar, b_cigar_max, &b_icig, &b_iseq, &b_iref);
-    if ( b_ret<0 ) return b_ret<-1 ? -1:0;  // no overlap or error
 
-    #if DBG
-        fprintf(stderr,"tweak %s  n_cigar=%d %d  .. %d-%d vs %"PRIhts_pos"-%"PRIhts_pos"\n", bam_get_qname(a), a->core.n_cigar, b->core.n_cigar,
-            a->core.pos+1,a->core.pos+bam_cigar2rlen(a->core.n_cigar,bam_get_cigar(a)), b->core.pos+1, b->core.pos+bam_cigar2rlen(b->core.n_cigar,bam_get_cigar(b)));
-    #endif
+    int a_ret = cigar_iref2iseq_set(&a_cigar, a_cigar_max,
+                                    &a_icig, &a_iseq, &a_iref);
+    if ( a_ret<0 )
+        // no overlap or error
+        return a_ret<-1 ? -1:0;
 
+    int b_ret = cigar_iref2iseq_set(&b_cigar, b_cigar_max,
+                                    &b_icig, &b_iseq, &b_iref);
+    if ( b_ret<0 )
+        // no overlap or error
+        return b_ret<-1 ? -1:0;
+
+    // Determine which seq is the one getting modified qualities.
+    uint8_t amul, bmul;
+    if (__ac_Wang_hash(__ac_X31_hash_string(bam_get_qname(a))) & 1) {
+        amul = 1;
+        bmul = 0;
+    } else {
+        amul = 0;
+        bmul = 1;
+    }
+
+    // Loop over the overlapping region nulling qualities in either
+    // seq a or b.
     int err = 0;
     while ( 1 )
     {
-        // Increment reference position
+        // Step to next matching reference position in a and b
         while ( a_ret >= 0 && a_iref>=0 && a_iref < iref - a->core.pos )
-            a_ret = cigar_iref2iseq_next(&a_cigar, a_cigar_max, &a_icig, &a_iseq, &a_iref);
-        if ( a_ret<0 ) { err = a_ret<-1?-1:0; break; }   // done
-        if ( iref < a_iref + a->core.pos ) iref = a_iref + a->core.pos;
+            a_ret = cigar_iref2iseq_next(&a_cigar, a_cigar_max,
+                                         &a_icig, &a_iseq, &a_iref);
+        if ( a_ret<0 ) { // done
+            err = a_ret<-1?-1:0;
+            break;
+        }
+        if ( iref < a_iref + a->core.pos )
+            iref = a_iref + a->core.pos;
 
         while ( b_ret >= 0 && b_iref>=0 && b_iref < iref - b->core.pos )
-            b_ret = cigar_iref2iseq_next(&b_cigar, b_cigar_max, &b_icig, &b_iseq, &b_iref);
-        if ( b_ret<0 ) { err = b_ret<-1?-1:0; break; }  // done
-        if ( iref < b_iref + b->core.pos ) iref = b_iref + b->core.pos;
+            b_ret = cigar_iref2iseq_next(&b_cigar, b_cigar_max, &b_icig,
+                                         &b_iseq, &b_iref);
+        if ( b_ret<0 ) { // done
+            err = b_ret<-1?-1:0;
+            break;
+        }
+        if ( iref < b_iref + b->core.pos )
+            iref = b_iref + b->core.pos;
 
         iref++;
-        if ( a_iref+a->core.pos != b_iref+b->core.pos ) continue;   // only CMATCH positions, don't know what to do with indels
+
+        if ( a_iref+a->core.pos != b_iref+b->core.pos )
+            // only CMATCH positions, don't know what to do with indels
+            continue;
 
         if (a_iseq > a->core.l_qseq || b_iseq > b->core.l_qseq)
-            return -1;  // Fell off end of sequence, bad CIGAR?
+            // Fell off end of sequence, bad CIGAR?
+            return -1;
 
-        if ( bam_seqi(a_seq,a_iseq) == bam_seqi(b_seq,b_iseq) )
-        {
-            #if DBG
-                fprintf(stderr,"%c",seq_nt16_str[bam_seqi(a_seq,a_iseq)]);
-            #endif
-            // we are very confident about this base
+        // We're finally at the same ref base in both a and b.
+        // Check if the bases match (confident) or mismatch
+        // (not so confident).
+        if ( bam_seqi(a_seq,a_iseq) == bam_seqi(b_seq,b_iseq) ) {
+            // We are very confident about this base.  Use sum of quals
             int qual = a_qual[a_iseq] + b_qual[b_iseq];
-            a_qual[a_iseq] = qual>200 ? 200 : qual;
-            b_qual[b_iseq] = 0;
-        }
-        else
-        {
-            if ( a_qual[a_iseq] >= b_qual[b_iseq] )
-            {
-                #if DBG
-                    fprintf(stderr,"[%c/%c]",seq_nt16_str[bam_seqi(a_seq,a_iseq)],tolower_c(seq_nt16_str[bam_seqi(b_seq,b_iseq)]));
-                #endif
-                a_qual[a_iseq] = 0.8 * a_qual[a_iseq];  // not so confident about a_qual anymore given the mismatch
+            a_qual[a_iseq] = amul * (qual>200 ? 200 : qual);
+            b_qual[b_iseq] = bmul * (qual>200 ? 200 : qual);;
+        } else {
+            // Not so confident about anymore given the mismatch.
+            // Reduce qual for lowest quality base.
+            if ( a_qual[a_iseq] > b_qual[b_iseq] ) {
+                // A highest qual base; keep
+                a_qual[a_iseq] = 0.8 * a_qual[a_iseq];
                 b_qual[b_iseq] = 0;
-            }
-            else
-            {
-                #if DBG
-                    fprintf(stderr,"[%c/%c]",tolower_c(seq_nt16_str[bam_seqi(a_seq,a_iseq)]),seq_nt16_str[bam_seqi(b_seq,b_iseq)]);
-                #endif
+            } else if (a_qual[a_iseq] < b_qual[b_iseq] ) {
+                // B highest qual base; keep
                 b_qual[b_iseq] = 0.8 * b_qual[b_iseq];
                 a_qual[a_iseq] = 0;
+            } else {
+                // Both equal, so pick randomly
+                a_qual[a_iseq] = amul * 0.8 * a_qual[a_iseq];
+                b_qual[b_iseq] = bmul * 0.8 * b_qual[b_iseq];
             }
         }
     }
-    #if DBG
-        fprintf(stderr,"\n");
-    #endif
+
     return err;
 }
 
