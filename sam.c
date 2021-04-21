@@ -2405,6 +2405,7 @@ static inline unsigned int parse_sam_flag(char *v, char **rv, int *overflow) {
 static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient,
                             khash_t(tag) *tag_whitelist) {
     int overflow = 0;
+    int checkpoint;
     char logbuf[40];
     char *q = start, *p = end;
 
@@ -2416,6 +2417,7 @@ static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient,
                     q++;                        \
                 while (q < p && isspace_c(*q))    \
                     q++;                        \
+                b->l_data = checkpoint;         \
                 goto loop;                      \
             } else {                            \
                 hts_log_error(__VA_ARGS__);     \
@@ -2426,6 +2428,7 @@ static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient,
 
     while (q < p) loop: {
         char type;
+        checkpoint = b->l_data;
         if (p - q < 5) {
             if (lenient) {
                 break;
@@ -2533,7 +2536,7 @@ static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient,
         q++;
     }
 
-    _parse_err(overflow != 0, "numeric value out of allowed range");
+    _parse_err(!lenient && overflow != 0, "numeric value out of allowed range");
 #undef _parse_err
 
     return 0;
