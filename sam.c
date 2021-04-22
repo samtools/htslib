@@ -1804,6 +1804,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     if (sn) {
                         hts_log_warning("SQ header line has more than one SN: tag");
                         free(sn);
+                        sn = NULL;
                     }
                     sn = (char*)calloc(r - q + 1, 1);
                     if (!sn)
@@ -1831,6 +1832,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     if (!absent) {
                         hts_log_warning("Duplicated sequence '%s'", sn);
                         free(sn);
+                        sn = NULL;
                     } else {
                         if (ln >= UINT32_MAX) {
                             // Stash away ref length that
@@ -1841,7 +1843,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                                 if (!long_refs)
                                     goto error;
                             }
-                            k2 = kh_put(s2i, long_refs, sn, &absent);
+                            k2 = kh_put(s2i, long_refs, kh_key(d, k), &absent);
                             if (absent < 0)
                                 goto error;
                             kh_val(long_refs, k2) = ln;
@@ -1854,6 +1856,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                 } else {
                     hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
                     free(sn);
+                    sn = NULL;
                 }
             } else {
                 hts_log_warning("Ignored @SQ line with missing SN: tag");
@@ -1916,6 +1919,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
             if (!absent) {
                 hts_log_warning("Duplicated sequence '%s'", sn);
                 free(sn);
+                sn = NULL;
             } else {
                 if (ln >= UINT32_MAX) {
                     // Stash away ref length that
@@ -1927,7 +1931,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                         if (!long_refs)
                             goto error;
                     }
-                    k2 = kh_put(s2i, long_refs, sn, &absent);
+                    k2 = kh_put(s2i, long_refs, kh_key(d, k), &absent);
                     if (absent < 0)
                         goto error;
                     kh_val(long_refs, k2) = ln;
