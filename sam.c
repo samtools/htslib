@@ -54,6 +54,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
+KHASH_SET_INIT_INT(tag)
 
 #ifndef EFTYPE
 #define EFTYPE ENOEXEC
@@ -2027,6 +2028,10 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
     case sam:
         return sam_hdr_create(fp);
 
+    case fastq_format:
+    case fasta_format:
+        return sam_hdr_init();
+
     case empty_format:
         errno = EPIPE;
         return NULL;
@@ -2043,9 +2048,6 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         errno = EINVAL;
         return -1;
     }
-
-    if (!h->hrecs && !h->text)
-        return 0;
 
     switch (fp->format.format) {
     case binary_format:
@@ -2070,6 +2072,8 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         fp->format.format = sam;
         /* fall-through */
     case sam: {
+        if (!h->hrecs && !h->text)
+            return 0;
         char *text;
         kstring_t hdr_ks = { 0, 0, NULL };
         size_t l_text;
@@ -2128,6 +2132,11 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
             if (hflush(fp->fp.hfile) != 0) return -1;
         }
         }
+        break;
+
+    case fastq_format:
+    case fasta_format:
+        // Nothing to output; FASTQ has no file headers.
         break;
 
     default:
@@ -2387,6 +2396,155 @@ static inline unsigned int parse_sam_flag(char *v, char **rv, int *overflow) {
     }
 }
 
+// Parse tag line and append to bam object b.
+// Shared by both SAM and FASTQ parsers.
+//
+// The difference between the two is how lenient we are to recognising
+// non-compliant strings.  The FASTQ parser glosses over arbitrary
+// non-SAM looking strings.
+static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient,
+                            khash_t(tag) *tag_whitelist) {
+    int overflow = 0;
+    int checkpoint;
+    char logbuf[40];
+    char *q = start, *p = end;
+
+#define _parse_err(cond, ...)                   \
+    do {                                        \
+        if (cond) {                             \
+            if (lenient) {                      \
+                while (q < p && !isspace_c(*q))   \
+                    q++;                        \
+                while (q < p && isspace_c(*q))    \
+                    q++;                        \
+                b->l_data = checkpoint;         \
+                goto loop;                      \
+            } else {                            \
+                hts_log_error(__VA_ARGS__);     \
+                goto err_ret;                   \
+            }                                   \
+        }                                       \
+    } while (0)
+
+    while (q < p) loop: {
+        char type;
+        checkpoint = b->l_data;
+        if (p - q < 5) {
+            if (lenient) {
+                break;
+            } else {
+                hts_log_error("Incomplete aux field");
+                goto err_ret;
+            }
+        }
+        _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
+
+        if (lenient && (q[2] | q[4]) != ':') {
+            while (q < p && !isspace_c(*q))
+                q++;
+            while (q < p && isspace_c(*q))
+                q++;
+            continue;
+        }
+
+        if (tag_whitelist) {
+            int tt = q[0]*256 + q[1];
+            if (kh_get(tag, tag_whitelist, tt) == kh_end(tag_whitelist)) {
+                while (q < p && *q != '\t')
+                    q++;
+                continue;
+            }
+        }
+
+        // Copy over id
+        if (possibly_expand_bam_data(b, 2) < 0) goto err_ret;
+        memcpy(b->data + b->l_data, q, 2); b->l_data += 2;
+        q += 3; type = *q++; ++q; // q points to value
+        if (type != 'Z' && type != 'H') // the only zero length acceptable fields
+            _parse_err(*q <= '\t', "incomplete aux field");
+
+        // Ensure enough space for a double + type allocated.
+        if (possibly_expand_bam_data(b, 16) < 0) goto err_ret;
+
+        if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
+            b->data[b->l_data++] = 'A';
+            b->data[b->l_data++] = *q++;
+        } else if (type == 'i' || type == 'I') {
+            if (*q == '-') {
+                int32_t x = hts_str2int(q, &q, 32, &overflow);
+                if (x >= INT8_MIN) {
+                    b->data[b->l_data++] = 'c';
+                    b->data[b->l_data++] = x;
+                } else if (x >= INT16_MIN) {
+                    b->data[b->l_data++] = 's';
+                    i16_to_le(x, b->data + b->l_data);
+                    b->l_data += 2;
+                } else {
+                    b->data[b->l_data++] = 'i';
+                    i32_to_le(x, b->data + b->l_data);
+                    b->l_data += 4;
+                }
+            } else {
+                uint32_t x = hts_str2uint(q, &q, 32, &overflow);
+                if (x <= UINT8_MAX) {
+                    b->data[b->l_data++] = 'C';
+                    b->data[b->l_data++] = x;
+                } else if (x <= UINT16_MAX) {
+                    b->data[b->l_data++] = 'S';
+                    u16_to_le(x, b->data + b->l_data);
+                    b->l_data += 2;
+                } else {
+                    b->data[b->l_data++] = 'I';
+                    u32_to_le(x, b->data + b->l_data);
+                    b->l_data += 4;
+                }
+            }
+        } else if (type == 'f') {
+            b->data[b->l_data++] = 'f';
+            float_to_le(strtod(q, &q), b->data + b->l_data);
+            b->l_data += sizeof(float);
+        } else if (type == 'd') {
+            b->data[b->l_data++] = 'd';
+            double_to_le(strtod(q, &q), b->data + b->l_data);
+            b->l_data += sizeof(double);
+        } else if (type == 'Z' || type == 'H') {
+            char *end = strchr(q, '\t');
+            if (!end) end = q + strlen(q);
+            _parse_err(type == 'H' && ((end-q)&1) != 0,
+                       "hex field does not have an even number of digits");
+            b->data[b->l_data++] = type;
+            if (possibly_expand_bam_data(b, end - q + 1) < 0) goto err_ret;
+            memcpy(b->data + b->l_data, q, end - q);
+            b->l_data += end - q;
+            b->data[b->l_data++] = '\0';
+            q = end;
+        } else if (type == 'B') {
+            uint32_t n;
+            char *r;
+            type = *q++; // q points to the first ',' following the typing byte
+            _parse_err(*q && *q != ',' && *q != '\t',
+                       "B aux field type not followed by ','");
+
+            for (r = q, n = 0; *r > '\t'; ++r)
+                if (*r == ',') ++n;
+
+            if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
+                goto err_ret;
+        } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
+
+        while (*q > '\t') { q++; } // Skip any junk to next tab
+        q++;
+    }
+
+    _parse_err(!lenient && overflow != 0, "numeric value out of allowed range");
+#undef _parse_err
+
+    return 0;
+
+err_ret:
+    return -2;
+}
+
 int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 {
 #define _read_token(_p) (_p); do { char *tab = strchr((_p), '\t'); if (!tab) goto err_ret; *tab = '\0'; (_p) = tab + 1; } while (0)
@@ -2552,94 +2710,10 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(failed, "invalid QUAL character");
         p += c->l_qseq + 1;
     }
+
     // aux
-    q = p;
-    p = s->s + s->l;
-    while (q < p) {
-        char type;
-        _parse_err(p - q < 5, "incomplete aux field");
-        _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
-        // Copy over id
-        if (possibly_expand_bam_data(b, 2) < 0) goto err_ret;
-        memcpy(b->data + b->l_data, q, 2); b->l_data += 2;
-        q += 3; type = *q++; ++q; // q points to value
-        if (type != 'Z' && type != 'H') // the only zero length acceptable fields
-            _parse_err(*q <= '\t', "incomplete aux field");
-
-        // Ensure enough space for a double + type allocated.
-        if (possibly_expand_bam_data(b, 16) < 0) goto err_ret;
-
-        if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
-            b->data[b->l_data++] = 'A';
-            b->data[b->l_data++] = *q++;
-        } else if (type == 'i' || type == 'I') {
-            if (*q == '-') {
-                int32_t x = hts_str2int(q, &q, 32, &overflow);
-                if (x >= INT8_MIN) {
-                    b->data[b->l_data++] = 'c';
-                    b->data[b->l_data++] = x;
-                } else if (x >= INT16_MIN) {
-                    b->data[b->l_data++] = 's';
-                    i16_to_le(x, b->data + b->l_data);
-                    b->l_data += 2;
-                } else {
-                    b->data[b->l_data++] = 'i';
-                    i32_to_le(x, b->data + b->l_data);
-                    b->l_data += 4;
-                }
-            } else {
-                uint32_t x = hts_str2uint(q, &q, 32, &overflow);
-                if (x <= UINT8_MAX) {
-                    b->data[b->l_data++] = 'C';
-                    b->data[b->l_data++] = x;
-                } else if (x <= UINT16_MAX) {
-                    b->data[b->l_data++] = 'S';
-                    u16_to_le(x, b->data + b->l_data);
-                    b->l_data += 2;
-                } else {
-                    b->data[b->l_data++] = 'I';
-                    u32_to_le(x, b->data + b->l_data);
-                    b->l_data += 4;
-                }
-            }
-        } else if (type == 'f') {
-            b->data[b->l_data++] = 'f';
-            float_to_le(strtod(q, &q), b->data + b->l_data);
-            b->l_data += sizeof(float);
-        } else if (type == 'd') {
-            b->data[b->l_data++] = 'd';
-            double_to_le(strtod(q, &q), b->data + b->l_data);
-            b->l_data += sizeof(double);
-        } else if (type == 'Z' || type == 'H') {
-            char *end = strchr(q, '\t');
-            if (!end) end = q + strlen(q);
-            _parse_err(type == 'H' && ((end-q)&1) != 0,
-                       "hex field does not have an even number of digits");
-            b->data[b->l_data++] = type;
-            if (possibly_expand_bam_data(b, end - q + 1) < 0) goto err_ret;
-            memcpy(b->data + b->l_data, q, end - q);
-            b->l_data += end - q;
-            b->data[b->l_data++] = '\0';
-            q = end;
-        } else if (type == 'B') {
-            uint32_t n;
-            char *r;
-            type = *q++; // q points to the first ',' following the typing byte
-            _parse_err(*q && *q != ',' && *q != '\t',
-                       "B aux field type not followed by ','");
-
-            for (r = q, n = 0; *r > '\t'; ++r)
-                if (*r == ',') ++n;
-
-            if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
-                goto err_ret;
-        } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
-
-        while (*q > '\t') { q++; } // Skip any junk to next tab
-        q++;
-    }
-
-    _parse_err(overflow != 0, "numeric value out of allowed range");
+    if (aux_parse(p, s->s + s->l, b, 0, NULL) < 0)
+        goto err_ret;
 
     if (bam_tag2cigar(b, 1, 1) < 0)
         return -2;
@@ -3488,6 +3562,250 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     return 0;
 }
 
+typedef struct {
+    kstring_t name;
+    kstring_t comment; // NB: pointer into name, do not free
+    kstring_t seq;
+    kstring_t qual;
+    int casava;
+    int aux;
+    int rnum;
+    char BC[3];         // aux tag ID for barcode
+    khash_t(tag) *tags; // which aux tags to use (if empty, use all).
+    char nprefix;
+} fastq_state;
+
+// Initialise fastq state.
+// Name char of '@' or '>' distinguishes fastq vs fasta variant
+static fastq_state *fastq_state_init(int name_char) {
+    fastq_state *x = (fastq_state *)calloc(1, sizeof(*x));
+    if (!x)
+        return NULL;
+    strcpy(x->BC, "BC");
+    x->nprefix = name_char;
+
+    return x;
+}
+
+void fastq_state_destroy(htsFile *fp) {
+    if (fp->state) {
+        fastq_state *x = (fastq_state *)fp->state;
+        if (x->tags)
+            kh_destroy(tag, x->tags);
+        ks_free(&x->name);
+        ks_free(&x->seq);
+        ks_free(&x->qual);
+        free(fp->state);
+    }
+}
+
+int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
+    va_list args;
+
+    if (!fp)
+        return -1;
+    if (!fp->state)
+        if (!(fp->state = fastq_state_init(fp->format.format == fastq_format
+                                           ? '@' : '>')))
+            return -1;
+
+    fastq_state *x = (fastq_state *)fp->state;
+
+    switch (opt) {
+    case FASTQ_OPT_CASAVA:
+        x->casava = 1;
+        break;
+
+    case FASTQ_OPT_AUX: {
+        va_start(args, opt);
+        x->aux = 1;
+        char *tag = va_arg(args, char *);
+        va_end(args);
+        if (tag && strcmp(tag, "1") != 0) {
+            if (!x->tags)
+                if (!(x->tags = kh_init(tag)))
+                    return -1;
+
+            size_t i, tlen = strlen(tag);
+            for (i = 0; i+3 <= tlen+1; i += 3) {
+                if (tag[i+0] == ',' || tag[i+1] == ',' ||
+                    !(tag[i+2] == ',' || tag[i+2] == '\0')) {
+                    hts_log_warning("Bad tag format '%.3s'; skipping option", tag+i);
+                    break;
+                }
+                int ret, tcode = tag[i+0]*256 + tag[i+1];
+                kh_put(tag, x->tags, tcode, &ret);
+                if (ret < 0)
+                    return -1;
+            }
+        }
+        break;
+    }
+
+    case FASTQ_OPT_BARCODE: {
+        va_start(args, opt);
+        char *bc = va_arg(args, char *);
+        va_end(args);
+        strncpy(x->BC, bc, 2);
+        x->BC[2] = 0;
+        break;
+    }
+
+    case FASTQ_OPT_RNUM:
+        x->rnum = 1;
+        break;
+
+    default:
+        break;
+    }
+    return 0;
+}
+
+static int fastq_parse1(htsFile *fp, bam1_t *b) {
+    fastq_state *x = (fastq_state *)fp->state;
+    size_t i, l;
+    int ret = 0;
+
+    if (fp->format.format == fasta_format && fp->line.s) {
+        // For FASTA we've already read the >name line; steal it
+        // Not the most efficient, but we don't optimise for fasta reading.
+        if (fp->line.l == 0)
+            return -1; // EOF
+
+        free(x->name.s);
+        x->name = fp->line;
+        fp->line.l = fp->line.m = 0;
+        fp->line.s = NULL;
+    } else {
+        // Read a FASTQ format entry.
+        ret = hts_getline(fp, KS_SEP_LINE, &x->name);
+        if (ret == -1)
+            return -1;  // EOF
+        else if (ret < -1)
+            return ret; // ERR
+    }
+
+    // Name
+    if (*x->name.s != x->nprefix)
+        return -2;
+
+    i = 0; l = x->name.l;
+    char *s = x->name.s;
+    while (i < l && !isspace_c(s[i]))
+        i++;
+    if (i < l) {
+        s[i] = 0;
+        x->name.l = i++;
+    }
+
+    // Comment; a kstring struct, but pointer into name line.  (Do not free)
+    while (i < l && isspace_c(s[i]))
+        i++;
+    x->comment.s = s+i;
+    x->comment.l = l - i;
+
+    // Seq
+    x->seq.l = 0;
+    for (;;) {
+        if ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) < 0)
+            if (fp->format.format == fastq_format || ret < -1)
+                return -2;
+        if (*fp->line.s == (fp->format.format == fastq_format ? '+' : '>')
+            || ret == -1)
+            break;
+        if (kputsn(fp->line.s, fp->line.l, &x->seq) < 0)
+            return -2;
+    }
+
+    // Qual
+    if (fp->format.format == fastq_format) {
+        size_t remainder = x->seq.l;
+        x->qual.l = 0;
+        do {
+            if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0)
+                return -2;
+            if (fp->line.l > remainder)
+                return -2;
+            if (kputsn(fp->line.s, fp->line.l, &x->qual) < 0)
+                return -2;
+            remainder -= fp->line.l;
+        } while (remainder > 0);
+
+        // Decr qual
+        for (i = 0; i < x->qual.l; i++)
+            x->qual.s[i] -= '!';
+    }
+
+    int flag = BAM_FUNMAP; int pflag = BAM_FMUNMAP | BAM_FPAIRED;
+    if (x->name.l > 2 &&
+        x->name.s[x->name.l-2] == '/' &&
+        isdigit_c(x->name.s[x->name.l-1])) {
+        switch(x->name.s[x->name.l-1]) {
+        case '1': flag |= BAM_FREAD1 | pflag; break;
+        case '2': flag |= BAM_FREAD2 | pflag; break;
+        default : flag |= BAM_FREAD1 | BAM_FREAD2 | pflag; break;
+        }
+        x->name.s[x->name.l-=2] = 0;
+    }
+
+    // Convert to BAM
+    ret = bam_set1(b,
+                   x->name.l-1, x->name.s+1,
+                   flag,
+                   -1, -1, 0, // ref '*', pos, mapq,
+                   0, NULL,     // no cigar,
+                   -1, -1, 0,    // mate
+                   x->seq.l, x->seq.s, x->qual.s,
+                   0);
+
+    // Identify Illumina CASAVA strings.
+    // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
+    char *barcode = NULL;
+    int barcode_len = 0;
+    kstring_t *kc = &x->comment;
+    char *endptr;
+    if (x->casava &&
+        // \d:[YN]:\d+:[ACGTN]+
+        kc->l > 6 && (kc->s[1] | kc->s[3]) == ':' && isdigit_c(kc->s[0]) &&
+        strtol(kc->s+4, &endptr, 10) >= 0 && endptr != kc->s+4
+        && *endptr == ':') {
+
+        // read num
+        switch(kc->s[0]) {
+        case '1': b->core.flag |= BAM_FREAD1 | pflag; break;
+        case '2': b->core.flag |= BAM_FREAD2 | pflag; break;
+        default : b->core.flag |= BAM_FREAD1 | BAM_FREAD2 | pflag; break;
+        }
+
+        if (kc->s[2] == 'Y')
+            b->core.flag |= BAM_FQCFAIL;
+
+        // Barcode, maybe numeric in which case we skip it
+        if (!isdigit_c(endptr[1])) {
+            barcode = endptr+1;
+            for (i = barcode - kc->s; i < kc->l; i++)
+                if (isspace_c(kc->s[i]))
+                    break;
+
+            kc->s[i] = 0;
+            barcode_len = i+1-(barcode - kc->s);
+        }
+    }
+
+    if (ret >= 0 && barcode_len)
+        if (bam_aux_append(b, x->BC, 'Z', barcode_len, (uint8_t *)barcode) < 0)
+            ret = -2;
+
+    if (!x->aux)
+        return ret;
+
+    // Identify any SAM style aux tags in comments too.
+    if (aux_parse(&kc->s[barcode_len], kc->s + kc->l, b, 1, x->tags) < 0)
+        ret = -2;
+
+    return ret;
+}
+
 // Internal component of sam_read1 below
 static inline int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
     int ret = bam_read1(fp->fp.bgzf, b);
@@ -3628,6 +3946,18 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             ret = sam_read1_sam(fp, h, b);
             break;
 
+        case fasta_format:
+        case fastq_format: {
+            fastq_state *x = (fastq_state *)fp->state;
+            if (!x) {
+                if (!(fp->state = fastq_state_init(fp->format.format
+                                                   == fastq_format ? '@' : '>')))
+                    return -2;
+            }
+
+            return fastq_parse1(fp, b);
+        }
+
         case empty_format:
             errno = EPIPE;
             return -3;
@@ -3734,6 +4064,103 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     str->l = 0;
     return sam_format1_append(h, b, str);
+}
+
+static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end);
+int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
+{
+    unsigned flag = b->core.flag;
+    int i, e = 0, len = b->core.l_qseq;
+    uint8_t *seq, *qual;
+
+    str->l = 0;
+
+    if (len == 0) return 0;
+
+    // Name
+    if (kputc(x->nprefix, str) == EOF || kputs(bam_get_qname(b), str) == EOF)
+        return -1;
+
+    // /1 or /2 suffix
+    if (x && x->rnum && (flag & BAM_FPAIRED)) {
+        int r12 = flag & (BAM_FREAD1 | BAM_FREAD2);
+        if (r12 == BAM_FREAD1) {
+            if (kputs("/1", str) == EOF)
+                return -1;
+        } else if (r12 == BAM_FREAD2) {
+            if (kputs("/2", str) == EOF)
+                return -1;
+        }
+    }
+
+    // Illumina CASAVA tag.
+    // This is <rnum>:<Y/N qcfail>:<control-bits>:<barcode-or-zero>
+    if (x && x->casava) {
+        int rnum = (flag & BAM_FREAD1)? 1 : (flag & BAM_FREAD2)? 2 : 0;
+        char filtered = (flag & BAM_FQCFAIL)? 'Y' : 'N';
+        uint8_t *bc = bam_aux_get(b, x->BC);
+        if (ksprintf(str, " %d:%c:0:%s", rnum, filtered,
+                     bc ? (char *)bc+1 : "0") < 0)
+            return -1;
+
+        // Replace any non-alpha with '+'.  Ie seq-seq to seq+seq
+        if (bc) {
+            int l = strlen((char *)bc+1);
+            char *c = (char *)str->s + str->l - l;
+            for (i = 0; i < l; i++)
+                if (!isalpha_c(c[i]))
+                    c[i] = '+';
+        }
+    }
+
+    // Aux tags
+    if (x && x->aux) {
+        uint8_t *s = bam_get_aux(b), *end = b->data + b->l_data;
+        while (s && end - s >= 4) {
+            int tt = s[0]*256 + s[1];
+            if (x->tags == NULL ||
+                kh_get(tag, x->tags, tt) != kh_end(x->tags)) {
+                e |= kputc_('\t', str) < 0;
+                if (!(s = (uint8_t *)sam_format_aux1(s, s[2], s+3, end, str)))
+                    return -1;
+            } else {
+                s = skip_aux(s+2, end);
+            }
+        }
+        e |= kputsn("", 0, str) < 0; // nul terminate
+    }
+
+    if (ks_resize(str, str->l + 1 + len+1 + 2 + len+1 + 1) < 0) return -1;
+    e |= kputc_('\n', str) < 0;
+
+    // Seq line
+    seq = bam_get_seq(b);
+    if (flag & BAM_FREVERSE)
+        for (i = len-1; i >= 0; i--)
+            e |= kputc_("!TGKCYSBAWRDMHVN"[bam_seqi(seq, i)], str) < 0;
+    else
+        for (i = 0; i < len; i++)
+            e |= kputc_(seq_nt16_str[bam_seqi(seq, i)], str) < 0;
+
+
+    // Qual line
+    if (x->nprefix == '@') {
+        kputsn("\n+\n", 3, str);
+        qual = bam_get_qual(b);
+        if (qual[0] == 0xff)
+            for (i = 0; i < len; i++)
+                e |= kputc_('B', str) < 0;
+        else if (flag & BAM_FREVERSE)
+            for (i = len-1; i >= 0; i--)
+                e |= kputc_(33 + qual[i], str) < 0;
+        else
+            for (i = 0; i < len; i++)
+                e |= kputc_(33 + qual[i], str) < 0;
+
+    }
+    e |= kputc('\n', str) < 0;
+
+    return e ? -1 : str->l;
 }
 
 // Sadly we need to be able to modify the bam_hdr here so we can
@@ -3863,6 +4290,28 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 
             return fp->line.l;
         }
+
+
+    case fasta_format:
+    case fastq_format: {
+        fastq_state *x = (fastq_state *)fp->state;
+        if (!x) {
+            if (!(fp->state = fastq_state_init(fp->format.format
+                                               == fastq_format ? '@' : '>')))
+                return -2;
+        }
+
+        if (fastq_format1(fp->state, b, &fp->line) < 0)
+            return -1;
+        if (fp->is_bgzf) {
+            if (bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l)
+                return -1;
+        } else {
+            if (hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l)
+                return -1;
+        }
+        return fp->line.l;
+    }
 
     default:
         errno = EBADF;
@@ -4330,6 +4779,14 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     else if (strcasecmp(format, "cram") == 0) strcpy(mode, "c");
     else if (strcasecmp(format, "sam") == 0) strcpy(mode, "");
     else if (strcasecmp(format, "sam.gz") == 0) strcpy(mode, "z");
+    else if (strcasecmp(format, "fastq") == 0 ||
+             strcasecmp(format, "fq") == 0) strcpy(mode, "f");
+    else if (strcasecmp(format, "fastq.gz") == 0 ||
+             strcasecmp(format, "fq.gz") == 0) strcpy(mode, "fz");
+    else if (strcasecmp(format, "fasta") == 0 ||
+             strcasecmp(format, "fa") == 0) strcpy(mode, "F");
+    else if (strcasecmp(format, "fasta.gz") == 0 ||
+             strcasecmp(format, "fa.gz") == 0) strcpy(mode, "Fz");
     else return -1;
 
     return 0;
@@ -4390,6 +4847,20 @@ char *sam_open_mode_opts(const char *fn,
     } else if (strncmp(format, "sam", format_len) == 0) {
         ; // format mode=""
     } else if (strncmp(format, "sam.gz", format_len) == 0) {
+        *cp++ = 'z';
+    } else if (strncmp(format, "fastq", format_len) == 0 ||
+               strncmp(format, "fq", format_len) == 0) {
+        *cp++ = 'f';
+    } else if (strncmp(format, "fastq.gz", format_len) == 0 ||
+               strncmp(format, "fq.gz", format_len) == 0) {
+        *cp++ = 'f';
+        *cp++ = 'z';
+    } else if (strncmp(format, "fasta", format_len) == 0 ||
+               strncmp(format, "fa", format_len) == 0) {
+        *cp++ = 'F';
+    } else if (strncmp(format, "fasta.gz", format_len) == 0 ||
+               strncmp(format, "fa", format_len) == 0) {
+        *cp++ = 'F';
         *cp++ = 'z';
     } else {
         free(mode_opts);
