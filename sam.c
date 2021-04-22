@@ -1804,7 +1804,6 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     if (sn) {
                         hts_log_warning("SQ header line has more than one SN: tag");
                         free(sn);
-                        sn = NULL;
                     }
                     sn = (char*)calloc(r - q + 1, 1);
                     if (!sn)
@@ -1830,10 +1829,10 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                         goto error;
 
                     if (!absent) {
-                        hts_log_warning("Duplicated sequence '%s'", sn);
+                        hts_log_warning("Duplicated sequence \"%s\" in file \"%s\"", sn, fp->fn);
                         free(sn);
-                        sn = NULL;
                     } else {
+                        sn = NULL;
                         if (ln >= UINT32_MAX) {
                             // Stash away ref length that
                             // doesn't fit in target_len array
@@ -1856,7 +1855,6 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                 } else {
                     hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
                     free(sn);
-                    sn = NULL;
                 }
             } else {
                 hts_log_warning("Ignored @SQ line with missing SN: tag");
@@ -1907,20 +1905,25 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                 continue;
 
             sn = (char*)calloc(tab-line.s+1, 1);
-            if (!sn)
+            if (!sn) {
+                e = 1;
                 break;
+            }
             memcpy(sn, line.s, tab-line.s);
             k = kh_put(s2i, d, sn, &absent);
-            if (absent < 0)
+            if (absent < 0) {
+                e = 1;
                 break;
+            }
 
             ln = strtoll(tab, NULL, 10);
 
             if (!absent) {
-                hts_log_warning("Duplicated sequence '%s'", sn);
+                hts_log_warning("Duplicated sequence \"%s\" in the file \"%s\"", sn, fai_fn);
                 free(sn);
                 sn = NULL;
             } else {
+                sn = NULL;
                 if (ln >= UINT32_MAX) {
                     // Stash away ref length that
                     // doesn't fit in target_len array
@@ -1928,12 +1931,16 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     int absent = -1;
                     if (!long_refs) {
                         long_refs = kh_init(s2i);
-                        if (!long_refs)
-                            goto error;
+                        if (!long_refs) {
+                            e = 1;
+                            break;
+                        }
                     }
                     k2 = kh_put(s2i, long_refs, kh_key(d, k), &absent);
-                    if (absent < 0)
-                        goto error;
+                    if (absent < 0) {
+                         e = 1;
+                         break;
+                    }
                     kh_val(long_refs, k2) = ln;
                     kh_val(d, k) = ((int64_t) (kh_size(d) - 1) << 32
                                     | UINT32_MAX);
