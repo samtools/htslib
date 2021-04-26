@@ -5368,6 +5368,8 @@ int cram_write_eof_block(cram_fd *fd) {
             cram_free_block(c.comp_hdr_block);
             return -1;
         }
+        if (ch.preservation_map)
+            kh_destroy(map, ch.preservation_map);
         cram_free_block(c.comp_hdr_block);
 
         // V2.1 bytes
