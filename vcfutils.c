@@ -53,6 +53,17 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         }
         if ( an>=0 && ac_ptr )
         {
+            if ( ac_len != line->n_allele - 1 )
+            {
+                static int warned = 0;
+                if ( !warned )
+                {
+                    hts_log_warning("Incorrect number of AC fields at %s:%"PRIhts_pos". (This message is printed only once.)\n",
+                            header->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+                    warned = 1;
+                }
+                return 0;
+            }
             int nac = 0;
             #define BRANCH_INT(type_t, convert) {        \
                 for (i=0; i<ac_len; i++)        \
