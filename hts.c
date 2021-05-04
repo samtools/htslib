@@ -1992,6 +1992,38 @@ static char * idx_format_name(int fmt) {
     }
 }
 
+#if DEBUG_INDEX
+static void dump_index(const hts_idx_t *idx) {
+    int i;
+    int64_t j;
+
+    if (!idx) fprintf(stderr, "Null index\n");
+
+    fprintf(stderr, "format='%s', min_shift=%d, n_lvls=%d, n_bins=%d, l_meta=%u ",
+            idx_format_name(idx->fmt), idx->min_shift, idx->n_lvls, idx->n_bins, idx->l_meta);
+    fprintf(stderr, "n=%d, m=%d, n_no_coor=%"PRIu64"\n", idx->n, idx->m, idx->n_no_coor);
+    for (i = 0; i < idx->n; i++) {
+        bidx_t *bidx = idx->bidx[i];
+        lidx_t *lidx = &idx->lidx[i];
+        khint_t k;
+        fprintf(stderr, "======== BIN Index - tid=%d, n_buckets=%d, size=%d\n", i, bidx->n_buckets, bidx->size);
+        int b;
+        for (b = 0; b < META_BIN(idx); b++) {
+            if ((k = kh_get(bin, bidx, b)) != kh_end(bidx)) {
+                bins_t *entries = &kh_value(bidx, k);
+                fprintf(stderr, "\tbin=%d, parent=%d, n_entries=%d, loff=%"PRIu64"\n",
+                        b, hts_bin_parent(b), entries->n, entries->loff);
+                for (j = 0; j < entries->n; j++)
+                    fprintf(stderr, "\t\tchunk=%"PRId64", u=%"PRIu64", v=%"PRIu64"\n", j, entries->list[j].u, entries->list[j].v);
+            }
+        }
+        fprintf(stderr, "======== LINEAR Index - tid=%d, n_values=%"PRId64"\n", i, lidx->n);
+        for (j = 0; j < lidx->n; j++)
+            fprintf(stderr, "\t\tentry=%"PRId64", offset=%"PRIu64"\n", j, lidx->offset[j]);
+     }
+}
+#endif
+
 static inline int insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 {
     khint_t k;
