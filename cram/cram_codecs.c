@@ -1898,16 +1898,20 @@ int cram_xdelta_encode_int(cram_slice *slice, cram_codec *c,
     return -1;
 }
 
+#if __GNUC__ == 11 && __GNUC_MINOR__ == 1
+// See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100417
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
-                           char *in, int in_size) {
+                            char *in, int in_size) {
     char *dat = malloc(in_size*5);
     if (!dat)
         return -1;
     char *cp = dat, *cp_end = dat + in_size*5;
 
     c->u.e_xdelta.last = 0; // reset for each new array
-    switch(c->u.e_xdelta.word_size) {
-    case 2: {
+    if (c->u.e_xdelta.word_size == 2) {
         int i, part;
 
         part = in_size%2;
@@ -1923,9 +1927,6 @@ int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
             c->u.e_xdelta.last = le_int2(in16[i]);
             cp += c->vv->varint_put32(cp, cp_end, zigzag16(d));
         }
-
-        break;
-    }
     }
     if (c->u.e_xdelta.sub_codec->encode(slice, c->u.e_xdelta.sub_codec,
                                       (char *)dat, cp-dat)) {
@@ -1936,6 +1937,9 @@ int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
     free(dat);
     return 0;
 }
+#if __GNUC__ == 11 && __GNUC_MINOR__ == 1
+#pragma GCC diagnostic pop
+#endif
 
 void cram_xdelta_encode_free(cram_codec *c) {
     if (!c) return;
