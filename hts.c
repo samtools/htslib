@@ -2966,6 +2966,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 if (min_off < idx->lidx[tid].offset[rel_off])
                     min_off = idx->lidx[tid].offset[rel_off];
                 if (unmapped) {
+                    // unmapped reads are not covered by the linear index,
+                    // so search backwards for a smaller offset
                     int tmp_off;
                     for (tmp_off = rel_off-1; tmp_off >= 0; tmp_off--) {
                         if (idx->lidx[tid].offset[tmp_off] < min_off) {
@@ -2973,13 +2975,14 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                             break;
                         }
                     }
-
-                    if (k != kh_end(bidx) && (min_off < kh_val(bidx, k).list[0].u || tmp_off < 0))
-                        min_off = kh_val(bidx, k).list[0].u;
+                    // if the search went too far back or no satisfactory entry
+                    // was found, revert to the bin index loff value
+                    if (k != kh_end(bidx) && (min_off < kh_val(bidx, k).loff || tmp_off < 0))
+                        min_off = kh_val(bidx, k).loff;
                 }
             } else if (unmapped) { //CSI index
                 if (k != kh_end(bidx))
-                    min_off = kh_val(bidx, k).list[0].u;
+                    min_off = kh_val(bidx, k).loff;
             }
 
             // compute max_off: a virtual offset from a bin to the right of end
@@ -3143,12 +3146,12 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                             }
                         }
 
-                        if (k != kh_end(bidx) && (min_off < kh_val(bidx, k).list[0].u || tmp_off < 0))
-                            min_off = kh_val(bidx, k).list[0].u;
+                        if (k != kh_end(bidx) && (min_off < kh_val(bidx, k).loff || tmp_off < 0))
+                            min_off = kh_val(bidx, k).loff;
                     }
                 } else if (unmapped) { //CSI index
                     if (k != kh_end(bidx))
-                        min_off = kh_val(bidx, k).list[0].u;
+                        min_off = kh_val(bidx, k).loff;
                 }
 
                 // compute max_off: a virtual offset from a bin to the right of end
