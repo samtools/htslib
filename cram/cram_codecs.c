@@ -1900,9 +1900,10 @@ int cram_xdelta_encode_int(cram_slice *slice, cram_codec *c,
 
 int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
                            char *in, int in_size) {
-    char *dat = malloc(in_size*5), *cp = dat, *cp_end = dat + in_size*5;
+    char *dat = malloc(in_size*5);
     if (!dat)
         return -1;
+    char *cp = dat, *cp_end = dat + in_size*5;
 
     c->u.e_xdelta.last = 0; // reset for each new array
     switch(c->u.e_xdelta.word_size) {
