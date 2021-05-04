@@ -263,7 +263,7 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                 if (ret < -1) {
                     error_errno("Reading \"%s\" failed", fname);
                 }
-                tbx_itr_destroy(itr);
+                bcf_itr_destroy(itr);
             }
             bcf_destroy(rec);
         }
