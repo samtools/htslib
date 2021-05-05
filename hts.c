@@ -1992,8 +1992,8 @@ static char * idx_format_name(int fmt) {
     }
 }
 
-#if DEBUG_INDEX
-static void dump_index(const hts_idx_t *idx) {
+#ifdef DEBUG_INDEX
+static void idx_dump(const hts_idx_t *idx) {
     int i;
     int64_t j;
 
@@ -2005,22 +2005,30 @@ static void dump_index(const hts_idx_t *idx) {
     for (i = 0; i < idx->n; i++) {
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
-        khint_t k;
-        fprintf(stderr, "======== BIN Index - tid=%d, n_buckets=%d, size=%d\n", i, bidx->n_buckets, bidx->size);
-        int b;
-        for (b = 0; b < META_BIN(idx); b++) {
-            if ((k = kh_get(bin, bidx, b)) != kh_end(bidx)) {
-                bins_t *entries = &kh_value(bidx, k);
-                fprintf(stderr, "\tbin=%d, parent=%d, n_entries=%d, loff=%"PRIu64"\n",
-                        b, hts_bin_parent(b), entries->n, entries->loff);
-                for (j = 0; j < entries->n; j++)
-                    fprintf(stderr, "\t\tchunk=%"PRId64", u=%"PRIu64", v=%"PRIu64"\n", j, entries->list[j].u, entries->list[j].v);
+        if (bidx) {
+            fprintf(stderr, "======== BIN Index - tid=%d, n_buckets=%d, size=%d\n", i, bidx->n_buckets, bidx->size);
+            int b;
+            for (b = 0; b < META_BIN(idx); b++) {
+                khint_t k;
+                if ((k = kh_get(bin, bidx, b)) != kh_end(bidx)) {
+                    bins_t *entries = &kh_value(bidx, k);
+                    int l = hts_bin_level(b);
+                    int64_t bin_width = 1LL << ((idx->n_lvls - l) * 3 + idx->min_shift);
+                    fprintf(stderr, "\tbin=%d, level=%d, parent=%d, n_chunks=%d, loff=%"PRIu64", interval=[%"PRId64" - %"PRId64"]\n",
+                        b, l, hts_bin_parent(b), entries->n, entries->loff, (b-hts_bin_first(l))*bin_width+1, (b+1-hts_bin_first(l))*bin_width);
+                    for (j = 0; j < entries->n; j++)
+                        fprintf(stderr, "\t\tchunk=%"PRId64", u=%"PRIu64", v=%"PRIu64"\n", j, entries->list[j].u, entries->list[j].v);
+                }
             }
         }
-        fprintf(stderr, "======== LINEAR Index - tid=%d, n_values=%"PRId64"\n", i, lidx->n);
-        for (j = 0; j < lidx->n; j++)
-            fprintf(stderr, "\t\tentry=%"PRId64", offset=%"PRIu64"\n", j, lidx->offset[j]);
-     }
+        if (lidx) {
+            fprintf(stderr, "======== LINEAR Index - tid=%d, n_values=%"PRId64"\n", i, lidx->n);
+            for (j = 0; j < lidx->n; j++) {
+                fprintf(stderr, "\t\tentry=%"PRId64", offset=%"PRIu64", interval=[%"PRId64" - %"PRId64"]\n",
+                    j, lidx->offset[j], j*(1<<idx->min_shift)+1, (j+1)*(1<<idx->min_shift));
+            }
+        }
+    }
 }
 #endif
 
@@ -2590,6 +2598,10 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
     }
     if (bgzf_read(fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
     if (is_be) ed_swap_8p(&idx->n_no_coor);
+#ifdef DEBUG_INDEX
+    idx_dump(idx);
+#endif
+
     return 0;
 }
 

@@ -845,8 +845,10 @@ typedef struct hts_itr_t {
 
 typedef hts_itr_t hts_itr_multi_t;
 
-    #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
-    #define hts_bin_parent(l) (((l) - 1) >> 3)
+/// Compute the first bin on a given level
+#define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
+/// Compute the parent bin of a given bin
+#define hts_bin_parent(b) (((b) - 1) >> 3)
 
 ///////////////////////////////////////////////////////////
 // Low-level API for building indexes.
@@ -1446,10 +1448,26 @@ static inline int hts_reg2bin(hts_pos_t beg, hts_pos_t end, int min_shift, int n
     return 0;
 }
 
+/// Compute the level of a bin in a binning index
+static inline int hts_bin_level(int bin) {
+    int l, b;
+    for (l = 0, b = bin; b; ++l, b = hts_bin_parent(b));
+    return l;
+}
+
+/// Compute the corresponding entry into the linear index of a given bin from
+/// a binning index
+/** @param bin    The bin number
+ *  @param n_lvls The index depth (number of levels - 0 based)
+ *  @return       The integer offset into the linear index
+ *
+ *  Explanation of the return value formula:
+ *  Each bin on level l covers exp(2, (n_lvls - l)*3 + min_shift) base pairs.
+ *  A linear index entry covers exp(2, min_shift) base pairs.
+ */
 static inline int hts_bin_bot(int bin, int n_lvls)
 {
-    int l, b;
-    for (l = 0, b = bin; b; ++l, b = hts_bin_parent(b)); // compute the level of bin
+    int l = hts_bin_level(bin);
     return (bin - hts_bin_first(l)) << (n_lvls - l) * 3;
 }
 
