@@ -753,10 +753,10 @@ typedef struct varint_vec {
     int64_t (*varint_get64s)(char **cp, const char *endp, int *err);
 
     // Returns the number of bytes written, <= 0 on error.
-    int (*varint_put32) (char *cp, const char *endp, int32_t val_p);
-    int (*varint_put32s)(char *cp, const char *endp, int32_t val_p);
-    int (*varint_put64) (char *cp, const char *endp, int64_t val_p);
-    int (*varint_put64s)(char *cp, const char *endp, int64_t val_p);
+    int (*varint_put32) (char *cp, char *endp, int32_t val_p);
+    int (*varint_put32s)(char *cp, char *endp, int32_t val_p);
+    int (*varint_put64) (char *cp, char *endp, int64_t val_p);
+    int (*varint_put64s)(char *cp, char *endp, int64_t val_p);
 
     // Returns the number of bytes written, <= 0 on error.
     int (*varint_put32_blk) (cram_block *blk, int32_t val_p);

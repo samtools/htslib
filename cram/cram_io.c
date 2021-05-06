@@ -739,15 +739,15 @@ static int64_t safe_ltf8_get(char **cp, const char *endp, int *err) {
 }
 
 // Wrapper for now
-int safe_itf8_put(char *cp, const char *cp_end, int32_t val) {
+static int safe_itf8_put(char *cp, char *cp_end, int32_t val) {
     return itf8_put(cp, val);
 }
 
-int safe_ltf8_put(char *cp, const char *cp_end, int64_t val) {
+static int safe_ltf8_put(char *cp, char *cp_end, int64_t val) {
     return ltf8_put(cp, val);
 }
 
-int itf8_size(int64_t v) {
+static int itf8_size(int64_t v) {
     return ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5);
 }
 
@@ -796,20 +796,20 @@ static int64_t sint7_get_64(char **cp, const char *endp, int *err) {
     return val;
 }
 
-static int uint7_put_32(char *cp, const char *endp, int32_t val) {
-    return var_put_u32((uint8_t *)cp, (const uint8_t *)endp, val);
+static int uint7_put_32(char *cp, char *endp, int32_t val) {
+    return var_put_u32((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
-static int sint7_put_32(char *cp, const char *endp, int32_t val) {
-    return var_put_s32((uint8_t *)cp, (const uint8_t *)endp, val);
+static int sint7_put_32(char *cp, char *endp, int32_t val) {
+    return var_put_s32((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
-static int uint7_put_64(char *cp, const char *endp, int64_t val) {
-    return var_put_u64((uint8_t *)cp, (const uint8_t *)endp, val);
+static int uint7_put_64(char *cp, char *endp, int64_t val) {
+    return var_put_u64((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
-static int sint7_put_64(char *cp, const char *endp, int64_t val) {
-    return var_put_s64((uint8_t *)cp, (const uint8_t *)endp, val);
+static int sint7_put_64(char *cp, char *endp, int64_t val) {
+    return var_put_s64((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
 // Put direct to to cram_block
