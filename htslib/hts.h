@@ -1455,9 +1455,10 @@ static inline int hts_bin_level(int bin) {
     return l;
 }
 
-/// Compute the corresponding entry into the linear index of a given bin from
-/// a binning index
-/** @param bin    The bin number
+//! Compute the corresponding entry into the linear index of a given bin from
+//! a binning index
+/*!
+ *  @param bin    The bin number
  *  @param n_lvls The index depth (number of levels - 0 based)
  *  @return       The integer offset into the linear index
  *

@@ -2117,7 +2117,7 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
     int l;
     // the last entry is always valid
     for (l=lidx->n-2; l >= 0; l--) {
-	if (lidx->offset[l] == (uint64_t)-1)
+        if (lidx->offset[l] == (uint64_t)-1)
             lidx->offset[l] = lidx->offset[l+1];
     }
     if (bidx == 0) return;
@@ -2589,8 +2589,8 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (l->offset == NULL) return -2;
             if (bgzf_read(fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
-            for (j = 1; j < l->n; ++j) // fill missing values; may happen given older samtools and tabix
-                if (l->offset[j] == 0) l->offset[j] = l->offset[j-1];
+            for (j = l->n-1; j > 0; j--) // fill missing values; may happen given older samtools and tabix
+                if (l->offset[j-1] == 0) l->offset[j-1] = l->offset[j];
             update_loff(idx, i, 0);
         }
     }
