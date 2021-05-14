@@ -258,6 +258,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
 
     // create map of indexes from old to new ALT numbering and modify ALT
     kstring_t str = {0,0,0};
+    if (!line->d.allele)
+        bcf_unpack(line, BCF_UN_STR);
     kputs(line->d.allele[0], &str);
 
     int nrm = 0, i,j;  // i: ori alleles, j: new alleles
@@ -507,8 +509,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     }
 
     // Update GT fields, the allele indexes might have changed
-    for (i=1; i<line->n_allele; i++) if ( map[i]!=i ) break;
-    if ( i<line->n_allele )
+    for (i=1; i<nR_ori; i++) if ( map[i]!=i ) break;
+    if ( i<nR_ori )
     {
         mdat = mdat_bytes / 4;  // sizeof(int32_t)
         nret = bcf_get_genotypes(header,line,(void**)&dat,&mdat);
