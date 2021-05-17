@@ -532,7 +532,9 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                             bcf_seqname_safe(header,line), line->pos+1, al, nR_ori, map[al]);
                         goto err;
                     }
-                    ptr[j] = (map[al]+1)<<1 | (ptr[j]&1);
+                    // if an allele other than the reference is mapped to 0, it has been removed,
+                    // so translate it to 'missing', while preserving the phasing bit
+                    ptr[j] = ((al>0 && !map[al]) ? bcf_gt_missing : (map[al]+1)<<1) | (ptr[j]&1);
                 }
                 ptr += nret;
             }
