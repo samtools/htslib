@@ -1359,7 +1359,7 @@ knetFile *knet_open(const char *fn, const char *mode) {
     if (!fp) return NULL;
     if (!(fp->hf = hopen(fn, mode))) {
         free(fp);
-        fp = NULL;
+        return NULL;
     }
 
     // FD backend is the only one implementing knet_fileno
@@ -1376,7 +1376,7 @@ knetFile *knet_dopen(int fd, const char *mode) {
     if (!fp) return NULL;
     if (!(fp->hf = hdopen(fd, mode))) {
         free(fp);
-        fp = NULL;
+        return NULL;
     }
     fp->fd = fd;
     return fp;
