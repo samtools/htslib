@@ -289,6 +289,7 @@ struct cram_metrics {
 
     // aggregate sizes during trials
     int sz[CRAM_MAX_METHOD];
+    int input_avg_sz, input_avg_delta;
 
     // resultant method from trials
     int method, revised_method;

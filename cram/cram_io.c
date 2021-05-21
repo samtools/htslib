@@ -1957,14 +1957,40 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
         return 0;
     }
 
+#ifndef ABS
+#    define ABS(a) ((a)>=0?(a):-(a))
+#endif
+
     if (metrics) {
         pthread_mutex_lock(&fd->metrics_lock);
+        // Sudden changes in size trigger a retrial.  These are mainly
+        // triggered when switching to sorted / unsorted, where the number
+        // of elements in a slice radically changes.
+        //
+        // We also get large fluctuations based on genome coordinate for
+        // e.g. SA:Z and SC series, but we consider the typical scale of
+        // delta between blocks and use this to look for abnormality.
+        if (metrics->input_avg_sz &&
+            (b->uncomp_size + 1000 > 4*(metrics->input_avg_sz+1000) ||
+             b->uncomp_size + 1000 < (metrics->input_avg_sz+1000)/4) &&
+            ABS(b->uncomp_size-metrics->input_avg_sz)
+                > 10*metrics->input_avg_delta) {
+            metrics->next_trial = 0;
+        }
+
         if (metrics->trial > 0 || --metrics->next_trial <= 0) {
             int m, unpackable = metrics->unpackable;
             size_t sz_best = b->uncomp_size;
             size_t sz[CRAM_MAX_METHOD] = {0};
             int method_best = 0; // RAW
             char *c_best = NULL, *c = NULL;
+
+            metrics->input_avg_delta =
+                0.9 * (metrics->input_avg_delta +
+                       ABS(b->uncomp_size - metrics->input_avg_sz));
+
+            metrics->input_avg_sz += b->uncomp_size*.2;
+            metrics->input_avg_sz *= 0.8;
 
             if (metrics->revised_method)
                 method = metrics->revised_method;
@@ -2124,7 +2150,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                         metrics->sz[m] *= 1+(meth_cost[m]-1)/3;
                 } // else cost is ignored
 
-                // Ensure these are never used
+                // Ensure these are never used; BSC and ZSTD
                 metrics->sz[9] = metrics->sz[10] = INT_MAX;
 
                 for (m = 0; m < CRAM_MAX_METHOD; m++) {
@@ -2189,6 +2215,13 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             }
             pthread_mutex_unlock(&fd->metrics_lock);
         } else {
+            metrics->input_avg_delta =
+                0.9 * (metrics->input_avg_delta +
+                       ABS(b->uncomp_size - metrics->input_avg_sz));
+
+            metrics->input_avg_sz += b->uncomp_size*.2;
+            metrics->input_avg_sz *= 0.8;
+
             strat = metrics->strat;
             method = metrics->method;
 
