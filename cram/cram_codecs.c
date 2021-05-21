@@ -1728,8 +1728,10 @@ cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
     else if (option == E_BYTE_ARRAY_BLOCK) {
         option = E_BYTE_ARRAY;
         c->decode = cram_xdelta_decode_block;
-    } else
+    } else {
+        free(c);
         return NULL;
+    }
     c->free = cram_xdelta_decode_free;
     c->size = cram_xdelta_decode_size;
     c->get_block = cram_xdelta_get_block;
