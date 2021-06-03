@@ -2723,6 +2723,18 @@ const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid,
     return names;
 }
 
+int hts_idx_nseq(const hts_idx_t *idx) {
+    int tid = 0, i;
+    for (i=0; i < idx->n; i++)
+    {
+        bidx_t *bidx = idx->bidx[i];
+        if ( !bidx ) continue;
+        tid++;
+    }
+
+    return tid;
+}
+
 int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped)
 {
     if ( idx->fmt == HTS_FMT_CRAI ) {
@@ -4372,11 +4384,11 @@ static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)
 
     if (hts_idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
         if (flags & HTS_IDX_SAVE_REMOTE) {
-            fnidx = hts_idx_getfn(fn, ".csi");
+            fnidx = idx_filename(fn, ".csi", HTS_IDX_SAVE_REMOTE);
             if (!fnidx) {
                 switch (fmt) {
-                case HTS_FMT_BAI: fnidx = hts_idx_getfn(fn, ".bai"); break;
-                case HTS_FMT_TBI: fnidx = hts_idx_getfn(fn, ".tbi"); break;
+                case HTS_FMT_BAI: fnidx = idx_filename(fn, ".bai", HTS_IDX_SAVE_REMOTE); break;
+                case HTS_FMT_TBI: fnidx = idx_filename(fn, ".tbi", HTS_IDX_SAVE_REMOTE); break;
                 default: break;
                 }
             }

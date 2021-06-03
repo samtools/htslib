@@ -4,6 +4,9 @@ Noteworthy changes in release a.b
 Features and Updates
 --------------------
 
+* New method `hts_idx_nseq` returns the number of contigs covered by reads
+  from an index structure.
+
 * In case a PG header line has multiple ID tags supplied by other applications,
   the header API now selects the first one encountered as the identifying tag
   and issues a warning when detecting subsequent ID tags.
