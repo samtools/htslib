@@ -2577,7 +2577,7 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (is_be) swap_bins(p);
         }
         if (fmt != HTS_FMT_CSI) { // load linear index
-            int j;
+            int j, k;
             uint32_t x;
             if (bgzf_read(fp, &x, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&x);
@@ -2589,7 +2589,8 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (l->offset == NULL) return -2;
             if (bgzf_read(fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
-            for (j = l->n-1; j > 0; j--) // fill missing values; may happen given older samtools and tabix
+            for (k = j = 0; j < l->n && l->offset[j] == 0; k = ++j); // stop at the first non-zero entry
+            for (j = l->n-1; j > k; j--) // fill missing values; may happen given older samtools and tabix
                 if (l->offset[j-1] == 0) l->offset[j-1] = l->offset[j];
             update_loff(idx, i, 0);
         }
