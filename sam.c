@@ -1153,12 +1153,16 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             ks_clear(&res->s);
             uint32_t *cigar = bam_get_cigar(b);
             int i, n = b->core.n_cigar, r = 0;
-            for (i = 0; i < n; i++) {
-                r |= kputw (bam_cigar_oplen(cigar[i]), &res->s);
-                r |= kputc_(bam_cigar_opchr(cigar[i]), &res->s);
+            if (n) {
+                for (i = 0; i < n; i++) {
+                    r |= kputw (bam_cigar_oplen(cigar[i]), &res->s) < 0;
+                    r |= kputc_(bam_cigar_opchr(cigar[i]), &res->s) < 0;
+                }
+                r |= kputs("", &res->s) < 0;
+            } else {
+                r |= kputs("*", &res->s) < 0;
             }
-            kputs("", &res->s);
-            return r ? 0 : -1;
+            return r ? -1 : 0;
         }
         break;
 
