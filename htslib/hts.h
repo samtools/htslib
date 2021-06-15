@@ -1252,7 +1252,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED
 HTSLIB_EXPORT
 const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
-/// Return the number targets covered by reads from an index
+/// Return the total number targets from an index
 /** @param      idx    Index
     @return The number of targets
  */

@@ -2706,7 +2706,7 @@ uint8_t *hts_idx_get_meta(hts_idx_t *idx, uint32_t *l_meta)
 
 const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr)
 {
-    if ( !idx->n )
+    if ( !idx || !idx->n )
     {
         *n = 0;
         return NULL;
@@ -2725,25 +2725,20 @@ const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid,
 }
 
 int hts_idx_nseq(const hts_idx_t *idx) {
-    int tid = 0, i;
-    for (i=0; i < idx->n; i++)
-    {
-        bidx_t *bidx = idx->bidx[i];
-        if ( !bidx ) continue;
-        tid++;
-    }
-
-    return tid;
+    if (!idx) return -1;
+    return idx->n;
 }
 
 int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped)
 {
+    if (!idx) return -1;
     if ( idx->fmt == HTS_FMT_CRAI ) {
         *mapped = 0; *unmapped = 0;
         return -1;
     }
 
     bidx_t *h = idx->bidx[tid];
+    if (!h) return -1;
     khint_t k = kh_get(bin, h, META_BIN(idx));
     if (k != kh_end(h)) {
         *mapped = kh_val(h, k).list[1].u;
