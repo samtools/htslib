@@ -1010,6 +1010,8 @@ hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags);
 ///////////////////////////////////////////////////////////
 // Functions for accessing meta-data stored in indexes
 
+typedef const char *(*hts_id2name_f)(void*, int);
+
 /// Get extra index meta-data
 /** @param idx    The index
     @param l_meta Pointer to where the length of the extra data is stored
@@ -1066,6 +1068,26 @@ int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* 
 HTSLIB_EXPORT
 uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
+/// Return a list of target names from an index
+/** @param      idx    Index
+    @param[out] n      Location to store the number of targets
+    @param      getid  Callback function to get the name for a target ID
+    @param      hdr    Header from indexed file
+    @return An array of pointers to the names on success; NULL on failure
+
+    @note The names are pointers into the header data structure.  When cleaning
+    up, only the array should be freed, not the names.
+ */
+HTSLIB_EXPORT
+const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
+
+/// Return the number of targets from an index
+/** @param      idx    Index
+    @return The number of targets
+ */
+HTSLIB_EXPORT
+int hts_idx_nseq(const hts_idx_t *idx);
+
 ///////////////////////////////////////////////////////////
 // Region parsing
 
@@ -1089,7 +1111,6 @@ HTSLIB_EXPORT
 long long hts_parse_decimal(const char *str, char **strend, int flags);
 
 typedef int (*hts_name2id_f)(void*, const char*);
-typedef const char *(*hts_id2name_f)(void*, int);
 
 /// Parse a "CHR:START-END"-style region string
 /** @param str  String to be parsed
@@ -1238,26 +1259,6 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
  */
 HTSLIB_EXPORT
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
-
-/// Return a list of target names from an index
-/** @param      idx    Index
-    @param[out] n      Location to store the number of targets
-    @param      getid  Callback function to get the name for a target ID
-    @param      hdr    Header from indexed file
-    @return An array of pointers to the names on success; NULL on failure
-
-    @note The names are pointers into the header data structure.  When cleaning
-    up, only the array should be freed, not the names.
- */
-HTSLIB_EXPORT
-const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
-
-/// Return the total number targets from an index
-/** @param      idx    Index
-    @return The number of targets
- */
-HTSLIB_EXPORT
-int hts_idx_nseq(const hts_idx_t *idx);
 
 /**********************************
  * Iterator with multiple regions *
