@@ -234,7 +234,16 @@ AC_SEARCH_LIBS([recv], [socket ws2_32], [
 if test "$ac_cv_search_recv" != "none required"
 then
   static_LIBS="$static_LIBS $ac_cv_search_recv"
-fi], [MSG_ERROR([unable to find the recv() function])])
+fi],
+  dnl on MinGW-i686, checking recv() linking requires an annotated declaration
+  [AC_MSG_CHECKING([for library containing recv using declaration])
+   LIBS="-lws2_32 $LIBS"
+   AC_LINK_IFELSE(
+     [AC_LANG_PROGRAM([[#include <winsock2.h>]], [[recv(0, 0, 0, 0);]])],
+     [AC_MSG_RESULT([-lws2_32])
+      static_LIBS="$static_LIBS -lws2_32"],
+     [AC_MSG_RESULT([no])
+      MSG_ERROR([unable to find the recv() function])])])
 
 if test "$enable_bz2" != no; then
   bz2_devel=ok
