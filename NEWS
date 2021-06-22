@@ -38,9 +38,8 @@ Features and Updates
   
 * Initialise the missing entries of the linear index in reverse order.
   Populates empty linear index entries from the right rather from the left.
-  Two functions have been renamed, dump_index is now idx_dump and
-  hts_idx_save_core is idx_save_core.  The new hts_bin_level function computes
-  the index level of a bin.  Thanks to @carsonh for reporting the issue.
+  The new hts_bin_level function computes the index level of a bin.
+  Thanks to @carsonh for reporting the issue.
   (#1286; fixes #486)
   
 * Related to the above, the new method, hts_idx_nseq, returns the total number
