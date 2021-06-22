@@ -1,6 +1,6 @@
 /*  hfile_gcs.c -- Google Cloud Storage backend for low-level file streams.
 
-    Copyright (C) 2016 Genome Research Ltd.
+    Copyright (C) 2016, 2021 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
