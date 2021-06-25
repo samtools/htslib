@@ -63,6 +63,9 @@ These are compiler, configuration and makefile based changes.
 * Support building HTSlib in a separate directory. Thanks to John Marshall.
   (#1277; fixes #231)
 
+* Support building HTSlib on MinGW 32-bit environments. Thanks to John Marshall.
+  (#1301)
+
 Bug fixes
 ---------
 
