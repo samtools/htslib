@@ -16,34 +16,34 @@ Features and Updates
 * Transparently treat FASTQ as unmapped data as if it was SAM, BAM or CRAM.
   (#1156)
 
-* Add GCP requester pays bucket access.  Thanks to @indraniel.
+* Added GCP requester pays bucket access.  Thanks to @indraniel.
   (#1255)
   
-* Make mpileup's overlap removal choose a random sequence.
+* Made mpileup's overlap removal choose a random sequence.
   (#1273; fixes samtools/bcftools#1459)
   
-* Permit platform specific BAQ parameters.  It will also select long-read
+* Now permits platform specific BAQ parameters.  This also selects long-read
   parameters for read lengths bigger than 1kb.  This helps bcftools mpileup call
   SNPs on PacBio CCS reads.
   (#1275)
   
-* Improve bcf_remove_allele_set.  Fixes a bug that stopped iteration over
+* Improved bcf_remove_allele_set.  This fixes a bug that stopped iteration over
   alleles prematurely, marks removed alleles as 'missing' and does automatic
   lazy unpacking.
   (#1288; fixes #1259)
   
-* [CRAM] Improve compression metrics for unsorted files.  This improves the
+* [CRAM] Improved compression metrics for unsorted files.  This improves the
   choice of codecs when handling unsorted data.
   (#1291)
   
-* Initialise the missing entries of the linear index in reverse order.
+* Now initialisea the missing entries of the linear index in reverse order.
   Populates empty linear index entries from the right rather from the left.
   The new hts_bin_level function computes the index level of a bin.
   Thanks to @carsonh for reporting the issue.
   (#1286; fixes #486)
   
-* Related to the above, the new method, hts_idx_nseq, returns the total number
-  of contigs from an index.
+* Related to the above, the new method, hts_idx_nseq, now returns the total
+  number of contigs from an index.
   (#1295 and #1299)
    
 * Added bracket handling to bcf_hdr_parse_line.  Thanks to Alberto Casas Orrtiz.
@@ -60,16 +60,17 @@ These are compiler, configuration and makefile based changes.
 * Some fixes to address GCC 11.1 warnings.
   (#1280, #1284, #1285; fixes #1283)
 
-* Support building HTSlib in a separate directory. Thanks to John Marshall.
+* Supports building HTSlib in a separate directory. Thanks to John Marshall.
   (#1277; fixes #231)
 
-* Support building HTSlib on MinGW 32-bit environments. Thanks to John Marshall.
+* Supports building HTSlib on MinGW 32-bit environments. Thanks to
+  John Marshall.
   (#1301)
 
 Bug fixes
 ---------
 
-* Remove compressBound assertions on opening bgzf files.  Thanks to 
+* Removed compressBound assertions on opening bgzf files.  Thanks to 
   Gurt Hulselmans for reporting the issue.
   (#1258; fixed #1257) 
 
@@ -80,20 +81,20 @@ Bug fixes
 * Fix to make samtools cat work on CRAMs again.
   (#1276; fixes samtools/samtools#1420)
   
-* Fix for double memory free in SAM header creation.  Thanks to @ihsineme.
+* Fix for a double memory free in SAM header creation.  Thanks to @ihsineme.
   (#1274)
   
 * Prevent assert in bcf_sr_set_regions.  Thanks to Dr K D Murray.
   (#1270)
   
-* Fix the update of the minimum offset when unmapped reads are present.  This
+* Fixed the update of the minimum offset when unmapped reads are present.  This
   bug broke subsetting.  Thanks to Daniel Cooke for reporting the issue.
   (#1281; fixes #1279)
   
-* Fix crash in knet_open() etc stubs.  Thanks to John Marshall.
+* Fixed crash in knet_open() etc stubs.  Thanks to John Marshall.
   (#1289)
   
-* Fix filter expression "cigar" on unmapped reads.  Stop treating an empty
+* Fixed filter expression "cigar" on unmapped reads.  Stop treating an empty
   CIGAR string as an error.  Thanks to Chang Y for reporting the issue.
   (#1298, fixes samtools/samtools#1445)
 
