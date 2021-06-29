@@ -54,8 +54,8 @@ Build changes
 These are compiler, configuration and makefile based changes.
 
 * Added a curl/curl.h check to configure and improved INSTALL documentation on
-  build options.  Thanks to John Marshall.
-  (#1265)
+  build options.  Thanks to Melanie Kirsche and John Marshall.
+  (#1265; fixes #1261)
 
 * Some fixes to address GCC 11.1 warnings.
   (#1280, #1284, #1285; fixes #1283)
