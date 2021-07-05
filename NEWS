@@ -13,18 +13,21 @@ Features and Updates
   remote index file by default.
   (#1266; fixes #380)
 
-* Transparently treat FASTQ as unmapped data as if it was SAM, BAM or CRAM.
+* Support reading and writing FASTQ format in the same way as SAM, BAM or CRAM.
+  Records read from a FASTQ file will be treated as unmapped data.
   (#1156)
 
 * Added GCP requester pays bucket access.  Thanks to @indraniel.
   (#1255)
 
-* Made mpileup's overlap removal choose a random sequence.
+* Made mpileup's overlap removal choose which copy to remove at random instead
+  of always removing the second one.  This avoids strand bias in experiments
+  where the +ve and -ve strand reads always appear in the same order.
   (#1273; fixes samtools/bcftools#1459)
 
-* Now permits platform specific BAQ parameters.  This also selects long-read
-  parameters for read lengths bigger than 1kb.  This helps bcftools mpileup call
-  SNPs on PacBio CCS reads.
+* It is now possible to use platform specific BAQ parameters.  This also
+  selects long-read parameters for read lengths bigger than 1kb, which helps
+  bcftools mpileup call SNPs on PacBio CCS reads.
   (#1275)
 
 * Improved bcf_remove_allele_set.  This fixes a bug that stopped iteration over
@@ -32,21 +35,27 @@ Features and Updates
   lazy unpacking.
   (#1288; fixes #1259)
 
-* [CRAM] Improved compression metrics for unsorted files.  This improves the
+* Improved compression metrics for unsorted CRAM files.  This improves the
   choice of codecs when handling unsorted data.
   (#1291)
 
-* Now initialises the missing entries of the linear index in reverse order.
-  Populates empty linear index entries from the right rather from the left.
-  The new hts_bin_level function computes the index level of a bin.
+* Linear index entries for empty intervals are now initialised with the file
+  offset in the next non-empty interval instead of the previous one.  This
+  may reduce the amount of data iterators have to discard before reaching
+  the desired region, when the starting location is in a sequence gap.
   Thanks to @carsonh for reporting the issue.
   (#1286; fixes #486)
 
-* Related to the above, the new method, hts_idx_nseq, now returns the total
+* A new hts_bin_level API function has been added, to compute the level of a
+  given bin in the binning index.
+  (#1286)
+
+* Related to the above, a new API method, hts_idx_nseq, now returns the total
   number of contigs from an index.
   (#1295 and #1299)
 
-* Added bracket handling to bcf_hdr_parse_line.  Thanks to Alberto Casas Ortiz.
+* Added bracket handling to bcf_hdr_parse_line, for use with ##META lines.
+  Thanks to Alberto Casas Ortiz.
   (#1240)
 
 Build changes
