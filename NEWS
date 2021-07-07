@@ -63,6 +63,8 @@ Build changes
 
 These are compiler, configuration and makefile based changes.
 
+* HTSlib now uses libhtscodecs release 1.1.1.
+
 * Added a curl/curl.h check to configure and improved INSTALL documentation on
   build options.  Thanks to Melanie Kirsche and John Marshall.
   (#1265; fixes #1261)
@@ -111,6 +113,15 @@ Bug fixes
 * Fixed filter expression "cigar" on unmapped reads.  Stop treating an empty
   CIGAR string as an error.  Thanks to Chang Y for reporting the issue.
   (#1298, fixes samtools/samtools#1445)
+
+* Bug fixes in the bundled copy of htscodecs:
+
+  - Fixed an uninitialized access in the name tokeniser decoder.
+    (samtools/htscodecs#23)
+
+  - Fixed a bug with name tokeniser and variable number of names per slice,
+    causing it to incorrectly report an error on certain valid inputs.
+    (samtools/htscodecs#24)
 
 
 Noteworthy changes in release 1.12 (17th March 2021)
