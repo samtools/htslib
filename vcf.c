@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020 Genome Research Ltd.
+    Copyright (C) 2012-2021 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -129,7 +129,7 @@ static int bcf_hdr_add_sample_len(bcf_hdr_t *h, const char *s, size_t len)
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = n;
     } else {
-        hts_log_error("Duplicated sample name '%s'", s);
+        hts_log_error("Duplicated sample name '%s'", sdup);
         free(sdup);
         return -1;
     }
@@ -426,11 +426,24 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         if (bcf_hrec_add_key(hrec, p, q-p-m) < 0) goto fail;
         p = ++q;
         while ( *q && *q==' ' ) { p++; q++; }
-        int quoted = *p=='"' ? 1 : 0;
-        if ( quoted ) p++, q++;
+
+        int quoted = 0;
+        char ending = '\0';
+        switch (*p) {
+        case '"':
+            quoted = 1;
+            ending = '"';
+            p++;
+            break;
+        case '[':
+            quoted = 1;
+            ending = ']';
+            break;
+        }
+        if ( quoted ) q++;
         while ( *q && *q != '\n' )
         {
-            if ( quoted ) { if ( *q=='"' && !is_escaped(p,q) ) break; }
+            if ( quoted ) { if ( *q==ending && !is_escaped(p,q) ) break; }
             else
             {
                 if ( *q=='<' ) nopen++;
@@ -441,10 +454,23 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             q++;
         }
         const char *r = q;
+        if (quoted && ending == ']') {
+            if (*q == ending) {
+                r++;
+                q++;
+                quoted = 0;
+            } else {
+                char buffer[320];
+                hts_log_error("Missing ']' in header line %s",
+                              hts_strprint(buffer, sizeof(buffer), '"',
+                                           line, q-line));
+                goto fail;
+            }
+        }
         while ( r > p && r[-1] == ' ' ) r--;
         if (bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p, quoted) < 0)
             goto fail;
-        if ( quoted && *q=='"' ) q++;
+        if ( quoted && *q==ending ) q++;
         if ( *q=='>' ) { nopen--; q++; }
     }
 
@@ -1916,7 +1942,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     if ( bcf_hdr_parse(h, txt.s) < 0 ) goto error;
 
     // check tabix index, are all contigs listed in the header? add the missing ones
-    idx = tbx_index_load3(fp->fn, NULL, HTS_IDX_SAVE_REMOTE|HTS_IDX_SILENT_FAIL);
+    idx = tbx_index_load3(fp->fn, NULL, HTS_IDX_SILENT_FAIL);
     if ( idx )
     {
         int i, n, need_sync = 0;

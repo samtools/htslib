@@ -1,6 +1,6 @@
 /*  vcfutils.c -- allele-related utility functions.
 
-    Copyright (C) 2012-2018, 2020 Genome Research Ltd.
+    Copyright (C) 2012-2018, 2020-2021 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -53,6 +53,17 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         }
         if ( an>=0 && ac_ptr )
         {
+            if ( ac_len != line->n_allele - 1 )
+            {
+                static int warned = 0;
+                if ( !warned )
+                {
+                    hts_log_warning("Incorrect number of AC fields at %s:%"PRIhts_pos". (This message is printed only once.)\n",
+                            header->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+                    warned = 1;
+                }
+                return 0;
+            }
             int nac = 0;
             #define BRANCH_INT(type_t, convert) {        \
                 for (i=0; i<ac_len; i++)        \
@@ -247,6 +258,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
 
     // create map of indexes from old to new ALT numbering and modify ALT
     kstring_t str = {0,0,0};
+    if (!line->d.allele)
+        bcf_unpack(line, BCF_UN_STR);
     kputs(line->d.allele[0], &str);
 
     int nrm = 0, i,j;  // i: ori alleles, j: new alleles
@@ -496,8 +509,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     }
 
     // Update GT fields, the allele indexes might have changed
-    for (i=1; i<line->n_allele; i++) if ( map[i]!=i ) break;
-    if ( i<line->n_allele )
+    for (i=1; i<nR_ori; i++) if ( map[i]!=i ) break;
+    if ( i<nR_ori )
     {
         mdat = mdat_bytes / 4;  // sizeof(int32_t)
         nret = bcf_get_genotypes(header,line,(void**)&dat,&mdat);
@@ -519,7 +532,9 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                             bcf_seqname_safe(header,line), line->pos+1, al, nR_ori, map[al]);
                         goto err;
                     }
-                    ptr[j] = (map[al]+1)<<1 | (ptr[j]&1);
+                    // if an allele other than the reference is mapped to 0, it has been removed,
+                    // so translate it to 'missing', while preserving the phasing bit
+                    ptr[j] = ((al>0 && !map[al]) ? bcf_gt_missing : (map[al]+1)<<1) | (ptr[j]&1);
                 }
                 ptr += nret;
             }

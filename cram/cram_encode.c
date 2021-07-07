@@ -107,12 +107,14 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
         }
     }
 
-    if (h->preservation_map)
+    if (h->preservation_map) {
         kh_destroy(map, h->preservation_map);
+        h->preservation_map = NULL;
+    }
 
     /* Create in-memory preservation map */
     /* FIXME: should create this when we create the container */
-    if (h->num_records > 0) {
+    if (c->num_records > 0) {
         khint_t k;
         int r;
 

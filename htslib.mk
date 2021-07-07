@@ -1,6 +1,6 @@
 # Makefile rules useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2017, 2019 Genome Research Ltd.
+#    Copyright (C) 2013-2017, 2019, 2021 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -27,12 +27,13 @@
 # If your source file foo.c #includes <htslib/hts.h> and <htslib/kstring.h>,
 # you can write the correct prerequisites for foo.o as:
 #
-#	HTSDIR = <path to htslib top-level directory>
+#	HTSDIR = <path to htslib top-level (build) directory>
 #	include $(HTSDIR)/htslib.mk
 #
 #	foo.o: foo.c $(htslib_hts_h) $(htslib_kstring_h)
 
-HTSPREFIX = $(HTSDIR)/
+HTSSRCDIR = $(HTSDIR)
+HTSPREFIX = $(HTSSRCDIR)/
 include $(HTSDIR)/htslib_vars.mk
 
 # This file provides the HTSCODECS_SOURCES variable.  It may not be present
@@ -54,101 +55,101 @@ include $(HTSDIR)/htslib_vars.mk
 #		$(HTSDIR)/tabix -p bed bar.bed.bgz
 
 HTSLIB_PUBLIC_HEADERS = \
-	$(HTSDIR)/htslib/bgzf.h \
-	$(HTSDIR)/htslib/cram.h \
-	$(HTSDIR)/htslib/faidx.h \
-	$(HTSDIR)/htslib/hfile.h \
-	$(HTSDIR)/htslib/hts.h \
-	$(HTSDIR)/htslib/hts_defs.h \
-	$(HTSDIR)/htslib/hts_endian.h \
-	$(HTSDIR)/htslib/hts_expr.h \
-	$(HTSDIR)/htslib/hts_log.h \
-	$(HTSDIR)/htslib/hts_os.h \
-	$(HTSDIR)/htslib/kbitset.h \
-	$(HTSDIR)/htslib/kfunc.h \
-	$(HTSDIR)/htslib/khash.h \
-	$(HTSDIR)/htslib/khash_str2int.h \
-	$(HTSDIR)/htslib/klist.h \
-	$(HTSDIR)/htslib/kseq.h \
-	$(HTSDIR)/htslib/ksort.h \
-	$(HTSDIR)/htslib/kstring.h \
-	$(HTSDIR)/htslib/regidx.h \
-	$(HTSDIR)/htslib/sam.h \
-	$(HTSDIR)/htslib/synced_bcf_reader.h \
-	$(HTSDIR)/htslib/tbx.h \
-	$(HTSDIR)/htslib/thread_pool.h \
-	$(HTSDIR)/htslib/vcf.h \
-	$(HTSDIR)/htslib/vcf_sweep.h \
-	$(HTSDIR)/htslib/vcfutils.h
+	$(HTSSRCDIR)/htslib/bgzf.h \
+	$(HTSSRCDIR)/htslib/cram.h \
+	$(HTSSRCDIR)/htslib/faidx.h \
+	$(HTSSRCDIR)/htslib/hfile.h \
+	$(HTSSRCDIR)/htslib/hts.h \
+	$(HTSSRCDIR)/htslib/hts_defs.h \
+	$(HTSSRCDIR)/htslib/hts_endian.h \
+	$(HTSSRCDIR)/htslib/hts_expr.h \
+	$(HTSSRCDIR)/htslib/hts_log.h \
+	$(HTSSRCDIR)/htslib/hts_os.h \
+	$(HTSSRCDIR)/htslib/kbitset.h \
+	$(HTSSRCDIR)/htslib/kfunc.h \
+	$(HTSSRCDIR)/htslib/khash.h \
+	$(HTSSRCDIR)/htslib/khash_str2int.h \
+	$(HTSSRCDIR)/htslib/klist.h \
+	$(HTSSRCDIR)/htslib/kseq.h \
+	$(HTSSRCDIR)/htslib/ksort.h \
+	$(HTSSRCDIR)/htslib/kstring.h \
+	$(HTSSRCDIR)/htslib/regidx.h \
+	$(HTSSRCDIR)/htslib/sam.h \
+	$(HTSSRCDIR)/htslib/synced_bcf_reader.h \
+	$(HTSSRCDIR)/htslib/tbx.h \
+	$(HTSSRCDIR)/htslib/thread_pool.h \
+	$(HTSSRCDIR)/htslib/vcf.h \
+	$(HTSSRCDIR)/htslib/vcf_sweep.h \
+	$(HTSSRCDIR)/htslib/vcfutils.h
 
 HTSLIB_ALL = \
 	$(HTSLIB_PUBLIC_HEADERS) \
-	$(HTSDIR)/bcf_sr_sort.c \
-	$(HTSDIR)/bcf_sr_sort.h \
-	$(HTSDIR)/bgzf.c \
+	$(HTSSRCDIR)/bcf_sr_sort.c \
+	$(HTSSRCDIR)/bcf_sr_sort.h \
+	$(HTSSRCDIR)/bgzf.c \
 	$(HTSDIR)/config.h \
-	$(HTSDIR)/errmod.c \
-	$(HTSDIR)/faidx.c \
-	$(HTSDIR)/header.c \
-	$(HTSDIR)/header.h \
-	$(HTSDIR)/hfile_internal.h \
-	$(HTSDIR)/hfile.c \
-	$(HTSDIR)/hfile_gcs.c \
-	$(HTSDIR)/hfile_libcurl.c \
-	$(HTSDIR)/hfile_s3.c \
-	$(HTSDIR)/hfile_s3_write.c \
-	$(HTSDIR)/hts.c \
-	$(HTSDIR)/hts_expr.c \
-	$(HTSDIR)/hts_internal.h \
-	$(HTSDIR)/hts_os.c \
-	$(HTSDIR)/kfunc.c \
-	$(HTSDIR)/kstring.c \
-	$(HTSDIR)/md5.c \
-	$(HTSDIR)/multipart.c \
-	$(HTSDIR)/plugin.c \
-	$(HTSDIR)/probaln.c \
-	$(HTSDIR)/realn.c \
-	$(HTSDIR)/regidx.c \
-	$(HTSDIR)/region.c \
-	$(HTSDIR)/sam.c \
-	$(HTSDIR)/sam_internal.h \
-	$(HTSDIR)/synced_bcf_reader.c \
-	$(HTSDIR)/tbx.c \
-	$(HTSDIR)/textutils.c \
-	$(HTSDIR)/textutils_internal.h \
-	$(HTSDIR)/thread_pool.c \
-	$(HTSDIR)/thread_pool_internal.h \
-	$(HTSDIR)/vcf.c \
-	$(HTSDIR)/vcf_sweep.c \
-	$(HTSDIR)/vcfutils.c \
-	$(HTSDIR)/cram/cram.h \
-	$(HTSDIR)/cram/cram_codecs.c \
-	$(HTSDIR)/cram/cram_codecs.h \
-	$(HTSDIR)/cram/cram_decode.c \
-	$(HTSDIR)/cram/cram_decode.h \
-	$(HTSDIR)/cram/cram_encode.c \
-	$(HTSDIR)/cram/cram_encode.h \
-	$(HTSDIR)/cram/cram_external.c \
-	$(HTSDIR)/cram/cram_index.c \
-	$(HTSDIR)/cram/cram_index.h \
-	$(HTSDIR)/cram/cram_io.c \
-	$(HTSDIR)/cram/cram_io.h \
-	$(HTSDIR)/cram/cram_samtools.h \
-	$(HTSDIR)/cram/cram_stats.c \
-	$(HTSDIR)/cram/cram_stats.h \
-	$(HTSDIR)/cram/cram_structs.h \
-	$(HTSDIR)/cram/mFILE.c \
-	$(HTSDIR)/cram/mFILE.h \
-	$(HTSDIR)/cram/misc.h \
-	$(HTSDIR)/cram/open_trace_file.c \
-	$(HTSDIR)/cram/open_trace_file.h \
-	$(HTSDIR)/cram/os.h \
-	$(HTSDIR)/cram/pooled_alloc.c \
-	$(HTSDIR)/cram/pooled_alloc.h \
-	$(HTSDIR)/cram/string_alloc.c \
-	$(HTSDIR)/cram/string_alloc.h \
-	$(HTSDIR)/os/lzma_stub.h \
-	$(HTSDIR)/os/rand.c \
+	$(HTSSRCDIR)/errmod.c \
+	$(HTSSRCDIR)/faidx.c \
+	$(HTSSRCDIR)/header.c \
+	$(HTSSRCDIR)/header.h \
+	$(HTSSRCDIR)/hfile_internal.h \
+	$(HTSSRCDIR)/hfile.c \
+	$(HTSSRCDIR)/hfile_gcs.c \
+	$(HTSSRCDIR)/hfile_libcurl.c \
+	$(HTSSRCDIR)/hfile_s3.c \
+	$(HTSSRCDIR)/hfile_s3_write.c \
+	$(HTSSRCDIR)/hts.c \
+	$(HTSSRCDIR)/hts_expr.c \
+	$(HTSSRCDIR)/hts_internal.h \
+	$(HTSSRCDIR)/hts_os.c \
+	$(HTSSRCDIR)/kfunc.c \
+	$(HTSSRCDIR)/kstring.c \
+	$(HTSSRCDIR)/md5.c \
+	$(HTSSRCDIR)/multipart.c \
+	$(HTSSRCDIR)/plugin.c \
+	$(HTSSRCDIR)/probaln.c \
+	$(HTSSRCDIR)/realn.c \
+	$(HTSSRCDIR)/regidx.c \
+	$(HTSSRCDIR)/region.c \
+	$(HTSSRCDIR)/sam.c \
+	$(HTSSRCDIR)/sam_internal.h \
+	$(HTSSRCDIR)/synced_bcf_reader.c \
+	$(HTSSRCDIR)/tbx.c \
+	$(HTSSRCDIR)/textutils.c \
+	$(HTSSRCDIR)/textutils_internal.h \
+	$(HTSSRCDIR)/thread_pool.c \
+	$(HTSSRCDIR)/thread_pool_internal.h \
+	$(HTSSRCDIR)/vcf.c \
+	$(HTSSRCDIR)/vcf_sweep.c \
+	$(HTSSRCDIR)/vcfutils.c \
+	$(HTSSRCDIR)/cram/cram.h \
+	$(HTSSRCDIR)/cram/cram_codecs.c \
+	$(HTSSRCDIR)/cram/cram_codecs.h \
+	$(HTSSRCDIR)/cram/cram_decode.c \
+	$(HTSSRCDIR)/cram/cram_decode.h \
+	$(HTSSRCDIR)/cram/cram_encode.c \
+	$(HTSSRCDIR)/cram/cram_encode.h \
+	$(HTSSRCDIR)/cram/cram_external.c \
+	$(HTSSRCDIR)/cram/cram_index.c \
+	$(HTSSRCDIR)/cram/cram_index.h \
+	$(HTSSRCDIR)/cram/cram_io.c \
+	$(HTSSRCDIR)/cram/cram_io.h \
+	$(HTSSRCDIR)/cram/cram_samtools.h \
+	$(HTSSRCDIR)/cram/cram_stats.c \
+	$(HTSSRCDIR)/cram/cram_stats.h \
+	$(HTSSRCDIR)/cram/cram_structs.h \
+	$(HTSSRCDIR)/cram/mFILE.c \
+	$(HTSSRCDIR)/cram/mFILE.h \
+	$(HTSSRCDIR)/cram/misc.h \
+	$(HTSSRCDIR)/cram/open_trace_file.c \
+	$(HTSSRCDIR)/cram/open_trace_file.h \
+	$(HTSSRCDIR)/cram/os.h \
+	$(HTSSRCDIR)/cram/pooled_alloc.c \
+	$(HTSSRCDIR)/cram/pooled_alloc.h \
+	$(HTSSRCDIR)/cram/string_alloc.c \
+	$(HTSSRCDIR)/cram/string_alloc.h \
+	$(HTSSRCDIR)/os/lzma_stub.h \
+	$(HTSSRCDIR)/os/rand.c \
 	$(HTSCODECS_SOURCES)
 
 $(HTSDIR)/config.h:
@@ -166,15 +167,13 @@ $(HTSDIR)/libhts.so: $(HTSLIB_ALL)
 $(HTSDIR)/libhts.dylib $(HTSDIR)/libhts.dll.a $(HTSDIR)/hts.dll.a: $(HTSDIR)/hts-object-files
 	+cd $(HTSDIR) && $(MAKE) lib-shared
 
-$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
+$(HTSDIR)/bgzip: $(HTSSRCDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
 	+cd $(HTSDIR) && $(MAKE) bgzip
 
-$(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
-
+$(HTSDIR)/htsfile: $(HTSSRCDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
 	+cd $(HTSDIR) && $(MAKE) htsfile
 
-$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
-
+$(HTSDIR)/tabix: $(HTSSRCDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
 	+cd $(HTSDIR) && $(MAKE) tabix
 
 $(HTSDIR)/htslib_static.mk: $(HTSDIR)/htslib.pc.tmp

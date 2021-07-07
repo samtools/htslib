@@ -1728,8 +1728,10 @@ cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
     else if (option == E_BYTE_ARRAY_BLOCK) {
         option = E_BYTE_ARRAY;
         c->decode = cram_xdelta_decode_block;
-    } else
+    } else {
+        free(c);
         return NULL;
+    }
     c->free = cram_xdelta_decode_free;
     c->size = cram_xdelta_decode_size;
     c->get_block = cram_xdelta_get_block;
@@ -1899,14 +1901,14 @@ int cram_xdelta_encode_int(cram_slice *slice, cram_codec *c,
 }
 
 int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
-                           char *in, int in_size) {
-    char *dat = malloc(in_size*5), *cp = dat, *cp_end = dat + in_size*5;
+                            char *in, int in_size) {
+    char *dat = malloc(in_size*5);
     if (!dat)
         return -1;
+    char *cp = dat, *cp_end = dat + in_size*5;
 
     c->u.e_xdelta.last = 0; // reset for each new array
-    switch(c->u.e_xdelta.word_size) {
-    case 2: {
+    if (c->u.e_xdelta.word_size == 2) {
         int i, part;
 
         part = in_size%2;
@@ -1922,9 +1924,6 @@ int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
             c->u.e_xdelta.last = le_int2(in16[i]);
             cp += c->vv->varint_put32(cp, cp_end, zigzag16(d));
         }
-
-        break;
-    }
     }
     if (c->u.e_xdelta.sub_codec->encode(slice, c->u.e_xdelta.sub_codec,
                                       (char *)dat, cp-dat)) {
@@ -3931,6 +3930,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         // unify this.
         cram_codec *t = malloc(sizeof(*t));
         if (!t) return -1;
+        t->vv     = c->vv;
         t->codec = E_HUFFMAN;
         t->free = cram_huffman_encode_free;
         t->store = cram_huffman_encode_store;
@@ -4017,6 +4017,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         // {len,val}_{encoding,dat} are undefined, but unused.
         // Leaving them unset here means we can test that assertion.
         *c = *t;
+        free(t);
         break;
     }
 

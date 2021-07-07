@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2020 Genome Research Ltd.
+    Copyright (C) 2012-2021 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -171,21 +171,26 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
 
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 {
-    assert( !readers->regions );
-    if ( readers->nreaders )
+    if ( readers->nreaders || readers->regions )
     {
         hts_log_error("Must call bcf_sr_set_regions() before bcf_sr_add_reader()");
         return -1;
     }
+
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
     readers->require_index = REQUIRE_IDX_;
     return 0;
 }
+
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles)
 {
-    assert( !readers->targets );
+    if ( readers->nreaders || readers->targets )
+    {
+        hts_log_error("Must call bcf_sr_set_targets() before bcf_sr_add_reader()");
+        return -1;
+    }
     if ( targets[0]=='^' )
     {
         readers->targets_exclude = 1;

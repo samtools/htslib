@@ -739,15 +739,15 @@ static int64_t safe_ltf8_get(char **cp, const char *endp, int *err) {
 }
 
 // Wrapper for now
-int safe_itf8_put(char *cp, const char *cp_end, int32_t val) {
+static int safe_itf8_put(char *cp, char *cp_end, int32_t val) {
     return itf8_put(cp, val);
 }
 
-int safe_ltf8_put(char *cp, const char *cp_end, int64_t val) {
+static int safe_ltf8_put(char *cp, char *cp_end, int64_t val) {
     return ltf8_put(cp, val);
 }
 
-int itf8_size(int64_t v) {
+static int itf8_size(int64_t v) {
     return ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5);
 }
 
@@ -796,20 +796,20 @@ static int64_t sint7_get_64(char **cp, const char *endp, int *err) {
     return val;
 }
 
-static int uint7_put_32(char *cp, const char *endp, int32_t val) {
-    return var_put_u32((uint8_t *)cp, (const uint8_t *)endp, val);
+static int uint7_put_32(char *cp, char *endp, int32_t val) {
+    return var_put_u32((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
-static int sint7_put_32(char *cp, const char *endp, int32_t val) {
-    return var_put_s32((uint8_t *)cp, (const uint8_t *)endp, val);
+static int sint7_put_32(char *cp, char *endp, int32_t val) {
+    return var_put_s32((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
-static int uint7_put_64(char *cp, const char *endp, int64_t val) {
-    return var_put_u64((uint8_t *)cp, (const uint8_t *)endp, val);
+static int uint7_put_64(char *cp, char *endp, int64_t val) {
+    return var_put_u64((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
-static int sint7_put_64(char *cp, const char *endp, int64_t val) {
-    return var_put_s64((uint8_t *)cp, (const uint8_t *)endp, val);
+static int sint7_put_64(char *cp, char *endp, int64_t val) {
+    return var_put_s64((uint8_t *)cp, (uint8_t *)endp, val);
 }
 
 // Put direct to to cram_block
@@ -1957,14 +1957,40 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
         return 0;
     }
 
+#ifndef ABS
+#    define ABS(a) ((a)>=0?(a):-(a))
+#endif
+
     if (metrics) {
         pthread_mutex_lock(&fd->metrics_lock);
+        // Sudden changes in size trigger a retrial.  These are mainly
+        // triggered when switching to sorted / unsorted, where the number
+        // of elements in a slice radically changes.
+        //
+        // We also get large fluctuations based on genome coordinate for
+        // e.g. SA:Z and SC series, but we consider the typical scale of
+        // delta between blocks and use this to look for abnormality.
+        if (metrics->input_avg_sz &&
+            (b->uncomp_size + 1000 > 4*(metrics->input_avg_sz+1000) ||
+             b->uncomp_size + 1000 < (metrics->input_avg_sz+1000)/4) &&
+            ABS(b->uncomp_size-metrics->input_avg_sz)
+                > 10*metrics->input_avg_delta) {
+            metrics->next_trial = 0;
+        }
+
         if (metrics->trial > 0 || --metrics->next_trial <= 0) {
             int m, unpackable = metrics->unpackable;
             size_t sz_best = b->uncomp_size;
             size_t sz[CRAM_MAX_METHOD] = {0};
             int method_best = 0; // RAW
             char *c_best = NULL, *c = NULL;
+
+            metrics->input_avg_delta =
+                0.9 * (metrics->input_avg_delta +
+                       ABS(b->uncomp_size - metrics->input_avg_sz));
+
+            metrics->input_avg_sz += b->uncomp_size*.2;
+            metrics->input_avg_sz *= 0.8;
 
             if (metrics->revised_method)
                 method = metrics->revised_method;
@@ -2124,7 +2150,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                         metrics->sz[m] *= 1+(meth_cost[m]-1)/3;
                 } // else cost is ignored
 
-                // Ensure these are never used
+                // Ensure these are never used; BSC and ZSTD
                 metrics->sz[9] = metrics->sz[10] = INT_MAX;
 
                 for (m = 0; m < CRAM_MAX_METHOD; m++) {
@@ -2189,6 +2215,13 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             }
             pthread_mutex_unlock(&fd->metrics_lock);
         } else {
+            metrics->input_avg_delta =
+                0.9 * (metrics->input_avg_delta +
+                       ABS(b->uncomp_size - metrics->input_avg_sz));
+
+            metrics->input_avg_sz += b->uncomp_size*.2;
+            metrics->input_avg_sz *= 0.8;
+
             strat = metrics->strat;
             method = metrics->method;
 
@@ -5368,6 +5401,8 @@ int cram_write_eof_block(cram_fd *fd) {
             cram_free_block(c.comp_hdr_block);
             return -1;
         }
+        if (ch.preservation_map)
+            kh_destroy(map, ch.preservation_map);
         cram_free_block(c.comp_hdr_block);
 
         // V2.1 bytes

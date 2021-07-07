@@ -1,3 +1,129 @@
+Noteworthy changes in release 1.13 (7th July 2021)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Features and Updates
+--------------------
+
+* In case a PG header line has multiple ID tags supplied by other applications,
+  the header API now selects the first one encountered as the identifying tag
+  and issues a warning when detecting subsequent ID tags.
+  (#1256; fixed samtools/samtools#1393)
+
+* VCF header reading function (vcf_hdr_read) no longer tries to download a
+  remote index file by default.
+  (#1266; fixes #380)
+
+* Support reading and writing FASTQ format in the same way as SAM, BAM or CRAM.
+  Records read from a FASTQ file will be treated as unmapped data.
+  (#1156)
+
+* Added GCP requester pays bucket access.  Thanks to @indraniel.
+  (#1255)
+
+* Made mpileup's overlap removal choose which copy to remove at random instead
+  of always removing the second one.  This avoids strand bias in experiments
+  where the +ve and -ve strand reads always appear in the same order.
+  (#1273; fixes samtools/bcftools#1459)
+
+* It is now possible to use platform specific BAQ parameters.  This also
+  selects long-read parameters for read lengths bigger than 1kb, which helps
+  bcftools mpileup call SNPs on PacBio CCS reads.
+  (#1275)
+
+* Improved bcf_remove_allele_set.  This fixes a bug that stopped iteration over
+  alleles prematurely, marks removed alleles as 'missing' and does automatic
+  lazy unpacking.
+  (#1288; fixes #1259)
+
+* Improved compression metrics for unsorted CRAM files.  This improves the
+  choice of codecs when handling unsorted data.
+  (#1291)
+
+* Linear index entries for empty intervals are now initialised with the file
+  offset in the next non-empty interval instead of the previous one.  This
+  may reduce the amount of data iterators have to discard before reaching
+  the desired region, when the starting location is in a sequence gap.
+  Thanks to @carsonh for reporting the issue.
+  (#1286; fixes #486)
+
+* A new hts_bin_level API function has been added, to compute the level of a
+  given bin in the binning index.
+  (#1286)
+
+* Related to the above, a new API method, hts_idx_nseq, now returns the total
+  number of contigs from an index.
+  (#1295 and #1299)
+
+* Added bracket handling to bcf_hdr_parse_line, for use with ##META lines.
+  Thanks to Alberto Casas Ortiz.
+  (#1240)
+
+Build changes
+-------------
+
+These are compiler, configuration and makefile based changes.
+
+* HTSlib now uses libhtscodecs release 1.1.1.
+
+* Added a curl/curl.h check to configure and improved INSTALL documentation on
+  build options.  Thanks to Melanie Kirsche and John Marshall.
+  (#1265; fixes #1261)
+
+* Some fixes to address GCC 11.1 warnings.
+  (#1280, #1284, #1285; fixes #1283)
+
+* Supports building HTSlib in a separate directory. Thanks to John Marshall.
+  (#1277; fixes #231)
+
+* Supports building HTSlib on MinGW 32-bit environments. Thanks to
+  John Marshall.
+  (#1301)
+
+Bug fixes
+---------
+
+* Fixed hts_itr_query() et al region queries: fixed bug introduced in
+  HTSlib 1.12, which led to iterators producing very few reads for some
+  queries (especially for larger target regions) when unmapped reads were
+  present. HTSlib 1.11 had a related problem in which iterators would omit
+  a few unmapped reads that should have been produced; cf #1142.
+  Thanks to Daniel Cooke for reporting the issue.
+  (#1281; fixes #1279)
+
+* Removed compressBound assertions on opening bgzf files.  Thanks to
+  Gurt Hulselmans for reporting the issue.
+  (#1258; fixed #1257)
+
+* Duplicate sample name error message for a VCF file now only displays the
+  duplicated name rather the entire same name list.
+  (#1262; fixes samtools/bcftools#1451)
+
+* Fix to make samtools cat work on CRAMs again.
+  (#1276; fixes samtools/samtools#1420)
+
+* Fix for a double memory free in SAM header creation.  Thanks to @ihsineme.
+  (#1274)
+
+* Prevent assert in bcf_sr_set_regions.  Thanks to Dr K D Murray.
+  (#1270)
+
+* Fixed crash in knet_open() etc stubs.  Thanks to John Marshall.
+  (#1289)
+
+* Fixed filter expression "cigar" on unmapped reads.  Stop treating an empty
+  CIGAR string as an error.  Thanks to Chang Y for reporting the issue.
+  (#1298, fixes samtools/samtools#1445)
+
+* Bug fixes in the bundled copy of htscodecs:
+
+  - Fixed an uninitialized access in the name tokeniser decoder.
+    (samtools/htscodecs#23)
+
+  - Fixed a bug with name tokeniser and variable number of names per slice,
+    causing it to incorrectly report an error on certain valid inputs.
+    (samtools/htscodecs#24)
+
+
 Noteworthy changes in release 1.12 (17th March 2021)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

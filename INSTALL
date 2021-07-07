@@ -49,7 +49,7 @@ Storage is enabled.
 
 Amazon S3 support requires an HMAC function to calculate a message
 authentication code.  On MacOS, the CCHmac function from the standard
-library is used.  Systems that do not have CChmac will get this from
+library is used.  Systems that do not have CCHmac will get this from
 libcrypto.  libcrypto is part of OpenSSL or one of its derivatives (LibreSSL
 or BoringSSL).
 
@@ -57,7 +57,7 @@ On Microsoft Windows we recommend use of Mingw64/Msys2.  Note that
 currently for the test harness to work you will need to override the
 test temporary directory with e.g.: make check TEST_OPTS="-t C:/msys64/tmp/_"
 Whilst the code may work on Windows with other environments, these have
-not be verified.
+not been verified.
 
 Update htscodecs submodule
 ==========================
@@ -103,7 +103,7 @@ configure and just type 'make; make install' as for previous versions
 of HTSlib.  However if the build fails you should run './configure' as
 it can diagnose the common reasons for build failures.
 
-The 'make' command builds the HTSlib library and and various useful
+The 'make' command builds the HTSlib library and various useful
 utilities: bgzip, htsfile, and tabix.  If compilation fails you should
 run './configure' as it can diagnose problems with your build environment
 that cause build failures.
@@ -150,7 +150,10 @@ various features and specify further optional external requirements:
 
 --enable-libcurl
     Use libcurl (<http://curl.se/>) to implement network access to
-    remote files via FTP, HTTP, HTTPS, etc.
+    remote files via FTP, HTTP, HTTPS, etc.  By default or with
+    --enable-libcurl=check, configure will probe for libcurl and include
+    this functionality if libcurl is available.  Use --disable-libcurl
+    to prevent this.
 
 --enable-gcs
     Implement network access to Google Cloud Storage.  By default or with
@@ -175,6 +178,12 @@ various features and specify further optional external requirements:
     and decompression.  It also includes a fast crc32 implementation.
     By default, ./configure will probe for libdeflate and use it if
     available.  To prevent this, use --without-libdeflate.
+
+Each --enable-FEATURE/--disable-FEATURE/--with-PACKAGE/--without-PACKAGE
+option listed also has an opposite, e.g., --without-external-htscodecs
+or --disable-plugins.  However, apart from those options for which the
+default is to probe for related facilities, using these opposite options
+is mostly unnecessary as they just select the default configure behaviour.
 
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'

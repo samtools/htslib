@@ -1,6 +1,6 @@
 /*  test/test_introspection.c -- demonstration of introspection function usage
 
-    Copyright (C) 2020 Genome Research Ltd.
+    Copyright (C) 2020-2021 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 

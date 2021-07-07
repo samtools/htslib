@@ -330,9 +330,14 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
 
         while (tag) {
             if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-                assert(tag->len >= 3);
-                hrecs->pg[npg].name = tag->str + 3;
-                hrecs->pg[npg].name_len = tag->len - 3;
+                /* Avoid duplicate ID tags coming from other applications */
+                if (!hrecs->pg[npg].name) {
+                    assert(tag->len >= 3);
+                    hrecs->pg[npg].name = tag->str + 3;
+                    hrecs->pg[npg].name_len = tag->len - 3;
+                } else {
+                    hts_log_warning("PG line with multiple ID tags. The first encountered was preferred - ID:%s", hrecs->pg[npg].name);
+                }
             } else if (tag->str[0] == 'P' && tag->str[1] == 'P') {
                 // Resolve later if needed
                 khint_t k;

@@ -234,7 +234,16 @@ AC_SEARCH_LIBS([recv], [socket ws2_32], [
 if test "$ac_cv_search_recv" != "none required"
 then
   static_LIBS="$static_LIBS $ac_cv_search_recv"
-fi], [MSG_ERROR([unable to find the recv() function])])
+fi],
+  dnl on MinGW-i686, checking recv() linking requires an annotated declaration
+  [AC_MSG_CHECKING([for library containing recv using declaration])
+   LIBS="-lws2_32 $LIBS"
+   AC_LINK_IFELSE(
+     [AC_LANG_PROGRAM([[#include <winsock2.h>]], [[recv(0, 0, 0, 0);]])],
+     [AC_MSG_RESULT([-lws2_32])
+      static_LIBS="$static_LIBS -lws2_32"],
+     [AC_MSG_RESULT([no])
+      MSG_ERROR([unable to find the recv() function])])])
 
 if test "$enable_bz2" != no; then
   bz2_devel=ok
@@ -326,7 +335,6 @@ in  the top-level htslib directory to update it, and then re-run configure.
 You have an incomplete distribution.  Please try downloading one of the
 official releases from https://www.htslib.org
 ])])])])
-AC_SUBST([selected_htscodecs_mk])
 
 AS_IF([test "x$with_libdeflate" != "xno"],
   [libdeflate=ok
@@ -351,15 +359,20 @@ HTSlib.])])])])
 
 libcurl=disabled
 if test "$enable_libcurl" != no; then
-  AC_CHECK_LIB([curl], [curl_easy_pause],
-    [AC_DEFINE([HAVE_LIBCURL], 1, [Define if libcurl file access is enabled.])
-     libcurl=enabled],
+  libcurl_devel=ok
+  AC_CHECK_HEADER([curl/curl.h], [], [libcurl_devel="headers not found"], [;])
+  AC_CHECK_LIB([curl], [curl_easy_pause], [:],
     [AC_CHECK_LIB([curl], [curl_easy_init],
-       [message="library is too old (7.18+ required)"],
-       [message="library not found"])
-     case "$enable_libcurl" in
-       check) AC_MSG_WARN([libcurl not enabled: $message]) ;;
-       *) MSG_ERROR([libcurl $message
+       [libcurl_devel="library is too old (7.18+ required)"],
+       [libcurl_devel="library not found"])])
+
+  if test "$libcurl_devel" = ok; then
+    AC_DEFINE([HAVE_LIBCURL], 1, [Define if libcurl file access is enabled.])
+    libcurl=enabled
+  elif test "$enable_libcurl" = check; then
+    AC_MSG_WARN([libcurl not enabled: $libcurl_devel])
+  else
+    MSG_ERROR([libcurl $libcurl_devel
 
 Support for HTTPS and other SSL-based URLs requires routines from the libcurl
 library <http://curl.se/libcurl/>.  Building HTSlib with libcurl enabled
@@ -369,8 +382,8 @@ Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions
 or Cygwin) is installed.
 
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])
-       ;;
-     esac])
+  fi
+
 dnl -lcurl is only needed for static linking if hfile_libcurl is not a plugin
   if test "$libcurl" = enabled ; then
     if test "$enable_plugins" != yes ; then
@@ -469,5 +482,28 @@ AC_SUBST([private_LIBS])
 AC_SUBST([static_LDFLAGS])
 AC_SUBST([static_LIBS])
 
-AC_CONFIG_FILES([config.mk htscodecs.mk htslib.pc.tmp:htslib.pc.in])
+AC_CONFIG_FILES([config.mk htslib.pc.tmp:htslib.pc.in])
+AC_CONFIG_LINKS([htscodecs.mk:$selected_htscodecs_mk])
+
+if test "$srcdir" != .; then
+  # Set up for a separate build directory. As HTSlib uses a non-recursive
+  # makefile, we need to create additional build subdirectories explicitly.
+  AC_CONFIG_LINKS([Makefile:Makefile htslib.mk:htslib.mk])
+  AC_CONFIG_FILES([htslib_vars.mk:builddir_vars.mk.in])
+  AC_CONFIG_COMMANDS([mkdir],
+    [AS_MKDIR_P([cram])
+     AS_MKDIR_P([htscodecs/htscodecs])
+     AS_MKDIR_P([htscodecs/tests])
+     AS_MKDIR_P([test/fuzz])
+     AS_MKDIR_P([test/longrefs])
+     AS_MKDIR_P([test/tabix])])
+fi
+
+# @HTSDIRslash_if_relsrcdir@ will be empty when $srcdir is absolute
+case "$srcdir" in
+  /*) HTSDIRslash_if_relsrcdir= ;;
+  *)  HTSDIRslash_if_relsrcdir='$(HTSDIR)/' ;;
+esac
+AC_SUBST([HTSDIRslash_if_relsrcdir])
+
 AC_OUTPUT
