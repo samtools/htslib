@@ -1166,6 +1166,14 @@ static int bam_sym_lookup(void *data, char *str, char **end,
         }
         break;
 
+    case 'e':
+        if (memcmp(str, "endpos", 6) == 0) {
+            *end = str+6;
+            res->d = bam_endpos(b);
+            return 0;
+        }
+        break;
+
     case 'f':
         if (memcmp(str, "flag", 4) == 0) {
             str = *end = str+4;
