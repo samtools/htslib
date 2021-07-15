@@ -949,9 +949,11 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
             pthread_cond_signal(&p->t[i].pending_c);
 
     // Ensure there is room for the final sprint.
-    // Shouldn't be possible to get here, but just in case.
-    if (q->qsize < q->n_output + q->n_input + q->n_processing)
-        q->qsize = q->n_output + q->n_input + q->n_processing;
+    // Ideally we shouldn't get here, but the "q->qsize - q->n_output >
+    // p->tsize - p->nwaiting" check in tpool_worker means we can
+    // trigger a deadlock there.  This negates that possibility.
+    if (q->qsize < q->n_output + q->n_input + q->n_processing + p->tsize)
+        q->qsize = q->n_output + q->n_input + q->n_processing + p->tsize;
 
     // When shutdown, we won't be launching more, but we can still
     // wait for any processing jobs complete.
