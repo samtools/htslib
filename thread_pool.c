@@ -529,7 +529,7 @@ static void *tpool_worker(void *arg) {
             // room to put the result.
             //if (q && q->input_head && !hts_tpool_process_output_full(q)) {
             if (q && q->input_head
-                && q->qsize - q->n_output > p->tsize - p->nwaiting
+                && q->qsize - q->n_output > q->n_processing
                 && !q->shutdown) {
                 work_to_do = 1;
                 break;
@@ -949,7 +949,9 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
             pthread_cond_signal(&p->t[i].pending_c);
 
     // Ensure there is room for the final sprint.
-    // Shouldn't be possible to get here, but just in case.
+    // Ideally we shouldn't get here, but the "q->qsize - q->n_output >
+    // n_processing" check in tpool_worker means we can trigger a
+    // deadlock there.  This negates that possibility.
     if (q->qsize < q->n_output + q->n_input + q->n_processing)
         q->qsize = q->n_output + q->n_input + q->n_processing;
 
