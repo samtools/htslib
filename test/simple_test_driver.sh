@@ -3,7 +3,8 @@
 #
 #    Copyright (C) 2017-2018 Genome Research Ltd.
 #
-#    Author: Robert Davies <rmd@sanger.ac.uk>
+#    Author: James Bonfield <jkb@sanger.ac.uk>
+#            Robert Davies <rmd@sanger.ac.uk>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal

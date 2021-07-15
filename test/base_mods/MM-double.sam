@@ -1,0 +1,3 @@
+@CO	Modifications called on both strands of the same record,
+@CO	including potentially at the same location simultaneously.
+*	0	*	0	0	*	*	0	0	AGGATCTCTAGCGGATCGGCGGGGGATATGCCATAT	*	Mm:Z:C+m,1,3,0;G-m,0,2,0,4;G+o,4;	Ml:B:C,128,153,179,115,141,166,192,102

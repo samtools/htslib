@@ -74,12 +74,14 @@ BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
 	test/pileup \
+	test/pileup_mod \
 	test/plugins-dlhts \
 	test/sam \
 	test/test_bgzf \
 	test/test_expr \
 	test/test_kfunc \
 	test/test_kstring \
+	test/test_mod \
 	test/test_realn \
 	test/test-regidx \
 	test/test_str2int \
@@ -497,6 +499,7 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS) $(HTSCODEC
 	cd test/tabix && ./test-tabix.sh tabix.tst
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	cd test/fastq && ./test-fastq.sh
+	cd test/base_mods && ./base-mods.sh base-mods.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
@@ -516,6 +519,9 @@ test/hfile: test/hfile.o libhts.a
 test/pileup: test/pileup.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
 
+test/pileup_mod: test/pileup_mod.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/pileup_mod.o libhts.a $(LIBS) -lpthread
+
 test/plugins-dlhts: test/plugins-dlhts.o
 	$(CC) $(LDFLAGS) -o $@ test/plugins-dlhts.o $(LIBS)
 
@@ -533,6 +539,9 @@ test/test_kfunc: test/test_kfunc.o libhts.a
 
 test/test_kstring: test/test_kstring.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_mod: test/test_mod.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_mod.o libhts.a $(LIBS) -lpthread
 
 test/test_realn: test/test_realn.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
@@ -622,12 +631,14 @@ test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
+test/pileup_mod.o: test/pileup_mod.c config.h $(htslib_sam_h)
 test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
+test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(textutils_internal_h)
