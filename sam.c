@@ -5106,13 +5106,14 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
  *
  * This variant handles base modifications, but only when "m" is non-NULL.
  *
- * Returns the length of insertion string on success;
+ * Returns the number of inserted base on success, with string length being
+ *        accessable via ins->l;
  *        -1 on failure.
  */
 int bam_plp_insertion_mod(const bam_pileup1_t *p,
                           hts_base_mod_state *m,
                           kstring_t *ins, int *del_len) {
-    int j, k, indel;
+    int j, k, indel, nb = 0;
     uint32_t *cigar;
 
     if (p->indel <= 0) {
@@ -5142,7 +5143,7 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
         }
         k++;
     }
-    ins->l = indel;
+    nb = ins->l = indel;
 
     // Produce sequence
     if (ks_resize(ins, indel+1) < 0)
@@ -5204,8 +5205,9 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
         k++;
     }
     ins->s[indel] = '\0';
+    ins->l = indel; // string length
 
-    return indel;
+    return nb;      // base length
 }
 
 /*

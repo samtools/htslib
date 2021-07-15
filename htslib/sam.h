@@ -1992,7 +1992,8 @@ typedef struct bam_mplp_s *bam_mplp_t;
      * @param m       state data for the base modification finder
      * @param ins     the kstring where the insertion sequence will be written
      * @param del_len location for deletion length
-     * @return the length of insertion string on success; -1 on failure.
+     * @return the number of insertion string on success, with string length
+     *         being accessable via ins->l; -1 on failure.
      *
      * Fills out the kstring with the padded insertion sequence for the current
      * location in 'p'.  If this is not an insertion site, the string is blank.
