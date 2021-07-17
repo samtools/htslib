@@ -59,6 +59,8 @@ struct hFILE;
 struct hts_tpool;
 struct sam_hdr_t;
 
+size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,
+                          int, void **, const char *);
 /**
  * @hideinitializer
  * Deprecated macro to expand a dynamic array of a given type
@@ -85,8 +87,6 @@ struct sam_hdr_t;
  */
 #define hts_expand(type_t, n, m, ptr) do {                              \
         if ((n) > (m)) {                                                \
-            size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,   \
-                                      int, void **, const char *);      \
             (m) = hts_realloc_or_die((n) >= 1 ? (n) : 1, (m), sizeof(m), \
                                      sizeof(type_t),  0,                \
                                      (void **)&(ptr), __func__);        \
@@ -117,8 +117,6 @@ struct sam_hdr_t;
 
 #define hts_expand0(type_t, n, m, ptr) do {                             \
         if ((n) > (m)) {                                                \
-            size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,   \
-                                      int, void **, const char *);      \
             (m) = hts_realloc_or_die((n) >= 1 ? (n) : 1, (m), sizeof(m), \
                                      sizeof(type_t), 1,                 \
                                      (void **)&(ptr), __func__);        \
