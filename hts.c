@@ -737,7 +737,7 @@ char *hts_format_description(const htsFormat *format)
     return ks_release(&str);
 }
 
-htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
+static htsFile *hts_open_format_impl(const char *fn, const char *mode, const htsFormat *fmt, hFILE* hf)
 {
     char smode[101], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
@@ -785,7 +785,7 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
         fn = rmme;
     }
 
-    hfile = hopen(fn, smode);
+    hfile = hf ? hf : hopen(fn, smode);
     if (hfile == NULL) goto error;
 
     fp = hts_hopen(hfile, fn, smode);
@@ -817,6 +817,17 @@ error:
         hclose_abruptly(hfile);
 
     return NULL;
+}
+htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
+{
+	return hts_open_format_impl(fn, mode, fmt, NULL);
+}
+
+htsFile *hts_open_callback(const char* fn, hFILE_callback_ops* ops, const char* mode)
+{
+	if(NULL == ops) return NULL;
+	hFILE* fp = hopen_callback(*ops, mode);
+	return hts_open_format_impl(fn ? fn : "-", mode, NULL, fp);
 }
 
 htsFile *hts_open(const char *fn, const char *mode) {
