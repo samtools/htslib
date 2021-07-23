@@ -388,6 +388,7 @@ dnl -lcurl is only needed for static linking if hfile_libcurl is not a plugin
   if test "$libcurl" = enabled ; then
     if test "$enable_plugins" != yes ; then
       static_LIBS="$static_LIBS -lcurl"
+      private_LIBS="$private_LIBS -lcurl"
     fi
   fi
 fi
