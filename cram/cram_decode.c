@@ -668,6 +668,13 @@ int cram_dependent_data_series(cram_fd *fd,
             s->data_series |= CRAM_CF | CRAM_NF;
         if (s->data_series & (CRAM_BA | CRAM_QS | CRAM_BB | CRAM_QQ))
             s->data_series |= CRAM_BF | CRAM_CF | CRAM_RL;
+        if (s->data_series & CRAM_FN) {
+            // The CRAM_FN loop checks for reference length boundaries,
+            // which needs a working seq_pos.  Some fields are fixed size
+            // irrespective of if we decode (BS), but others need to know
+            // the size of the string fetched back (SC, IN, BB).
+            s->data_series |= CRAM_SC | CRAM_IN | CRAM_BB;
+        }
 
         orig_ds = s->data_series;
 
