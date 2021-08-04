@@ -6278,8 +6278,17 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
     }
     *pos = state->seq_pos = i;
 
-    if (i >= b->core.l_qseq)
+    if (i >= b->core.l_qseq) {
+        // Check for more MM elements than bases present.
+        for (i = 0; i < state->nmods; i++) {
+            if (!(b->core.flag & BAM_FREVERSE) &&
+                state->MMcount[i] < 0x7f000000) {
+                hts_log_warning("MM tag refers to bases beyond sequence length");
+                return -1;
+            }
+        }
         return 0;
+    }
 
     if (b->core.flag & BAM_FREVERSE) {
         for (i = 0; i < state->nmods; i++)
@@ -6303,7 +6312,7 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
  */
 int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
                     hts_base_mod *mods, int n_mods) {
-    // FIXME: for now this is ineffecient in implementation.
+    // FIXME: for now this is inefficient in implementation.
     int r = 0;
     while (state->seq_pos <= qpos)
         if ((r = bam_mods_at_next_pos(b, state, mods, n_mods)) < 0)

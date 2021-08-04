@@ -107,6 +107,8 @@ int main(int argc, char **argv) {
             else
                 strcat(out, line);
         }
+        if (n < 0)
+            goto err;
 
         if (argc > 1) puts("\n===\n");
     }
