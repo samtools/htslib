@@ -654,7 +654,8 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
         errno = saved_errno; // restore errno on expected no-CG-tag case
         return 0;
     }
-    if (CG[0] != 'B' || CG[1] != 'I') return 0; // not of type B,I
+    if (CG[0] != 'B' || !(CG[1] == 'I' || CG[1] == 'i'))
+        return 0; // not of type B,I
     CG_len = le_to_u32(CG + 2);
     if (CG_len < c->n_cigar || CG_len >= 1U<<29) return 0; // don't move if the real CIGAR length is shorter than the fake cigar length
 
