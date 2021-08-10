@@ -49,6 +49,7 @@ shlib-exports-*.txt
 /test/hts_endian
 /test/longrefs/*.tmp.*
 /test/pileup
+/test/pileup_mod
 /test/plugins-dlhts
 /test/sam
 /test/tabix/*.tmp.*
@@ -61,6 +62,7 @@ shlib-exports-*.txt
 /test/test_introspection
 /test/test_kfunc
 /test/test_kstring
+/test/test_mod
 /test/test-parse-reg
 /test/test_realn
 /test/test-regidx
