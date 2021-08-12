@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2017-2019 Genome Research Ltd.
+    Copyright (C) 2017-2021 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -259,6 +259,7 @@ static int cmpstringp(const void *p1, const void *p2)
     return strcmp(* (char * const *) p1, * (char * const *) p2);
 }
 
+#define DEBUG_VSETS 0
 #if DEBUG_VSETS
 void debug_vsets(sr_sort_t *srt)
 {
@@ -280,6 +281,7 @@ void debug_vsets(sr_sort_t *srt)
 }
 #endif
 
+#define DEBUG_VBUF 0
 #if DEBUG_VBUF
 void debug_vbuf(sr_sort_t *srt)
 {
@@ -380,13 +382,33 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
 
             if ( srt->str.l ) kputc(';',&srt->str);
             srt->off[srt->noff++] = srt->str.l;
-            size_t beg = srt->str.l;
+            size_t beg  = srt->str.l;
+            int end_pos = -1;
             for (ivar=1; ivar<line->n_allele; ivar++)
             {
                 if ( ivar>1 ) kputc(',',&srt->str);
                 kputs(line->d.allele[0],&srt->str);
                 kputc('>',&srt->str);
                 kputs(line->d.allele[ivar],&srt->str);
+
+                // If symbolic allele, check also the END tag in case there are multiple events,
+                // such as <DEL>s, starting at the same positions
+                if ( line->d.allele[ivar][0]=='<' )
+                {
+                    if ( end_pos==-1 )
+                    {
+                        bcf_info_t *end_info = bcf_get_info(reader->header,line,"END");
+                        if ( end_info )
+                            end_pos = (int)end_info->v1.i;  // this is only to create a unique id, we don't mind a potential int64 overflow
+                        else
+                            end_pos = 0;
+                    }
+                    if ( end_pos )
+                    {
+                        kputc('/',&srt->str);
+                        kputw(end_pos, &srt->str);
+                    }
+                }
             }
             if ( line->n_allele==1 )
             {
