@@ -1022,7 +1022,7 @@ int bgzf_read_block(BGZF *fp)
         if (j->hit_eof) {
             if (!fp->last_block_eof && !fp->no_eof_block) {
                 fp->no_eof_block = 1;
-                hts_log_warning("EOF marker is absent. The input is probably truncated");
+                hts_log_warning("EOF marker is absent. The input may be truncated");
             }
             fp->mt->hit_eof = 1;
         }
@@ -1124,7 +1124,7 @@ int bgzf_read_block(BGZF *fp)
         if (count == 0) { // no data read
             if (!fp->last_block_eof && !fp->no_eof_block && !fp->is_gzip) {
                 fp->no_eof_block = 1;
-                hts_log_warning("EOF marker is absent. The input is probably truncated");
+                hts_log_warning("EOF marker is absent. The input may be truncated");
             }
             fp->block_length = 0;
             return 0;
