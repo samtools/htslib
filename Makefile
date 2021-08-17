@@ -473,6 +473,13 @@ maintainer-check:
 	test/maintainer/check_copyright.pl .
 	test/maintainer/check_spaces.pl .
 
+# Look for untracked files in the git repository.
+check-untracked:
+	@if test -e .git && git status --porcelain | grep '^\?'; then \
+	    echo 'Untracked files detected (see above). Please either clean up, add to .gitignore, or for test output files consider naming them to match *.tmp or *.tmp.*' ; \
+	    false ; \
+	fi
+
 # Create a shorthand. We use $(SRC) or $(srcprefix) rather than $(srcdir)/
 # for brevity in test and install rules, and so that build logs do not have
 # ./ sprinkled throughout.
@@ -801,7 +808,7 @@ distdir:
 force:
 
 
-.PHONY: all check clean distclean distdir force
+.PHONY: all check check-untracked clean distclean distdir force
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
 .PHONY: maintainer-check maintainer-clean mostlyclean plugins
 .PHONY: print-config print-version show-version tags

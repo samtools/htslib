@@ -48,7 +48,7 @@ test_template: &TEST
   test_script: |
     make test-shlib-exports
     make test
-
+    if test "x$DO_UNTRACKED_FILE_CHECK" = "xyes"; then make check-untracked ; fi
 
 #--------------------------------------------------
 # Task: linux builds.
@@ -68,6 +68,7 @@ gcc_task:
   matrix:
     - environment:
        DO_MAINTAINER_CHECKS: yes
+       DO_UNTRACKED_FILE_CHECK: yes
        USE_CONFIG: no
     - environment:
        USE_CONFIG: yes
@@ -96,6 +97,7 @@ ubuntu_task:
   matrix:
     - environment:
        USE_CONFIG: yes
+       DO_UNTRACKED_FILE_CHECK: yes
     - environment:
        USE_CONFIG: yes
        CFLAGS: -g -Wall -O3 -fsanitize=address
