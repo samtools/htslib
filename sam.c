@@ -3597,6 +3597,7 @@ typedef struct {
     char BC[3];         // aux tag ID for barcode
     khash_t(tag) *tags; // which aux tags to use (if empty, use all).
     char nprefix;
+    int sra_names;
 } fastq_state;
 
 // Initialise fastq state.
@@ -3638,6 +3639,10 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
     switch (opt) {
     case FASTQ_OPT_CASAVA:
         x->casava = 1;
+        break;
+
+    case FASTQ_OPT_NAME2:
+        x->sra_names = 1;
         break;
 
     case FASTQ_OPT_AUX: {
@@ -3710,11 +3715,27 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
     }
 
     // Name
+
     if (*x->name.s != x->nprefix)
         return -2;
 
-    i = 0; l = x->name.l;
-    char *s = x->name.s;
+    // Reverse the SRA strangeness of putting the run_name.number before
+    // the read name.
+    i = 0;
+    char *name = x->name.s+1;
+    if (x->sra_names) {
+        char *cp = strpbrk(x->name.s, " \t");
+        if (cp) {
+            while (*cp == ' ' || *cp == '\t')
+                cp++;
+            *--cp = '@';
+            i = cp - x->name.s;
+            name = cp+1;
+        }
+    }
+
+    l = x->name.l;
+    char *s = x->name.s + i;
     while (i < l && !isspace_c(s[i]))
         i++;
     if (i < l) {
@@ -3774,7 +3795,7 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
 
     // Convert to BAM
     ret = bam_set1(b,
-                   x->name.l-1, x->name.s+1,
+                   x->name.s + x->name.l - name, name,
                    flag,
                    -1, -1, 0, // ref '*', pos, mapq,
                    0, NULL,     // no cigar,

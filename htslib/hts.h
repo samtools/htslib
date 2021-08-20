@@ -359,6 +359,11 @@ enum hts_fmt_option {
     // Two character string.
     // Barcode aux tag for CASAVA; defaults to "BC".
     FASTQ_OPT_BARCODE,
+
+    // Process SRA and ENA read names which pointlessly move the original
+    // name to the second field and insert a constructed <run>.<number>
+    // name in its place.
+    FASTQ_OPT_NAME2,
 };
 
 // Profile options for encoding; primarily used at present in CRAM

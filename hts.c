@@ -1035,6 +1035,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         strcmp(o->arg, "FASTQ_CASAVA") == 0)
         o->opt = FASTQ_OPT_CASAVA, o->val.i = 1;
 
+    else if (strcmp(o->arg, "fastq_name2") == 0 ||
+        strcmp(o->arg, "FASTQ_NAME2") == 0)
+        o->opt = FASTQ_OPT_NAME2, o->val.i = 1;
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1606,6 +1610,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
 
     case FASTQ_OPT_CASAVA:
     case FASTQ_OPT_RNUM:
+    case FASTQ_OPT_NAME2:
         if (fp->format.format == fastq_format ||
             fp->format.format == fasta_format)
             return fastq_state_set(fp, opt);
