@@ -31,7 +31,11 @@ srcdir=${0%/version.sh}
 if [ -e $srcdir/.git ]
 then
     # If we ever get to 10.x this will need to be more liberal
-    VERSION=`cd $srcdir && git describe --match '[0-9].[0-9]*' --dirty`
+    v=`cd $srcdir && git describe --always --match '[0-9].[0-9]*' --dirty`
+    case $v in
+        [0-9]*.[0-9]*) VERSION="$v" ;;
+        [0-9a-f][0-9a-f]*) VERSION="$VERSION-1-g$v" ;;
+    esac
 fi
 
 # Numeric version is for use in .dylib or .so libraries
