@@ -304,6 +304,7 @@ typedef struct bcf1_t {
     typedef htsFile vcfFile;
     #define bcf_open(fn, mode) hts_open((fn), (mode))
     #define vcf_open(fn, mode) hts_open((fn), (mode))
+    #define bcf_flush(fp) hts_flush((fp))
     #define bcf_close(fp) hts_close(fp)
     #define vcf_close(fp) hts_close(fp)
 

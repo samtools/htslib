@@ -1370,6 +1370,7 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
 
     #define sam_open(fn, mode) (hts_open((fn), (mode)))
     #define sam_open_format(fn, mode, fmt) (hts_open_format((fn), (mode), (fmt)))
+    #define sam_flush(fp) hts_flush((fp))
     #define sam_close(fp) hts_close(fp)
 
     HTSLIB_EXPORT

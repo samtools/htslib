@@ -1482,6 +1482,38 @@ int hts_close(htsFile *fp)
     return ret;
 }
 
+int hts_flush(htsFile *fp)
+{
+    if (fp == NULL) return 0;
+
+    switch (fp->format.format) {
+    case binary_format:
+    case bam:
+    case bcf:
+        return bgzf_flush(fp->fp.bgzf);
+
+    case cram:
+        return cram_flush(fp->fp.cram);
+
+    case empty_format:
+    case text_format:
+    case bed:
+    case fasta_format:
+    case fastq_format:
+    case sam:
+    case vcf:
+        if (fp->format.compression != no_compression)
+            return bgzf_flush(fp->fp.bgzf);
+        else
+            return hflush(fp->fp.hfile);
+
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 const htsFormat *hts_get_format(htsFile *fp)
 {
     return fp? &fp->format : NULL;
