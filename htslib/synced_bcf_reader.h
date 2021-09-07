@@ -1,7 +1,7 @@
 /// @file htslib/synced_bcf_reader.h
 /// Stream through multiple VCF files.
 /*
-    Copyright (C) 2012-2017, 2019-2020 Genome Research Ltd.
+    Copyright (C) 2012-2017, 2019-2021 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -96,7 +96,9 @@ typedef enum
 {
     BCF_SR_REQUIRE_IDX,
     BCF_SR_PAIR_LOGIC,          // combination of the PAIR_* values above
-    BCF_SR_ALLOW_NO_IDX         // allow to proceed even if required index is not present (at the user's risk)
+    BCF_SR_ALLOW_NO_IDX,        // allow to proceed even if required index is not present (at the user's risk)
+    BCF_SR_REGIONS_OVERLAP,     // include overlapping records with POS outside the regions: 0=no, 1=VCF line overlap, 2=true variant overlap [1]
+    BCF_SR_TARGETS_OVERLAP      // include overlapping records with POS outside the targets: 0=no, 1=VCF line overlap, 2=true variant overlap [0]
 }
 bcf_sr_opt_t;
 
@@ -110,7 +112,8 @@ typedef struct bcf_sr_regions_t
     kstring_t line;         // holder of the current line, set only when reading from tabix-indexed files
     htsFile *file;
     char *fname;
-    int is_bin;             // is open in binary mode (tabix access)
+    int is_bin:30,          // is open in binary mode (tabix access)
+        overlap:2;          // see BCF_SR_REGIONS_OVERLAP/BCF_SR_TARGETS_OVERLAP
     char **als;             // parsed alleles if targets_als set and _regions_match_alleles called
     kstring_t als_str;      // block of parsed alleles
     int nals, mals;         // number of set alleles and the size of allocated array
