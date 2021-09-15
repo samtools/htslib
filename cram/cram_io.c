@@ -3363,7 +3363,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
     char *seq;
     int ostart = start;
 
-    if (id == -1)
+    if (id == -1 || start < 1)
         return NULL;
 
     /* FIXME: axiomatic query of r->seq being true?
@@ -3439,8 +3439,6 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
         end = r->length;
     if (end >= r->length)
         end  = r->length;
-    if (start < 1)
-        return NULL;
 
     if (end - start >= 0.5*r->length || fd->shared_ref) {
         start = 1;
