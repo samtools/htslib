@@ -41,6 +41,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/stat.h>
 #include <assert.h>
 
+#ifdef HAVE_LIBLZMA
+#ifdef HAVE_LZMA_H
+#include <lzma.h>
+#else
+#include "os/lzma_stub.h"
+#endif
+#endif
+
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
@@ -322,6 +330,38 @@ decompress_peek_gz(hFILE *fp, unsigned char *dest, size_t destsize)
     return destsize;
 }
 
+#ifdef HAVE_LIBLZMA
+// Similarly decompress a portion by peeking at the file, which must be
+// positioned at the start of the file.
+static ssize_t
+decompress_peek_xz(hFILE *fp, unsigned char *dest, size_t destsize)
+{
+    unsigned char buffer[2048];
+    ssize_t npeek = hpeek(fp, buffer, sizeof buffer);
+    if (npeek < 0) return -1;
+
+    lzma_stream ls = LZMA_STREAM_INIT;
+    if (lzma_stream_decoder(&ls, lzma_easy_decoder_memusage(9), 0) != LZMA_OK)
+        return -1;
+
+    ls.next_in = buffer;
+    ls.avail_in = npeek;
+    ls.next_out = dest;
+    ls.avail_out = destsize;
+
+    int r = lzma_code(&ls, LZMA_RUN);
+    if (! (r == LZMA_OK || r == LZMA_STREAM_END)) {
+        lzma_end(&ls);
+        return -1;
+    }
+
+    destsize = ls.total_out;
+    lzma_end(&ls);
+
+    return destsize;
+}
+#endif
+
 // Parse "x.y" text, taking care because the string is not NUL-terminated
 // and filling in major/minor only when the digits are followed by a delimiter,
 // so we don't misread "1.10" as "1.1" due to reaching the end of the buffer.
@@ -504,6 +544,19 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         if (s[4] == '\x31') return 0;
         else len = 0;
     }
+    else if (len >= 6 && memcmp(s, "\xfd""7zXZ\0", 6) == 0) {
+        fmt->compression = xz_compression;
+#ifdef HAVE_LIBLZMA
+        len = decompress_peek_xz(hfile, s, sizeof s);
+#else
+        // Without liblzma, we can't recognise the decompressed contents.
+        return 0;
+#endif
+    }
+    else if (len >= 4 && memcmp(s, "\x28\xb5\x2f\xfd", 4) == 0) {
+        fmt->compression = zstd_compression;
+        return 0;
+    }
     else {
         len = hpeek(hfile, s, sizeof s);
     }
@@ -683,6 +736,8 @@ char *hts_format_description(const htsFormat *format)
     switch (format->compression) {
     case bzip2_compression:  kputs(" bzip2-compressed", &str); break;
     case razf_compression:   kputs(" legacy-RAZF-compressed", &str); break;
+    case xz_compression:     kputs(" XZ-compressed", &str); break;
+    case zstd_compression:   kputs(" Zstandard-compressed", &str); break;
     case custom: kputs(" compressed", &str); break;
     case gzip:   kputs(" gzip-compressed", &str); break;
     case bgzf:
