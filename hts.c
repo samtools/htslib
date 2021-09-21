@@ -296,13 +296,14 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
 
 // Decompress several hundred bytes by peeking at the file, which must be
 // positioned at the start of a GZIP block.
-static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
+static ssize_t
+decompress_peek_gz(hFILE *fp, unsigned char *dest, size_t destsize)
 {
     unsigned char buffer[2048];
     z_stream zs;
     ssize_t npeek = hpeek(fp, buffer, sizeof buffer);
 
-    if (npeek < 0) return 0;
+    if (npeek < 0) return -1;
 
     zs.zalloc = NULL;
     zs.zfree = NULL;
@@ -310,7 +311,7 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
     zs.avail_in = npeek;
     zs.next_out = dest;
     zs.avail_out = destsize;
-    if (inflateInit2(&zs, 31) != Z_OK) return 0;
+    if (inflateInit2(&zs, 31) != Z_OK) return -1;
 
     while (zs.total_out < destsize)
         if (inflate(&zs, Z_SYNC_FLUSH) != Z_OK) break;
@@ -489,7 +490,7 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         if (len >= 9 && s[2] == 8)
             fmt->compression_level = (s[8] == 2)? 9 : (s[8] == 4)? 1 : -1;
 
-        len = decompress_peek(hfile, s, sizeof s);
+        len = decompress_peek_gz(hfile, s, sizeof s);
     }
     else if (len >= 10 && memcmp(s, "BZh", 3) == 0 &&
              (memcmp(&s[4], "\x31\x41\x59\x26\x53\x59", 6) == 0 ||
