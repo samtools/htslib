@@ -77,6 +77,10 @@ P r2.sam $tview -i fastq_aux r2.fq
 P r1-q.sam $tview -i fastq_aux r1.fa
 P r2-q.sam $tview -i fastq_aux r2.fa
 
+# Simple tests for the FASTQ_NAME2 option.
+P name2.sam $tview -i fastq_name2 name2.fq
+P name2-q.sam $tview -i fastq_name2 name2.fa
+
 # --------------------
 # Writing
 
