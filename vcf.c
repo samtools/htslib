@@ -3584,7 +3584,7 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
         return dst;
     }
 
-    int i, ndst_ori = dst->nhrec, need_sync = 0, ret = 0, res;
+    int i, ndst_ori = dst->nhrec, need_sync = 0, res;
     for (i=0; i<src->nhrec; i++)
     {
         if ( src->hrec[i]->type==BCF_HL_GEN && src->hrec[i]->value )
@@ -3641,13 +3641,11 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different lengths",
                         src->hrec[i]->vals[0]);
-                    ret |= 1;
                 }
                 if ( (kh_val(d_src,k_src).info[rec->type]>>4 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>4 & 0xf) )
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different types",
                         src->hrec[i]->vals[0]);
-                    ret |= 1;
                 }
             }
         }

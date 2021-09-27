@@ -1467,7 +1467,7 @@ static void *bgzf_mt_writer(void *vp) {
 int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
 {
     uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
-    int count, size = 0, block_length, remaining;
+    int count, block_length, remaining;
 
     // NOTE: Guaranteed to be compressed as we block multi-threading in
     // uncompressed mode.  However it may be gzip compression instead
@@ -1496,7 +1496,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     if (count != sizeof(header)) // no data read
         return -1;
 
-    size = count;
     block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
     if (block_length < BLOCK_HEADER_LENGTH) {
         j->errcode |= BGZF_ERR_HEADER;
@@ -1510,7 +1509,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
         j->errcode |= BGZF_ERR_IO;
         return -1;
     }
-    size += count;
     j->comp_len = block_length;
     j->uncomp_len = BGZF_MAX_BLOCK_SIZE;
     j->block_address = block_address;
