@@ -5,7 +5,7 @@ Noteworthy changes in release a.b
   htsFile/samFile/vcfFile streams. (PR #1326, thanks to John Marshall)
 
 * Added a keep option to bgzip to leave the original file untouched.  This
-  brings bgip into line with gzip. (PR #1331, thanks to Alex Petty).
+  brings bgzip into line with gzip. (PR #1331, thanks to Alex Petty).
 
 
 Noteworthy changes in release 1.13 (7th July 2021)
