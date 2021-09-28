@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2019 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2019, 2021 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -112,16 +112,16 @@ static int bgzip_main_usage(FILE *fp, int status)
     fprintf(fp, "   -c, --stdout               write on standard output, keep original files unchanged\n");
     fprintf(fp, "   -d, --decompress           decompress\n");
     fprintf(fp, "   -f, --force                overwrite files without asking\n");
+    fprintf(fp, "   -g, --rebgzip              use an index file to bgzip a file\n");
     fprintf(fp, "   -h, --help                 give this help\n");
     fprintf(fp, "   -i, --index                compress and create BGZF index\n");
     fprintf(fp, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
+    fprintf(fp, "   -k, --keep                 don't delete input files during operation\n");
     fprintf(fp, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
     fprintf(fp, "   -r, --reindex              (re)index compressed file\n");
-    fprintf(fp, "   -g, --rebgzip              use an index file to bgzip a file\n");
     fprintf(fp, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
-    fprintf(fp, "   -@, --threads INT          number of compression threads to use [1]\n");
     fprintf(fp, "   -t, --test                 test integrity of compressed file\n");
-    fprintf(fp, "   -k, --keep                 don't delete input files during operation\n");
+    fprintf(fp, "   -@, --threads INT          number of compression threads to use [1]\n");
     return status;
 }
 
