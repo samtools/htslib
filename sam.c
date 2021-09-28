@@ -3735,7 +3735,7 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
     }
 
     l = x->name.l;
-    char *s = x->name.s + i;
+    char *s = x->name.s;
     while (i < l && !isspace_c(s[i]))
         i++;
     if (i < l) {
