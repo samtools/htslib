@@ -205,6 +205,7 @@ enum htsExactFormat {
     empty_format,  // File is empty (or empty after decompression)
     fasta_format, fastq_format, fai_format, fqi_format,
     hts_crypt4gh_format,
+    d4_format,
     format_maximum = 32767
 };
 

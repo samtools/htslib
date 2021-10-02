@@ -285,6 +285,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
         return index_file;
 
     case bed:
+    case d4_format:
         return region_list;
 
     case htsget:
@@ -634,6 +635,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
             fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
+    else if (len >= 8 && memcmp(s, "d4\xdd\xdd", 4) == 0) {
+        fmt->category = region_list;
+        fmt->format = d4_format;
+        // How to decode the D4 Format Version bytes is not yet specified
+        // so we don't try to set fmt->version.{major,minor}.
+        return 0;
+    }
     else if (cmp_nonblank("{\"htsget\":", s, &s[len]) == 0) {
         fmt->category = unknown_category;
         fmt->format = htsget;
@@ -718,6 +726,7 @@ char *hts_format_description(const htsFormat *format)
     case gzi:   kputs("GZI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
     case bed:   kputs("BED", &str); break;
+    case d4_format:     kputs("D4", &str); break;
     case htsget: kputs("htsget", &str); break;
     case hts_crypt4gh_format: kputs("crypt4gh", &str); break;
     case empty_format:  kputs("empty", &str); break;
@@ -1597,6 +1606,7 @@ const char *hts_format_file_extension(const htsFormat *format) {
     case gzi:  return "gzi";
     case tbi:  return "tbi";
     case bed:  return "bed";
+    case d4_format:    return "d4";
     case fasta_format: return "fa";
     case fastq_format: return "fq";
     default:   return "?";
