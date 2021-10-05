@@ -112,8 +112,7 @@ typedef struct bcf_sr_regions_t
     kstring_t line;         // holder of the current line, set only when reading from tabix-indexed files
     htsFile *file;
     char *fname;
-    int is_bin:30,          // is open in binary mode (tabix access)
-        overlap:2;          // see BCF_SR_REGIONS_OVERLAP/BCF_SR_TARGETS_OVERLAP
+    int is_bin;             // is open in binary mode (tabix access)
     char **als;             // parsed alleles if targets_als set and _regions_match_alleles called
     kstring_t als_str;      // block of parsed alleles
     int nals, mals;         // number of set alleles and the size of allocated array
@@ -134,6 +133,7 @@ typedef struct bcf_sr_regions_t
     hts_pos_t start, end;   // current position: start, end of the region (0-based)
     int prev_seq;
     hts_pos_t prev_start, prev_end;
+    int overlap;            // see BCF_SR_REGIONS_OVERLAP/BCF_SR_TARGETS_OVERLAP
 }
 bcf_sr_regions_t;
 
