@@ -1211,7 +1211,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
                     *end = str+5;
                     res->d = b->core.flag & BAM_FREAD1;
                     return 0;
-                } else if (!memcmp(str, "read2", 6)) {
+                } else if (!memcmp(str, "read2", 5)) {
                     *end = str+5;
                     res->d = b->core.flag & BAM_FREAD2;
                     return 0;
