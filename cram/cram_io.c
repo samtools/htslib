@@ -1344,7 +1344,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     r = lzma_code(&strm, LZMA_FINISH);
     if (r != LZMA_OK && r != LZMA_STREAM_END) {
         hts_log_error("Call to lzma_code failed with error %d", r);
-        return NULL;
+        goto fail;
     }
 
     new_out = realloc(out, strm.total_out > 0 ? strm.total_out : 1);
