@@ -205,11 +205,13 @@ enum htsExactFormat {
     empty_format,  // File is empty (or empty after decompression)
     fasta_format, fastq_format, fai_format, fqi_format,
     hts_crypt4gh_format,
+    d4_format,
     format_maximum = 32767
 };
 
 enum htsCompression {
     no_compression, gzip, bgzf, custom, bzip2_compression, razf_compression,
+    xz_compression, zstd_compression,
     compression_maximum = 32767
 };
 
@@ -359,6 +361,11 @@ enum hts_fmt_option {
     // Two character string.
     // Barcode aux tag for CASAVA; defaults to "BC".
     FASTQ_OPT_BARCODE,
+
+    // Process SRA and ENA read names which pointlessly move the original
+    // name to the second field and insert a constructed <run>.<number>
+    // name in its place.
+    FASTQ_OPT_NAME2,
 };
 
 // Profile options for encoding; primarily used at present in CRAM
@@ -479,7 +486,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 101300
+#define HTS_VERSION 101400
 
 /*! @abstract Introspection on the features enabled in htslib
  *
@@ -598,6 +605,15 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 */
 HTSLIB_EXPORT
 htsFile *hts_hopen(struct hFILE *fp, const char *fn, const char *mode);
+
+/*!
+  @abstract  For output streams, flush any buffered data
+  @param fp  The file handle to be flushed
+  @return    0 for success, or negative if an error occurred.
+  @since     1.14
+*/
+HTSLIB_EXPORT
+int hts_flush(htsFile *fp);
 
 /*!
   @abstract  Close a file handle, flushing buffered data for output streams

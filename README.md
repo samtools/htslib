@@ -12,7 +12,7 @@ HTSlib implements a generalized BAM index, with file extension `.csi`
 (coordinate-sorted index). The HTSlib file reader first looks for the new index
 and then for the old if the new index is absent.
 
-This project also includes the popular tabix indexer, which indexes both `.tbi`
+This project also includes the popular tabix indexer, which creates both `.tbi`
 and `.csi` formats, and the bgzip compression utility.
 
 [1]: http://samtools.github.io/hts-specs/

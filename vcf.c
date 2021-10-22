@@ -143,21 +143,33 @@ int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
     return bcf_hdr_add_sample_len(h, s, 0);
 }
 
-int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
+int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *hdr, const char *str)
 {
-    int ret = 0;
-    int i = 0;
-    const char *p, *q;
-    // add samples
-    for (p = q = str;; ++q) {
-        if ((unsigned char) *q > '\n') continue;
-        if (++i > 9) {
-            if ( bcf_hdr_add_sample_len(h, p, q - p) < 0 ) ret = -1;
-        }
-        if (*q == 0 || *q == '\n' || ret < 0) break;
-        p = q + 1;
+    const char *mandatory = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO";
+    if ( strncmp(str,mandatory,strlen(mandatory)) )
+    {
+        hts_log_error("Could not parse the \"#CHROM..\" line, either the fields are incorrect or spaces are present instead of tabs:\n\t%s",str);
+        return -1;
     }
 
+    const char *beg = str + strlen(mandatory), *end;
+    if ( !*beg || *beg=='\n' ) return 0;
+    if ( strncmp(beg,"\tFORMAT\t",8) )
+    {
+        hts_log_error("Could not parse the \"#CHROM..\" line, either FORMAT is missing or spaces are present instead of tabs:\n\t%s",str);
+        return -1;
+    }
+    beg += 8;
+
+    int ret = 0;
+    while ( *beg )
+    {
+        end = beg;
+        while ( *end && *end!='\t' && *end!='\n' ) end++;
+        if ( bcf_hdr_add_sample_len(hdr, beg, end-beg) < 0 ) ret = -1;
+        if ( !*end || *end=='\n' || ret<0 ) break;
+        beg = end + 1;
+    }
     return ret;
 }
 
@@ -873,7 +885,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
         // operations do not really care about a few malformed lines).
         // In the future we may want to add a strict mode that errors in
         // this case.
-        if ( strncmp("#CHROM\tPOS",p,10) != 0 ) {
+        if ( strncmp("#CHROM\t",p,7) && strncmp("#CHROM ",p,7) ) {
             char *eol = strchr(p, '\n');
             if (*p != '\0') {
                 char buffer[320];
@@ -3584,7 +3596,7 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
         return dst;
     }
 
-    int i, ndst_ori = dst->nhrec, need_sync = 0, ret = 0, res;
+    int i, ndst_ori = dst->nhrec, need_sync = 0, res;
     for (i=0; i<src->nhrec; i++)
     {
         if ( src->hrec[i]->type==BCF_HL_GEN && src->hrec[i]->value )
@@ -3641,13 +3653,11 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different lengths",
                         src->hrec[i]->vals[0]);
-                    ret |= 1;
                 }
                 if ( (kh_val(d_src,k_src).info[rec->type]>>4 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>4 & 0xf) )
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different types",
                         src->hrec[i]->vals[0]);
-                    ret |= 1;
                 }
             }
         }

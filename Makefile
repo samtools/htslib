@@ -74,12 +74,14 @@ BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
 	test/pileup \
+	test/pileup_mod \
 	test/plugins-dlhts \
 	test/sam \
 	test/test_bgzf \
 	test/test_expr \
 	test/test_kfunc \
 	test/test_kstring \
+	test/test_mod \
 	test/test_realn \
 	test/test-regidx \
 	test/test_str2int \
@@ -129,8 +131,8 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.13
-MACH_O_CURRENT_VERSION = 3.1.13
+MACH_O_COMPATIBILITY_VERSION = 3.1.14
+MACH_O_CURRENT_VERSION = 3.1.14
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
@@ -363,7 +365,7 @@ hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstrin
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
-hts.o hts.pico: hts.c config.h $(htslib_hts_expr_h) $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
+hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
@@ -471,6 +473,13 @@ maintainer-check:
 	test/maintainer/check_copyright.pl .
 	test/maintainer/check_spaces.pl .
 
+# Look for untracked files in the git repository.
+check-untracked:
+	@if test -e .git && git status --porcelain | grep '^\?'; then \
+	    echo 'Untracked files detected (see above). Please either clean up, add to .gitignore, or for test output files consider naming them to match *.tmp or *.tmp.*' ; \
+	    false ; \
+	fi
+
 # Create a shorthand. We use $(SRC) or $(srcprefix) rather than $(srcdir)/
 # for brevity in test and install rules, and so that build logs do not have
 # ./ sprinkled throughout.
@@ -497,6 +506,7 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS) $(HTSCODEC
 	cd test/tabix && ./test-tabix.sh tabix.tst
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	cd test/fastq && ./test-fastq.sh
+	cd test/base_mods && ./base-mods.sh base-mods.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
@@ -516,6 +526,9 @@ test/hfile: test/hfile.o libhts.a
 test/pileup: test/pileup.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
 
+test/pileup_mod: test/pileup_mod.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/pileup_mod.o libhts.a $(LIBS) -lpthread
+
 test/plugins-dlhts: test/plugins-dlhts.o
 	$(CC) $(LDFLAGS) -o $@ test/plugins-dlhts.o $(LIBS)
 
@@ -533,6 +546,9 @@ test/test_kfunc: test/test_kfunc.o libhts.a
 
 test/test_kstring: test/test_kstring.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_mod: test/test_mod.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_mod.o libhts.a $(LIBS) -lpthread
 
 test/test_realn: test/test_realn.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
@@ -622,12 +638,14 @@ test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
+test/pileup_mod.o: test/pileup_mod.c config.h $(htslib_sam_h)
 test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
+test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(textutils_internal_h)
@@ -790,7 +808,7 @@ distdir:
 force:
 
 
-.PHONY: all check clean distclean distdir force
+.PHONY: all check check-untracked clean distclean distdir force
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
 .PHONY: maintainer-check maintainer-clean mostlyclean plugins
 .PHONY: print-config print-version show-version tags

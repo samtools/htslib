@@ -41,6 +41,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/stat.h>
 #include <assert.h>
 
+#ifdef HAVE_LIBLZMA
+#ifdef HAVE_LZMA_H
+#include <lzma.h>
+#else
+#include "os/lzma_stub.h"
+#endif
+#endif
+
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
@@ -277,6 +285,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
         return index_file;
 
     case bed:
+    case d4_format:
         return region_list;
 
     case htsget:
@@ -296,13 +305,14 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
 
 // Decompress several hundred bytes by peeking at the file, which must be
 // positioned at the start of a GZIP block.
-static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
+static ssize_t
+decompress_peek_gz(hFILE *fp, unsigned char *dest, size_t destsize)
 {
     unsigned char buffer[2048];
     z_stream zs;
     ssize_t npeek = hpeek(fp, buffer, sizeof buffer);
 
-    if (npeek < 0) return 0;
+    if (npeek < 0) return -1;
 
     zs.zalloc = NULL;
     zs.zfree = NULL;
@@ -310,7 +320,7 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
     zs.avail_in = npeek;
     zs.next_out = dest;
     zs.avail_out = destsize;
-    if (inflateInit2(&zs, 31) != Z_OK) return 0;
+    if (inflateInit2(&zs, 31) != Z_OK) return -1;
 
     while (zs.total_out < destsize)
         if (inflate(&zs, Z_SYNC_FLUSH) != Z_OK) break;
@@ -320,6 +330,38 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 
     return destsize;
 }
+
+#ifdef HAVE_LIBLZMA
+// Similarly decompress a portion by peeking at the file, which must be
+// positioned at the start of the file.
+static ssize_t
+decompress_peek_xz(hFILE *fp, unsigned char *dest, size_t destsize)
+{
+    unsigned char buffer[2048];
+    ssize_t npeek = hpeek(fp, buffer, sizeof buffer);
+    if (npeek < 0) return -1;
+
+    lzma_stream ls = LZMA_STREAM_INIT;
+    if (lzma_stream_decoder(&ls, lzma_easy_decoder_memusage(9), 0) != LZMA_OK)
+        return -1;
+
+    ls.next_in = buffer;
+    ls.avail_in = npeek;
+    ls.next_out = dest;
+    ls.avail_out = destsize;
+
+    int r = lzma_code(&ls, LZMA_RUN);
+    if (! (r == LZMA_OK || r == LZMA_STREAM_END)) {
+        lzma_end(&ls);
+        return -1;
+    }
+
+    destsize = ls.total_out;
+    lzma_end(&ls);
+
+    return destsize;
+}
+#endif
 
 // Parse "x.y" text, taking care because the string is not NUL-terminated
 // and filling in major/minor only when the digits are followed by a delimiter,
@@ -489,7 +531,7 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         if (len >= 9 && s[2] == 8)
             fmt->compression_level = (s[8] == 2)? 9 : (s[8] == 4)? 1 : -1;
 
-        len = decompress_peek(hfile, s, sizeof s);
+        len = decompress_peek_gz(hfile, s, sizeof s);
     }
     else if (len >= 10 && memcmp(s, "BZh", 3) == 0 &&
              (memcmp(&s[4], "\x31\x41\x59\x26\x53\x59", 6) == 0 ||
@@ -502,6 +544,19 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         // except that \x1772... magic indicates the stream is empty.
         if (s[4] == '\x31') return 0;
         else len = 0;
+    }
+    else if (len >= 6 && memcmp(s, "\xfd""7zXZ\0", 6) == 0) {
+        fmt->compression = xz_compression;
+#ifdef HAVE_LIBLZMA
+        len = decompress_peek_xz(hfile, s, sizeof s);
+#else
+        // Without liblzma, we can't recognise the decompressed contents.
+        return 0;
+#endif
+    }
+    else if (len >= 4 && memcmp(s, "\x28\xb5\x2f\xfd", 4) == 0) {
+        fmt->compression = zstd_compression;
+        return 0;
     }
     else {
         len = hpeek(hfile, s, sizeof s);
@@ -578,6 +633,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
             parse_version(fmt, &s[7], &s[len]);
         else
             fmt->version.major = 1, fmt->version.minor = -1;
+        return 0;
+    }
+    else if (len >= 8 && memcmp(s, "d4\xdd\xdd", 4) == 0) {
+        fmt->category = region_list;
+        fmt->format = d4_format;
+        // How to decode the D4 Format Version bytes is not yet specified
+        // so we don't try to set fmt->version.{major,minor}.
         return 0;
     }
     else if (cmp_nonblank("{\"htsget\":", s, &s[len]) == 0) {
@@ -664,6 +726,7 @@ char *hts_format_description(const htsFormat *format)
     case gzi:   kputs("GZI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
     case bed:   kputs("BED", &str); break;
+    case d4_format:     kputs("D4", &str); break;
     case htsget: kputs("htsget", &str); break;
     case hts_crypt4gh_format: kputs("crypt4gh", &str); break;
     case empty_format:  kputs("empty", &str); break;
@@ -682,6 +745,8 @@ char *hts_format_description(const htsFormat *format)
     switch (format->compression) {
     case bzip2_compression:  kputs(" bzip2-compressed", &str); break;
     case razf_compression:   kputs(" legacy-RAZF-compressed", &str); break;
+    case xz_compression:     kputs(" XZ-compressed", &str); break;
+    case zstd_compression:   kputs(" Zstandard-compressed", &str); break;
     case custom: kputs(" compressed", &str); break;
     case gzip:   kputs(" gzip-compressed", &str); break;
     case bgzf:
@@ -1034,6 +1099,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     else if (strcmp(o->arg, "fastq_casava") == 0 ||
         strcmp(o->arg, "FASTQ_CASAVA") == 0)
         o->opt = FASTQ_OPT_CASAVA, o->val.i = 1;
+
+    else if (strcmp(o->arg, "fastq_name2") == 0 ||
+        strcmp(o->arg, "FASTQ_NAME2") == 0)
+        o->opt = FASTQ_OPT_NAME2, o->val.i = 1;
 
     else {
         hts_log_error("Unknown option '%s'", o->arg);
@@ -1482,6 +1551,38 @@ int hts_close(htsFile *fp)
     return ret;
 }
 
+int hts_flush(htsFile *fp)
+{
+    if (fp == NULL) return 0;
+
+    switch (fp->format.format) {
+    case binary_format:
+    case bam:
+    case bcf:
+        return bgzf_flush(fp->fp.bgzf);
+
+    case cram:
+        return cram_flush(fp->fp.cram);
+
+    case empty_format:
+    case text_format:
+    case bed:
+    case fasta_format:
+    case fastq_format:
+    case sam:
+    case vcf:
+        if (fp->format.compression != no_compression)
+            return bgzf_flush(fp->fp.bgzf);
+        else
+            return hflush(fp->fp.hfile);
+
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 const htsFormat *hts_get_format(htsFile *fp)
 {
     return fp? &fp->format : NULL;
@@ -1505,6 +1606,7 @@ const char *hts_format_file_extension(const htsFormat *format) {
     case gzi:  return "gzi";
     case tbi:  return "tbi";
     case bed:  return "bed";
+    case d4_format:    return "d4";
     case fasta_format: return "fa";
     case fastq_format: return "fq";
     default:   return "?";
@@ -1574,6 +1676,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
 
     case FASTQ_OPT_CASAVA:
     case FASTQ_OPT_RNUM:
+    case FASTQ_OPT_NAME2:
         if (fp->format.format == fastq_format ||
             fp->format.format == fasta_format)
             return fastq_state_set(fp, opt);
@@ -2752,6 +2855,7 @@ int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* 
 
 uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
 {
+    if (idx->fmt == HTS_FMT_CRAI) return 0;
     return idx->n_no_coor;
 }
 

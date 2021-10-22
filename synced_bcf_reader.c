@@ -67,6 +67,7 @@ region_t;
 typedef struct
 {
     sr_sort_t sort;
+    int regions_overlap, targets_overlap;
 }
 aux_t;
 
@@ -121,6 +122,18 @@ int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...)
         case BCF_SR_PAIR_LOGIC:
             va_start(args, opt);
             BCF_SR_AUX(readers)->sort.pair = va_arg(args, int);
+            return 0;
+
+        case BCF_SR_REGIONS_OVERLAP:
+            va_start(args, opt);
+            BCF_SR_AUX(readers)->regions_overlap = va_arg(args, int);
+            if ( readers->regions ) readers->regions->overlap = BCF_SR_AUX(readers)->regions_overlap;
+            return 0;
+
+        case BCF_SR_TARGETS_OVERLAP:
+            va_start(args, opt);
+            BCF_SR_AUX(readers)->targets_overlap = va_arg(args, int);
+            if ( readers->targets ) readers->targets->overlap = BCF_SR_AUX(readers)->targets_overlap;
             return 0;
 
         default:
@@ -181,6 +194,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
     readers->require_index = REQUIRE_IDX_;
+    readers->regions->overlap = BCF_SR_AUX(readers)->regions_overlap;
     return 0;
 }
 
@@ -199,6 +213,7 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int
     readers->targets = bcf_sr_regions_init(targets,is_file,0,1,-2);
     if ( !readers->targets ) return -1;
     readers->targets_als = alleles;
+    readers->targets->overlap = BCF_SR_AUX(readers)->targets_overlap;
     return 0;
 }
 
@@ -391,6 +406,8 @@ bcf_srs_t *bcf_sr_init(void)
     bcf_srs_t *files = (bcf_srs_t*) calloc(1,sizeof(bcf_srs_t));
     files->aux = (aux_t*) calloc(1,sizeof(aux_t));
     bcf_sr_sort_init(&BCF_SR_AUX(files)->sort);
+    bcf_sr_set_opt(files,BCF_SR_REGIONS_OVERLAP,1);
+    bcf_sr_set_opt(files,BCF_SR_TARGETS_OVERLAP,0);
     return files;
 }
 
@@ -545,6 +562,35 @@ static int _readers_next_region(bcf_srs_t *files)
     return 0;
 }
 
+static void _set_variant_boundaries(bcf1_t *rec, hts_pos_t *beg, hts_pos_t *end)
+{
+    hts_pos_t off;
+    if ( rec->n_allele )
+    {
+        off = rec->rlen;
+        bcf_unpack(rec, BCF_UN_STR);
+        int i;
+        for (i=1; i<rec->n_allele; i++)
+        {
+            // Make symbolic alleles start at POS, although this is not strictly true for
+            // <DEL>,<INS> where POS should be the position BEFORE the deletion/insertion.
+            // However, since arbitrary symbolic alleles can be defined by the user, we
+            // will simplify the interpretation of --targets-overlap and --region-overlap.
+            int j = 0;
+            char *ref = rec->d.allele[0];
+            char *alt = rec->d.allele[i];
+            while ( ref[j] && alt[j] && ref[j]==alt[j] ) j++;
+            if ( off > j ) off = j;
+            if ( !off ) break;
+        }
+    }
+    else
+        off = 0;
+
+    *beg = rec->pos + off;
+    *end = rec->pos + rec->rlen - 1;
+}
+
 /*
  *  _reader_fill_buffer() - buffers all records with the same coordinate
  */
@@ -606,8 +652,28 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
         }
 
-        // prevent creation of duplicates from records overlapping multiple regions
-        if ( files->regions && reader->buffer[reader->nbuffer+1]->pos <= files->regions->prev_end ) continue;
+        // Prevent creation of duplicates from records overlapping multiple regions
+        // and recognize true variant overlaps vs record overlaps (e.g. TA>T vs A>-)
+        if ( files->regions )
+        {
+            hts_pos_t beg, end;
+            if ( BCF_SR_AUX(files)->regions_overlap==0 )
+                beg = end = reader->buffer[reader->nbuffer+1]->pos;
+            else if ( BCF_SR_AUX(files)->regions_overlap==1 )
+            {
+                beg = reader->buffer[reader->nbuffer+1]->pos;
+                end = reader->buffer[reader->nbuffer+1]->pos + reader->buffer[reader->nbuffer+1]->rlen - 1;
+            }
+            else if ( BCF_SR_AUX(files)->regions_overlap==2 )
+                _set_variant_boundaries(reader->buffer[reader->nbuffer+1], &beg,&end);
+            else
+            {
+                hts_log_error("This should never happen, just to keep clang compiler happy: %d",BCF_SR_AUX(files)->targets_overlap);
+                exit(1);
+            }
+
+            if ( beg <= files->regions->prev_end || end < files->regions->start || beg > files->regions->end ) continue;
+        }
 
         // apply filter
         if ( !reader->nfilter_ids )
@@ -637,23 +703,18 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
 }
 
 /*
- *  _readers_shift_buffer() - removes the first line and all subsequent lines with the same position
+ *  _readers_shift_buffer() - removes the first line
  */
 static void _reader_shift_buffer(bcf_sr_t *reader)
 {
+    if ( !reader->nbuffer ) return;
     int i;
+    bcf1_t *tmp = reader->buffer[1];
     for (i=2; i<=reader->nbuffer; i++)
-        if ( reader->buffer[i]->rid!=reader->buffer[1]->rid || reader->buffer[i]->pos!=reader->buffer[1]->pos ) break;
-    if ( i<=reader->nbuffer )
-    {
-        // A record with a different position follows, swap it. Because of the reader's logic,
-        // only one such line can be present.
-        assert( i==reader->nbuffer );
-        bcf1_t *tmp = reader->buffer[1]; reader->buffer[1] = reader->buffer[i]; reader->buffer[i] = tmp;
-        reader->nbuffer = 1;
-    }
-    else
-        reader->nbuffer = 0;    // no other line
+        reader->buffer[i-1] = reader->buffer[i];
+    if ( reader->nbuffer > 1 )
+        reader->buffer[reader->nbuffer] = tmp;
+    reader->nbuffer--;
 }
 
 static int next_line(bcf_srs_t *files)
@@ -704,19 +765,38 @@ static int next_line(bcf_srs_t *files)
         // Skip this position if not present in targets
         if ( files->targets )
         {
-            int ret = bcf_sr_regions_overlap(files->targets, chr, min_pos, min_pos);
-            if ( (!files->targets_exclude && ret<0) || (files->targets_exclude && !ret) )
+            int match = 0;
+            for (i=0; i<files->nreaders; i++)
             {
-                // Remove all lines with this position from the buffer
-                for (i=0; i<files->nreaders; i++)
-                    if ( files->readers[i].nbuffer && files->readers[i].buffer[1]->pos==min_pos )
-                        _reader_shift_buffer(&files->readers[i]);
+                if ( !files->readers[i].nbuffer || files->readers[i].buffer[1]->pos!=min_pos ) continue;
+                hts_pos_t beg, end;
+                if ( BCF_SR_AUX(files)->targets_overlap==0 )
+                    beg = end = min_pos;
+                else if ( BCF_SR_AUX(files)->targets_overlap==1 )
+                {
+                    beg = min_pos;
+                    end = min_pos + files->readers[i].buffer[1]->rlen - 1;
+                }
+                else if ( BCF_SR_AUX(files)->targets_overlap==2 )
+                    _set_variant_boundaries(files->readers[i].buffer[1], &beg,&end);
+                else
+                {
+                    hts_log_error("This should never happen, just to keep clang compiler happy: %d",BCF_SR_AUX(files)->targets_overlap);
+                    exit(1);
+                }
+                int overlap = bcf_sr_regions_overlap(files->targets, chr, beg, end)==0 ? 1 : 0;
+                if ( (!files->targets_exclude && !overlap) || (files->targets_exclude && overlap) )
+                    _reader_shift_buffer(&files->readers[i]);
+                else
+                    match = 1;
+            }
+            if ( !match )
+            {
                 min_pos = HTS_POS_MAX;
                 chr = NULL;
                 continue;
             }
         }
-
         break;  // done: chr and min_pos are set
     }
     if ( !chr ) return 0;

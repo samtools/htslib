@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2019 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2019, 2021 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -112,22 +112,22 @@ static int bgzip_main_usage(FILE *fp, int status)
     fprintf(fp, "   -c, --stdout               write on standard output, keep original files unchanged\n");
     fprintf(fp, "   -d, --decompress           decompress\n");
     fprintf(fp, "   -f, --force                overwrite files without asking\n");
+    fprintf(fp, "   -g, --rebgzip              use an index file to bgzip a file\n");
     fprintf(fp, "   -h, --help                 give this help\n");
     fprintf(fp, "   -i, --index                compress and create BGZF index\n");
     fprintf(fp, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
+    fprintf(fp, "   -k, --keep                 don't delete input files during operation\n");
     fprintf(fp, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
     fprintf(fp, "   -r, --reindex              (re)index compressed file\n");
-    fprintf(fp, "   -g, --rebgzip              use an index file to bgzip a file\n");
     fprintf(fp, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
+    fprintf(fp, "   -t, --test                 test integrity of compressed file\n");
     fprintf(fp, "   -@, --threads INT          number of compression threads to use [1]\n");
-    fprintf(fp, "   -t, --test                 test integrity of compressed file");
-    fprintf(fp, "\n");
     return status;
 }
 
 int main(int argc, char **argv)
 {
-    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0;
+    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0, keep;
     BGZF *fp;
     void *buffer;
     long start, end, size;
@@ -150,11 +150,12 @@ int main(int argc, char **argv)
         {"threads", required_argument, NULL, '@'},
         {"test", no_argument, NULL, 't'},
         {"version", no_argument, NULL, 1},
+        {"keep", no_argument, NULL, 'k'},
         {NULL, 0, NULL, 0}
     };
 
-    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grt",loptions,NULL)) >= 0){
+    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0; keep = 0;
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grtk",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
@@ -168,6 +169,7 @@ int main(int argc, char **argv)
         case 'r': reindex = 1; compress = 0; break;
         case '@': threads = atoi(optarg); break;
         case 't': test = 1; compress = 0; reindex = 0; break;
+        case 'k': keep = 1; break;
         case 1:
             printf(
 "bgzip (htslib) %s\n"
@@ -272,7 +274,7 @@ int main(int argc, char **argv)
             }
         }
         if (bgzf_close(fp) < 0) error("Close failed: Error %d", fp->errcode);
-        if (argc > optind && !pstdout) unlink(argv[optind]);
+        if (argc > optind && !pstdout && !keep) unlink(argv[optind]);
         free(buffer);
         close(f_src);
         return 0;
@@ -416,7 +418,7 @@ int main(int argc, char **argv)
         }
         free(buffer);
         if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
-        if (argc > optind && !pstdout && !test) unlink(argv[optind]);
+        if (argc > optind && !pstdout && !test && !keep) unlink(argv[optind]);
         return 0;
     }
 }

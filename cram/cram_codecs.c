@@ -3069,7 +3069,7 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
                                      int version, varint_vec *vv) {
     int *vals = NULL, *freqs = NULL, *lens = NULL, code, len;
     int *new_vals, *new_freqs;
-    int i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
+    int i, max_val = 0, min_val = INT_MAX, k;
     size_t nvals, vals_alloc = 0;
     cram_codec *c;
     cram_huffman_code *codes;
@@ -3095,7 +3095,6 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
         vals[nvals] = i;
         freqs[nvals] = st->freqs[i];
         assert(st->freqs[i] > 0);
-        ntot += freqs[nvals];
         if (max_val < i) max_val = i;
         if (min_val > i) min_val = i;
         nvals++;
@@ -3118,7 +3117,6 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
             vals[nvals]= kh_key(st->h, k);
             freqs[nvals] = kh_val(st->h, k);
             assert(freqs[nvals] > 0);
-            ntot += freqs[nvals];
             if (max_val < i) max_val = i;
             if (min_val > i) min_val = i;
             nvals++;

@@ -1058,6 +1058,10 @@ static int v4_auth_header_callback(void *ctx, char ***hdrs) {
         return -1;
     }
 
+    if (!ad->id.l || !ad->secret.l) {
+        return copy_auth_headers(ad, hdrs);
+    }
+
     hash_string("", 0, content_hash); // empty hash
 
     ad->canonical_query_string.l = 0;

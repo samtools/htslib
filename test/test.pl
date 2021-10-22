@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2020 Genome Research Ltd.
+#    Copyright (C) 2012-2021 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -520,6 +520,32 @@ sub test_view
     my ($opts, $nthreads) = @_;
     my $tv_args = $nthreads ? "-\@$nthreads" : "";
 
+    # Files appropriate for CRAM V3.1 and V4.0 testing
+    my %cram31 = ("auxf#values.sam"   => 1,
+                  "c1#pad3.sam"       => 1,
+                  "ce#5.sam"          => 1,
+                  "ce#1000.sam",      => 1,
+                  "ce#large_seq.sam", => 1,
+                  "ce#supp.sam",      => 1,
+                  "xx#MD.sam",        => 1,
+                  "xx#blank.sam",     => 1,
+                  "xx#large_aux.sam", => 1,
+                  "xx#pair.sam",      => 1,
+                  "xx#tlen.sam"       => 1);
+
+    # Files appropriate for CRAM multi-ref containers
+    my %cram_ms = ("ce#1000.sam"      => 1,
+                   "ce#5.sam"         => 1,
+                   "ce#5b.sam"        => 1,
+                   "ce#unmap.sam"     => 1,
+                   "ce#unmap1.sam"    => 1,
+                   "ce#unmap2.sam"    => 1,
+                   "xx#blank.sam"     => 1,
+                   "xx#minimal.sam"   => 1,
+                   "xx#tlen.sam"      => 1,
+                   "xx#tlen2.sam"     => 1,
+                   "xx#triplet.sam"   => 1);
+
     foreach my $sam (glob("*#*.sam")) {
         my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
         $ref .= ".fa";
@@ -536,9 +562,11 @@ sub test_view
         $test_view_failures = 0;
 
         # SAM -> BAM -> SAM
-        testv $opts, "./test_view $tv_args -S -b $sam > $bam";
-        testv $opts, "./test_view $tv_args $bam > $bam.sam_";
-        testv $opts, "./compare_sam.pl $sam $bam.sam_";
+        if ($sam eq "ce#1000.sam") {
+            testv $opts, "./test_view $tv_args -S -b $sam > $bam";
+            testv $opts, "./test_view $tv_args $bam > $bam.sam_";
+            testv $opts, "./compare_sam.pl $sam $bam.sam_";
+        }
 
         # SAM -> BAMu -> SAM
         testv $opts, "./test_view $tv_args -S -l0 -b $sam > $bam";
@@ -550,93 +578,52 @@ sub test_view
         testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
-        # BAM -> CRAM2 -> BAM -> SAM
-        $cram = "$bam.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=2.1 $bam > $cram";
-        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
-        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
-
         # SAM -> CRAM3u -> SAM
-        $cram = "$base.tmp.cram";
-        testv $opts, "./test_view $tv_args -t $ref -S -l0 -C -o VERSION=3.0 $sam > $cram";
-        testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+        if ($sam eq "ce#1000.sam") {
+            $cram = "$base.tmp.cram";
+            testv $opts, "./test_view $tv_args -t $ref -S -l0 -C -o VERSION=3.0 $sam > $cram";
+            testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+            testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+        }
 
-        # BAM -> CRAM3 -> BAM -> SAM
+        # BAM -> CRAM3 -> SAM
         $cram = "$bam.cram";
         testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $bam > $cram";
-        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
-        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv $opts, "./test_view $tv_args $cram > $cram.bam.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
-
-        # CRAM3 -> CRAM2
-        $cram = "$base.tmp.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
-
-        # CRAM2 -> CRAM3
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
 
         # CRAM3 -> CRAM3 + multi-slice
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
-        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
-
-        ## Experimental CRAM 3.1 support.
-        # SAM -> CRAM31u -> SAM
-        foreach my $profile (qw/fast normal small archive/) {
-            $cram = "$base.tmp.cram";
-            testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=3.1 -o $profile $sam > $cram";
-            testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+        if (exists($cram_ms{$sam}) && $nthreads > 0) {
+            testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram > $cram.ms";
+            testv $opts, "./test_view $tv_args $cram.ms > $cram.sam_";
             testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
         }
 
-        # BAM -> CRAM31 -> BAM -> SAM
-        $cram = "$bam.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 $bam > $cram";
-        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
-        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
+        if (exists($cram31{$sam}) && $nthreads > 0) {
+            ## Experimental CRAM 3.1 support.
+            # SAM -> CRAM31 -> SAM
+            my @p = $sam eq "ce#1000.sam"
+                ? (qw/fast normal small archive/)
+                : (qw/archive/);
+            foreach my $profile (@p) {
+                $cram = "$base.tmp.cram";
+                testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=3.1 -o $profile $sam > $cram";
+                testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+                testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+            }
 
-        # CRAM31 -> CRAM30
-        $cram = "$base.tmp.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram > $cram.cram";
-
-        # CRAM30 -> CRAM31
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 $cram.cram > $cram";
-
-        # CRAM31 -> CRAM31 + multi-slice
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
-        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
-
-        ## Experimental CRAM 4.0 support.
-        # SAM -> CRAM40u -> SAM
-        foreach my $profile (qw/fast normal small archive/) {
-            $cram = "$base.tmp.cram";
-            testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=4.0 -o $profile $sam > $cram";
-            testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
-            testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+            ## Experimental CRAM 4.0 support.
+            # SAM -> CRAM40 -> SAM
+            my @p = $sam eq "ce#large_seq.sam" || $sam eq "xx#large_aux.sam"
+                ? (qw/fast normal small archive/)
+                : (qw/archive/);
+            foreach my $profile (@p) {
+                $cram = "$base.tmp.cram";
+                testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=4.0 -o $profile $sam > $cram";
+                testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+                testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+            }
         }
-
-        # BAM -> CRAM40 -> BAM -> SAM
-        $cram = "$bam.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=4.0 $bam > $cram";
-        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
-        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
-
-        # CRAM40 -> CRAM30
-        $cram = "$base.tmp.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram > $cram.cram";
-
-        # CRAM30 -> CRAM40
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=4.0 $cram.cram > $cram";
-
-        # CRAM40 -> CRAM40 + multi-slice
-        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=4.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
-        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
-        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";

@@ -1,0 +1,6 @@
+@CO	Testing mods on top and bottom strand, but also in
+@CO	original vs reverse-complemented orientation
+top-fwd	0	*	0	0	*	*	0	0	AGGATCTCTAGCGGATCGGCGGGGGATATGCCATAT	*	Mm:Z:C+m,1,3,0;	Ml:B:C,128,153,179
+top-rev	16	*	0	0	*	*	0	0	ATATGGCATATCCCCCGCCGATCCGCTAGAGATCCT	*	Mm:Z:C+m,1,3,0;	Ml:B:C,128,153,179
+bot-fwd	0	*	0	0	*	*	0	0	AGGATCTCTAGCGGATCGGCGGGGGATATGCCATAT	*	Mm:Z:G-m,0,0,4,3;	Ml:B:C,115,141,166,192
+bot-rev	16	*	0	0	*	*	0	0	ATATGGCATATCCCCCGCCGATCCGCTAGAGATCCT	*	Mm:Z:G-m,0,0,4,3;	Ml:B:C,115,141,166,192
