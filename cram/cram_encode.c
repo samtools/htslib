@@ -3057,7 +3057,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->rg = brg ? brg->id : -1;
     } else if (CRAM_MAJOR_VERS(fd->version) == 1) {
         sam_hrec_rg_t *brg = sam_hrecs_find_rg(fd->header->hrecs, "UNKNOWN");
-        assert(brg);
+        if (!brg) goto block_err;
+        cr->rg = brg->id;
     } else {
         cr->rg = -1;
     }
