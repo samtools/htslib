@@ -1271,6 +1271,18 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
     return 0;
 }
 
+sam_hdr_line_t *sam_hdr_first_line(sam_hdr_t *bh) {
+    if (!bh->hrecs) {
+        if (sam_hdr_fill_hrecs(bh) != 0) return NULL;
+    }
+    return bh->hrecs->first_line;
+}
+
+sam_hdr_line_t *sam_hdr_next_line(sam_hdr_t *bh, sam_hdr_line_t *line) {
+    line = line->global_next;
+    return (line != bh->hrecs->first_line)? line : NULL;
+}
+
 /*
  * Appends a formatted line to an existing SAM header.
  * Line is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
@@ -1346,6 +1358,13 @@ int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
     return ret;
 }
 
+int sam_hdr_format_line_append(const sam_hdr_line_t *line, kstring_t *ks) {
+    if (!line) return -1;
+
+    if (build_header_line(line, ks) < 0) return -2;
+    return 0;
+}
+
 /*
  * Returns a complete line of formatted text for a specific head type/ID
  * combination. If ID_key is NULL then it returns the first line of the specified
@@ -1397,6 +1416,27 @@ int sam_hdr_find_line_pos(sam_hdr_t *bh, const char *type,
     }
 
     return 0;
+}
+
+/*
+ * Remove a line from the header via an iterator.
+ */
+
+sam_hdr_line_t *sam_hdr_remove_line(sam_hdr_t *bh, sam_hdr_line_t *line) {
+    if (!bh || !line) return NULL;
+
+    if (line->type == TYPEKEY("PG")) {
+        hts_log_warning("Removing PG lines is not supported!");
+        return NULL;
+    }
+
+    sam_hdr_line_t *next = sam_hdr_next_line(bh, line);
+    char type[2] = { line->type >> 8, line->type & 0xff };
+    if (sam_hrecs_remove_line(bh->hrecs, type, line, 1) < 0) return NULL;
+
+    if (bh->hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0) return NULL;
+    if (bh->hrecs->dirty) redact_header_text(bh);
+    return next;
 }
 
 /*
@@ -1908,6 +1948,19 @@ const char *sam_hdr_line_name(sam_hdr_t *bh,
 
 /* ==== Key:val level methods ==== */
 
+int sam_hdr_find_tag(const sam_hdr_line_t *line,
+                     const char *key,
+                     kstring_t *ks) {
+    if (!line || !key) return -2;
+
+    sam_hrec_tag_t *tag = sam_hrecs_find_key(line, key, NULL);
+    if (!tag || tag->len < 3) return -1;
+
+    ks_clear(ks);
+    if (kputsn(&tag->str[3], tag->len-3, ks) < 0) return -2;
+    return 0;
+}
+
 int sam_hdr_find_tag_id(sam_hdr_t *bh,
                      const char *type,
                      const char *ID_key,
@@ -1938,6 +1991,16 @@ int sam_hdr_find_tag_id(sam_hdr_t *bh,
     }
 
     return 0;
+}
+
+int sam_hdr_remove_tag(sam_hdr_t *bh,
+                       sam_hdr_line_t *line,
+                       const char *key) {
+    if (!bh || !line || !key) return -1;
+
+    int ret = sam_hrecs_remove_key(bh->hrecs, line, key);
+    if (ret == 0 && bh->hrecs->dirty) redact_header_text(bh);
+    return ret;
 }
 
 int sam_hdr_find_tag_pos(sam_hdr_t *bh,
@@ -2635,7 +2698,7 @@ static int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, ...) {
  * Returns the tag pointer on success
  *         NULL on failure
  */
-sam_hrec_tag_t *sam_hrecs_find_key(sam_hrec_type_t *type,
+sam_hrec_tag_t *sam_hrecs_find_key(const sam_hrec_type_t *type,
                                    const char *key,
                                    sam_hrec_tag_t **prev) {
     sam_hrec_tag_t *tag, *p = NULL;
