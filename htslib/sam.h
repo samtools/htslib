@@ -44,6 +44,7 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+struct hts_filter_t;
 struct sam_hrec_type_s;
 
 /// Highest SAM format version supported by this library
@@ -859,6 +860,15 @@ hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid);
  */
 static inline int bam_name2id(sam_hdr_t *h, const char *ref) { return sam_hdr_name2tid(h, ref); }
 
+/// Check whether a header line passes an hts_filter
+/** @param h      Pointer to the header structure previously read
+ *  @param line   Iterator pointing to a header line
+ *  @param filt   Pointer to the filter, created from hts_filter_init
+ *  @return       1 if it passes, 0 if not, and <0 on error
+ */
+HTSLIB_EXPORT
+int sam_hdr_passes_filter(sam_hdr_t *h, sam_hdr_line_t *line, struct hts_filter_t *filt);
+
 /// Generate a unique \@PG ID: value
 /*!
  * @param name  Name of the program. Eg. samtools
@@ -1504,9 +1514,6 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
  */
     HTSLIB_EXPORT
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
-
-// Forward declaration, see hts_expr.h for full.
-struct hts_filter_t;
 
 /// sam_passes_filter - Checks whether a record passes an hts_filter.
 /** @param h      Pointer to the header structure previously read

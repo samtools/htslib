@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include "htslib/hts_expr.h"
 #include "textutils_internal.h"
 #include "header.h"
 
@@ -896,6 +897,84 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
     }
 
     return 0;
+}
+
+static int sam_hrecs_tag_lookup(sam_hrec_type_t *h_type, const char *tagname,
+                                char type, hts_expr_val_t *result) {
+    sam_hrec_tag_t *tag = sam_hrecs_find_key(h_type, tagname, NULL);
+    if (tag == NULL || tag->len < 3) {
+        result->is_str = (type == 'Z');
+        result->s.l = 0;
+        result->d = 0.0;
+        result->is_true = 0;
+        return 0;
+    }
+
+    result->is_true = 1;
+    switch (type) {
+    case 'f':
+        result->is_str = 0;
+        result->d = strtod(&tag->str[3], NULL);
+        return 0;
+
+    case 'i':
+        result->is_str = 0;
+        result->d = strtoll(&tag->str[3], NULL, 0);
+        return 0;
+
+    case 'Z':
+        result->is_str = 1;
+        ks_clear(&result->s);
+        return (kputsn(&tag->str[3], tag->len-3, &result->s) >= 0)? 0 : -1;
+    }
+
+    return -1;
+}
+
+static int sam_hrecs_sym_lookup(void *data, char *str, char **end,
+                                hts_expr_val_t *result) {
+    sam_hrec_type_t *h_type = (sam_hrec_type_t *) data;
+
+    switch (*str) {
+    case 't':
+        if (memcmp(str, "type", 4) == 0) {
+            *end = &str[4];
+            result->is_str = 1;
+            ks_clear(&result->s);
+            kputc_(h_type->type >> 8, &result->s);
+            kputc(h_type->type & 0xff, &result->s);
+            return (ks_len(&result->s) == 2)? 0 : -1;
+        }
+        break;
+
+    case '@':
+        if (isalpha_c(str[1]) && isalpha_c(str[2])) {
+            *end = &str[3];
+            result->is_str = 0;
+            result->is_true = result->d = (h_type->type == TYPEKEY(&str[1]));
+            return 0;
+        }
+        break;
+
+    case '[':
+        if (str[1] & str[2]) {
+            if (str[3] == ']') {
+                *end = &str[4];
+                return sam_hrecs_tag_lookup(h_type, &str[1], 'Z', result);
+            }
+            else if (str[3] == ':' && str[4] && str[5] == ']') {
+                if (!strchr("fiZ", str[4])) {
+                    hts_log_error("Unrecognised %.6s type code", str);
+                    return -1;
+                }
+                *end = &str[6];
+                return sam_hrecs_tag_lookup(h_type, &str[1], str[4], result);
+            }
+        }
+        break;
+    }
+
+    return -1;
 }
 
 /*! Update sam_hdr_t target_name and target_len arrays
@@ -1805,6 +1884,21 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
 
+    return ret;
+}
+
+int sam_hdr_passes_filter(sam_hdr_t *bh, sam_hdr_line_t *line, hts_filter_t *filt) {
+    hts_expr_val_t result = HTS_EXPR_VAL_INIT;
+    int ret;
+    if (hts_filter_eval2(filt, line, sam_hrecs_sym_lookup, &result) >= 0) {
+        ret = result.is_true;
+    }
+    else {
+        hts_log_error("Couldn't process sam_hdr filter expression");
+        ret = -1;
+    }
+
+    hts_expr_val_free(&result);
     return ret;
 }
 
