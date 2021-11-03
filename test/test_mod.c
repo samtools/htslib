@@ -22,6 +22,52 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+/*
+This tests multiple APIs.  The simplest is to parse the MM/ML tags with
+bam_parse_basemod and then call bam_mods_at_next_pos once for each base in
+the bam sequence to check for modifications.
+
+Ie:
+
+    hts_base_mod_state *m = hts_base_mod_state_alloc();
+    bam_parse_basemod(b, m); // b=bam1_t pointer
+    hts_base_mod mods[5];
+    for (i = 0; i < b->core.l_qseq; i++) {
+        n = bam_mods_at_next_pos(b, m, mods, 5);
+        for (j = 0; j < n && j < 5; j++) {
+            // Report 'n'th mod at seq pos 'i'.
+            // mods[j].modified_base holds the base mod itself, with
+            // mods[j].canonical_base, mods[j].strand and mods[j].qual
+            // also present in hts_base_mod struct.
+            // ...
+        }
+    }
+    hts_base_mod_state_free(m);
+
+The extended mode has the same loop above, but calls bam_mods_query_type
+to return additional meta-data including the strand, canonical base and
+whether the base modification is recorded implicitly or explicitly:
+
+            int ret = bam_mods_query_type(m, mods[j].modified_base,
+                                          &m_strand, &m_implicit,
+                                          &m_canonical);
+
+Looping over every base in the sequence is not particularly efficient
+however unless this fits your natural processing order.  The alternative
+is to call bam_next_base_mod to iterate only over modified locations:
+
+    hts_base_mod_state *m = hts_base_mod_state_alloc();
+    bam_parse_basemod(b, m); // b=bam1_t pointer
+    hts_base_mod mods[5];
+    while ((n=bam_next_basemod(b, m, mods, 5, &pos)) > 0) {
+        for (j = 0; j < n && j < 5; j++) {
+            // Report 'n'th mod at sequence position 'pos'
+        }
+    }
+    hts_base_mod_state_free(m);
+
+*/
+
 #include <config.h>
 #include <stdio.h>
 
@@ -41,6 +87,14 @@ static char *code(int id) {
 
 int main(int argc, char **argv) {
     char out[1024] = {0};
+    int extended = 0;
+
+    if (argc > 1 && strcmp(argv[1], "-x") == 0) {
+        extended = 1;
+        argv++;
+        argc--;
+    }
+
     if (argc < 2)
         return 1;
 
@@ -69,12 +123,31 @@ int main(int argc, char **argv) {
             n = bam_mods_at_next_pos(b, m, mods, 5);
             lp += sprintf(lp, "%d\t%c\t",
                           i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
-            for (j = 0; j < n && j < 5; j++)
-                lp += sprintf(lp, "%c%c%s%d ",
-                              mods[j].canonical_base,
-                              "+-"[mods[j].strand],
-                              code(mods[j].modified_base),
-                              mods[j].qual);
+            for (j = 0; j < n && j < 5; j++) {
+                if (extended) {
+                    int m_strand, m_implicit;
+                    char m_canonical;
+                    int ret = bam_mods_query_type(m, mods[j].modified_base,
+                                                  &m_strand, &m_implicit,
+                                                  &m_canonical);
+                    if (ret < 0 ||
+                        m_canonical != mods[j].canonical_base ||
+                        m_strand    != mods[j].strand)
+                        goto err;
+                    lp += sprintf(lp, "%c%c%s%c%d ",
+                                  mods[j].canonical_base,
+                                  "+-"[mods[j].strand],
+                                  code(mods[j].modified_base),
+                                  "?."[m_implicit],
+                                  mods[j].qual);
+                } else {
+                    lp += sprintf(lp, "%c%c%s%d ",
+                                  mods[j].canonical_base,
+                                  "+-"[mods[j].strand],
+                                  code(mods[j].modified_base),
+                                  mods[j].qual);
+                }
+            }
             *lp++ = '\n';
             *lp++ = 0;
 
@@ -88,17 +161,27 @@ int main(int argc, char **argv) {
 
         bam_parse_basemod(b, m);
 
+        // List possible mod choices.
+        int *all_mods;
+        int all_mods_n = 0;
+        all_mods = bam_mods_recorded(m, &all_mods_n);
+        printf("Present:");
+        for (i = 0; i < all_mods_n; i++)
+            printf(all_mods[i] > 0 ? " %c" : " #%d", all_mods[i]);
+        putchar('\n');
+
         int pos;
         while ((n=bam_next_basemod(b, m, mods, 5, &pos)) > 0) {
             char line[8192]={0}, *lp = line;
             lp += sprintf(lp, "%d\t%c\t", pos,
                           seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
-            for (j = 0; j < n && j < 5; j++)
+            for (j = 0; j < n && j < 5; j++) {
                 lp += sprintf(lp, "%c%c%s%d ",
                               mods[j].canonical_base,
                               "+-"[mods[j].strand],
                               code(mods[j].modified_base),
                               mods[j].qual);
+            }
             *lp++ = '\n';
             *lp++ = 0;
 
