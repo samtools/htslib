@@ -6092,6 +6092,7 @@ struct hts_base_mod_state {
     char *MMend[MAX_BASE_MOD];  // end of pos-delta string
     uint8_t *ML[MAX_BASE_MOD];  // next qual
     int MLstride[MAX_BASE_MOD]; // bytes between quals for this type
+    int implicit[MAX_BASE_MOD]; // treat unlisted positions as non-modified?
     int seq_pos;                // current position along sequence
     int nmods;                  // used array size (0 to MAX_BASE_MOD-1).
 };
@@ -6160,6 +6161,7 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
 
     char *cp = (char *)mm+1;
     int mod_num = 0;
+    int implicit = 1;
     while (*cp) {
         for (; *cp; cp++) {
             // cp should be [ACGTNU][+-]([a-zA-Z]+|[0-9]+)[.?]?(,\d+)*;
@@ -6192,16 +6194,15 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                 if (*cp == '\0')
                     return -1;
             }
+
             me = cp;
 
-            // Optional explicit vs implicit marker.
-            // Right now we ignore this field.  A proper API for
-            // querying it will follow later.
+            // Optional explicit vs implicit marker
             if (*cp == '.') {
-                // implicit = 1;
+                // default is implicit = 1;
                 cp++;
             } else if (*cp == '?') {
-                // implicit = 0;
+                implicit = 0;
                 cp++;
             } else if (*cp != ',' && *cp != ';') {
                 // parse error
@@ -6257,6 +6258,7 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                 state->strand   [mod_num] = (strand == '-');
                 state->canonical[mod_num] = btype;
                 state->MLstride [mod_num] = stride;
+                state->implicit [mod_num] = implicit;
 
                 state->MMcount  [mod_num] = delta;
                 if (b->core.flag & BAM_FREVERSE) {
@@ -6472,4 +6474,45 @@ int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
             break;
 
     return r;
+}
+
+/*
+ * Returns the list of base modification codes provided for this
+ * alignment record as an array of character codes (+ve) or ChEBI numbers
+ * (negative).
+ *
+ * Returns the array, with *ntype filled out with the size.
+ *         The array returned should not be freed.
+ *         It is a valid pointer until the state is freed using
+ *         hts_base_mod_free().
+ */
+int *bam_mods_recorded(hts_base_mod_state *state, int *ntype) {
+    *ntype = state->nmods;
+    return state->type;
+}
+
+/*
+ * Returns data about a specific modification type for the alignment record.
+ * Code is either positive (eg 'm') or negative for ChEBI numbers.
+ *
+ * Return 0 on success or -1 if not found.  The strand, implicit and canonical
+ * fields are filled out if passed in as non-NULL pointers.
+ */
+int bam_mods_query_type(hts_base_mod_state *state, int code,
+                        int *strand, int *implicit, char *canonical) {
+    // Find code entry
+    int i;
+    for (i = 0; i < state->nmods; i++) {
+        if (state->type[i] == code)
+            break;
+    }
+    if (i == state->nmods)
+        return -1;
+
+    // Return data
+    if (strand)    *strand    = state->strand[i];
+    if (implicit)  *implicit  = state->implicit[i];
+    if (canonical) *canonical = "?AC?G???T??????N"[state->canonical[i]];
+
+    return 0;
 }
