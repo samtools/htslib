@@ -87,6 +87,15 @@ uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
     return NULL;
 }
 
+static void check_aux_count(const bam1_t *aln, int expected, const char *what)
+{
+    const uint8_t *itr;
+    int n = 0;
+    for (itr = bam_aux_first(aln); itr; itr = bam_aux_next(aln, itr)) n++;
+    if (n != expected)
+        fail("%s has %d aux fields, expected %d", what, n, expected);
+}
+
 static void check_int_B_array(bam1_t *aln, char *tag,
                              uint32_t nvals, int64_t *vals) {
     uint8_t *p;
@@ -285,9 +294,29 @@ static int aux_fields1(void)
         if ((p = check_bam_aux_get(aln, "XA", 'A')) && bam_aux2A(p) != 'k')
             fail("XA field is '%c', expected 'k'", bam_aux2A(p));
 
+        check_aux_count(aln, 24, "Original record");
+
         bam_aux_del(aln,p);
         if (bam_aux_get(aln,"XA"))
             fail("XA field was not deleted");
+
+        check_aux_count(aln, 23, "Record post-XA-deletion");
+
+        p = bam_aux_get(aln, "Y2");
+        if (p == NULL || strncmp(bam_aux_tag(p), "Y2", 2) != 0 || bam_aux_type(p) != 'i')
+            fail("bam_aux_get() missed Y2 field");
+
+        p = bam_aux_next(aln, p);
+        if (p == NULL || strncmp(bam_aux_tag(p), "Y3", 2) != 0 || bam_aux_type(p) != 'c')
+            fail("bam_aux_next() missed Y3 field");
+
+        p = bam_aux_get(aln, "Y8");
+        if (p == NULL || strncmp(bam_aux_tag(p), "Y8", 2) != 0 || bam_aux_type(p) != 'I')
+            fail("bam_aux_get() missed Y8 field");
+
+        p = bam_aux_next(aln, p);
+        if (p != NULL || errno != ENOENT)
+            fail("bam_aux_next missed the end of fields");
 
         if ((p = check_bam_aux_get(aln, "Xi", 'C')) && bam_aux2i(p) != 37)
             fail("Xi field is %"PRId64", expected 37", bam_aux2i(p));
@@ -492,6 +521,16 @@ static int aux_fields1(void)
 
         if (strcmp(ks.s, r1) != 0)
             fail("record formatted incorrectly: \"%s\"", ks.s);
+
+        // Test field removal APIs -- after the strcmp(..., r1) check so that
+        // can also check the formatting of the to-be-removed fields.
+
+        p = bam_aux_remove(aln, check_bam_aux_get(aln, "XH", 'H'));
+        if (bam_aux_get(aln, "XH"))
+            fail("XH field was not removed");
+        check_aux_count(aln, 31, "Record post-XH-removal");
+        if (strncmp(bam_aux_tag(p), "XB", 2) != 0 || bam_aux_type(p) != 'B')
+            fail("bam_aux_remove() missed XB field");
     }
     else fail("can't read record");
 
