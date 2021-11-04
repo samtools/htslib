@@ -4614,31 +4614,42 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
     }
 }
 
+uint8_t *bam_aux_first(const bam1_t *b)
+{
+    uint8_t *s = bam_get_aux(b);
+    uint8_t *end = b->data + b->l_data;
+    if (s >= end) { errno = ENOENT; return NULL; }
+    return s+2;
+}
+
+uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s)
+{
+    uint8_t *end = b->data + b->l_data;
+    uint8_t *next = s? skip_aux((uint8_t *) s, end) : end;
+    if (next == NULL) goto bad_aux;
+    if (next >= end) { errno = ENOENT; return NULL; }
+    return next+2;
+
+ bad_aux:
+    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
+    errno = EINVAL;
+    return NULL;
+}
+
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
 {
-    uint8_t *s, *end, *t = (uint8_t *) tag;
-    uint16_t y = (uint16_t) t[0]<<8 | t[1];
-    s = bam_get_aux(b);
-    end = b->data + b->l_data;
-    while (s != NULL && end - s >= 3) {
-        uint16_t x = (uint16_t) s[0]<<8 | s[1];
-        s += 2;
-        if (x == y) {
+    uint8_t *s;
+    for (s = bam_aux_first(b); s; s = bam_aux_next(b, s))
+        if (s[-2] == tag[0] && s[-1] == tag[1]) {
             // Check the tag value is valid and complete
-            uint8_t *e = skip_aux(s, end);
-            if ((*s == 'Z' || *s == 'H') && *(e - 1) != '\0') {
-                goto bad_aux;  // Unterminated string
-            }
-            if (e != NULL) {
-                return s;
-            } else {
-                goto bad_aux;
-            }
+            uint8_t *e = skip_aux(s, b->data + b->l_data);
+            if (e == NULL) goto bad_aux;
+            if ((*s == 'Z' || *s == 'H') && *(e - 1) != '\0') goto bad_aux;
+
+            return s;
         }
-        s = skip_aux(s, end);
-    }
-    if (s == NULL) goto bad_aux;
-    errno = ENOENT;
+
+    // errno now as set by bam_aux_first()/bam_aux_next()
     return NULL;
 
  bad_aux:
@@ -4647,23 +4658,28 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
     return NULL;
 }
 
-// s MUST BE returned by bam_aux_get()
 int bam_aux_del(bam1_t *b, uint8_t *s)
 {
-    uint8_t *p, *aux;
-    int l_aux = bam_get_l_aux(b);
-    aux = bam_get_aux(b);
-    p = s - 2;
-    s = skip_aux(s, aux + l_aux);
-    if (s == NULL) goto bad_aux;
-    memmove(p, s, l_aux - (s - aux));
-    b->l_data -= s - p;
-    return 0;
+    s = bam_aux_remove(b, s);
+    return (s || errno == ENOENT)? 0 : -1;
+}
+
+uint8_t *bam_aux_remove(bam1_t *b, uint8_t *s)
+{
+    uint8_t *end = b->data + b->l_data;
+    uint8_t *next = skip_aux(s, end);
+    if (next == NULL) goto bad_aux;
+
+    b->l_data -= next - (s-2);
+    if (next >= end) { errno = ENOENT; return NULL; }
+
+    memmove(s-2, next, end - next);
+    return s;
 
  bad_aux:
     hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
     errno = EINVAL;
-    return -1;
+    return NULL;
 }
 
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
