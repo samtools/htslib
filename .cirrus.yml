@@ -146,7 +146,7 @@ centos_task:
 macosx_task:
   name: macosx + clang
   osx_instance:
-    image: catalina-base
+    image: monterey-base
 
   environment:
     CC: clang
