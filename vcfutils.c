@@ -256,10 +256,10 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     int *map = (int*) calloc(line->n_allele, sizeof(int));
     uint8_t *dat = NULL;
 
+    bcf_unpack(line, BCF_UN_FMT);
+
     // create map of indexes from old to new ALT numbering and modify ALT
     kstring_t str = {0,0,0};
-    if (!line->d.allele)
-        bcf_unpack(line, BCF_UN_STR);
     kputs(line->d.allele[0], &str);
 
     int nrm = 0, i,j;  // i: ori alleles, j: new alleles
