@@ -205,11 +205,13 @@ enum htsExactFormat {
     empty_format,  // File is empty (or empty after decompression)
     fasta_format, fastq_format, fai_format, fqi_format,
     hts_crypt4gh_format,
+    d4_format,
     format_maximum = 32767
 };
 
 enum htsCompression {
     no_compression, gzip, bgzf, custom, bzip2_compression, razf_compression,
+    xz_compression, zstd_compression,
     compression_maximum = 32767
 };
 
@@ -484,7 +486,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 101390
+#define HTS_VERSION 101490
 
 /*! @abstract Introspection on the features enabled in htslib
  *
@@ -532,9 +534,28 @@ const char *hts_feature_string(void);
   @param fp    File opened for reading, positioned at the beginning
   @param fmt   Format structure that will be filled out on return
   @return      0 for success, or negative if an error occurred.
+
+  Equivalent to hts_detect_format2(fp, NULL, fmt).
 */
 HTSLIB_EXPORT
 int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
+
+/*!
+  @abstract    Determine format primarily by peeking at the start of a file
+  @param fp    File opened for reading, positioned at the beginning
+  @param fname Name of the file, or NULL if not available
+  @param fmt   Format structure that will be filled out on return
+  @return      0 for success, or negative if an error occurred.
+  @since       1.15
+
+Some formats are only recognised if the filename is available and has the
+expected extension, as otherwise more generic files may be misrecognised.
+In particular:
+ - FASTA/Q indexes must have .fai/.fqi extensions; without this requirement,
+   some similar BED files would be misrecognised as indexes.
+*/
+HTSLIB_EXPORT
+int hts_detect_format2(struct hFILE *fp, const char *fname, htsFormat *fmt);
 
 /*!
   @abstract    Get a human-readable description of the file format

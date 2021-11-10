@@ -1211,7 +1211,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
                     *end = str+5;
                     res->d = b->core.flag & BAM_FREAD1;
                     return 0;
-                } else if (!memcmp(str, "read2", 6)) {
+                } else if (!memcmp(str, "read2", 5)) {
                     *end = str+5;
                     res->d = b->core.flag & BAM_FREAD2;
                     return 0;
@@ -1716,6 +1716,22 @@ sam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
     return bh;
 }
 
+static int valid_sam_header_type(const char *s) {
+    if (s[0] != '@') return 0;
+    switch (s[1]) {
+    case 'H':
+        return s[2] == 'D' && s[3] == '\t';
+    case 'S':
+        return s[2] == 'Q' && s[3] == '\t';
+    case 'R':
+    case 'P':
+        return s[2] == 'G' && s[3] == '\t';
+    case 'C':
+        return s[2] == 'O';
+    }
+    return 0;
+}
+
 // Minimal sanitisation of a header to ensure.
 // - null terminated string.
 // - all lines start with @ (also implies no blank lines).
@@ -1788,6 +1804,20 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
     }
 
     return h;
+}
+
+static void known_stderr(const char *tool, const char *advice) {
+    hts_log_warning("SAM file corrupted by embedded %s error/log message", tool);
+    hts_log_warning("%s", advice);
+}
+
+static void warn_if_known_stderr(const char *line) {
+    if (strstr(line, "M::bwa_idx_load_from_disk") != NULL)
+        known_stderr("bwa", "Use `bwa mem -o file.sam ...` or `bwa sampe -f file.sam ...` instead of `bwa ... > file.sam`");
+    else if (strstr(line, "M::mem_pestat") != NULL)
+        known_stderr("bwa", "Use `bwa mem -o file.sam ...` instead of `bwa mem ... > file.sam`");
+    else if (strstr(line, "loaded/built the index") != NULL)
+        known_stderr("minimap2", "Use `minimap2 -o file.sam ...` instead of `minimap2 ... > file.sam`");
 }
 
 static sam_hdr_t *sam_hdr_create(htsFile* fp) {
@@ -1868,13 +1898,21 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     }
                 } else {
                     hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
+                    warn_if_known_stderr(fp->line.s);
                     free(sn);
                 }
             } else {
                 hts_log_warning("Ignored @SQ line with missing SN: tag");
+                warn_if_known_stderr(fp->line.s);
             }
             sn = NULL;
         }
+        else if (!valid_sam_header_type(fp->line.s)) {
+            hts_log_error("Invalid header line: must start with @HD/@SQ/@RG/@PG/@CO");
+            warn_if_known_stderr(fp->line.s);
+            goto error;
+        }
+
         if (kputsn(fp->line.s, fp->line.l, &str) < 0)
             goto error;
 

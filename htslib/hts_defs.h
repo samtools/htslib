@@ -79,7 +79,7 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_DEPRECATED(message)
 #endif
 
-#if HTS_COMPILER_HAS(__deprecated__) || HTS_GCC_AT_LEAST(6,4)
+#if (HTS_COMPILER_HAS(__deprecated__) || HTS_GCC_AT_LEAST(6,4)) && !defined(__ICC)
 #define HTS_DEPRECATED_ENUM(message) __attribute__ ((__deprecated__ (message)))
 #else
 #define HTS_DEPRECATED_ENUM(message)

@@ -1,12 +1,98 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* New API function hts_flush()/sam_flush()/bcf_flush() for flushing output
-  htsFile/samFile/vcfFile streams. (PR #1326, thanks to John Marshall)
+Noteworthy changes in release 1.14 (22nd October 2021)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Features and Updates
+--------------------
 
 * Added a keep option to bgzip to leave the original file untouched.  This
-  brings bgzip into line with gzip. (PR #1331, thanks to Alex Petty).
+  brings bgzip into line with gzip. (PR #1331, thanks to Alex Petty)
 
+* "endpos" has been added to the filter language, giving the position
+  of the rightmost mapped base as measured by the CIGAR string.  For
+  unmapped reads it is the same as "pos". (PR #1307, thanks to John Marshall)
+
+* Interfaces have been added to interpret the new base modification tags
+  added to the SAMtags document in samtools/hts-specs#418.  (PR #1132)
+
+* New API functions hts_flush()/sam_flush()/bcf_flush() for flushing output
+  htsFile/samFile/vcfFile streams. (PR #1326, thanks to John Marshall)
+
+* The synced_bcf_reader now sorts lines with symbolic alleles by END tag as
+  well as POS.  (PR #1321)
+
+* Added synced_bcf_reader options BCF_SR_REGIONS_OVERLAP and
+  BCF_SR_TARGETS_OVERLAP for better control of records that start outside
+  the desired region but overlap it are handled.  Fixes samtools/bcftools#1420
+  and samtools/bcftools#1421 raised by John Marshall.  (PR #1327)
+
+* HTSlib will now accept long-cigar CG:B: tags made by htsjdk which don't
+  quite follow the specification properly (using signed values instead of
+  unsigned).  Thanks to Colin Diesh for reporting an example file. (PR #1317)
+
+* The warning printed when the BGZF reader finds a file with no EOF block
+  has been changed to be less alarming.  Unfortunately some third-party
+  BGZF encoders don't write EOF blocks at the end of files.  Thanks to
+  Keiran Raine for reporting an example file.  (PR #1323)
+
+* The FASTA and FASTQ readers get an option to skip over the first item on
+  the header line, and use the second as the read name.  It allows the original
+  name to be restored on some of the fastq files served from the European
+  Nucleotide Archive (ENA).  (PR #1325)
+
+* HTSlib is now more strict when parsing the VCF samples line (beginning
+  #CHROM).  It will only accept tabs between the mandatory field names and
+  sample names must be separated with tabs. (PR #1328)
+
+* HTSlib will now warn if it looks like the header has been corrupted
+  by diagnostic messages from the program that made it.  This can happen when
+  using `nohup`, which by default mixes stdout and stderr into the same
+  stream.  (PR#1339, thanks to John Marshall)
+
+* File format detection will now recognise signatures for XZ, Zstd and D4
+  files (note that HTSlib will not read them yet).  (PR #1340, thanks to
+  John Marshall)
+
+Build changes
+-------------
+
+These are compiler, configuration and makefile based changes.
+
+* Some redundant tests have been removed from the test harness, speeding it up.
+  (PR #1308)
+
+* The version.sh script now works better on shallow checkouts.  (PR #1324)
+
+* A check-untracked Makefile target has been added to catch untracked files
+  (mostly) left by the test harness.  (PR #1324)
+
+Bug fixes
+---------
+
+* Fixed a case where flushing the thread pool could very occasionally cause
+  a deadlock.  (PR #1309)
+
+* Fixed a bug where some CRAM files could fail to decode if the required_fields
+  option was in use.  Thanks to Matt Sexton for reporting the issue.
+  (PR #1314, fixes samtools/samtools#1475)
+
+* Fixed a regression where the S3 plugin could not read public files unless
+  you supplied some Amazon credentials.  Thanks to Chris Saunders for reporting.
+  (PR #1332, fixes samtools/samtools#1491)
+
+* Fixed a possible CRAM thread deadlock discovered by @ryancaicse.
+  (PR #1330, fixes #1329)
+
+* Some set-but-unused variables have been removed.  (PR #1334)
+
+* Fixed a bug which prevented "flag.read2" from working in the filter
+  language unless it was at the end of the expression.  Thanks to Vamsi Kodali
+  for reporting the issue.  (PR #1342)
+
+* Fixed a memory leak that could happen if CRAM fails to inflate a LZMA
+  block. (PR #1340, thanks to John Marshall)
 
 Noteworthy changes in release 1.13 (7th July 2021)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
