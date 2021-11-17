@@ -173,6 +173,11 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
     idx_stack[idx_stack_ptr] = idx;
 
+    // Support pathX.cram##idx##pathY.crai
+    const char *fn_delim = strstr(fn, HTS_IDX_DELIM);
+    if (fn_delim && !fn_idx)
+        fn_idx = fn_delim + strlen(HTS_IDX_DELIM);
+
     if (!fn_idx) {
         if (hts_idx_check_local(fn, HTS_FMT_CRAI, &tfn_idx) == 0 && hisremote(fn))
             tfn_idx = hts_idx_getfn(fn, ".crai");
