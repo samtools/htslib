@@ -1090,6 +1090,73 @@ hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 HTSLIB_EXPORT
 hts_pos_t bam_endpos(const bam1_t *b);
 
+/*! @typedef
+ *  @abstract Flag filtering settings structure
+ */
+typedef struct sam_flag_filter_s {
+    uint32_t has_all:1, has_none:1, has_any:1, has_omit_any:1, has_exact:1, :27;
+    // To pass this filter, a read must have...
+    unsigned int all;       // all of these flags
+    unsigned int none;      // none of these
+    unsigned int any;       // at least one of these
+    unsigned int omit_any;  // OMIT at least one of these
+    unsigned int exact;     // exactly these flags (and no others)
+} sam_flag_filter_t;
+
+/// Check whether the flags pass the collected flag filters
+/** @param flag  Bitwise SAM flags
+    @param filt  Pointer to the flag filtering settings
+    @return      1 if @a flag passes all the active filters, 0 if not
+*/
+static inline
+int sam_flag_passes_flag_filter(unsigned int flag, const sam_flag_filter_t *filt) {
+    if (filt->has_all && (flag & filt->all) != filt->all) return 0;
+    if (filt->has_none && (flag & filt->none) != 0) return 0;
+    if (filt->has_any && (flag & filt->any) == 0) return 0;
+    if (filt->has_omit_any && (flag & filt->omit_any) == filt->omit_any) return 0;
+    if (filt->has_exact && flag != filt->exact) return 0;
+    return 1;
+}
+
+/// Check whether the alignment record's flags pass the collected flag filters
+/** @param b     Pointer to the BAM record to be checked
+    @param filt  Pointer to the flag filtering settings
+    @return      1 if the record passes all the active filters, 0 if not
+*/
+static inline
+int sam_passes_flag_filter(const bam1_t *b, const sam_flag_filter_t *filt) {
+    return sam_flag_passes_flag_filter(b->core.flag, filt);
+}
+
+/// Update flag filtering settings from a flag specification string
+/** @param s     Flag specification string
+    @param mode  Initial punctuation mode character (one of [-&!^+|~=])
+    @param filt  Pointer to the flag filtering settings to update
+    @return      >= 0 on success, -1 if the string syntax was invalid
+
+Flag specification strings are of the form `#flag,...,flag,#flag,...,flag,...`,
+i.e., a comma-separated list of flag items (each of which is either a numeric
+flag bitset, a symbolic (/[pPuUrR12sxdS_]+/) flag bitset, or a single flag
+name (eg "PAIRED")), each of which may be prefixed by a punctuation character
+that controls which filter the subsequent items contribute to (until the next
+punctuation character):
+
+    Chr  To pass filtering and be kept, the read must...
+    - &    ...have ALL flags prefixed by either - or &
+    ! ^    ...have NONE of the flags prefixed by either ! or ^
+    + |    ...have ANY (at least one) of the flags prefixed by either + or |
+    ~      ...NOT have at least one of the flags prefixed by ~
+    =      ...have EXACTLY the flags prefixed by = (and no others)
+
+Flag items before the first punctuation character are controlled by @a mode.
+The settings are updated via `|=` so that sam_parse_flag_filter() can be used
+repeatedly to record filters from several specification strings.  Hence
+@a filt should be zero-initialised before the first call.
+*/
+HTSLIB_EXPORT
+int sam_parse_flag_filter(const char *s, char mode, sam_flag_filter_t *filt);
+
+
 HTSLIB_EXPORT
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 

@@ -4955,6 +4955,164 @@ char *sam_open_mode_opts(const char *fn,
     return mode_opts;
 }
 
+// Parses one item, which may be a set of flags specified numerically
+// or via symbolic letter codes, or a single flag via its long name.
+static unsigned long sam_parse_flag1(const char *s, char **endptr)
+{
+    if (isdigit_c(*s)) return strtoul(s, endptr, 0);
+
+    unsigned long flag = 0;
+    char name[24];
+    int i = 0, short_ok = 1;
+
+    for (; isalpha_c(*s) || *s == '_'; s++) {
+        if (i < sizeof name) name[i++] = toupper_c(*s);
+        switch (*s) {
+        case 'p': flag |= BAM_FPAIRED; break;
+        case 'P': flag |= BAM_FPROPER_PAIR; break;
+        case 'u': flag |= BAM_FUNMAP; break;
+        case 'U': flag |= BAM_FMUNMAP; break;
+        case 'r': flag |= BAM_FREVERSE; break;
+        case 'R': flag |= BAM_FMREVERSE; break;
+        case '1': flag |= BAM_FREAD1; break;
+        case '2': flag |= BAM_FREAD2; break;
+        case 's': flag |= BAM_FSECONDARY; break;
+        case 'x': flag |= BAM_FQCFAIL; break;
+        case 'd': flag |= BAM_FDUP; break;
+        case 'S': flag |= BAM_FSUPPLEMENTARY; break;
+        case '_': break;
+        // TODO In future, add an option to allow [mMfF] as no-ops
+
+        default:
+            short_ok = 0;
+            break;
+        }
+    }
+
+    *endptr = (char *) s;
+
+    if (i < sizeof name) {
+        name[i] = '\0';
+        switch (name[0]) {
+        case 'D':
+            if (strcmp(name, "DUP") == 0) return BAM_FDUP;
+            break;
+
+        case 'M':
+            if (strcmp(name, "MUNMAP") == 0) return BAM_FMUNMAP;
+            else if (strcmp(name, "MREVERSE") == 0) return BAM_FMREVERSE;
+            break;
+
+        case 'P':
+            if (strcmp(name, "PAIRED") == 0) return BAM_FPAIRED;
+            else if (strcmp(name, "PROPER_PAIR") == 0) return BAM_FPROPER_PAIR;
+            break;
+
+        case 'Q':
+            if (strcmp(name, "QCFAIL") == 0) return BAM_FQCFAIL;
+            break;
+
+        case 'R':
+            if (strcmp(name, "REVERSE") == 0) return BAM_FREVERSE;
+            else if (strcmp(name, "READ1") == 0) return BAM_FREAD1;
+            else if (strcmp(name, "READ2") == 0) return BAM_FREAD2;
+            break;
+
+        case 'S':
+            if (strcmp(name, "SECONDARY") == 0) return BAM_FSECONDARY;
+            else if (strcmp(name, "SUPPLEMENTARY") == 0) return BAM_FSUPPLEMENTARY;
+            break;
+
+        case 'U':
+            if (strcmp(name, "UNMAP") == 0) return BAM_FUNMAP;
+            break;
+        }
+    }
+
+    return short_ok? flag : 0;
+}
+
+// Parses one colon-terminated mode prefix, if present.
+static char parse_optional_mode_prefix(const char *s, char **endptr)
+{
+    char prefix[8];
+    int i = 0;
+
+    for (; isalpha_c(*s) && i < sizeof prefix; s++)
+        prefix[i++] = tolower_c(*s);
+
+    if (*s != ':') return '\0';
+
+    *endptr = (char *) &s[1];
+
+    if (i < sizeof prefix) {
+        prefix[i] = '\0';
+        switch (prefix[0]) {
+        case 'a':
+            if (strcmp(prefix, "all") == 0) return '&';
+            else if (strcmp(prefix, "any") == 0) return '|';
+            else if (strcmp(prefix, "anynot") == 0) return '~';
+            break;
+
+        case 'e':
+            if (strcmp(prefix, "exact") == 0) return '=';
+            break;
+
+        case 'n':
+            if (strcmp(prefix, "none") == 0) return '^';
+            else if (strcmp(prefix, "notall") == 0) return '~';
+            break;
+        }
+    }
+
+    return '\0';
+}
+
+int sam_parse_flag_filter(const char *s, char mode, sam_flag_filter_t *filt)
+{
+    while (*s) {
+        if (isalnum_c(*s) || *s == '_') {
+            char *end;
+            char newmode = parse_optional_mode_prefix(s, &end);
+            if (newmode) mode = newmode, s = end;
+            unsigned long flag = sam_parse_flag1(s, &end);
+            if (!flag) return -1;
+            s = end;
+
+            switch (mode) {
+            case '-': case '&':
+                filt->has_all = 1;
+                filt->all |= flag;
+                break;
+            case '!': case '^':
+                filt->has_none = 1;
+                filt->none |= flag;
+                break;
+            case '+': case '|':
+                filt->has_any = 1;
+                filt->any |= flag;
+                break;
+            case '~':
+                filt->has_omit_any = 1;
+                filt->omit_any |= flag;
+                break;
+            case '=':
+                filt->has_exact = 1;
+                filt->exact |= flag;
+                break;
+            default:
+                return -1;
+            }
+        }
+        else if (*s == ',')
+            s++;
+        else
+            mode = *s++;
+    }
+
+    return 0;
+}
+
 #define STRNCMP(a,b,n) (strncasecmp((a),(b),(n)) || strlen(a)!=(n))
 int bam_str2flag(const char *str)
 {
