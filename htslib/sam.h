@@ -1492,7 +1492,8 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         ++s;
     } else if (type == 'f') {
         if (end - s >= 4) {
-            ksprintf(ks, "f:%g", le_to_float(s));
+            // cast to avoid triggering -Wdouble-promotion
+            ksprintf(ks, "f:%g", (double)le_to_float(s));
             s += 4;
         } else goto bad_aux;
 
@@ -1594,7 +1595,8 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
             if (ks_expand(ks, n*8) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
                 ks->s[ks->l++] = ',';
-                r |= kputd(le_to_float(s), ks) < 0;
+                // cast to avoid triggering -Wdouble-promotion
+                r |= kputd((double)le_to_float(s), ks) < 0;
                 s += 4;
             }
             break;
