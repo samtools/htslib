@@ -119,7 +119,10 @@ extern "C" {
     /* kgetline() uses the supplied fgets()-like function to read a "\n"-
      * or "\r\n"-terminated line from fp.  The line read is appended to the
      * kstring without its terminator and 0 is returned; EOF is returned at
-     * EOF or on error (determined by querying fp, as per fgets()). */
+     * EOF or on error (determined by querying fp, as per fgets()).
+     *
+     * If a line contains a nul byte, then any subsequent content on the line
+     * is silently discarded. kgetline2() avoids this caveat. */
     typedef char *kgets_func(char *, int, void *);
     HTSLIB_EXPORT
     int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp);
@@ -131,6 +134,12 @@ extern "C" {
     typedef ssize_t kgets_func2(char *, size_t, void *);
     HTSLIB_EXPORT
     int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp);
+
+    /* kgetline3() is similar to kgetline2() but includes the line's
+     * terminator. Upon success, the appended line lacks a newline terminator
+     * only for the last line of a file that doesn't end in one. */
+    HTSLIB_EXPORT
+    int kgetline3(kstring_t *s, kgets_func2 *fgets_fn, void *fp);
 
 #ifdef __cplusplus
 }

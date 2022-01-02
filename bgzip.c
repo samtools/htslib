@@ -36,6 +36,7 @@
 #include <inttypes.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "htslib/hfile.h"
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -121,13 +122,14 @@ static int bgzip_main_usage(FILE *fp, int status)
     fprintf(fp, "   -r, --reindex              (re)index compressed file\n");
     fprintf(fp, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
     fprintf(fp, "   -t, --test                 test integrity of compressed file\n");
+    fprintf(fp, "   -a, --text                 compress in text mode (align blocks with text lines)\n");
     fprintf(fp, "   -@, --threads INT          number of compression threads to use [1]\n");
     return status;
 }
 
 int main(int argc, char **argv)
 {
-    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0, keep;
+    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0, keep, text;
     BGZF *fp;
     void *buffer;
     long start, end, size;
@@ -151,11 +153,12 @@ int main(int argc, char **argv)
         {"test", no_argument, NULL, 't'},
         {"version", no_argument, NULL, 1},
         {"keep", no_argument, NULL, 'k'},
+        {"text", no_argument, NULL, 'a'},
         {NULL, 0, NULL, 0}
     };
 
-    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0; keep = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grtk",loptions,NULL)) >= 0){
+    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0; keep = 0; text = 0;
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grtka",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
@@ -170,6 +173,7 @@ int main(int argc, char **argv)
         case '@': threads = atoi(optarg); break;
         case 't': test = 1; compress = 0; reindex = 0; break;
         case 'k': keep = 1; break;
+        case 'a': text = 1; break;
         case 1:
             printf(
 "bgzip (htslib) %s\n"
@@ -185,7 +189,7 @@ int main(int argc, char **argv)
         return 1;
     }
     if (compress == 1) {
-        int f_src = fileno(stdin);
+        hFILE* f_src = NULL;
         char out_mode[3] = "w\0";
         char out_mode_exclusive[4] = "wx\0";
 
@@ -198,13 +202,13 @@ int main(int argc, char **argv)
             out_mode_exclusive[2] = compress_level + '0';
         }
 
+        if (!(f_src = hopen(argc > optind ? argv[optind] : "-", "r"))) {
+            fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
+            return 1;
+        }
+
         if ( argc>optind )
         {
-            if ((f_src = open(argv[optind], O_RDONLY)) < 0) {
-                fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
-                return 1;
-            }
-
             if (pstdout)
                 fp = bgzf_open("-", out_mode);
             else
@@ -239,6 +243,11 @@ int main(int argc, char **argv)
             return 1;
         }
 
+        if ( rebgzip && text ) {
+            fprintf(stderr, "[bgzip] Can't ensure text mode for rebgzip\n");
+            return 1;
+        }
+
         if ( rebgzip && !index_fname )
         {
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
@@ -250,18 +259,34 @@ int main(int argc, char **argv)
             bgzf_mt(fp, threads, 256);
 
         buffer = malloc(WINDOW_SIZE);
-#ifdef _WIN32
-        _setmode(f_src, O_BINARY);
-#endif
         if (rebgzip){
             if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
 
-            while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
+            while ((c = hread(f_src, buffer, WINDOW_SIZE)) > 0)
                 if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
         }
         else {
-            while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
-                if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+            if (!text) {
+                while ((c = hread(f_src, buffer, WINDOW_SIZE)) > 0)
+                    if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+            } else {
+                /* text mode: read line-by-line */
+                kstring_t line = KS_INITIALIZE;
+                int header_line = 1;
+                while (line.l = 0, kgetline3(&line, (kgets_func2*) hgetln, f_src) >= 0) {
+                    /* flush current block if it's nonempty and remaining
+                       capacity is less than line.l */
+                    if (bgzf_flush_try(fp, line.l) < 0) error("Could not flush %d bytes: Error %d\n", line.l, fp->errcode);
+                    if (header_line && !strchr("@#", *line.s)) {
+                        /* special heuristic: flush before first line not
+                           starting with @ or # (SAM or VCF header) */
+                        if (bgzf_flush(fp) < 0) error("Could not flush BGZF after header: Error %d\n", fp->errcode);
+                        header_line = 0;
+                    }
+                    if (bgzf_write(fp, line.s, line.l) != line.l) error("Could not write %d bytes: Error %d\n", line.l, fp->errcode);
+                }
+                ks_free(&line);
+            }
         }
         if ( index )
         {
@@ -273,10 +298,10 @@ int main(int argc, char **argv)
                     error("Could not write index to '%s.gz.gzi'", argv[optind]);
             }
         }
-        if (bgzf_close(fp) < 0) error("Close failed: Error %d", fp->errcode);
+        if (bgzf_close(fp) < 0) error("Output close failed: Error %d", fp->errcode);
+        if (hclose(f_src) < 0) error("Input close failed");
         if (argc > optind && !pstdout && !keep) unlink(argv[optind]);
         free(buffer);
-        close(f_src);
         return 0;
     }
     else if ( reindex )

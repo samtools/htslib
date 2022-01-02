@@ -282,7 +282,7 @@ int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 	return 0;
 }
 
-int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
+int kgetline3(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
 {
 	size_t l0 = s->l;
 
@@ -307,7 +307,16 @@ int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
 		s->l += len;
 	}
 
-	if (s->l == l0) return EOF;
+	return s->l > l0 ? 0 : EOF;
+}
+
+int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
+{
+	size_t l0 = s->l;
+	int ret = kgetline3(s, fgets_fn, fp);
+	if (ret < 0) {
+		return ret;
+	}
 
 	if (s->l > l0 && s->s[s->l-1] == '\n') {
 		s->l--;
