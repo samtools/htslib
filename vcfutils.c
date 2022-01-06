@@ -747,7 +747,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 nnew = nR_new;
             }
 
-            #define BRANCH(type_t,is_vector_end) \
+            #define BRANCH(type_t,is_vector_end,set_missing) \
             { \
                 for (j=0; j<line->n_sample; j++) \
                 { \
@@ -757,7 +757,12 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     int k_src, k_dst = 0; \
                     for (k_src=0; k_src<nori; k_src++) \
                     { \
-                        if ( is_vector_end ) { memcpy(ptr_dst+k_dst, ptr_src+k_src, size); break; } \
+                        if ( is_vector_end ) \
+                        { \
+                            if ( k_dst ) memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
+                            else set_missing; \
+                            break; \
+                        } \
                         if ( kbs_exists(rm_set, k_src+inc) ) continue; \
                         memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
                         k_dst++; \
@@ -766,8 +771,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             }
             switch (type)
             {
-                case BCF_HT_INT:  BRANCH(int32_t,ptr_src[k_src]==bcf_int32_vector_end); break;
-                case BCF_HT_REAL: BRANCH(float,bcf_float_is_vector_end(ptr_src[k_src])); break;
+                case BCF_HT_INT:  BRANCH(int32_t,ptr_src[k_src]==bcf_int32_vector_end,ptr_dst[k_dst]=bcf_int32_missing); break;
+                case BCF_HT_REAL: BRANCH(float,bcf_float_is_vector_end(ptr_src[k_src]),bcf_float_set_missing(ptr_dst[k_dst])); break;
             }
             #undef BRANCH
         }
