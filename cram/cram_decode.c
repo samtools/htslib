@@ -1777,7 +1777,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     }
 
     cr->ncigar = ncigar - cr->cigar;
-    cr->aend = ref_pos;
+    cr->aend = ref_pos > cr->apos ? ref_pos : cr->apos;
 
     //printf("2: %.*s %d .. %d\n", cr->name_len, DSTRING_STR(name_ds) + cr->name, cr->apos, ref_pos);
 
