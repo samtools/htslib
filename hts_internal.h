@@ -127,7 +127,7 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
  */
 void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset);
 
-static inline int find_file_extension(const char *fn, char ext_out[static HTS_MAX_EXT_LEN])
+static inline int find_file_extension(const char *fn, char ext_out[HTS_MAX_EXT_LEN])
 {
     const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;
     if (!fn) return -1;
