@@ -103,6 +103,11 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_FORMAT(type, idx, first)
 #endif
 
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 #if defined(_WIN32) || defined(__CYGWIN__)
 #if defined(HTS_BUILDING_LIBRARY)
 #define HTSLIB_EXPORT __declspec(dllexport)
