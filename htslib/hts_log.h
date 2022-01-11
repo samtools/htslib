@@ -60,6 +60,9 @@ enum htsLogLevel hts_get_log_level(void);
  */
 extern int hts_verbose;
 
+
+extern const int hts_log_buffer_size;
+
 /*! Logs an event.
 * \param severity      Severity of the event:
 *                      - HTS_LOG_ERROR means that something went wrong so that a task could not be completed.
@@ -88,6 +91,13 @@ HTS_FORMAT(HTS_PRINTF_FMT, 3, 4);
 
 /*! Logs an event with severity HTS_LOG_TRACE and default context. Parameters: format, ... */
 #define hts_log_trace(...) hts_log(HTS_LOG_TRACE, __func__, __VA_ARGS__)
+
+
+HTSLIB_EXPORT
+int get_last_err(const char *message, int len);
+
+HTSLIB_EXPORT
+int clear_last_err();
 
 #ifdef __cplusplus
 }

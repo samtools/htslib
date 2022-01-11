@@ -81,6 +81,12 @@ KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 HTSLIB_EXPORT
 int hts_verbose = HTS_LOG_WARNING;
 
+HTSLIB_EXPORT
+const int hts_log_buffer_size = 256;
+
+static pthread_key_t threadlocal_log_key;
+static pthread_once_t threadlocal_log_init_done = PTHREAD_ONCE_INIT;
+
 const char *hts_version()
 {
     return HTS_VERSION_TEXT;
@@ -4749,10 +4755,18 @@ static char get_severity_tag(enum htsLogLevel severity)
     return '*';
 }
 
+static void log_threadlocal_init()
+{
+    pthread_key_create(&threadlocal_log_key, free);
+}
+
+
 void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...)
 {
     int save_errno = errno;
+    char* thread_log_buffer = NULL;
     if (severity <= hts_verbose) {
+
         va_list argptr;
 
         fprintf(stderr, "[%c::%s] ", get_severity_tag(severity), context);
@@ -4762,6 +4776,72 @@ void hts_log(enum htsLogLevel severity, const char *context, const char *format,
         va_end(argptr);
 
         fprintf(stderr, "\n");
+
+
+        pthread_once(&threadlocal_log_init_done, log_threadlocal_init);
+        thread_log_buffer = (char *)pthread_getspecific(threadlocal_log_key);
+
+        if (thread_log_buffer == NULL) {
+          thread_log_buffer = malloc(hts_log_buffer_size);
+          if (thread_log_buffer != NULL) {
+            pthread_setspecific(threadlocal_log_key, thread_log_buffer);
+          }
+        }
+
+        if (thread_log_buffer != NULL) {
+            char* pos = thread_log_buffer;
+            char* end = thread_log_buffer + hts_log_buffer_size;
+            int written = 0;
+
+            written = snprintf(pos, end - pos, "[%c::%s] ", get_severity_tag(severity),
+                context);
+
+            if (written > 0 && written + pos < end) {
+                pos += written;
+
+                va_list sargptr;
+                va_start(sargptr, format);
+                written = vsnprintf(pos, end - pos, format, sargptr);
+                va_end(sargptr);
+            }
+        }
     }
     errno = save_errno;
 }
+
+int get_last_err(const char *message, int len)
+{
+    char *thread_log_buffer = NULL;
+
+    pthread_once(&threadlocal_log_init_done, log_threadlocal_init);
+    thread_log_buffer = (char *)pthread_getspecific(threadlocal_log_key);
+
+    if (thread_log_buffer == NULL) {
+        return -1;
+    }
+
+    if (len > hts_log_buffer_size)
+      len = hts_log_buffer_size;
+
+    memcpy(message, thread_log_buffer, len);
+
+    return 0;
+}
+
+int clear_last_err() 
+{
+    char *thread_log_buffer = NULL;
+
+    pthread_once(&threadlocal_log_init_done, log_threadlocal_init);
+    thread_log_buffer = (char *)pthread_getspecific(threadlocal_log_key);
+
+    if (thread_log_buffer == NULL) {
+        return 0;
+    }
+
+    pthread_setspecific(threadlocal_log_key, NULL);
+    free(thread_log_buffer);
+
+    return 0;
+}
+
