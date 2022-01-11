@@ -35,6 +35,13 @@
 
 #include "hts_defs.h"
 
+// Ensure ssize_t exists within this header. All #includes must precede this,
+// and ssize_t must be undefined again at the end of this header.
+#if defined _MSC_VER && defined _INTPTR_T_DEFINED && !defined _SSIZE_T_DEFINED && !defined ssize_t
+#define HTSLIB_SSIZE_T
+#define ssize_t intptr_t
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -448,6 +455,11 @@ typedef struct BGZF BGZF;
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef HTSLIB_SSIZE_T
+#undef HTSLIB_SSIZE_T
+#undef ssize_t
 #endif
 
 #endif
