@@ -1014,17 +1014,17 @@ int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthre
 
 int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads)
 {
-    return sam_index_build3(fn, fnidx, min_shift, nthreads);
+    return sam_index_build4(fn, fnidx, min_shift, nthreads, NULL, NULL);
 }
 
-int sam_index_build2(const char *fn, int min_shift)
+int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
-    return sam_index_build3(fn, NULL, min_shift, 0);
+    return sam_index_build4(fn, fnidx, min_shift, 0, NULL, NULL);
 }
 
 int sam_index_build(const char *fn, int min_shift)
 {
-    return sam_index_build3(fn, NULL, min_shift, 0);
+    return sam_index_build4(fn, NULL, min_shift, 0, NULL, NULL);
 }
 
 // Provide bam_index_build() symbol for binary compatibility with earlier HTSlib

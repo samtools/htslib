@@ -374,7 +374,7 @@ void tbx_destroy(tbx_t *tbx)
 
 int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf)
 {
-    tbx_index_build4(fn, fnidx, min_shift, n_threads, conf, NULL, NULL);
+    return tbx_index_build4(fn, fnidx, min_shift, n_threads, conf, NULL, NULL);
 }
 
 int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads,
