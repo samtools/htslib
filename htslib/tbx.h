@@ -90,7 +90,7 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf);
 
     HTSLIB_EXPORT
-    int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf, 
+    int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf,
         const file_progress_func progress_fn, void *progress_data);
 
 
