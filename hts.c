@@ -4828,7 +4828,7 @@ int get_last_err(char *message, int len)
     return 0;
 }
 
-int clear_last_err() 
+int clear_last_err()
 {
     char *thread_log_buffer = NULL;
 
