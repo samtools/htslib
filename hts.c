@@ -4809,7 +4809,7 @@ void hts_log(enum htsLogLevel severity, const char *context, const char *format,
     errno = save_errno;
 }
 
-int get_last_err(const char *message, int len)
+int get_last_err(char *message, int len)
 {
     char *thread_log_buffer = NULL;
 

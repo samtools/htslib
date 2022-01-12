@@ -94,7 +94,7 @@ HTS_FORMAT(HTS_PRINTF_FMT, 3, 4);
 
 
 HTSLIB_EXPORT
-int get_last_err(const char *message, int len);
+int get_last_err(char *message, int len);
 
 HTSLIB_EXPORT
 int clear_last_err();
