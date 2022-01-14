@@ -938,7 +938,7 @@ void bam_destroy1(bam1_t *b);
 
  cleanup:
    for (size_t i = 0; i < nrecs; i++)
-     bam_destroy1(i);
+     bam_destroy1(&recs[i]);
    free(buffer);
    free(recs);
 
