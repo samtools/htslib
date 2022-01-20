@@ -2910,6 +2910,10 @@ ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
 // Number of BAM records (writing)
 #define NB 1000
 
+// FIXME: this is too large for ONT data.
+// We should have NB as a maximum for allocation purposes, but bail out
+// early if it grows beyond NM so we have constant memory usage.
+
 struct SAM_state;
 
 // Output job - a block of BAM records
@@ -3444,6 +3448,8 @@ static void *sam_dispatcher_write(void *vp) {
                     i++;
 
                 if (fp->is_bgzf) {
+                    if (bgzf_flush_try(fp->fp.bgzf, i-j) < 0)
+                        goto err;
                     if (bgzf_write(fp->fp.bgzf, &gl->data[j], i-j) != i-j)
                         goto err;
                 } else {
@@ -3483,8 +3489,69 @@ static void *sam_dispatcher_write(void *vp) {
             pthread_mutex_unlock(&fd->lines_m);
         } else {
             if (fp->is_bgzf) {
-                if (bgzf_write(fp->fp.bgzf, gl->data, gl->data_size) != gl->data_size)
-                    goto err;
+                // We keep track of how much in the current block we have
+                // remaining => R.  We look for the last newline in input
+                // [i] to [i+R], backwards => position N.
+                //
+                // If we find a newline, we write out bytes i to N.
+                // We know we cannot fit the next record in this bgzf block,
+                // so we flush what we have and copy input N to i+R into
+                // the start of a new block, and recompute a new R for that.
+                //
+                // If we don't find a newline (i==N) then we cannot extend
+                // the current block at all, so flush whatever is in it now
+                // if it ends on a newline.
+                // We still copy i(==N) to i+R to the next block and
+                // continue as before with a new R.
+                //
+                // The only exception on the flush is when we run out of
+                // data in the input.  In that case we skip it as we don't
+                // yet know if the next record will fit.
+                //
+                // Both conditions share the same code here:
+                // - Look for newline (pos N)
+                // - Write i to N (which maybe 0)
+                // - Flush if block ends on newline and not end of input
+                // - write N to i+R
+
+                int i = 0;
+                BGZF *fb = fp->fp.bgzf;
+                while (i < gl->data_size) {
+                    // remaining space in block
+                    int R = BGZF_BLOCK_SIZE - fb->block_offset;
+                    int eod = 0;
+                    if (R > gl->data_size-i)
+                        R = gl->data_size-i, eod = 1;
+
+                    // Find last newline in input data
+                    int N = i + R;
+                    while (--N > i) {
+                        if (gl->data[N] == '\n')
+                            break;
+                    }
+
+                    if (N != i) {
+                        // Found a newline
+                        N++;
+                        if (bgzf_write(fb, &gl->data[i], N-i) != N-i)
+                            goto err;
+                    }
+
+                    // Flush bgzf block
+                    int b_off = fb->block_offset;
+                    if (!eod && b_off &&
+                        ((char *)fb->uncompressed_block)[b_off-1] == '\n')
+                        if (bgzf_flush_try(fb, BGZF_BLOCK_SIZE) < 0)
+                            goto err;
+
+                    // Copy from N onwards into next block
+                    if (i+R > N)
+                        if (bgzf_write(fb, &gl->data[N], i+R - N)
+                            != i+R - N)
+                            goto err;
+
+                    i = i+R;
+                }
             } else {
                 if (hwrite(fp->fp.hfile, gl->data, gl->data_size) != gl->data_size)
                     goto err;
@@ -4348,6 +4415,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
             if (sam_format1(h, b, &fp->line) < 0) return -1;
             kputc('\n', &fp->line);
             if (fp->is_bgzf) {
+                if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
+                    return -1;
                 if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
             } else {
                 if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
@@ -4387,6 +4456,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         if (fastq_format1(fp->state, b, &fp->line) < 0)
             return -1;
         if (fp->is_bgzf) {
+            if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
+                return -1;
             if (bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l)
                 return -1;
         } else {
