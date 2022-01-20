@@ -2226,10 +2226,12 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
     }
     while (htxt.l && htxt.s[htxt.l-1] == '\0') --htxt.l; // kill trailing zeros
     int ret;
-    if ( fp->format.compression!=no_compression )
+    if ( fp->format.compression!=no_compression ) {
         ret = bgzf_write(fp->fp.bgzf, htxt.s, htxt.l);
-    else
+        if (bgzf_flush(fp->fp.bgzf) != 0) return -1;
+    } else {
         ret = hwrite(fp->fp.hfile, htxt.s, htxt.l);
+    }
     free(htxt.s);
     return ret<0 ? -1 : 0;
 }
@@ -3401,10 +3403,13 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     fp->line.l = 0;
     if (vcf_format1(h, v, &fp->line) != 0)
         return -1;
-    if ( fp->format.compression!=no_compression )
+    if ( fp->format.compression!=no_compression ) {
+        if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
+            return -1;
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
-    else
+    } else {
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+    }
 
     if (fp->idx) {
         int tid;
