@@ -2906,9 +2906,10 @@ ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
  * SAM threading
  */
 // Size of SAM text block (reading)
-#define NM 240000
-// Number of BAM records (writing)
-#define NB 1000
+#define SAM_NBYTES 240000
+
+// Number of BAM records (writing, up to NB_mem in size)
+#define SAM_NBAM 1000
 
 struct SAM_state;
 
@@ -2918,7 +2919,8 @@ typedef struct sp_bams {
     int serial;
 
     bam1_t *bams;
-    int nbams, abams; // used and alloc
+    int nbams, abams; // used and alloc for bams[] array
+    size_t bam_mem;   // very approximate total size
 
     struct SAM_state *fd;
 } sp_bams;
@@ -3169,6 +3171,7 @@ static void *sam_parse_worker(void *arg) {
             goto err;
         }
         gb->nbams = 0;
+        gb->bam_mem = 0;
     }
     gb->serial = gl->serial;
     gb->next = NULL;
@@ -3221,6 +3224,7 @@ static void *sam_parse_worker(void *arg) {
             cleanup_sp_lines(gl);
             goto err;
         }
+
         cp = nl;
         i++;
     }
@@ -3290,7 +3294,7 @@ static void *sam_dispatcher_read(void *vp) {
             l = calloc(1, sizeof(*l));
             if (!l)
                 goto err;
-            l->alloc = NM;
+            l->alloc = SAM_NBYTES;
             l->data = malloc(l->alloc+8); // +8 for optimisation in sam_parse1
             if (!l->data) {
                 free(l);
@@ -3301,11 +3305,11 @@ static void *sam_dispatcher_read(void *vp) {
         }
         l->next = NULL;
 
-        if (l->alloc < line_frag+NM/2) {
-            char *rp = realloc(l->data, line_frag+NM/2 +8);
+        if (l->alloc < line_frag+SAM_NBYTES/2) {
+            char *rp = realloc(l->data, line_frag+SAM_NBYTES/2 +8);
             if (!rp)
                 goto err;
-            l->alloc = line_frag+NM/2;
+            l->alloc = line_frag+SAM_NBYTES/2;
             l->data = rp;
         }
         memcpy(l->data, line.s, line_frag);
@@ -4302,16 +4306,18 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                     fd->bams = gb->next;
                     gb->next = NULL;
                     gb->nbams = 0;
+                    gb->bam_mem = 0;
                     pthread_mutex_unlock(&fd->lines_m);
                 } else {
                     pthread_mutex_unlock(&fd->lines_m);
                     if (!(gb = calloc(1, sizeof(*gb)))) return -1;
-                    if (!(gb->bams = calloc(NB, sizeof(*gb->bams)))) {
+                    if (!(gb->bams = calloc(SAM_NBAM, sizeof(*gb->bams)))) {
                         free(gb);
                         return -1;
                     }
                     gb->nbams = 0;
-                    gb->abams = NB;
+                    gb->abams = SAM_NBAM;
+                    gb->bam_mem = 0;
                     gb->fd = fd;
                     fd->curr_idx = 0;
                     fd->curr_bam = gb;
@@ -4320,11 +4326,11 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 
             if (!bam_copy1(&gb->bams[gb->nbams++], b))
                 return -2;
+            gb->bam_mem += b->l_data + sizeof(*b);
 
             // Dispatch if full
-            if (gb->nbams == NB) {
+            if (gb->nbams == SAM_NBAM || gb->bam_mem > SAM_NBYTES*0.8) {
                 gb->serial = fd->serial++;
-                //fprintf(stderr, "Dispatch another %d bams\n", NB);
                 pthread_mutex_lock(&fd->command_m);
                 if (fd->errcode != 0) {
                     pthread_mutex_unlock(&fd->command_m);
