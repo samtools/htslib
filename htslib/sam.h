@@ -944,10 +944,12 @@ void bam_destroy1(bam1_t *b);
    // ... use data ...
 
  cleanup:
-   for (size_t i = 0; i < nrecs; i++)
-     bam_destroy1(i);
+   if (recs) {
+      for (size_t i = 0; i < nrecs; i++)
+         bam_destroy1(&recs[i]);
+      free(recs);
+   }
    free(buffer);
-   free(recs);
 
    \endcode
 */
