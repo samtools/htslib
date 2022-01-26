@@ -923,7 +923,7 @@ int bam_set_qname(bam1_t *rec, const char *qname)
  *** BAM indexing ***
  ********************/
 
-static hts_idx_t *sam_index(htsFile *fp, int min_shift, const file_progress_func progress_fn, void* progress_data)
+static hts_idx_t *sam_index(htsFile *fp, int min_shift, const hts_progress_callback progress_fn, void* progress_data)
 {
     int n_lvls, i, fmt, ret;
     int64_t last_block_address = 0;
@@ -970,7 +970,7 @@ err:
     return NULL;
 }
 
-int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthreads, const file_progress_func progress_fn, void* progress_data)
+int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthreads, const hts_progress_callback progress_fn, void* progress_data)
 {
     hts_idx_t *idx;
     htsFile *fp;

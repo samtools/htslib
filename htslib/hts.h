@@ -60,7 +60,7 @@ struct hts_tpool;
 struct sam_hdr_t;
 
 
-typedef int (*file_progress_func)(int64_t current_pos, void *data);
+typedef int (*hts_progress_callback)(int64_t current_pos, void *data);
 
 /**
  * @hideinitializer

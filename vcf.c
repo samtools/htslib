@@ -3403,7 +3403,7 @@ int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
             break;
 
         case vcf:
-            tbx = tbx_index(hts_get_bgzfp(fp), min_shift, &tbx_conf_vcf, NULL, NULL);
+            tbx = tbx_index(hts_get_bgzfp(fp), min_shift, &tbx_conf_vcf);
             if (tbx) {
                 ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0 ? HTS_FMT_CSI : HTS_FMT_TBI);
                 if (ret < 0) ret = -4;

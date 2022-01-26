@@ -285,8 +285,13 @@ static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
     return n_lvls;
 }
 
-tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf,
-                 const file_progress_func progress_fn, void *progress_data)
+tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
+{
+    return tbx_index2(fp, min_shift, conf, NULL, NULL);
+}
+
+tbx_t *tbx_index2(BGZF *fp, int min_shift, const tbx_conf_t *conf,
+                 const hts_progress_callback progress_fn, void *progress_data)
 {
     tbx_t *tbx;
     kstring_t str;
@@ -378,7 +383,7 @@ int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
 }
 
 int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads,
-                     const tbx_conf_t *conf, const file_progress_func progress_fn,
+                     const tbx_conf_t *conf, const hts_progress_callback progress_fn,
                      void *progress_data)
 {
     tbx_t *tbx;
@@ -387,7 +392,7 @@ int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_thr
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( n_threads ) bgzf_mt(fp, n_threads, 256);
     if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -2; }
-    tbx = tbx_index(fp, min_shift, conf, progress_fn, progress_data);
+    tbx = tbx_index2(fp, min_shift, conf, progress_fn, progress_data);
     bgzf_close(fp);
     if ( !tbx ) return -1;
     ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);

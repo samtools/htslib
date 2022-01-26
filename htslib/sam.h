@@ -1248,7 +1248,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
              sam_index_build for error codes)
 */
 HTSLIB_EXPORT
-int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthreads, const file_progress_func progress_fn, void* progress_data) HTS_RESULT_USED;
+int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthreads, const hts_progress_callback progress_fn, void* progress_data) HTS_RESULT_USED;
 
 
 /// Free a SAM iterator

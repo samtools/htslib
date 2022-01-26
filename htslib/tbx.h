@@ -76,7 +76,11 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     via tbx_destroy() when it is no longer needed.
 */
     HTSLIB_EXPORT
-    tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf, const file_progress_func progress_fn, void *progress_data);
+    tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf);
+
+    HTSLIB_EXPORT
+    tbx_t *tbx_index2(BGZF *fp, int min_shift, const tbx_conf_t *conf, const hts_progress_callback progress_fn, void *progress_data);
+
 /*
  * All tbx_index_build* methods return: 0 (success), -1 (general failure) or -2 (compression not BGZF)
  */
@@ -91,7 +95,7 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
 
     HTSLIB_EXPORT
     int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf,
-        const file_progress_func progress_fn, void *progress_data);
+        const hts_progress_callback progress_fn, void *progress_data);
 
 
 /// Load or stream a .tbi or .csi index

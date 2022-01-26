@@ -738,7 +738,7 @@ int cram_index_container(cram_fd *fd,
  * Returns 0 on success,
  *         negative on failure (-1 for read failure, -4 for write failure)
  */
-int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx, const file_progress_func progress_fn, void *progress_data) {
+int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx, const hts_progress_callback progress_fn, void *progress_data) {
     cram_container *c;
     off_t cpos, hpos;
     off_t ppos = 0;
