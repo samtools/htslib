@@ -3228,7 +3228,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                     }
 
                     // position beyond end of range; bail out
-                    if (c_next->ref_seq_start > fd->range.end) {
+                    if (fd->range.refid != -1 &&
+                        c_next->ref_seq_start > fd->range.end) {
                         cram_free_container(c_next);
                         fd->ctr_mt = NULL;
                         fd->ooc = 1;
@@ -3236,7 +3237,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                     }
 
                     // before start of range; skip to next container
-                    if (c_next->ref_seq_start + c_next->ref_seq_span-1 <
+                    if (fd->range.refid != -1 &&
+                        c_next->ref_seq_start + c_next->ref_seq_span-1 <
                         fd->range.start) {
                         c_next->curr_slice_mt = c_next->max_slice;
                         cram_seek(fd, c_next->length, SEEK_CUR);
@@ -3301,7 +3303,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                 }
 
                 // position beyond end of range; bail out
-                if (s_next->hdr->ref_seq_start > fd->range.end) {
+                if (fd->range.refid != -1 &&
+                    s_next->hdr->ref_seq_start > fd->range.end) {
                     fd->ooc = 1;
                     cram_free_slice(s_next);
                     c_next->slice = s_next = NULL;
@@ -3309,7 +3312,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                 }
 
                 // before start of range; skip to next slice
-                if (s_next->hdr->ref_seq_start + s_next->hdr->ref_seq_span-1 <
+                if (fd->range.refid != -1 &&
+                    s_next->hdr->ref_seq_start + s_next->hdr->ref_seq_span-1 <
                     fd->range.start) {
                     cram_free_slice(s_next);
                     c_next->slice = s_next = NULL;
