@@ -1397,6 +1397,9 @@ static int add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
     return -1;
 }
 
+// CRAM version >= 3.1
+#define CRAM_ge31(v) ((v) >= 0x301)
+
 /*
  * Encodes all slices in a container into blocks.
  * Returns 0 on success
@@ -1524,6 +1527,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
         if (c->multi_seq) {
             s->hdr->ref_seq_id    = -2;
+            s->hdr->ref_seq_start = 0;
+            s->hdr->ref_seq_span  = 0;
+        } else if (c->ref_id == -1 && CRAM_ge31(fd->version)) {
+            // Spec states span=0, but it broke our range queries.
+            // See commit message for this and prior.
+            s->hdr->ref_seq_id    = -1;
             s->hdr->ref_seq_start = 0;
             s->hdr->ref_seq_span  = 0;
         } else {
@@ -1923,8 +1932,15 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     }
 
     c->ref_seq_id    = c->slices[0]->hdr->ref_seq_id;
-    c->ref_seq_start = c->slices[0]->hdr->ref_seq_start;
-    c->ref_seq_span  = c->slices[0]->hdr->ref_seq_span;
+    if (c->ref_seq_id == -1 && CRAM_ge31(fd->version)) {
+        // Spec states span=0, but it broke our range queries.
+        // See commit message for this and prior.
+        c->ref_seq_start = 0;
+        c->ref_seq_span  = 0;
+    } else {
+        c->ref_seq_start = c->slices[0]->hdr->ref_seq_start;
+        c->ref_seq_span  = c->slices[0]->hdr->ref_seq_span;
+    }
     for (i = 0; i < c->curr_slice; i++) {
         cram_slice *s = c->slices[i];
 
@@ -2592,10 +2608,16 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
  *
  * See cram_next_container() and cram_close().
  */
-void cram_update_curr_slice(cram_container *c) {
+void cram_update_curr_slice(cram_container *c, int version) {
     cram_slice *s = c->slice;
     if (c->multi_seq) {
         s->hdr->ref_seq_id    = -2;
+        s->hdr->ref_seq_start = 0;
+        s->hdr->ref_seq_span  = 0;
+    } else if (c->curr_ref == -1 && CRAM_ge31(version)) {
+        // Spec states span=0, but it broke our range queries.
+        // See commit message for this and prior.
+        s->hdr->ref_seq_id    = -1;
         s->hdr->ref_seq_start = 0;
         s->hdr->ref_seq_span  = 0;
     } else {
@@ -2632,7 +2654,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
         c->curr_ref = bam_ref(b);
 
     if (c->slice)
-        cram_update_curr_slice(c);
+        cram_update_curr_slice(c, fd->version);
 
     /* Flush container */
     if (c->curr_slice == c->max_slice ||
