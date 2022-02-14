@@ -3482,7 +3482,7 @@ static inline long long push_digit(long long i, char c)
 long long hts_parse_decimal(const char *str, char **strend, int flags)
 {
     long long n = 0;
-    int decimals = 0, e = 0, lost = 0;
+    int decimals = 0, e = 0, lost = 0, has_digit = 0;
     char sign = '+', esign = '+';
     const char *s;
 
@@ -3491,13 +3491,20 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
 
     if (*s == '+' || *s == '-') sign = *s++;
     while (*s)
-        if (isdigit_c(*s)) n = push_digit(n, *s++);
+        if (isdigit_c(*s)) n = push_digit(n, *s++), has_digit = 1;
         else if (*s == ',' && (flags & HTS_PARSE_THOUSANDS_SEP)) s++;
         else break;
 
     if (*s == '.') {
         s++;
-        while (isdigit_c(*s)) decimals++, n = push_digit(n, *s++);
+        while (isdigit_c(*s)) decimals++, n = push_digit(n, *s++), has_digit = 1;
+    }
+
+    // there must have been a digit or else cannot be a valid number
+    if ( !has_digit )
+    {
+        if ( strend ) *strend = (char*)str;
+        return 0;
     }
 
     if (*s == 'E' || *s == 'e') {

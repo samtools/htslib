@@ -1107,7 +1107,7 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
     if ( k==l )
     {
         *from = *to = hts_parse_decimal(ss, &tmp, 0);
-        if ( tmp==ss ) return -1;
+        if ( tmp==ss || (*tmp && *tmp!='\t') ) return -1;
     }
     else
     {
@@ -1115,7 +1115,7 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
             *from = hts_parse_decimal(ss, &tmp, 0);
         else
             *to = hts_parse_decimal(ss, &tmp, 0);
-        if ( ss==tmp ) return -1;
+        if ( ss==tmp || (*tmp && *tmp!='\t') ) return -1;
 
         for (i=k; i<l && *se; i++)
         {
@@ -1127,7 +1127,7 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
             *to = hts_parse_decimal(ss, &tmp, 0);
         else
             *from = hts_parse_decimal(ss, &tmp, 0);
-        if ( ss==tmp ) return -1;
+        if ( ss==tmp || (*tmp && *tmp!='\t') ) return -1;
     }
 
     ss = se = line;
@@ -1193,7 +1193,10 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
                     hts_close(reg->file); reg->file = NULL; free(reg);
                     return NULL;
                 }
+                ito = ifrom;
             }
+            else if ( ito<0 )
+                ito = abs(ito);
             if ( !ret ) continue;
             if ( is_bed ) from++;
             *chr_end = 0;
