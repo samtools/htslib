@@ -1655,6 +1655,37 @@ static int read_data_block(const char *in_name, samFile *fp_in,
     return ret;
 }
 
+static void test_parse_decimal1(long long exp, const char *str, size_t exp_consumed, int flags, const char *warning)
+{
+    if (warning) fprintf(stderr, "(Expect %s message for \"%s\")\n", warning, str);
+
+    long long val = hts_parse_decimal(str, NULL, flags);
+    if (val != exp) fail("hts_parse_decimal(\"%s\", NULL, %d) returned %lld, expected %lld", str, flags, val, exp);
+
+    char *end;
+    val = hts_parse_decimal(str, &end, flags);
+    if (val != exp) fail("hts_parse_decimal(\"%s\", ..., %d) returned %lld, expected %lld", str, flags, val, exp);
+    size_t consumed = end - str;
+    if (consumed != exp_consumed) fail("hts_parse_decimal(\"%s\", ..., %d) consumed %zu chars, expected %zu", str, flags, consumed, exp_consumed);
+}
+
+static void test_parse_decimal(void)
+{
+    test_parse_decimal1(37, "+37", 3, 0, NULL);
+    test_parse_decimal1(-1001, " \t -1,001x", 9, HTS_PARSE_THOUSANDS_SEP, "trailing 'x'");
+    test_parse_decimal1(LLONG_MAX, "+9223372036854775807", 20, 0, NULL);
+    test_parse_decimal1(LLONG_MIN, "-9,223,372,036,854,775,808", 26, HTS_PARSE_THOUSANDS_SEP, NULL);
+    test_parse_decimal1(1500, "1.5e3", 5, 0, NULL);
+    test_parse_decimal1(1500, "1.5e+3k", 6, 0, "trailing 'k'");
+    test_parse_decimal1(1500000000, "1.5G", 4, 0, NULL);
+    test_parse_decimal1(12345, "12.345k", 7, 0, NULL);
+    test_parse_decimal1(12345, "12.3456k", 8, 0, "dropped fraction");
+    test_parse_decimal1(0, "A", 0, 0, "invalid numeric");
+    test_parse_decimal1(0, "G", 0, 0, "invalid numeric");
+    test_parse_decimal1(0, " +/-", 0, 0, "invalid numeric");
+    test_parse_decimal1(0, " \t -.e+9999", 0, 0, "invalid numeric");
+}
+
 static void test_mempolicy(void)
 {
     size_t bufsz = MAX_RECS * REC_LENGTH, nrecs = 0, i;
@@ -2194,6 +2225,7 @@ int main(int argc, char **argv)
     check_cigar_tab();
     check_big_ref(0);
     check_big_ref(1);
+    test_parse_decimal();
     test_mempolicy();
     set_qname();
     for (i = 1; i < argc; i++) faidx1(argv[i]);

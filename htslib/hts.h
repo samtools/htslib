@@ -1137,10 +1137,26 @@ int hts_idx_nseq(const hts_idx_t *idx);
     @param strend  If non-NULL, set on return to point to the first character
                    in @a str after those forming the parsed number
     @param flags   Or'ed-together combination of HTS_PARSE_* flags
-    @return  Converted value of the parsed number.
+    @return  Integer value of the parsed number, or 0 if no valid number
 
-    When @a strend is NULL, a warning will be printed (if hts_verbose is HTS_LOG_WARNING
-    or more) if there are any trailing characters after the number.
+    The input string is parsed as: optional whitespace; an optional '+' or
+    '-' sign; decimal digits possibly including ',' characters (if @a flags
+    includes HTS_PARSE_THOUSANDS_SEP) and a '.' decimal point; and an optional
+    case-insensitive suffix, which may be either 'k', 'M', 'G', or scientific
+    notation consisting of 'e'/'E' followed by an optional '+' or '-' sign and
+    decimal digits. To be considered a valid numeric value, the main part (not
+    including any suffix or scientific notation) must contain at least one
+    digit (either before or after the decimal point).
+
+    When @a strend is NULL, @a str is expected to contain only (optional
+    whitespace followed by) the numeric value. A warning will be printed
+    (if hts_verbose is HTS_LOG_WARNING or more) if no valid parsable number
+    is found or if there are any unused characters after the number.
+
+    When @a strend is non-NULL, @a str starts with (optional whitespace
+    followed by) the numeric value. On return, @a strend is set to point
+    to the first unused character after the numeric value, or to @a str
+    if no valid parsable number is found.
 */
 HTSLIB_EXPORT
 long long hts_parse_decimal(const char *str, char **strend, int flags);
