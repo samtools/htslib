@@ -3482,39 +3482,32 @@ static inline long long push_digit(long long i, char c)
 long long hts_parse_decimal(const char *str, char **strend, int flags)
 {
     long long n = 0;
-    int decimals = 0, e = 0, lost = 0, has_digit = 0;
+    int digits = 0, decimals = 0, e = 0, lost = 0;
     char sign = '+', esign = '+';
-    const char *s;
+    const char *s, *str_orig = str;
 
     while (isspace_c(*str)) str++;
     s = str;
 
     if (*s == '+' || *s == '-') sign = *s++;
     while (*s)
-        if (isdigit_c(*s)) n = push_digit(n, *s++), has_digit = 1;
+        if (isdigit_c(*s)) digits++, n = push_digit(n, *s++);
         else if (*s == ',' && (flags & HTS_PARSE_THOUSANDS_SEP)) s++;
         else break;
 
     if (*s == '.') {
         s++;
-        while (isdigit_c(*s)) decimals++, n = push_digit(n, *s++), has_digit = 1;
+        while (isdigit_c(*s)) decimals++, digits++, n = push_digit(n, *s++);
     }
 
-    // there must have been a digit or else cannot be a valid number
-    if ( !has_digit )
-    {
-        if ( strend ) *strend = (char*)str;
-        return 0;
-    }
-
-    if (*s == 'E' || *s == 'e') {
+    switch (*s) {
+    case 'e': case 'E':
         s++;
         if (*s == '+' || *s == '-') esign = *s++;
         while (isdigit_c(*s)) e = push_digit(e, *s++);
         if (esign == '-') e = -e;
-    }
+        break;
 
-    switch (*s) {
     case 'k': case 'K': e += 3; s++; break;
     case 'm': case 'M': e += 6; s++; break;
     case 'g': case 'G': e += 9; s++; break;
@@ -3529,7 +3522,10 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     }
 
     if (strend) {
-        *strend = (char *)s;
+        // Set to the original input str pointer if not valid number syntax
+        *strend = (digits > 0)? (char *)s : (char *)str_orig;
+    } else if (digits == 0) {
+        hts_log_warning("Invalid numeric value %.8s[truncated]", str);
     } else if (*s) {
         if ((flags & HTS_PARSE_THOUSANDS_SEP) || (!(flags & HTS_PARSE_THOUSANDS_SEP) && *s != ','))
             hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
