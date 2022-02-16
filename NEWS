@@ -20,10 +20,18 @@ Features and Updates
   this due to poor performance of libdeflate.  This gives a slight
   speed up and reduction in file size. (PR#1383)
 
+* The VCF and BCF readers will now issue a warning if contig, INFO
+  or FORMAT IDs do not match the formats described in the VCFv4.3
+  specification. Note that while the invalid names will mostly still
+  be accepted, future updates will convert the warnings to errors
+  causing files including invalid names to be rejected.  (PR#1389)
+
 Build changes
 -------------
 
 These are compiler, configuration and makefile based changes.
+
+* HTSlib now uses libhtscodecs release 1.2.1.
 
 * Improved support for compiling and linking against HTSlib with
   Microsoft Visual Studio. (PR#1380, #1377, #1375.  Thanks to
@@ -46,7 +54,9 @@ Bug fixes
 
 * CRAM now honours the filename##idx##index nomenclature for
   specifying non-standard index locations. (PR#1360, reported by
-  Cariaso)
+  Michael Cariaso)
+
+* Minor CRAM v1.0 read-group fix (PR#1349, thanks to John Marshall)
 
 * Permit .fa and .fq file type detection as synonyms for FASTA and
   FASTQ. (PR#1386).
@@ -60,13 +70,16 @@ Bug fixes
 * Bcf_remove_allele_set now works on unpacked BCF records. (PR#1358,
   reported by Brent Pedersen).
 
+* The hts_parse_decimal() function used to read numbers in region lists
+  is now better at rejecting non-numeric values.  In particular it
+  now rejects a lone 'G' instead of interpreting it as '0G', i.e. zero.
+  (PR#1396, PR#1400, reported by SSSimon Yang; thanks to John Marshall).
+
 * Improve support for GPU issues listed by -Wdouble-promotion.
   (PR#1365, reported by David Seisert)
 
 * Fix example code in header file documentation. (PR#1381, Thanks to
   Aidan Bickford)
-
-* Minor CRAM v1.0 read-group fix (PR#1349, thanks to John Marshall)
 
 Noteworthy changes in release 1.14 (22nd October 2021)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
