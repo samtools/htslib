@@ -53,11 +53,9 @@ library is used.  Systems that do not have CCHmac will get this from
 libcrypto.  libcrypto is part of OpenSSL or one of its derivatives (LibreSSL
 or BoringSSL).
 
-On Microsoft Windows we recommend use of Mingw64/Msys2.  Note that
-currently for the test harness to work you will need to override the
-test temporary directory with e.g.: make check TEST_OPTS="-t C:/msys64/tmp/_"
-Whilst the code may work on Windows with other environments, these have
-not been verified.
+On Microsoft Windows we recommend use of Mingw64/Msys2.  Whilst the
+code may work on Windows with other environments, these have not been
+verified.  Use of the configure script is a requirement too.
 
 Update htscodecs submodule
 ==========================
@@ -272,6 +270,9 @@ sudo zypper install autoconf automake make gcc perl zlib-devel libbz2-devel xz-d
 
 Windows MSYS2/MINGW64
 ---------------------
+
+The configure script must be used as without it the compilation will
+likely fail.
 
 Follow MSYS2 installation instructions at
 https://www.msys2.org/wiki/MSYS2-installation/
