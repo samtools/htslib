@@ -840,6 +840,31 @@ sub test_index
         $wtmp =~ s/\//\\\\/g;
     }
     test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $wtmp/index.vcf.gz##idx##$wtmp/index.vcf.gz.tbi 1:10000060-10000060");
+
+    cmd("$$opts{path}/test_view -b -p $$opts{tmp}/index2.bam -x $$opts{tmp}/index2.bam.bai $$opts{path}/index2.sam");
+    for (my $tid = 1; $tid <= 2; $tid++) {
+        for (my $pos = 1; $pos <= 2; $pos++) {
+            # All queries should return exactly two sequences.
+            # The input data consists of mapped/unmapped and unmapped/mapped
+            # in both orders.
+            # Done verbatim as test_cmd cannot return $out for us to check.
+            my $test = "$$opts{path}/test_view $$opts{tmp}/index2.bam $tid:${pos}000000-${pos}000000";
+            print "test_index:\n\t$test\n";
+            my ($ret, $out) = _cmd($test);
+            if ($ret ne 0) {
+                failed($opts, $test);
+            } else {
+                my $rnum = ($out =~ s/^[^@].*\n//gm);
+                if ($rnum ne 2) {
+                    failed($opts, $test);
+                } else {
+                    passed($opts, $test);
+                }
+            }
+        }
+    }
+    unlink("$$opts{tmp}/index2.bam");
+    unlink("$$opts{tmp}/index2.bam.bai");
 }
 
 sub test_bcf2vcf

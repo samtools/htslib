@@ -505,7 +505,12 @@ static int colmatch(const char *columns, const char *pattern)
 
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    char columns[24];
+    return hts_detect_format2(hfile, NULL, fmt);
+}
+
+int hts_detect_format2(hFILE *hfile, const char *fname, htsFormat *fmt)
+{
+    char extension[HTS_MAX_EXT_LEN], columns[24];
     unsigned char s[1024];
     int complete = 0;
     ssize_t len = hpeek(hfile, s, 18);
@@ -568,6 +573,18 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         return 0;
     }
 
+    // We avoid using filename extensions wherever possible (as filenames are
+    // not always available), but in a few cases they must be considered:
+    //  - FASTA/Q indexes are simply tab-separated text; files that match these
+    //    patterns but not the fai/fqi extension are usually generic BED files
+    //  - GZI indexes have no magic numbers so can only be detected by filename
+    if (fname && strcmp(fname, "-") != 0) {
+        char *s;
+        if (find_file_extension(fname, extension) < 0) extension[0] = '\0';
+        for (s = extension; *s; s++) *s = tolower_c(*s);
+    }
+    else extension[0] = '\0';
+
     if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=7 && s[5]<=7) {
         fmt->category = sequence_data;
         fmt->format = cram;
@@ -611,6 +628,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         else if (memcmp(s, "TBI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = tbi;
+            return 0;
+        }
+        // GZI indexes have no magic numbers, so must be recognised solely by
+        // filename extension.
+        else if (strcmp(extension, "gzi") == 0) {
+            fmt->category = index_file;
+            fmt->format = gzi;
             return 0;
         }
     }
@@ -679,12 +703,12 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
             fmt->format = crai;
             return 0;
         }
-        else if (colmatch(columns, "Ziiiii") == 6) {
+        else if (strstr(extension, "fqi") && colmatch(columns, "Ziiiii") == 6) {
             fmt->category = index_file;
             fmt->format = fqi_format;
             return 0;
         }
-        else if (colmatch(columns, "Ziiii") == 5) {
+        else if (strstr(extension, "fai") && colmatch(columns, "Ziiii") == 5) {
             fmt->category = index_file;
             fmt->format = fai_format;
             return 0;
@@ -1367,7 +1391,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     if (strchr(simple_mode, 'r')) {
         const int max_loops = 5; // Should be plenty
         int loops = 0;
-        if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+        if (hts_detect_format2(hfile, fn, &fp->format) < 0) goto error;
 
         // Deal with formats that re-direct an underlying file via a plug-in.
         // Loops as we may have crypt4gh served via htsget, or
@@ -1392,7 +1416,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
             }
 
             // Re-detect format against the result of the redirection
-            if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+            if (hts_detect_format2(hfile, fn, &fp->format) < 0) goto error;
         }
     }
     else if (strchr(simple_mode, 'w') || strchr(simple_mode, 'a')) {
@@ -2014,7 +2038,7 @@ int hts_file_type(const char *fname)
     if (f == NULL) return 0;
 
     htsFormat fmt;
-    if (hts_detect_format(f, &fmt) < 0) { hclose_abruptly(f); return 0; }
+    if (hts_detect_format2(f, fname, &fmt) < 0) { hclose_abruptly(f); return 0; }
     if (hclose(f) < 0) return 0;
 
     switch (fmt.format) {
@@ -2384,14 +2408,12 @@ int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t
     if ( tid>=0 )
     {
         if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
-        if (is_mapped) {
-            // shoehorn [-1,0) (VCF POS=0) into the leftmost bottom-level bin
-            if (beg < 0)  beg = 0;
-            if (end <= 0) end = 1;
-            // idx->z.last_off points to the start of the current record
-            if (insert_to_l(&idx->lidx[tid], beg, end,
-                            idx->z.last_off, idx->min_shift) < 0) return -1;
-        }
+        // shoehorn [-1,0) (VCF POS=0) into the leftmost bottom-level bin
+        if (beg < 0)  beg = 0;
+        if (end <= 0) end = 1;
+        // idx->z.last_off points to the start of the current record
+        if (insert_to_l(&idx->lidx[tid], beg, end,
+                        idx->z.last_off, idx->min_shift) < 0) return -1;
     }
     else idx->n_no_coor++;
     bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
@@ -3460,32 +3482,32 @@ static inline long long push_digit(long long i, char c)
 long long hts_parse_decimal(const char *str, char **strend, int flags)
 {
     long long n = 0;
-    int decimals = 0, e = 0, lost = 0;
+    int digits = 0, decimals = 0, e = 0, lost = 0;
     char sign = '+', esign = '+';
-    const char *s;
+    const char *s, *str_orig = str;
 
     while (isspace_c(*str)) str++;
     s = str;
 
     if (*s == '+' || *s == '-') sign = *s++;
     while (*s)
-        if (isdigit_c(*s)) n = push_digit(n, *s++);
+        if (isdigit_c(*s)) digits++, n = push_digit(n, *s++);
         else if (*s == ',' && (flags & HTS_PARSE_THOUSANDS_SEP)) s++;
         else break;
 
     if (*s == '.') {
         s++;
-        while (isdigit_c(*s)) decimals++, n = push_digit(n, *s++);
+        while (isdigit_c(*s)) decimals++, digits++, n = push_digit(n, *s++);
     }
 
-    if (*s == 'E' || *s == 'e') {
+    switch (*s) {
+    case 'e': case 'E':
         s++;
         if (*s == '+' || *s == '-') esign = *s++;
         while (isdigit_c(*s)) e = push_digit(e, *s++);
         if (esign == '-') e = -e;
-    }
+        break;
 
-    switch (*s) {
     case 'k': case 'K': e += 3; s++; break;
     case 'm': case 'M': e += 6; s++; break;
     case 'g': case 'G': e += 9; s++; break;
@@ -3500,7 +3522,10 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     }
 
     if (strend) {
-        *strend = (char *)s;
+        // Set to the original input str pointer if not valid number syntax
+        *strend = (digits > 0)? (char *)s : (char *)str_orig;
+    } else if (digits == 0) {
+        hts_log_warning("Invalid numeric value %.8s[truncated]", str);
     } else if (*s) {
         if ((flags & HTS_PARSE_THOUSANDS_SEP) || (!(flags & HTS_PARSE_THOUSANDS_SEP) && *s != ','))
             hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
@@ -4220,7 +4245,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
             free(s.s);
             return -1;
         }
-        if (hts_detect_format(remote_hfp, &fmt)) {
+        if (hts_detect_format2(remote_hfp, fn, &fmt)) {
             hts_log_error("Failed to detect format of index file '%s'", fn);
             goto fail;
         }

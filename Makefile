@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2021 Genome Research Ltd.
+#    Copyright (C) 2013-2022 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -131,8 +131,8 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.14
-MACH_O_CURRENT_VERSION = 3.1.14
+MACH_O_COMPATIBILITY_VERSION = 3.1.15
+MACH_O_CURRENT_VERSION = 3.1.15
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
@@ -282,10 +282,10 @@ SHLIB_FLAVOUR = cygdll
 lib-shared: cyghts-$(LIBHTS_SOVERSION).dll
 else ifeq "$(findstring MSYS,$(PLATFORM))" "MSYS"
 SHLIB_FLAVOUR = dll
-lib-shared: hts-$(LIBHTS_SOVERSION).dll
+lib-shared: hts-$(LIBHTS_SOVERSION).dll hts-$(LIBHTS_SOVERSION).def hts-$(LIBHTS_SOVERSION).lib
 else ifeq "$(findstring MINGW,$(PLATFORM))" "MINGW"
 SHLIB_FLAVOUR = dll
-lib-shared: hts-$(LIBHTS_SOVERSION).dll
+lib-shared: hts-$(LIBHTS_SOVERSION).dll hts-$(LIBHTS_SOVERSION).def hts-$(LIBHTS_SOVERSION).lib
 else
 SHLIB_FLAVOUR = so
 lib-shared: libhts.so
@@ -329,6 +329,41 @@ cyghts-$(LIBHTS_SOVERSION).dll libhts.dll.a: $(LIBHTS_OBJS)
 
 hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
 	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--enable-auto-import -Wl,--exclude-all-symbols $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+
+hts-$(LIBHTS_SOVERSION).def: hts-$(LIBHTS_SOVERSION).dll
+	gendef hts-$(LIBHTS_SOVERSION).dll
+
+hts-$(LIBHTS_SOVERSION).lib: hts-$(LIBHTS_SOVERSION).def
+	dlltool -m i386:x86-64 -d hts-$(LIBHTS_SOVERSION).def -l hts-$(LIBHTS_SOVERSION).lib
+
+# Bundling libraries, binaries, dll dependencies, and licenses into a
+# single directory.  NB: This is not needed for end-users, but a test bed
+# for maintainers building binary distributions.
+#
+# NOTE: only tested on the supported MSYS2/MINGW64 environment.
+dist-windows: DESTDIR=
+dist-windows: prefix=dist-windows
+dist-windows: install
+	cp hts-$(LIBHTS_SOVERSION).def hts-$(LIBHTS_SOVERSION).lib dist-windows/lib
+	cp `ldd hts-$(LIBHTS_SOVERSION).dll| awk '/mingw64/ {print $$3}'` dist-windows/bin
+	mkdir -p dist-windows/share/licenses/htslib
+	-cp -r /mingw64/share/licenses/mingw-w64-libraries \
+	      /mingw64/share/licenses/brotli \
+	      /mingw64/share/licenses/bzip2 \
+	      /mingw64/share/licenses/gcc-libs \
+	      /mingw64/share/licenses/libdeflate \
+	      /mingw64/share/licenses/libpsl \
+	      /mingw64/share/licenses/libtre \
+	      /mingw64/share/licenses/libwinpthread \
+	      /mingw64/share/licenses/openssl \
+	      /mingw64/share/licenses/xz \
+	      /mingw64/share/licenses/zlib \
+	      /mingw64/share/licenses/zstd \
+	      dist-windows/share/licenses/
+	-cp -r /usr/share/licenses/curl \
+	      dist-windows/share/licenses/
+	cp LICENSE dist-windows/share/licenses/htslib/
+
 
 # Target to allow htslib.mk to build all the object files before it
 # links the shared and static libraries.

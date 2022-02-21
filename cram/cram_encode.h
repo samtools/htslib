@@ -106,7 +106,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c);
  *
  * See cram_next_container() and cram_close().
  */
-void cram_update_curr_slice(cram_container *c);
+void cram_update_curr_slice(cram_container *c, int version);
 
 #ifdef __cplusplus
 }

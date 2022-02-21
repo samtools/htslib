@@ -258,7 +258,7 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "htsfile (htslib) %s\n"
-"Copyright (C) 2021 Genome Research Ltd.\n",
+"Copyright (C) 2022 Genome Research Ltd.\n",
                    hts_version());
             exit(EXIT_SUCCESS);
             break;
@@ -283,7 +283,7 @@ int main(int argc, char **argv)
 
         if (mode == identify) {
             htsFormat fmt;
-            if (hts_detect_format(fp, &fmt) < 0) {
+            if (hts_detect_format2(fp, argv[i], &fmt) < 0) {
                 error("detecting \"%s\" format failed", argv[i]);
                 hclose_abruptly(fp);
                 continue;

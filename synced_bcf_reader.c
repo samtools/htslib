@@ -75,6 +75,7 @@ static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start,
 static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
 static void _regions_sort_and_merge(bcf_sr_regions_t *reg);
+static int _bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end, int missed_reg_handler);
 
 char *bcf_sr_strerror(int errnum)
 {
@@ -838,6 +839,7 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
     for (i=0; i<reg->nseqs; i++)
         reg->regs[i].creg = -1;
     reg->iseq = 0;
+    reg->prev_seq = -1;
 }
 
 
@@ -851,8 +853,18 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos)
         bcf_sr_seek_start(readers);
         return 0;
     }
-    bcf_sr_regions_overlap(readers->regions, seq, pos, pos);
+
     int i, nret = 0;
+
+    // Need to position both the readers and the regions. The latter is a bit of a mess
+    // because we can have in memory or external regions. The safe way is:
+    //  - reset all regions as if they were not read from at all (bcf_sr_seek_start)
+    //  - find the requested iseq (stored in the seq_hash)
+    //  - position regions to the requested position (bcf_sr_regions_overlap)
+    bcf_sr_seek_start(readers);
+    if ( khash_str2int_get(readers->regions->seq_hash, seq, &i)>=0 ) readers->regions->iseq = i;
+    _bcf_sr_regions_overlap(readers->regions, seq, pos, pos, 0);
+
     for (i=0; i<readers->nreaders; i++)
     {
         nret += _reader_seek(&readers->readers[i],seq,pos,MAX_CSI_COOR-1);
@@ -1095,7 +1107,7 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
     if ( k==l )
     {
         *from = *to = hts_parse_decimal(ss, &tmp, 0);
-        if ( tmp==ss ) return -1;
+        if ( tmp==ss || (*tmp && *tmp!='\t') ) return -1;
     }
     else
     {
@@ -1103,7 +1115,7 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
             *from = hts_parse_decimal(ss, &tmp, 0);
         else
             *to = hts_parse_decimal(ss, &tmp, 0);
-        if ( ss==tmp ) return -1;
+        if ( ss==tmp || (*tmp && *tmp!='\t') ) return -1;
 
         for (i=k; i<l && *se; i++)
         {
@@ -1115,7 +1127,7 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
             *to = hts_parse_decimal(ss, &tmp, 0);
         else
             *from = hts_parse_decimal(ss, &tmp, 0);
-        if ( ss==tmp ) return -1;
+        if ( ss==tmp || (*tmp && *tmp!='\t') ) return -1;
     }
 
     ss = se = line;
@@ -1181,7 +1193,10 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
                     hts_close(reg->file); reg->file = NULL; free(reg);
                     return NULL;
                 }
+                ito = ifrom;
             }
+            else if ( ito<0 )
+                ito = abs(ito);
             if ( !ret ) continue;
             if ( is_bed ) from++;
             *chr_end = 0;
@@ -1407,13 +1422,19 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
 
 int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end)
 {
+    return _bcf_sr_regions_overlap(reg,seq,start,end,1);
+}
+
+static int _bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end, int missed_reg_handler)
+{
     int iseq;
     if ( khash_str2int_get(reg->seq_hash, seq, &iseq)<0 ) return -1;    // no such sequence
+    if ( missed_reg_handler && !reg->missed_reg_handler ) missed_reg_handler = 0;
 
     if ( reg->prev_seq==-1 || iseq!=reg->prev_seq || reg->prev_start > start ) // new chromosome or after a seek
     {
         // flush regions left on previous chromosome
-        if ( reg->missed_reg_handler && reg->prev_seq!=-1 && reg->iseq!=-1 )
+        if ( missed_reg_handler && reg->prev_seq!=-1 && reg->iseq!=-1 )
             bcf_sr_regions_flush(reg);
 
         bcf_sr_regions_seek(reg, seq);
@@ -1427,7 +1448,7 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t sta
     {
         if ( bcf_sr_regions_next(reg) < 0 ) return -2;  // no more regions left
         if ( reg->iseq != iseq ) return -1; // does not overlap any regions
-        if ( reg->missed_reg_handler && reg->end < start ) reg->missed_reg_handler(reg, reg->missed_reg_data);
+        if ( missed_reg_handler && reg->end < start ) reg->missed_reg_handler(reg, reg->missed_reg_data);
     }
     if ( reg->start <= end ) return 0;    // region overlap
     return -1;  // no overlap

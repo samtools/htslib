@@ -1,3 +1,86 @@
+Noteworthy changes in release 1.15 (21st February 2022)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Features and Updates
+--------------------
+
+* Bgzip now has a --keep option to not remove the input file after
+  compressing. (PR#1331)
+
+* Improved file format detection so some BED files are no longer
+  detected as FASTQ or FASTA. (PR#1350, thanks to John Marshall)
+
+* Added xz (lzma), zstd and D4 formats to the file type detection
+  functions.  We don't actively support reading these data types, but
+  function calls and htsfile can detect them. (PR#1340, thanks to
+  John Marshall)
+
+* CRAM now also uses libdeflate for read-names if the libdeflate
+  version is new enough (1.9 onwards).  Previously we used zlib for
+  this due to poor performance of libdeflate.  This gives a slight
+  speed up and reduction in file size. (PR#1383)
+
+* The VCF and BCF readers will now issue a warning if contig, INFO
+  or FORMAT IDs do not match the formats described in the VCFv4.3
+  specification. Note that while the invalid names will mostly still
+  be accepted, future updates will convert the warnings to errors
+  causing files including invalid names to be rejected.  (PR#1389)
+
+Build changes
+-------------
+
+These are compiler, configuration and makefile based changes.
+
+* HTSlib now uses libhtscodecs release 1.2.1.
+
+* Improved support for compiling and linking against HTSlib with
+  Microsoft Visual Studio. (PR#1380, #1377, #1375.  Thanks to
+  Aidan Bickford and John Marshall)
+
+* Various internal CI improvements.
+
+Bug fixes
+---------
+
+* Fixed CRAM index queries for HTSJDK output (PR#1388, reported by
+  Chris Norman).  Note this also fixes writing CRAM writing, to match
+  the specification (and HTSJDK), from version 3.1 onwards.
+
+* Fixed CRAM index queries when required-fields settings are selected
+  to ignore CIGARs (PR#1372, reported by Giulio Genovese).
+
+* Unmapped but placed (having chr/pos) are now included in the BAM
+  indices. (PR#1352, thanks to John Marshall)
+
+* CRAM now honours the filename##idx##index nomenclature for
+  specifying non-standard index locations. (PR#1360, reported by
+  Michael Cariaso)
+
+* Minor CRAM v1.0 read-group fix (PR#1349, thanks to John Marshall)
+
+* Permit .fa and .fq file type detection as synonyms for FASTA and
+  FASTQ. (PR#1386).
+
+* Empty VCF format fields are now output ":.:" as instead of "::".
+  (PR#1370)
+
+* Repeated bcf_sr_seek calls now work. (PR#1363, reported by
+  Giulio Genovese)
+
+* Bcf_remove_allele_set now works on unpacked BCF records. (PR#1358,
+  reported by Brent Pedersen).
+
+* The hts_parse_decimal() function used to read numbers in region lists
+  is now better at rejecting non-numeric values.  In particular it
+  now rejects a lone 'G' instead of interpreting it as '0G', i.e. zero.
+  (PR#1396, PR#1400, reported by SSSimon Yang; thanks to John Marshall).
+
+* Improve support for GPU issues listed by -Wdouble-promotion.
+  (PR#1365, reported by David Seisert)
+
+* Fix example code in header file documentation. (PR#1381, Thanks to
+  Aidan Bickford)
+
 Noteworthy changes in release 1.14 (22nd October 2021)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

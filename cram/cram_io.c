@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2021 Genome Research Ltd.
+Copyright (c) 2012-2022 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -1108,8 +1108,8 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
 static char *libdeflate_deflate(char *data, size_t size, size_t *cdata_size,
                                 int level, int strat) {
     level = level > 0 ? level : 6; // libdeflate doesn't honour -1 as default
-    level *= 1.2; // NB levels go up to 12 here; 5 onwards is +1
-    if (level >= 8) level += level/8; // 8->10, 9->12
+    level *= 1.23;     // NB levels go up to 12 here; 5 onwards is +1
+    level += level>=8; // 5,6,7->6,7,8  8->10  9->12
     if (level > 12) level = 12;
 
     if (strat == Z_RLE) // not supported by libdeflate
@@ -1213,6 +1213,7 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
 }
 #endif
 
+#if !defined(HAVE_LIBDEFLATE) || LIBDEFLATE_VERSION_MAJOR < 1 || (LIBDEFLATE_VERSION_MAJOR ==  1 && LIBDEFLATE_VERSION_MINOR <= 8)
 static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
                               int level, int strat) {
     z_stream s;
@@ -1269,6 +1270,7 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
     }
     return (char *)cdata;
 }
+#endif
 
 #ifdef HAVE_LIBLZMA
 /* ------------------------------------------------------------------------ */
@@ -1754,9 +1756,11 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
         //
         // Eg RN at level 5;  libdeflate=55.9MB  zlib=51.6MB
 #ifdef HAVE_LIBDEFLATE
+#  if (LIBDEFLATE_VERSION_MAJOR < 1 || (LIBDEFLATE_VERSION_MAJOR == 1 && LIBDEFLATE_VERSION_MINOR <= 8))
         if (content_id == DS_RN && level >= 4 && level <= 7)
             return zlib_mem_deflate(in, in_size, out_size, level, strat);
         else
+#  endif
             return libdeflate_deflate(in, in_size, out_size, level, strat);
 #else
         return zlib_mem_deflate(in, in_size, out_size, level, strat);
@@ -5338,7 +5342,7 @@ int cram_flush(cram_fd *fd) {
 
     if (fd->mode == 'w' && fd->ctr) {
         if(fd->ctr->slice)
-            cram_update_curr_slice(fd->ctr);
+            cram_update_curr_slice(fd->ctr, fd->version);
 
         if (-1 == cram_flush_container_mt(fd, fd->ctr))
             return -1;
@@ -5445,7 +5449,7 @@ int cram_close(cram_fd *fd) {
 
     if (fd->mode == 'w' && fd->ctr) {
         if(fd->ctr->slice)
-            cram_update_curr_slice(fd->ctr);
+            cram_update_curr_slice(fd->ctr, fd->version);
 
         if (-1 == cram_flush_container_mt(fd, fd->ctr))
             return -1;

@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2021 Genome Research Ltd.
+    Copyright (C) 2012-2022 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -376,6 +376,126 @@ int bcf_hrec_find_key(bcf_hrec_t *hrec, const char *key)
     return -1;
 }
 
+static void bcf_hrec_set_type(bcf_hrec_t *hrec)
+{
+    if ( !strcmp(hrec->key, "contig") ) hrec->type = BCF_HL_CTG;
+    else if ( !strcmp(hrec->key, "INFO") ) hrec->type = BCF_HL_INFO;
+    else if ( !strcmp(hrec->key, "FILTER") ) hrec->type = BCF_HL_FLT;
+    else if ( !strcmp(hrec->key, "FORMAT") ) hrec->type = BCF_HL_FMT;
+    else if ( hrec->nkeys>0 ) hrec->type = BCF_HL_STR;
+    else hrec->type = BCF_HL_GEN;
+}
+
+
+/**
+    The arrays were generated with
+
+    valid_ctg:
+        perl -le '@v = (split(//,q[!#$%&*+./:;=?@^_|~-]),"a"..."z","A"..."Z","0"..."9"); @a = (0) x 256; foreach $c (@v) { $a[ord($c)] = 1; } print join(", ",@a)' | fold -w 48
+
+    valid_tag:
+        perl -le '@v = (split(//,q[_.]),"a"..."z","A"..."Z","0"..."9"); @a = (0) x 256; foreach $c (@v) { $a[ord($c)] = 1; } print join(", ",@a)' | fold -w 48
+*/
+static const uint8_t valid_ctg[256] =
+{
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1,
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+static const uint8_t valid_tag[256] =
+{
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1,
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/**
+    bcf_hrec_check() - check the validity of structured header lines
+
+    Returns 0 on success or negative value on error.
+
+    Currently the return status is not checked by the caller
+    and only a warning is printed on stderr. This should be improved
+    to propagate the error all the way up to the caller and let it
+    decide what to do: throw an error or proceed anyway.
+ */
+static int bcf_hrec_check(bcf_hrec_t *hrec)
+{
+    int i;
+    bcf_hrec_set_type(hrec);
+
+    if ( hrec->type==BCF_HL_CTG )
+    {
+        i = bcf_hrec_find_key(hrec,"ID");
+        if ( i<0 ) goto err_missing_id;
+        char *val = hrec->vals[i];
+        if ( val[0]=='*' || val[0]=='=' || !valid_ctg[(uint8_t)val[0]] ) goto err_invalid_ctg;
+        while ( *(++val) )
+            if ( !valid_ctg[(uint8_t)*val] ) goto err_invalid_ctg;
+        return 0;
+    }
+    if ( hrec->type==BCF_HL_INFO )
+    {
+        i = bcf_hrec_find_key(hrec,"ID");
+        if ( i<0 ) goto err_missing_id;
+        char *val = hrec->vals[i];
+        if ( !strcmp(val,"1000G") ) return 0;
+        if ( val[0]=='.' || (val[0]>='0' && val[0]<='9') || !valid_tag[(uint8_t)val[0]] ) goto err_invalid_tag;
+        while ( *(++val) )
+            if ( !valid_tag[(uint8_t)*val] ) goto err_invalid_tag;
+        return 0;
+    }
+    if ( hrec->type==BCF_HL_FMT )
+    {
+        i = bcf_hrec_find_key(hrec,"ID");
+        if ( i<0 ) goto err_missing_id;
+        char *val = hrec->vals[i];
+        if ( val[0]=='.' || (val[0]>='0' && val[0]<='9') || !valid_tag[(uint8_t)val[0]] ) goto err_invalid_tag;
+        while ( *(++val) )
+            if ( !valid_tag[(uint8_t)*val] ) goto err_invalid_tag;
+        return 0;
+    }
+    return 0;
+
+  err_missing_id:
+    hts_log_warning("Missing ID attribute in one or more header lines");
+    return -1;
+
+  err_invalid_ctg:
+    hts_log_warning("Invalid contig name: \"%s\"", hrec->vals[i]);
+    return -1;
+
+  err_invalid_tag:
+    hts_log_warning("Invalid tag name: \"%s\"", hrec->vals[i]);
+    return -1;
+}
+
 static inline int is_escaped(const char *min, const char *str)
 {
     int n = 0;
@@ -402,6 +522,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     if (!hrec->key) goto fail;
     memcpy(hrec->key,p,n);
     hrec->key[n] = 0;
+    hrec->type = -1;
 
     p = ++q;
     if ( *p!='<' ) // generic field, e.g. ##samtoolsVersion=0.1.18-r579
@@ -483,8 +604,14 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         if (bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p, quoted) < 0)
             goto fail;
         if ( quoted && *q==ending ) q++;
-        if ( *q=='>' ) { nopen--; q++; }
+        if ( *q=='>' )
+        {
+            if (nopen) nopen--;     // this can happen with nested angle brackets <>
+            q++;
+        }
     }
+    if ( nopen )
+        hts_log_warning("Incomplete header line, trying to proceed anyway:\n\t[%s]\n\t[%d]",line,q[0]);
 
     // Skip to end of line
     int nonspace = 0;
@@ -555,10 +682,11 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     khint_t k;
     char *str = NULL;
 
-    if ( !strcmp(hrec->key, "contig") )
+    bcf_hrec_set_type(hrec);
+
+    if ( hrec->type==BCF_HL_CTG )
     {
         hts_pos_t len = 0;
-        hrec->type = BCF_HL_CTG;
 
         // Get the contig ID ($str) and length ($j)
         i = bcf_hrec_find_key(hrec,"length");
@@ -623,11 +751,8 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         return 1;
     }
 
-    if ( !strcmp(hrec->key, "INFO") ) hrec->type = BCF_HL_INFO;
-    else if ( !strcmp(hrec->key, "FILTER") ) hrec->type = BCF_HL_FLT;
-    else if ( !strcmp(hrec->key, "FORMAT") ) hrec->type = BCF_HL_FMT;
-    else if ( hrec->nkeys>0 ) { hrec->type = BCF_HL_STR; return 1; }
-    else return 0;
+    if ( hrec->type==BCF_HL_STR ) return 1;
+    if ( hrec->type!=BCF_HL_INFO && hrec->type!=BCF_HL_FLT && hrec->type!=BCF_HL_FMT ) return 0;
 
     // INFO/FILTER/FORMAT
     char *id = NULL;
@@ -738,7 +863,8 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     int res;
     if ( !hrec ) return 0;
 
-    hrec->type = BCF_HL_GEN;
+    bcf_hrec_check(hrec);   // todo: check return status and propagate errors up
+
     res = bcf_hdr_register_hrec(hdr,hrec);
     if (res < 0) return -1;
     if ( !res )
