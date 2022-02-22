@@ -91,12 +91,12 @@ int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres)
 static int realn_check_tag(const uint8_t *tg, enum htsLogLevel severity,
                            const char *type, const bam1_t *b) {
     if (*tg != 'Z') {
-        hts_log(severity, "Incorrect %s tag type (%c) for read %s",
+        hts_log(severity, __func__, "Incorrect %s tag type (%c) for read %s",
                 type, *tg, bam_get_qname(b));
         return -1;
     }
     if (b->core.l_qseq != strlen((const char *) tg + 1)) {
-        hts_log(severity, "Read %s %s tag is wrong length",
+        hts_log(severity, __func__, "Read %s %s tag is wrong length",
                 bam_get_qname(b), type);
         return -1;
     }
