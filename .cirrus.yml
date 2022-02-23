@@ -72,7 +72,7 @@ gcc_task:
        USE_CONFIG: no
     - environment:
        USE_CONFIG: yes
-       CFLAGS: -std=c99 -pedantic
+       CFLAGS: -std=c99 -pedantic -Wformat=2
        USE_LIBDEFLATE: yes
 
   << : *LIBDEFLATE
