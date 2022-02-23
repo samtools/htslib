@@ -168,18 +168,12 @@ const char *hts_test_feature(unsigned int id) {
 // to find the configuration parameters.
 const char *hts_feature_string(void) {
     static char config[1200];
-    const char *fmt=
+    const char *flags=
 
 #ifdef PACKAGE_URL
     "build=configure "
 #else
     "build=Makefile "
-#endif
-
-#ifdef ENABLE_PLUGINS
-    "plugins=yes, plugin-path=%.1000s "
-#else
-    "plugins=no "
 #endif
 
 #ifdef HAVE_LIBCURL
@@ -218,13 +212,21 @@ const char *hts_feature_string(void) {
     "bzip2=no "
 #endif
 
-    "htscodecs=%.40s";
+// "plugins=" must stay at the end as it is followed by "plugin-path="
+#ifdef ENABLE_PLUGINS
+    "plugins=yes";
+#else
+    "plugins=no";
+#endif
 
 #ifdef ENABLE_PLUGINS
-    snprintf(config, sizeof(config), fmt,
-             hts_plugin_path(), htscodecs_version());
+    snprintf(config, sizeof(config),
+             "%s plugin-path=%.1000s htscodecs=%.40s",
+             flags, hts_plugin_path(), htscodecs_version());
 #else
-    snprintf(config, sizeof(config), fmt, htscodecs_version());
+    snprintf(config, sizeof(config),
+             "%s htscodecs=%.40s",
+             flags, htscodecs_version());
 #endif
     return config;
 }
