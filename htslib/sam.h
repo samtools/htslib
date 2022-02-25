@@ -1524,7 +1524,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         ++s;
     } else if (type == 'B') {
         uint8_t sub_type = *(s++);
-        int sub_type_size;
+        unsigned sub_type_size;
 
         // or externalise sam.c's aux_type2size function?
         switch (sub_type) {
@@ -1547,7 +1547,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
             goto bad_aux;
         n = le_to_u32(s);
         s += 4; // now points to the start of the array
-        if ((end - s) / sub_type_size < n)
+        if ((size_t)(end - s) / sub_type_size < n)
             goto bad_aux;
         r |= kputsn_("B:", 2, ks) < 0;
         r |= kputc(sub_type, ks) < 0; // write the type
