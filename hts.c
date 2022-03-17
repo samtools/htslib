@@ -3713,7 +3713,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
     char *hyphen;
     *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
     if (*beg < 0) {
-        if ((*beg == -1 || *hyphen == '-') && colon[1] != '\0') {
+        if (*beg != -1 && *hyphen == '-' && colon[1] != '\0') {
             // User specified zero, but we're 1-based.
             hts_log_error("Coordinates must be > 0");
             return NULL;
@@ -3723,7 +3723,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
             *end = *beg==-1 ? HTS_POS_MAX : -(*beg+1);
             *beg = 0;
             return s_end;
-        } else {
+        } else if (*beg < -1) {
             hts_log_error("Unexpected string \"%s\" after region", hyphen);
             return NULL;
         }
