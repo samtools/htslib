@@ -1874,6 +1874,37 @@ static void test_mempolicy(void)
     }
 }
 
+static void my_logger(void *data, enum htsLogLevel severity, char severity_tag, const char *context, const char *format, va_list args)
+{
+    char msg[200];
+    int *nptr = (int *) data;
+    (*nptr)++;
+
+    if (severity != HTS_LOG_ERROR) fail("my_logger saw the wrong message");
+
+    vsprintf(msg, format, args);
+    if (strcmp(msg, "YOU SHOULD NOT SEE THIS MESSAGE") != 0)
+        fail("my_logger message was incorrect: \"%s\"", msg);
+}
+
+static void test_logging(void)
+{
+    int old_level = hts_get_log_level();
+    int n = 0;
+
+    hts_set_log_level(HTS_LOG_WARNING);
+
+    hts_log_set_logger(my_logger, &n);
+    hts_log_error("YOU SHOULD NOT SEE %s", "THIS MESSAGE");
+    if (n != 1) fail("test_logging message one was not redirected");
+
+    hts_log_set_logger(NULL, NULL);
+    hts_log_warning("(expect to see this message)");
+    if (n != 1) fail("test_logging message two was redirected");
+
+    hts_set_log_level(old_level);
+}
+
 static void test_bam_set1_minimal()
 {
     int r;
@@ -2227,6 +2258,7 @@ int main(int argc, char **argv)
     check_big_ref(1);
     test_parse_decimal();
     test_mempolicy();
+    test_logging();
     set_qname();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 

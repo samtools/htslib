@@ -29,6 +29,7 @@ SOFTWARE.
 #ifndef HTS_LOG_H
 #define HTS_LOG_H
 
+#include <stdarg.h>
 #include "hts_defs.h"
 
 #ifdef __cplusplus
@@ -88,6 +89,11 @@ HTS_FORMAT(HTS_PRINTF_FMT, 3, 4);
 
 /*! Logs an event with severity HTS_LOG_TRACE and default context. Parameters: format, ... */
 #define hts_log_trace(...) hts_log(HTS_LOG_TRACE, __func__, __VA_ARGS__)
+
+typedef void hts_log_func(void *data, enum htsLogLevel severity, char severity_tag, const char *context, const char *format, va_list args);
+
+HTSLIB_EXPORT
+void hts_log_set_logger(hts_log_func *logger, void *data);
 
 #ifdef __cplusplus
 }
