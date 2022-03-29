@@ -809,6 +809,12 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
                 *hrec->key == 'I' ? "An" : "A", hrec->key);
             var = BCF_VL_VAR;
         }
+        if ( type==BCF_HT_FLAG && (var!=BCF_VL_FIXED || num!=0) )
+        {
+            hts_log_warning("The definition of Flag \"%s/%s\" is invalid, forcing Number=0", hrec->key,id);
+            var = BCF_VL_FIXED;
+            num = 0;
+        }
     }
     uint32_t info = ((((uint32_t)num) & 0xfffff)<<12 |
                      (var & 0xf) << 8 |
