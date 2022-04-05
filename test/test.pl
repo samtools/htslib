@@ -32,6 +32,7 @@ use File::Temp qw/ tempfile tempdir /;
 use IO::Handle;
 
 my $opts = parse_params();
+srand($$opts{seed});
 
 test_bgzip($opts, 0);
 test_bgzip($opts, 4);
@@ -79,6 +80,7 @@ sub error
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
         "   -r, --redo-outputs              Recreate expected output files.\n",
+        "   -s, --random-seed <int>         Initialise rand() with a different seed.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
         "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
         "   -h, -?, --help                  This help message.\n",
@@ -104,12 +106,13 @@ sub safe_tempdir
 
 sub parse_params
 {
-    my $opts = { keep_files=>0, nok=>0, nfailed=>0 };
+    my $opts = { keep_files=>0, nok=>0, nfailed=>0, seed=>42 };
     my $help;
     Getopt::Long::Configure('bundling');
     my $ret = GetOptions (
             't|temp-dir:s' => \$$opts{keep_files},
             'r|redo-outputs' => \$$opts{redo_outputs},
+            's|random-seed=i' => \$$opts{seed},
             'f|fail-fast' => \$$opts{fail_fast},
             'h|?|help' => \$help
             );
@@ -974,7 +977,7 @@ sub test_bcf_sr_sort
     my ($opts, %args) = @_;
     for (my $i=0; $i<10; $i++)
     {
-        my $seed = int(rand(time));
+        my $seed = int(rand(100000000));
         my $test = 'test-bcf-sr';
         my $cmd  = "$$opts{path}/test-bcf-sr.pl -t $$opts{tmp} -s $seed";
         print "$test:\n";
