@@ -614,7 +614,7 @@ sub test_view
 
             ## Experimental CRAM 4.0 support.
             # SAM -> CRAM40 -> SAM
-            my @p = $sam eq "ce#large_seq.sam" || $sam eq "xx#large_aux.sam"
+            @p = $sam eq "ce#large_seq.sam" || $sam eq "xx#large_aux.sam"
                 ? (qw/fast normal small archive/)
                 : (qw/archive/);
             foreach my $profile (@p) {
