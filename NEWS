@@ -1,3 +1,27 @@
+Noteworthy changes in release 1.15.1 (7th April 2022)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Security fix: Fixed broken error reporting in the sam_cap_mapq()
+  function, due to a missing hts_log() parameter.  Prior to this fix
+  it was possible to abuse the log message format string by passing
+  a specially crafted alignment record to this function. (PR#1406)
+
+* HTSlib now uses libhtscodecs release 1.2.2.  This fixes a number
+  of bugs where invalid compressed data could trigger usage of
+  uninitialised values. (PR#1416)
+
+* Fixed excessive memory used by multi-threaded SAM output on
+  long reads. (Part of PR#1384)
+
+* Fixed a bug where tabix would misinterpret region specifiers
+  starting at position 0.  It will also now warn if the file
+  being indexed is supposed to be 1-based but has positions
+  less than or equal to 0. (PR#1411)
+
+* The VCF header parser will now issue a warning if it finds an
+  INFO header with Type=Flag but Number not equal to 0.  It will
+  also ignore the incorrect Number so the flag can be used. (PR#1415)
+
 Noteworthy changes in release 1.15 (21st February 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

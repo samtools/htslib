@@ -107,7 +107,11 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                 if ( s==line+b ) return -1; // expected int
                 if (!(conf->preset&TBX_UCSC)) --intv->beg;
                 else ++intv->end;
-                if (intv->beg < 0) intv->beg = 0;
+                if (intv->beg < 0) {
+                    hts_log_warning("Coordinate <= 0 detected. "
+                                    "Did you forget to use the -0 option?");
+                    intv->beg = 0;
+                }
                 if (intv->end < 1) intv->end = 1;
             } else {
                 if ((conf->preset&0xffff) == TBX_GENERIC) {
