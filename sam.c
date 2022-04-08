@@ -339,17 +339,23 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
 
     if (h->hrecs) {
         if (sam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
-        if (hdr_ks.l > INT32_MAX) {
+        if (hdr_ks.l > UINT32_MAX) {
             hts_log_error("Header too long for BAM format");
             free(hdr_ks.s);
             return -1;
+        } else if (hdr_ks.l > INT32_MAX) {
+            hts_log_warning("Header too long for BAM specification (>2GB)");
+            hts_log_warning("Output file may not be portable");
         }
         text = hdr_ks.s;
         l_text = hdr_ks.l;
     } else {
-        if (h->l_text > INT32_MAX) {
+        if (h->l_text > UINT32_MAX) {
             hts_log_error("Header too long for BAM format");
             return -1;
+        } else if (h->l_text > INT32_MAX) {
+            hts_log_warning("Header too long for BAM specification (>2GB)");
+            hts_log_warning("Output file may not be portable");
         }
         text = h->text;
         l_text = h->l_text;
