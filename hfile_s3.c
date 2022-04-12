@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 #include "htslib/hts.h"  // for hts_version() and hts_verbose
 #include "htslib/kstring.h"
+#include "hts_time_funcs.h"
 
 typedef struct s3_auth_data {
     kstring_t id;
@@ -49,6 +50,8 @@ typedef struct s3_auth_data {
     kstring_t canonical_query_string;
     kstring_t user_query_string;
     kstring_t host;
+    kstring_t profile;
+    time_t creds_expiry_time;
     char *bucket;
     kstring_t auth_hdr;
     time_t auth_time;
@@ -57,11 +60,12 @@ typedef struct s3_auth_data {
     char date_short[9];
     kstring_t date_html;
     char mode;
-    char *headers[4];
+    char *headers[5];
     int refcount;
 } s3_auth_data;
 
-#define AUTH_LIFETIME 60
+#define AUTH_LIFETIME 60  // Regenerate auth headers if older than this
+#define CREDENTIAL_LIFETIME 60 // Seconds before expiry to reread credentials
 
 #if defined HAVE_COMMONCRYPTO
 
@@ -235,7 +239,10 @@ static void parse_ini(const char *fname, const char *section, ...)
             va_start(args, section);
             while ((akey = va_arg(args, const char *)) != NULL) {
                 kstring_t *avar = va_arg(args, kstring_t *);
-                if (strcmp(key, akey) == 0) { kputs(value, avar); break; }
+                if (strcmp(key, akey) == 0) {
+                    avar->l = 0;
+                    kputs(value, avar);
+                    break; }
             }
             va_end(args);
         }
@@ -270,17 +277,37 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
 
 static int copy_auth_headers(s3_auth_data *ad, char ***hdrs) {
     char **hdr = &ad->headers[0];
+    int idx = 0;
     *hdrs = hdr;
-    *hdr = strdup(ad->date);
-    if (!*hdr) return -1;
-    hdr++;
-    if (ad->auth_hdr.l) {
-        *hdr = strdup(ad->auth_hdr.s);
-        if (!*hdr) { free(ad->headers[0]); return -1; }
-        hdr++;
+
+    hdr[idx] = strdup(ad->date);
+    if (!hdr[idx]) return -1;
+    idx++;
+
+    if (ad->token.l) {
+        kstring_t token_hdr = KS_INITIALIZE;
+        kputs("X-Amz-Security-Token: ", &token_hdr);
+        kputs(ad->token.s, &token_hdr);
+        if (token_hdr.s) {
+            hdr[idx++] = token_hdr.s;
+        } else {
+            goto fail;
+        }
     }
-    *hdr = NULL;
+
+    if (ad->auth_hdr.l) {
+        hdr[idx] = strdup(ad->auth_hdr.s);
+        if (!hdr[idx]) goto fail;
+        idx++;
+    }
+
+    hdr[idx] = NULL;
     return 0;
+
+ fail:
+    for (--idx; idx >= 0; --idx)
+        free(hdr[idx]);
+    return -1;
 }
 
 static void free_auth_data(s3_auth_data *ad) {
@@ -288,6 +315,7 @@ static void free_auth_data(s3_auth_data *ad) {
         --ad->refcount;
         return;
     }
+    free(ad->profile.s);
     free(ad->id.s);
     free(ad->token.s);
     free(ad->secret.s);
@@ -299,6 +327,67 @@ static void free_auth_data(s3_auth_data *ad) {
     free(ad->auth_hdr.s);
     free(ad->date_html.s);
     free(ad);
+}
+
+static time_t parse_rfc3339_date(kstring_t *datetime)
+{
+    int offset = 0;
+    time_t when;
+    int num;
+    char should_be_t = '\0', timezone[10] = { '\0' };
+    unsigned int year, mon, day, hour, min, sec;
+
+    if (!datetime->s)
+        return 0;
+
+    // It should be possible to do this with strptime(), but it seems
+    // to not get on with our feature definitions.
+    num = sscanf(datetime->s, "%4u-%2u-%2u%c%2u:%2u:%2u%9s",
+                 &year, &mon, &day, &should_be_t, &hour, &min, &sec, timezone);
+    if (num < 8)
+        return 0;
+    if (should_be_t != 'T' && should_be_t != 't' && should_be_t != ' ')
+        return 0;
+    struct tm parsed = { sec, min, hour, day, mon - 1, year - 1900, 0, 0, 0 };
+
+    switch (timezone[0]) {
+      case 'Z':
+      case 'z':
+      case '\0':
+          break;
+      case '+':
+      case '-': {
+          unsigned hr_off, min_off;
+          if (sscanf(timezone + 1, "%2u:%2u", &hr_off, &min_off)) {
+              if (hr_off < 24 && min_off <= 60) {
+                  offset = ((hr_off * 60 + min_off)
+                            * (timezone[0] == '+' ? -60 : 60));
+              }
+          }
+          break;
+      }
+      default:
+          return 0;
+    }
+
+    when = hts_time_gm(&parsed);
+    return when >= 0 ? when + offset : 0;
+}
+
+static void refresh_auth_data(s3_auth_data *ad) {
+    // Basically a copy of the AWS_SHARED_CREDENTIALS_FILE part of
+    // setup_auth_data(), but this only reads the authorisation parts.
+    const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
+    kstring_t expiry_time = KS_INITIALIZE;
+    parse_ini(v? v : "~/.aws/credentials", ad->profile.s,
+              "aws_access_key_id", &ad->id,
+              "aws_secret_access_key", &ad->secret,
+              "aws_session_token", &ad->token,
+              "expiry_time", &expiry_time);
+    if (expiry_time.l) {
+        ad->creds_expiry_time = parse_rfc3339_date(&expiry_time);
+    }
+    ks_free(&expiry_time);
 }
 
 static int auth_header_callback(void *ctx, char ***hdrs) {
@@ -320,7 +409,10 @@ static int auth_header_callback(void *ctx, char ***hdrs) {
         return 0;
     }
 
-    if (now - ad->auth_time < AUTH_LIFETIME) {
+    if (ad->creds_expiry_time > 0
+        && ad->creds_expiry_time - now < CREDENTIAL_LIFETIME) {
+        refresh_auth_data(ad);
+    } else if (now - ad->auth_time < AUTH_LIFETIME) {
         // Last auth string should still be valid
         *hdrs = NULL;
         return 0;
@@ -499,7 +591,6 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
     s3_auth_data *ad = calloc(1, sizeof(*ad));
     const char *bucket, *path;
     char *escaped = NULL;
-    kstring_t profile = { 0, 0, NULL };
     size_t url_path_pos;
     ptrdiff_t bucket_len;
     int is_https = 1, dns_compliant;
@@ -532,7 +623,7 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
     if (*path == '@') {
         const char *colon = strpbrk(bucket, ":@");
         if (*colon != ':') {
-            urldecode_kput(bucket, colon - bucket, &profile);
+            urldecode_kput(bucket, colon - bucket, &ad->profile);
         }
         else {
             const char *colon2 = strpbrk(&colon[1], ":@");
@@ -554,9 +645,9 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
         if ((v = getenv("AWS_DEFAULT_REGION")) != NULL) kputs(v, &ad->region);
         if ((v = getenv("HTS_S3_HOST")) != NULL) kputs(v, &ad->host);
 
-        if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &profile);
-        else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
-        else kputs("default", &profile);
+        if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &ad->profile);
+        else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &ad->profile);
+        else kputs("default", &ad->profile);
 
         if ((v = getenv("HTS_S3_ADDRESS_STYLE")) != NULL) {
             if (strcasecmp(v, "virtual") == 0) {
@@ -569,13 +660,15 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
 
     if (ad->id.l == 0) {
         kstring_t url_style = KS_INITIALIZE;
+        kstring_t expiry_time = KS_INITIALIZE;
         const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
-        parse_ini(v? v : "~/.aws/credentials", profile.s,
+        parse_ini(v? v : "~/.aws/credentials", ad->profile.s,
                   "aws_access_key_id", &ad->id,
                   "aws_secret_access_key", &ad->secret,
                   "aws_session_token", &ad->token,
                   "region", &ad->region,
                   "addressing_style", &url_style,
+                  "expiry_time", &expiry_time,
                   NULL);
 
         if (url_style.l) {
@@ -587,14 +680,23 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
                 address_style = s3_auto;
             }
         }
+        if (expiry_time.l) {
+            // Not a real part of the AWS configuration file, but it allows
+            // support for short-term credentials like those for the IAM
+            // service.  The botocore library uses the key "expiry_time"
+            // internally for this purpose.
+            // See https://github.com/boto/botocore/blob/develop/botocore/credentials.py
+            ad->creds_expiry_time = parse_rfc3339_date(&expiry_time);
+        }
 
         ks_free(&url_style);
+        ks_free(&expiry_time);
     }
 
     if (ad->id.l == 0) {
         kstring_t url_style = KS_INITIALIZE;
         const char *v = getenv("HTS_S3_S3CFG");
-        parse_ini(v? v : "~/.s3cfg", profile.s, "access_key", &ad->id,
+        parse_ini(v? v : "~/.s3cfg", ad->profile.s, "access_key", &ad->id,
                   "secret_key", &ad->secret, "access_token", &ad->token,
                   "host_base", &ad->host,
                   "bucket_location", &ad->region,
@@ -699,13 +801,11 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
         *query_start = 0;
     }
 
-    free(profile.s);
     free(escaped);
 
     return ad;
 
  error:
-    free(profile.s);
     free(escaped);
     free_auth_data(ad);
     return NULL;
@@ -713,23 +813,13 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
 
 static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
 {
-    char *header_list[4], **header = header_list;
-
     kstring_t url = { 0, 0, NULL };
-    kstring_t token_hdr = { 0, 0, NULL };
     s3_auth_data *ad = setup_auth_data(s3url, mode, 2, &url);
 
     if (!ad)
         return NULL;
 
-    if (ad->token.l > 0) {
-        kputs("X-Amz-Security-Token: ", &token_hdr);
-        kputs(ad->token.s, &token_hdr);
-        *header++ = token_hdr.s;
-    }
-
-    *header = NULL;
-    hFILE *fp = hopen(url.s, mode, "va_list", argsp, "httphdr:v", header_list,
+    hFILE *fp = hopen(url.s, mode, "va_list", argsp,
                       "httphdr_callback", auth_header_callback,
                       "httphdr_callback_data", ad,
                       "redirect_callback", redirect_endpoint_callback,
@@ -738,12 +828,10 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     if (!fp) goto fail;
 
     free(url.s);
-    free(token_hdr.s);
     return fp;
 
  fail:
     free(url.s);
-    free(token_hdr.s);
     free_auth_data(ad);
     return NULL;
 }
@@ -895,9 +983,8 @@ static int make_authorisation(s3_auth_data *ad, char *http_request, char *conten
 }
 
 
-static int update_time(s3_auth_data *ad) {
+static int update_time(s3_auth_data *ad, time_t now) {
     int ret = -1;
-    time_t now = time(NULL);
 #ifdef HAVE_GMTIME_R
     struct tm tm_buffer;
     struct tm *tm = gmtime_r(&now, &tm_buffer);
@@ -988,6 +1075,7 @@ static int write_authorisation_callback(void *auth, char *request, kstring_t *co
                                         kstring_t *token, int uqs) {
     s3_auth_data *ad = (s3_auth_data *)auth;
     char content_hash[HASH_LENGTH_SHA256];
+    time_t now;
 
     if (request == NULL) {
         // signal to free auth data
@@ -995,8 +1083,14 @@ static int write_authorisation_callback(void *auth, char *request, kstring_t *co
         return 0;
     }
 
-    if (update_time(ad)) {
+    now = time(NULL);
+
+    if (update_time(ad, now)) {
         return -1;
+    }
+    if (ad->creds_expiry_time > 0
+        && ad->creds_expiry_time - now < CREDENTIAL_LIFETIME) {
+        refresh_auth_data(ad);
     }
 
     if (content) {
@@ -1045,17 +1139,27 @@ static int write_authorisation_callback(void *auth, char *request, kstring_t *co
 static int v4_auth_header_callback(void *ctx, char ***hdrs) {
     s3_auth_data *ad = (s3_auth_data *) ctx;
     char content_hash[HASH_LENGTH_SHA256];
-    kstring_t content = {0, 0, NULL};
-    kstring_t authorisation = {0, 0, NULL};
+    kstring_t content = KS_INITIALIZE;
+    kstring_t authorisation = KS_INITIALIZE;
+    kstring_t token_hdr = KS_INITIALIZE;
     char *date_html = NULL;
+    time_t now;
+    int idx;
 
     if (!hdrs) { // Closing connection
         free_auth_data(ad);
         return 0;
     }
 
-    if (update_time(ad)) {
+    now = time(NULL);
+
+    if (update_time(ad, now)) {
         return -1;
+    }
+
+    if (ad->creds_expiry_time > 0
+        && ad->creds_expiry_time - now < CREDENTIAL_LIFETIME) {
+        refresh_auth_data(ad);
     }
 
     if (!ad->id.l || !ad->secret.l) {
@@ -1083,18 +1187,27 @@ static int v4_auth_header_callback(void *ctx, char ***hdrs) {
     ksprintf(&content, "x-amz-content-sha256: %s", content_hash);
     date_html = strdup(ad->date_html.s);
 
+    if (ad->token.l > 0) {
+        kputs("X-Amz-Security-Token: ", &token_hdr);
+        kputs(ad->token.s, &token_hdr);
+    }
+
     if (content.l == 0 || date_html == NULL) {
         ksfree(&authorisation);
         ksfree(&content);
+        ksfree(&token_hdr);
         free(date_html);
         return -1;
     }
 
     *hdrs = &ad->headers[0];
-    ad->headers[0] = ks_release(&authorisation);
-    ad->headers[1] = date_html;
-    ad->headers[2] = ks_release(&content);
-    ad->headers[3] = NULL;
+    idx = 0;
+    ad->headers[idx++] = ks_release(&authorisation);
+    ad->headers[idx++] = date_html;
+    ad->headers[idx++] = ks_release(&content);
+    if (token_hdr.s)
+        ad->headers[idx++] = ks_release(&token_hdr);
+    ad->headers[idx++] = NULL;
 
     return 0;
 }
@@ -1167,9 +1280,7 @@ static int http_status_errno(int status)
 
 static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
     kstring_t url = { 0, 0, NULL };
-    kstring_t token_hdr = { 0, 0, NULL };
 
-    char *header_list[4], **header = header_list;
     s3_auth_data *ad = setup_auth_data(s3url, mode, 4, &url);
     hFILE *fp = NULL;
 
@@ -1180,14 +1291,7 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
     if (ad->mode == 'r') {
         long http_response = 0;
 
-        if (ad->token.l > 0) {
-            kputs("x-amz-security-token: ", &token_hdr);
-            kputs(ad->token.s, &token_hdr);
-            *header++ = token_hdr.s;
-        }
-
-        *header = NULL;
-        fp = hopen(url.s, mode, "va_list", argsp, "httphdr:v", header_list,
+        fp = hopen(url.s, mode, "va_list", argsp,
                    "httphdr_callback", v4_auth_header_callback,
                    "httphdr_callback_data", ad,
                    "redirect_callback", redirect_endpoint_callback,
@@ -1204,7 +1308,7 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
                 goto error;
             }
             hclose_abruptly(fp);
-            fp = hopen(url.s, mode, "va_list", argsp, "httphdr:v", header_list,
+            fp = hopen(url.s, mode, "va_list", argsp,
                        "httphdr_callback", v4_auth_header_callback,
                        "httphdr_callback_data", ad,
                        "redirect_callback", redirect_endpoint_callback,
@@ -1237,7 +1341,6 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
     }
 
     free(url.s);
-    free(token_hdr.s);
 
     return fp;
 
@@ -1245,7 +1348,6 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
 
     if (fp) hclose_abruptly(fp);
     free(url.s);
-    free(token_hdr.s);
     free_auth_data(ad);
 
     return NULL;

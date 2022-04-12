@@ -86,6 +86,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test_realn \
 	test/test-regidx \
 	test/test_str2int \
+	test/test_time_funcs \
 	test/test_view \
 	test/test_index \
 	test/test-vcf-api \
@@ -234,6 +235,7 @@ bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
 header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
 hfile_internal_h = hfile_internal.h $(htslib_hts_defs_h) $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
+hts_time_funcs_h = hts_time_funcs.h config.h
 sam_internal_h = sam_internal.h $(htslib_sam_h)
 textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
@@ -421,7 +423,7 @@ hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
-hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
+hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(hts_time_funcs_h)
 hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
@@ -563,6 +565,7 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS) $(HTSCODEC
 	test/test_kfunc
 	test/test_kstring
 	test/test_str2int
+	test/test_time_funcs
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -g ./libhts.$(SHLIB_FLAVOUR)
@@ -628,6 +631,9 @@ test/test-parse-reg: test/test-parse-reg.o libhts.a
 
 test/test_str2int: test/test_str2int.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_str2int.o libhts.a $(LIBS) -lpthread
+
+test/test_time_funcs: test/test_time_funcs.o
+	$(CC) $(LDFLAGS) -o $@ test/test_time_funcs.o
 
 test/test_view: test/test_view.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS) -lpthread
@@ -720,6 +726,7 @@ test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_s
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(textutils_internal_h)
 test/test_str2int.o: test/test_str2int.c config.h $(textutils_internal_h)
+test/test_time_funcs.o: test/test_time_funcs.c $(htslib_time_funcs_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_hts_log_h)
 test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
