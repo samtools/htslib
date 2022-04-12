@@ -6156,7 +6156,7 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
     int mod_num = 0;
     while (*cp) {
         for (; *cp; cp++) {
-            // cp should be [ACGTNU][+-][^,]*(,\d+)*;
+            // cp should be [ACGTNU][+-]([a-zA-Z]+|[0-9]+)[.?]?(,\d+)*;
             unsigned char btype = *cp++;
 
             if (btype != 'A' && btype != 'C' &&
@@ -6176,17 +6176,31 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
             char *ms = cp, *me; // mod code start and end
             char *cp_end = NULL;
             int chebi = 0;
-            if (isdigit(*cp)) {
+            if (isdigit_c(*cp)) {
                 chebi = strtol(cp, &cp_end, 10);
                 cp = cp_end;
                 ms = cp-1;
             } else {
-                while (*cp && *cp != ',' && *cp != ';')
+                while (*cp && isalpha_c(*cp))
                     cp++;
                 if (*cp == '\0')
                     return -1;
             }
             me = cp;
+
+            // Optional explicit vs implicit marker.
+            // Right now we ignore this field.  A proper API for
+            // querying it will follow later.
+            if (*cp == '.') {
+                // implicit = 1;
+                cp++;
+            } else if (*cp == '?') {
+                // implicit = 0;
+                cp++;
+            } else if (*cp != ',' && *cp != ';') {
+                // parse error
+                return -1;
+            }
 
             long delta;
             int n = 0; // nth symbol in a multi-mod string

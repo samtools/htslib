@@ -33,9 +33,10 @@
 # samtools binary. This can be useful for testing older versions.
 
 # Test files from SAM spec
-P MM-chebi.out  $test_mod MM-chebi.sam
-P MM-double.out $test_mod MM-double.sam
-P MM-multi.out  $test_mod MM-multi.sam
+P MM-chebi.out     $test_mod MM-chebi.sam
+P MM-double.out    $test_mod MM-double.sam
+P MM-multi.out     $test_mod MM-multi.sam
+P MM-explicit.out  $test_mod MM-explicit.sam
 
 # Pileup testing
 P MM-pileup.out $pileup_mod < MM-pileup.sam
