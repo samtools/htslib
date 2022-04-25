@@ -37,6 +37,7 @@ CPPFLAGS =
 #CFLAGS   = -g -Wall -O2 -pedantic -std=c99 -D_XOPEN_SOURCE=600
 CFLAGS   = -g -Wall -O2 -fvisibility=hidden
 EXTRA_CFLAGS_PIC = -fpic
+TARGET_CFLAGS =
 LDFLAGS  = -fvisibility=hidden
 LIBS     = $(htslib_default_libs)
 
@@ -161,10 +162,10 @@ config_vars.h:
 .SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
 .c.o:
-	$(CC) $(CFLAGS) $(ALL_CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) -c -o $@ $<
 
 .c.pico:
-	$(CC) $(CFLAGS) $(ALL_CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
+	$(CC) $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
 LIBHTS_OBJS = \
@@ -214,6 +215,10 @@ NONCONFIGURE_OBJS = hfile_libcurl.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
+
+HTS_CFLAGS_AVX2 =
+HTS_CFLAGS_AVX512 =
+HTS_CFLAGS_SSE4 =
 
 cram_h = cram/cram.h $(cram_samtools_h) $(header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h $(htslib_cram_h)
 cram_io_h = cram/cram_io.h $(cram_misc_h)
@@ -448,6 +453,11 @@ htscodecs/htscodecs/rANS_static.o htscodecs/htscodecs/rANS_static.pico: htscodec
 htscodecs/htscodecs/rle.o htscodecs/htscodecs/rle.pico: htscodecs/htscodecs/rle.c config.h $(htscodecs_varint_h) $(htscodecs_rle_h)
 htscodecs/htscodecs/tokenise_name3.o htscodecs/htscodecs/tokenise_name3.pico: htscodecs/htscodecs/tokenise_name3.c config.h $(htscodecs_pooled_alloc_h) $(htscodecs_arith_dynamic_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_tokenise_name3_h) $(htscodecs_varint_h) $(htscodecs_utils_h)
 htscodecs/htscodecs/utils.o htscodecs/htscodecs/utils.pico: htscodecs/htscodecs/utils.c config.h $(htscodecs_utils_h)
+
+# Extra CFLAGS for specific files
+htscodecs/htscodecs/rANS_static32x16pr_avx2.o htscodecs/htscodecs/rANS_static32x16pr_avx2.pico: TARGET_CFLAGS = $(HTS_CFLAGS_AVX2)
+htscodecs/htscodecs/rANS_static32x16pr_avx512.o htscodecs/htscodecs/rANS_static32x16pr_avx512.pico: TARGET_CFLAGS = $(HTS_CFLAGS_AVX512)
+htscodecs/htscodecs/rANS_static32x16pr_sse4.o htscodecs/htscodecs/rANS_static32x16pr_sse4.pico: TARGET_CFLAGS = $(HTS_CFLAGS_SSE4)
 
 bgzip: bgzip.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ bgzip.o libhts.a $(LIBS) -lpthread
