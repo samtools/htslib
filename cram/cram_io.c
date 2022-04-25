@@ -1722,7 +1722,7 @@ int cram_uncompress_block(cram_block *b) {
 
     case TOK3: {
         uint32_t out_len;
-        uint8_t *cp = decode_names(b->data, b->comp_size, &out_len);
+        uint8_t *cp = tok3_decode_names(b->data, b->comp_size, &out_len);
         if (!cp)
             return -1;
         b->orig_method = TOK3;
@@ -1875,7 +1875,7 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
         int lev = level;
         if (method == TOK3 && lev > 3)
             lev = 3;
-        uint8_t *cp = encode_names(in, in_size, lev, strat, &out_len, NULL);
+        uint8_t *cp = tok3_encode_names(in, in_size, lev, strat, &out_len, NULL);
         *out_size = out_len;
         return (char *)cp;
     }

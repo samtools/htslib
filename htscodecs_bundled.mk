@@ -28,9 +28,15 @@ HTSCODECS_SOURCES = $(HTSPREFIX)htscodecs/htscodecs/arith_dynamic.c \
         $(HTSPREFIX)htscodecs/htscodecs/htscodecs.c \
         $(HTSPREFIX)htscodecs/htscodecs/pack.c \
         $(HTSPREFIX)htscodecs/htscodecs/rANS_static4x16pr.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_avx2.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_avx512.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_sse4.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr.c \
         $(HTSPREFIX)htscodecs/htscodecs/rANS_static.c \
         $(HTSPREFIX)htscodecs/htscodecs/rle.c \
-        $(HTSPREFIX)htscodecs/htscodecs/tokenise_name3.c
+        $(HTSPREFIX)htscodecs/htscodecs/tokenise_name3.c \
+	$(HTSPREFIX)htscodecs/htscodecs/utils.c
+
 
 HTSCODECS_OBJS = $(HTSCODECS_SOURCES:.c=.o)
 
@@ -49,8 +55,11 @@ htscodecs_varint_h = htscodecs/htscodecs/varint.h
 htscodecs_htscodecs_endian_h = htscodecs/htscodecs/htscodecs_endian.h
 htscodecs_c_range_coder_h = htscodecs/htscodecs/c_range_coder.h
 htscodecs_c_simple_model_h = htscodecs/htscodecs/c_simple_model.h $(htscodecs_c_range_coder_h)
+htscodecs_permute_h = htscodecs/htscodecs/permute.h
 htscodecs_pooled_alloc_h = htscodecs/htscodecs/pooled_alloc.h
 htscodecs_rANS_byte_h = htscodecs/htscodecs/rANS_byte.h
+htscodecs_rANS_static16_int_h = htscodecs/htscodecs/rANS_static16_int.h $(htscodecs_varint_h) $(htscodecs_utils_h)
+htscodecs_rANS_static32x16pr_h = htscodecs/htscodecs/rANS_static32x16pr.h
 htscodecs_rANS_word_h = htscodecs/htscodecs/rANS_word.h $(htscodecs_htscodecs_endian_h)
 htscodecs_utils_h = htscodecs/htscodecs/utils.h
 htscodecs_version_h = htscodecs/htscodecs/version.h
