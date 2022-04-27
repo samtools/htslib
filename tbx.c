@@ -291,6 +291,12 @@ static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
 
 tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
+    return tbx_index2(fp, min_shift, conf, NULL, NULL);
+}
+
+tbx_t *tbx_index2(BGZF *fp, int min_shift, const tbx_conf_t *conf,
+                 const hts_progress_callback progress_fn, void *progress_data)
+{
     tbx_t *tbx;
     kstring_t str;
     int ret, first = 0, n_lvls, fmt;
@@ -298,6 +304,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     uint64_t last_off = 0;
     tbx_intv_t intv;
     int64_t max_ref_len = 0;
+    int64_t last_block_address = 0;
 
     str.s = 0; str.l = str.m = 0;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
@@ -307,6 +314,14 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_TBI;
     while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
         ++lineno;
+
+        if (last_block_address != fp->block_address) {
+            if (progress_fn && progress_fn(fp->block_address, progress_data) != 0) {
+                goto fail;
+            }
+            last_block_address = fp->block_address;
+        }
+
         if (str.s[0] == tbx->conf.meta_char && fmt == HTS_FMT_CSI) {
             switch (tbx->conf.preset) {
                 case TBX_SAM:
@@ -368,13 +383,20 @@ void tbx_destroy(tbx_t *tbx)
 
 int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf)
 {
+    return tbx_index_build4(fn, fnidx, min_shift, n_threads, conf, NULL, NULL);
+}
+
+int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads,
+                     const tbx_conf_t *conf, const hts_progress_callback progress_fn,
+                     void *progress_data)
+{
     tbx_t *tbx;
     BGZF *fp;
     int ret;
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( n_threads ) bgzf_mt(fp, n_threads, 256);
     if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -2; }
-    tbx = tbx_index(fp, min_shift, conf);
+    tbx = tbx_index2(fp, min_shift, conf, progress_fn, progress_data);
     bgzf_close(fp);
     if ( !tbx ) return -1;
     ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);
@@ -382,14 +404,15 @@ int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
     return ret;
 }
 
+
 int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx_conf_t *conf)
 {
-    return tbx_index_build3(fn, fnidx, min_shift, 0, conf);
+    return tbx_index_build4(fn, fnidx, min_shift, 0, conf, NULL, NULL);
 }
 
 int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
 {
-    return tbx_index_build3(fn, NULL, min_shift, 0, conf);
+    return tbx_index_build4(fn, NULL, min_shift, 0, conf, NULL, NULL);
 }
 
 static tbx_t *index_load(const char *fn, const char *fnidx, int flags)

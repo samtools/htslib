@@ -87,12 +87,14 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r);
  * fd is a newly opened cram file that we wish to index.
  * fn_base is the filename of the associated CRAM file.
  * fn_idx is the filename of the index file to be written;
+ * progress_fn is an optional callback which will be called periodically with the current working offset into the file
+ * progress_data is the optional data passed to the progress_fn
  * if NULL, we add ".crai" to fn_base to get the index filename.
  *
  * Returns 0 on success,
  *         negative on failure (-1 for read failure, -4 for write failure)
  */
-int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx);
+int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx, const hts_progress_callback progress_fn, void *progress_data);
 
 /*
  * Adds a single slice to the index.

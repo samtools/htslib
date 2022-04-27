@@ -1246,6 +1246,20 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESUL
 HTSLIB_EXPORT
 int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads) HTS_RESULT_USED;
 
+/// Generate and save an index to a specific file
+/** @param fn        Input BAM/CRAM/etc filename
+    @param fnidx     Output filename, or NULL to add .bai/.csi/etc to @a fn
+    @param min_shift Positive to generate CSI, or 0 to generate BAI
+    @param nthreads  Number of threads to use when building the index
+    @param progress_fn  Funciton to call with progress updates
+    @param progress_data  Data to pass to the progress function
+    @return  0 if successful, or negative if an error occurred (see
+             sam_index_build for error codes)
+*/
+HTSLIB_EXPORT
+int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthreads, const hts_progress_callback progress_fn, void* progress_data) HTS_RESULT_USED;
+
+
 /// Free a SAM iterator
 /// @param iter     Iterator to free
 #define sam_itr_destroy(iter) hts_itr_destroy(iter)

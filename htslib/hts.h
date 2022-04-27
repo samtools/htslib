@@ -59,6 +59,9 @@ struct hFILE;
 struct hts_tpool;
 struct sam_hdr_t;
 
+
+typedef int (*hts_progress_callback)(int64_t current_pos, void *data);
+
 /**
  * @hideinitializer
  * Deprecated macro to expand a dynamic array of a given type

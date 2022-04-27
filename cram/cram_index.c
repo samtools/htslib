@@ -738,9 +738,10 @@ int cram_index_container(cram_fd *fd,
  * Returns 0 on success,
  *         negative on failure (-1 for read failure, -4 for write failure)
  */
-int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
+int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx, const hts_progress_callback progress_fn, void *progress_data) {
     cram_container *c;
     off_t cpos, hpos;
+    off_t ppos = 0;
     BGZF *fp;
     kstring_t fn_idx_str = {0};
     int64_t last_ref = -9, last_start = -9;
@@ -770,6 +771,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         }
 
         hpos = htell(fd->fp);
+
+        if (progress_fn && hpos != ppos) {
+            if (progress_fn(hpos, progress_data) != 0) {
+                return -5;
+            }
+            ppos = hpos;
+        }
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
             return -1;

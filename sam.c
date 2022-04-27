@@ -929,9 +929,10 @@ int bam_set_qname(bam1_t *rec, const char *qname)
  *** BAM indexing ***
  ********************/
 
-static hts_idx_t *sam_index(htsFile *fp, int min_shift)
+static hts_idx_t *sam_index(htsFile *fp, int min_shift, const hts_progress_callback progress_fn, void* progress_data)
 {
     int n_lvls, i, fmt, ret;
+    int64_t last_block_address = 0;
     bam1_t *b;
     hts_idx_t *idx;
     sam_hdr_t *h;
@@ -950,6 +951,12 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     b = bam_init1();
     while ((ret = sam_read1(fp, h, b)) >= 0) {
+        if (progress_fn && fp->fp.bgzf->block_address != last_block_address) {
+            if (progress_fn(fp->fp.bgzf->block_address, progress_data) != 0) {
+                goto err;
+            }
+            last_block_address = fp->fp.bgzf->block_address;
+        }
         ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP));
         if (ret < 0) { // unsorted or doesn't fit
             hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed", bam_get_qname(b), sam_hdr_tid2name(h, b->core.tid), sam_hdr_tid2len(h, b->core.tid), b->core.flag, b->core.pos+1);
@@ -969,7 +976,7 @@ err:
     return NULL;
 }
 
-int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads)
+int sam_index_build4(const char *fn, const char *fnidx, int min_shift, int nthreads, const hts_progress_callback progress_fn, void* progress_data)
 {
     hts_idx_t *idx;
     htsFile *fp;
@@ -982,7 +989,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     switch (fp->format.format) {
     case cram:
 
-        ret = cram_index_build(fp->fp.cram, fn, fnidx);
+        ret = cram_index_build(fp->fp.cram, fn, fnidx, progress_fn, progress_data);
         break;
 
     case bam:
@@ -993,7 +1000,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
             ret = -1;
             break;
         }
-        idx = sam_index(fp, min_shift);
+        idx = sam_index(fp, min_shift, progress_fn, progress_data);
         if (idx) {
             ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
             if (ret < 0) ret = -4;
@@ -1011,14 +1018,19 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     return ret;
 }
 
+int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads)
+{
+    return sam_index_build4(fn, fnidx, min_shift, nthreads, NULL, NULL);
+}
+
 int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
-    return sam_index_build3(fn, fnidx, min_shift, 0);
+    return sam_index_build4(fn, fnidx, min_shift, 0, NULL, NULL);
 }
 
 int sam_index_build(const char *fn, int min_shift)
 {
-    return sam_index_build3(fn, NULL, min_shift, 0);
+    return sam_index_build4(fn, NULL, min_shift, 0, NULL, NULL);
 }
 
 // Provide bam_index_build() symbol for binary compatibility with earlier HTSlib
