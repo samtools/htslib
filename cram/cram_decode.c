@@ -2423,10 +2423,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         if ((!s->ref && s->hdr->ref_base_id < 0)
             || memcmp(digest, s->hdr->md5, 16) != 0) {
             char M[33];
-            hts_log_error("MD5 checksum reference mismatch at #%d:%d-%d",
-                          ref_id, s->ref_start, s->ref_end);
-            hts_log_error("CRAM: %s", md5_print(s->hdr->md5, M));
-            hts_log_error("Ref : %s", md5_print(digest, M));
+            const char *rname = sam_hdr_tid2name(sh, ref_id);
+            if (!rname) rname="?"; // cannot happen normally
+            hts_log_error("MD5 checksum reference mismatch at %s:%d-%d",
+                          rname, s->ref_start, s->ref_end);
+            hts_log_error("CRAM  : %s", md5_print(s->hdr->md5, M));
+            hts_log_error("Ref   : %s", md5_print(digest, M));
+            kstring_t ks = KS_INITIALIZE;
+            if (sam_hdr_find_tag_id(sh, "SQ", "SN", rname, "M5", &ks) == 0)
+                hts_log_error("@SQ M5: %s", ks.s);
+            hts_log_error("Please check the reference given is correct");
+            ks_free(&ks);
             return -1;
         }
     }
