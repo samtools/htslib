@@ -188,6 +188,19 @@ int32_t cram_slice_hdr_get_num_blocks(cram_block_slice_hdr *hdr) {
     return hdr->num_blocks;
 }
 
+int cram_slice_hdr_get_embed_ref_id(cram_block_slice_hdr *h) {
+    return h->ref_base_id;
+}
+
+void cram_slice_hdr_get_coords(cram_block_slice_hdr *h,
+                               int *refid, hts_pos_t *start, hts_pos_t *span) {
+    if (refid)
+        *refid = h->ref_seq_id;
+    if (start)
+        *start = h->ref_seq_start;
+    if (span)
+        *span  = h->ref_seq_span;
+}
 
 /*
  *-----------------------------------------------------------------------------
