@@ -42,6 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 #include "cram.h"
 #include "os.h"
@@ -1438,19 +1439,29 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             goto_err;
         bam_seq_t *b = c->bams[0];
 
-        char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
-        if (!ref && bam_ref(b) >= 0) {
-            hts_log_error("Failed to load reference #%d", bam_ref(b));
-            return -1;
-        }
-        if ((c->ref_id = bam_ref(b)) >= 0) {
-            c->ref_seq_id = c->ref_id;
-            c->ref       = fd->refs->ref_id[c->ref_seq_id]->seq;
-            c->ref_start = 1;
-            c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
+        if (fd->embed_ref <= 1) {
+            char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
+            if (!ref && bam_ref(b) >= 0) {
+                hts_log_error("Failed to load reference #%d", bam_ref(b));
+                return -1;
+            }
+            if ((c->ref_id = bam_ref(b)) >= 0) {
+                c->ref_seq_id = c->ref_id;
+                c->ref       = fd->refs->ref_id[c->ref_seq_id]->seq;
+                c->ref_start = 1;
+                c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
+            }
         } else {
-            c->ref_seq_id = c->ref_id; // FIXME remove one var!
+            // Auto-embed ref.
+            // This starts as 'N' and is amended on-the-fly as we go
+            // based on MD:Z tags.
+            if ((c->ref_id = bam_ref(b)) >= 0) {
+                c->ref_free = 1;
+                if (c->ref) abort();
+                c->ref = NULL;
+            }
         }
+        c->ref_seq_id = c->ref_id;
     } else {
         c->ref_id = bam_ref(c->bams[0]);
         cram_ref_incr(fd->refs, c->ref_id);
@@ -2722,6 +2733,216 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     return c;
 }
 
+// Returns the next cigar op code: one of the BAM_C* codes,
+// or -1 if no more are present.
+static inline
+int next_cigar_op(uint32_t *cigar, int *ncigar, int *skip, int *spos,
+                  uint32_t *cig_ind, uint32_t *cig_op, uint32_t *cig_len) {
+    for(;;) {
+        while (*cig_len == 0) {
+            if (*cig_ind < *ncigar) {
+                *cig_op  = cigar[*cig_ind] & BAM_CIGAR_MASK;
+                *cig_len = cigar[*cig_ind] >> BAM_CIGAR_SHIFT;
+                (*cig_ind)++;
+            } else {
+                return -1;
+            }
+        }
+
+        if (skip[*cig_op]) {
+            *spos += (bam_cigar_type(*cig_op)&1) * *cig_len;
+            *cig_len = 0;
+            continue;
+        }
+
+        (*cig_len)--;
+        break;
+    }
+
+    return *cig_op;
+}
+
+// Set a base in the computed reference.
+// As we fill this out record by record as we go, and we encode the
+// sequence against the reference we've computed so far, once we set a
+// reference is must never change.  So if the reference inferred by one
+// SEQ+MD differs to the reference inferred by another SEQ+MD, the latter
+// is warned about and the reference remains unchanged to ensure
+// round-trips.
+//
+// In order to spot N->N->G type edits, where "N" and "G" are two inferred
+// ref from two sequences, we use N->n->G and patch up the lowercase n later.
+// Similarly where the data is unvalidated (faked up MD tag) also get
+// assigned lowercase letters.  This prevents false warnings when mixing data
+// with and without MD tags.
+static inline void assign_ref(char *ref, char *set, int pos,
+                              unsigned char base, int validate) {
+    base = base & ~0x20; // fast toupper for ASCII
+#if 1
+    if (!set[pos] || ref[pos] == base) {
+        ref[pos] = base;
+        set[pos] = 1;
+    }
+#else
+    // Optional reporting.  It's 7% additional CPU cost in process_one_read,
+    // and maybe not appropriate anyway given there's nothing we can do to
+    // correct this either than ignore it.  It'd need update to explain the
+    // position too.
+    if (!set[pos] || ref[pos] == base) {
+        ref[pos] = base;
+        set[pos] = validate ? 1 : 2; // actual MD:Z or guesswork/fake
+    } else if (validate && set[pos] == 1) {
+        hts_log_warning("Incompatible MD:Z tags between records");
+    }
+#endif
+}
+
+static int cram_extend_ref(cram_container *c, bam1_t *b) {
+    hts_pos_t end = bam_endpos(b);
+
+    if (!c->ref)
+        c->ref_start = b->core.pos+1;
+        //c->ref_start = 1; // FIXME, needs to be b->core.pos, but fails
+
+    if (end >= c->ref_end) {
+        hts_pos_t old_end = c->ref ? c->ref_end : c->ref_start;
+        c->ref_end = end + 1000 + (end - c->ref_start)*1.5;
+
+        char *r = realloc(c->ref, c->ref_end+1 - c->ref_start);
+        if (!r) return -1;
+        c->ref = r;
+
+        r = realloc(c->ref_set, c->ref_end+1 - c->ref_start);
+        if (!r) return -1;
+        c->ref_set = r;
+
+        memset(c->ref + old_end - c->ref_start, 'N', c->ref_end - old_end);
+        memset(c->ref_set + old_end - c->ref_start, 0, c->ref_end - old_end);
+    }
+
+    return 0;
+}
+
+// Converts a bam object with SEQ, POS/CIGAR and MD:Z to a reference.
+// Updates ref[] array.
+//
+// Returns >0 on success,
+//          0 on no-MD found,
+//         -1 on failure (eg inconsistent data)
+static int cram_build_ref(bam1_t *b, const uint8_t *MD,
+                          char *ref, char *ref_set,
+                          hts_pos_t ref_start, hts_pos_t ref_len) {
+    uint8_t *seq = bam_get_seq(b);
+    uint32_t *cigar = bam_get_cigar(b);
+    int ncigar = b->core.n_cigar;
+    uint32_t cig_op = 0, cig_len = 0, cig_ind = 0;
+    kstring_t fake_MD = KS_INITIALIZE;
+    int validate = 1;
+
+    if (!MD || *MD != 'Z') {
+        // Fake it!
+        int i, err = 0;
+        int run_len = 0;
+        for (i = 0; i < ncigar; i++) {
+            switch(cigar[i] & BAM_CIGAR_MASK) {
+            case BAM_CMATCH:
+            case BAM_CEQUAL:
+            case BAM_CDIFF:
+                run_len += cigar[i] >> BAM_CIGAR_SHIFT;
+                break;
+
+            case BAM_CDEL:
+                err |= ksprintf(&fake_MD, "%d", run_len) < 0;
+                run_len = 0;
+                err |= kputc('^', &fake_MD);
+                for (int j = 0; j < cigar[i] >> BAM_CIGAR_SHIFT; j++)
+                    err |= kputc('N', &fake_MD);
+                break;
+            }
+        }
+        if (run_len)
+            err |= ksprintf(&fake_MD, "%d", run_len) < 0;
+        MD = (uint8_t *)fake_MD.s;
+        if (err < 0)
+            return -1;
+
+        validate = 0;
+    } else {
+        MD++;
+    }
+
+    // Walk through MD + seq to generate ref
+    int iseq = 0, next_op;
+    hts_pos_t iref = b->core.pos+1 - ref_start;
+    int cig_skip[16] = {0,1,0,1,1,1,1,0,0,1,1,1,1,1,1,1};
+    while (iseq < b->core.l_qseq && MD && *MD) {
+        if (isdigit(*MD)) {
+            // match
+            int len = strtol((char *)MD, (char **)&MD, 10);
+            while (iseq < b->core.l_qseq && len) {
+                if ((next_op = next_cigar_op(cigar, &ncigar, cig_skip,
+                                             &iseq, &cig_ind, &cig_op,
+                                             &cig_len)) < 0)
+                    return -1;
+
+                if (next_op != BAM_CMATCH &&
+                    next_op != BAM_CEQUAL) {
+                    hts_log_warning("MD:Z and CIGAR are incompatible for "
+                                    "record %s", bam_get_qname(b));
+                    return -1;
+                }
+
+                if (iref < ref_len)
+                    assign_ref(ref, ref_set, iref,
+                               seq_nt16_str[bam_seqi(seq, iseq)], validate);
+                iseq++;
+                iref++;
+                len--;
+            }
+        } else if (*MD == '^') {
+            // deletion
+            MD++;
+            while (*MD && isalpha(*MD)) {
+                if ((next_op = next_cigar_op(cigar, &ncigar, cig_skip,
+                                             &iseq, &cig_ind, &cig_op,
+                                             &cig_len)) < 0)
+                    return -1;
+
+                if (next_op != BAM_CDEL) {
+                    hts_log_warning("MD:Z and CIGAR are incompatible");
+                    return -1;
+                }
+
+                if (iref < ref_len)
+                    assign_ref(ref, ref_set, iref, toupper(*MD), validate);
+
+                MD++;
+                iref++;
+            }
+        } else {
+            // substitution
+            if ((next_op = next_cigar_op(cigar, &ncigar, cig_skip,
+                                         &iseq, &cig_ind, &cig_op,
+                                         &cig_len)) < 0)
+                return -1;
+
+            if (next_op != BAM_CMATCH && next_op != BAM_CDIFF) {
+                hts_log_warning("MD:Z and CIGAR are incompatible");
+                return -1;
+            }
+            if (iref < ref_len)
+                assign_ref(ref, ref_set, iref, toupper(*MD), validate);
+
+            MD++;
+            iref++;
+            iseq++;
+        }
+    }
+
+    ks_free(&fake_MD);
+    return 1;
+}
+
 /*
  * Converts a single bam record into a cram record.
  * Possibly used within a thread.
@@ -2746,16 +2967,23 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     // FIXME: multi-ref containers
 
-    ref = c->ref;
     cr->flags       = bam_flag(b);
     cr->len         = bam_seq_len(b);
-    if (!bam_aux_get(b, "MD"))
+    uint8_t *md;
+    if (!(md = bam_aux_get(b, "MD")))
         MD = NULL;
     else
         MD->l = 0;
 
+    if (/*md &&*/ fd->embed_ref == 2) {
+        // Auto-generate and embed ref
+        cram_extend_ref(c, b);
+        cram_build_ref(b, md, c->ref, c->ref_set, c->ref_start, c->ref_end);
+    }
+
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
 
+    ref = c->ref ? c->ref - (c->ref_start-1) : NULL;
     cr->ref_id      = bam_ref(b);
     if (cram_stats_add(c->stats[DS_RI], cr->ref_id) < 0)
         goto block_err;

@@ -3639,6 +3639,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     if (!(c->tags_used = kh_init(m_tagmap)))
         goto err;
     c->refs_used = 0;
+    c->ref_free = 0;
 
     return c;
 
@@ -3709,6 +3710,11 @@ void cram_free_container(cram_container *c) {
         }
 
         kh_destroy(m_tagmap, c->tags_used);
+    }
+
+    if (c->ref_free) {
+        free(c->ref);
+        free(c->ref_set);
     }
 
     free(c);
@@ -4820,7 +4826,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
     }
 
     /* Fix M5 strings */
-    if (fd->refs && !fd->no_ref) {
+    if (fd->refs && !fd->no_ref && fd->embed_ref <= 1) {
         int i;
         for (i = 0; i < hdr->hrecs->nref; i++) {
             sam_hrec_type_t *ty;
