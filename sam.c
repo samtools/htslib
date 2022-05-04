@@ -5306,6 +5306,7 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
                 hts_base_mod mod[256];
                 if (m && (nm = bam_mods_at_qpos(p->b, p->qpos + j - p->is_del,
                                                 m, mod, 256)) > 0) {
+                    int o_indel = indel;
                     if (ks_resize(ins, ins->l + nm*16+3) < 0)
                         return -1;
                     ins->s[indel++] = '[';
@@ -5329,6 +5330,7 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
                                              qual);
                     }
                     ins->s[indel++] = ']';
+                    ins->l += indel - o_indel; // grow by amount we used
                 }
             }
             break;
