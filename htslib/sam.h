@@ -118,6 +118,7 @@ typedef sam_hdr_t bam_hdr_t;
 Result is operator code or -1. Be sure to cast the index if it is a plain char:
     int op = bam_cigar_table[(unsigned char) ch];
 */
+HTSLIB_EXPORT
 extern const int8_t bam_cigar_table[256];
 
 #define bam_cigar_op(c) ((c)&BAM_CIGAR_MASK)

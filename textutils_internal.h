@@ -65,9 +65,11 @@ typedef struct hts_json_token hts_json_token;
 /// Allocate an empty JSON token structure, for use with hts_json_* functions
 /** @return An empty token on success; NULL on failure
  */
+HTSLIB_EXPORT
 hts_json_token *hts_json_alloc_token(void);
 
 /// Free a JSON token
+HTSLIB_EXPORT
 void hts_json_free_token(hts_json_token *token);
 
 /// Accessor function to get JSON token type
@@ -85,6 +87,7 @@ as follows:
   - `!` other errors (e.g. out of memory)
   - `\0` terminator at end of input
 */
+HTSLIB_EXPORT
 char hts_json_token_type(hts_json_token *token);
 
 /// Accessor function to get JSON token in string form
@@ -98,6 +101,7 @@ will point at the kstring_t buffer passed as the third parameter to
 hts_json_fnext().  In that case, the value will only be valid until the
 next call to hts_json_fnext().
  */
+HTSLIB_EXPORT
 char *hts_json_token_str(hts_json_token *token);
 
 /// Read one JSON token from a string
@@ -111,6 +115,7 @@ is modified by having token-terminating characters overwritten as NULs.
 The `state` argument records the current position within `str` after each
 `hts_json_snext()` call, and should be set to 0 before the first call.
 */
+HTSLIB_EXPORT
 char hts_json_snext(char *str, size_t *state, hts_json_token *token);
 
 /// Read and discard a complete JSON value from a string
@@ -123,6 +128,7 @@ char hts_json_snext(char *str, size_t *state, hts_json_token *token);
 Skips a complete JSON value, which may be a single token or an entire object
 or array.
 */
+HTSLIB_EXPORT
 char hts_json_sskip_value(char *str, size_t *state, char type);
 
 struct hFILE;
@@ -137,6 +143,7 @@ The `kstr` buffer is used to store the string value of the token read,
 so `token->str` is only valid until the next time `hts_json_fnext()` is
 called with the same `kstr` argument.
 */
+HTSLIB_EXPORT
 char hts_json_fnext(struct hFILE *fp, hts_json_token *token, kstring_t *kstr);
 
 /// Read and discard a complete JSON value from a file
@@ -148,6 +155,7 @@ char hts_json_fnext(struct hFILE *fp, hts_json_token *token, kstring_t *kstr);
 Skips a complete JSON value, which may be a single token or an entire object
 or array.
 */
+HTSLIB_EXPORT
 char hts_json_fskip_value(struct hFILE *fp, char type);
 
 // The <ctype.h> functions operate on ints such as are returned by fgetc(),

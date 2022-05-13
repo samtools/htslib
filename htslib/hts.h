@@ -456,16 +456,19 @@ The input character may be either an IUPAC ambiguity code, '=' for 0, or
 '0'/'1'/'2'/'3' for a result of 1/2/4/8.  The result is encoded as 1/2/4/8
 for A/C/G/T or combinations of these bits for ambiguous bases.
 */
+HTSLIB_EXPORT
 extern const unsigned char seq_nt16_table[256];
 
 /*! @abstract Table for converting a 4-bit encoded nucleotide to an IUPAC
 ambiguity code letter (or '=' when given 0).
 */
+HTSLIB_EXPORT
 extern const char seq_nt16_str[];
 
 /*! @abstract Table for converting a 4-bit encoded nucleotide to about 2 bits.
 Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
 */
+HTSLIB_EXPORT
 extern const int seq_nt16_int[];
 
 /*!
