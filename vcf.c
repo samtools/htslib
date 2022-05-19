@@ -930,6 +930,8 @@ bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *key, co
     }
     else if ( type==BCF_HL_STR )
     {
+        if (!str_class)
+            return NULL;
         for (i=0; i<hdr->nhrec; i++)
         {
             if ( hdr->hrec[i]->type!=type ) continue;
