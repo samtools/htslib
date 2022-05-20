@@ -81,6 +81,14 @@ AX_CHECK_COMPILE_FLAG([-mssse3 -mpopcnt -msse4.1], [
             [Defined to 1 if the compiler can issue popcnt instructions.])
   AC_DEFINE([HAVE_SSE4_1],1,
             [Defined to 1 if the compiler can issue SSE4.1 instructions.])
+dnl Propagate HTSlib's unaligned access preference to htscodecs
+  AH_VERBATIM([UBSAN],[
+/* Prevent unaligned access in htscodecs SSE4 rANS codec */
+#if defined(HTS_ALLOW_UNALIGNED) && HTS_ALLOW_UNALIGNED == 0
+#undef UBSAN
+#endif
+  ])
+  AC_DEFINE([UBSAN],1,[])
   ], [], [], [AC_LANG_PROGRAM([[
     #include "x86intrin.h"
   ]],[[

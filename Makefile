@@ -264,6 +264,9 @@ config.h:
 	    echo '#define HAVE_POPCNT 1' >> $@ ; \
 	    echo '#define HAVE_SSE4_1 1' >> $@ ; \
 	    echo '#define HAVE_SSSE3 1' >> $@ ; \
+	    echo '#if defined(HTS_ALLOW_UNALIGNED) && HTS_ALLOW_UNALIGNED == 0' >> $@ ; \
+	    echo '#define UBSAN 1' >> $@ ; \
+	    echo '#endif' >> $@ ; \
 	fi
 	if [ "x$(HTS_CFLAGS_AVX2)" != "x" ] ; then \
 	    echo '#define HAVE_AVX2 1' >> $@ ; \
