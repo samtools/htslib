@@ -4,10 +4,11 @@ Noteworthy changes in release a.b
 Noteworthy changes in release 1.15.1 (7th April 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* Security fix: Fixed broken error reporting in the sam_cap_mapq()
+* Security fix: Fixed broken error reporting in the sam_prob_realn()
   function, due to a missing hts_log() parameter.  Prior to this fix
-  it was possible to abuse the log message format string by passing
-  a specially crafted alignment record to this function. (PR#1406)
+  (i.e., in HTSlib versions 1.8 to 1.15) it was possible to abuse
+  the log message format string by passing a specially crafted
+  alignment record to this function. (PR#1406)
 
 * HTSlib now uses libhtscodecs release 1.2.2.  This fixes a number
   of bugs where invalid compressed data could trigger usage of
