@@ -1354,6 +1354,33 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             res->s.l = b->core.l_qseq;
             res->is_str = 1;
             return 0;
+        } else if (memcmp(str, "sclen", 5) == 0) {
+            int sclen = 0;
+            uint32_t *cigar = bam_get_cigar(b);
+            int ncigar = b->core.n_cigar;
+            int left = 0;
+
+            // left
+            if (ncigar > 0
+                && bam_cigar_op(cigar[0]) == BAM_CSOFT_CLIP)
+                left = 0, sclen += bam_cigar_oplen(cigar[0]);
+            else if (ncigar > 1
+                     && bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP
+                     && bam_cigar_op(cigar[1]) == BAM_CSOFT_CLIP)
+                left = 1, sclen += bam_cigar_oplen(cigar[1]);
+
+            // right
+            if (ncigar-1 > left
+                && bam_cigar_op(cigar[ncigar-1]) == BAM_CSOFT_CLIP)
+                sclen += bam_cigar_oplen(cigar[ncigar-1]);
+            else if (ncigar-2 > left
+                     && bam_cigar_op(cigar[ncigar-1]) == BAM_CHARD_CLIP
+                     && bam_cigar_op(cigar[ncigar-2]) == BAM_CSOFT_CLIP)
+                sclen += bam_cigar_oplen(cigar[ncigar-2]);
+
+            *end = str+5;
+            res->d = sclen;
+            return 0;
         }
         break;
 
