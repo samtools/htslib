@@ -321,7 +321,7 @@ static int complete_upload(hFILE_s3_write *fp, kstring_t *resp) {
     curl_easy_reset(fp->curl);
     curl_easy_setopt(fp->curl, CURLOPT_POST, 1L);
     curl_easy_setopt(fp->curl, CURLOPT_POSTFIELDS, fp->completion_message.s);
-    curl_easy_setopt(fp->curl, CURLOPT_POSTFIELDSIZE, fp->completion_message.l);
+    curl_easy_setopt(fp->curl, CURLOPT_POSTFIELDSIZE, (long) fp->completion_message.l);
     curl_easy_setopt(fp->curl, CURLOPT_WRITEFUNCTION, response_callback);
     curl_easy_setopt(fp->curl, CURLOPT_WRITEDATA, (void *)resp);
     curl_easy_setopt(fp->curl, CURLOPT_URL, url.s);
