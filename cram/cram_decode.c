@@ -2037,12 +2037,30 @@ static int cram_decode_aux(cram_fd *fd,
             m = map_find(c->comp_hdr->tag_encoding_map, tag_data, id);
             if (!m)
                 return -1;
+
             BLOCK_APPEND(s->aux_blk, (char *)tag_data, 3);
 
             if (!m->codec) return -1;
             r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
             if (r) break;
             cr->aux_size += out_sz + 3;
+
+            // cF CRAM flags.
+            if (TN[-3]=='c' && TN[-2]=='F' && TN[-1]=='C' && out_sz == 1) {
+                // Remove cF tag
+                uint8_t cF = BLOCK_END(s->aux_blk)[-1];
+                BLOCK_SIZE(s->aux_blk) -= out_sz+3;
+                cr->aux_size -= out_sz+3;
+
+                // bit 1 => don't auto-decode MD.
+                // Pretend MD is present verbatim, so we don't auto-generate
+                if ((cF & 1) && has_MD && *has_MD == 0)
+                    *has_MD = 1;
+
+                // bit 1 => don't auto-decode NM
+                if ((cF & 2) && has_NM && *has_NM == 0)
+                    *has_NM = 1;
+            }
         }
     }
 

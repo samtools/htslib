@@ -2229,7 +2229,7 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
 static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                              cram_slice *s, cram_record *cr,
                              int verbatim_NM, int verbatim_MD,
-                             int NM, kstring_t *MD,
+                             int NM, kstring_t *MD, int cf_tag,
                              int *err) {
     char *aux, *orig, *rg = NULL;
     int aux_size = bam_get_l_aux(b);
@@ -2241,6 +2241,24 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     if (err) *err = 1;
 
     orig = aux = (char *)bam_aux(b);
+
+
+    // cF:i  => Extra CRAM bit flags.
+    // 1:  Don't auto-decode MD (may be invalid)
+    // 2:  Don't auto-decode NM (may be invalid)
+    if (cf_tag && CRAM_MAJOR_VERS(fd->version) < 4) {
+        // Temporary copy of aux so we can ammend it.
+        aux = malloc(aux_size+4);
+        if (!aux)
+            return NULL;
+
+        memcpy(aux, orig, aux_size);
+        aux[aux_size++] = 'c';
+        aux[aux_size++] = 'F';
+        aux[aux_size++] = 'C';
+        aux[aux_size++] = cf_tag;
+        orig = aux;
+    }
 
     // Copy aux keys to td_b and aux values to slice aux blocks
     while (aux - orig < aux_size && aux[0] != 0) {
@@ -2604,11 +2622,16 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     if (cram_stats_add(c->stats[DS_TL], cr->TL) < 0)
         goto block_err;
 
+    if (orig != (char *)bam_aux(b))
+        free(orig);
+
     if (err) *err = 0;
     return rg;
 
  err:
  block_err:
+    if (orig != (char *)bam_aux(b))
+        free(orig);
     return NULL;
 }
 
@@ -2975,10 +2998,13 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     else
         MD->l = 0;
 
+    int cf_tag = 0;
     if (/*md &&*/ fd->embed_ref == 2) {
         // Auto-generate and embed ref
         cram_extend_ref(c, b);
         cram_build_ref(b, md, c->ref, c->ref_set, c->ref_start, c->ref_end);
+        cf_tag  = MD ? 0 : 1;                   // No MD
+        cf_tag |= bam_aux_get(b, "NM") ? 0 : 2; // No NM
     }
 
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
@@ -3297,7 +3323,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     cr->ntags      = 0; //cram_stats_add(c->stats[DS_TC], cr->ntags);
     int err = 0;
-    rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD, &err);
+    rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD,
+                         cf_tag, &err);
     if (err)
         goto block_err;
 
