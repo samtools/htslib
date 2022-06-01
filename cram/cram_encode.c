@@ -1457,7 +1457,6 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             // based on MD:Z tags.
             if ((c->ref_id = bam_ref(b)) >= 0) {
                 c->ref_free = 1;
-                if (c->ref) abort();
                 c->ref = NULL;
             }
         }
@@ -2626,7 +2625,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
         free(orig);
 
     if (err) *err = 0;
-    return rg;
+
+    // rg from within bam_aux, not rg from our aux copy.
+    return rg ? (char *)bam_aux(b) + (rg - orig) : NULL;
 
  err:
  block_err:
@@ -2841,6 +2842,7 @@ static int cram_extend_ref(cram_container *c, bam1_t *b) {
 
         memset(c->ref + old_end - c->ref_start, 'N', c->ref_end - old_end);
         memset(c->ref_set + old_end - c->ref_start, 0, c->ref_end - old_end);
+        c->ref_free = 1;
     }
 
     return 0;
