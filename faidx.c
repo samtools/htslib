@@ -731,7 +731,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     }
 
     s[l] = '\0';
-    *len = l < INT_MAX ? l : INT_MAX;
+    *len = l;
     return s;
 }
 
@@ -784,7 +784,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 {
     hts_pos_t len64;
     char *ret = fai_fetch64(fai, str, &len64);
-    *len = len64; // trunc
+    *len = len64 < INT_MAX ? len64 : INT_MAX; // trunc
     return ret;
 }
 
@@ -803,7 +803,7 @@ char *fai_fetchqual64(const faidx_t *fai, const char *str, hts_pos_t *len) {
 char *fai_fetchqual(const faidx_t *fai, const char *str, int *len) {
     hts_pos_t len64;
     char *ret = fai_fetchqual64(fai, str, &len64);
-    *len = len64; // trunc
+    *len = len64 < INT_MAX ? len64 : INT_MAX; // trunc
     return ret;
 }
 
@@ -876,7 +876,7 @@ char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p
 {
     hts_pos_t len64;
     char *ret = faidx_fetch_seq64(fai, c_name, p_beg_i, p_end_i, &len64);
-    *len = len64;  // trunc
+    *len = len64 < INT_MAX ? len64 : INT_MAX;  // trunc
     return ret;
 }
 
@@ -897,7 +897,7 @@ char *faidx_fetch_qual(const faidx_t *fai, const char *c_name, int p_beg_i, int 
 {
     hts_pos_t len64;
     char *ret = faidx_fetch_qual64(fai, c_name, p_beg_i, p_end_i, &len64);
-    *len = len64;  // trunc
+    *len = len64 < INT_MAX ? len64 : INT_MAX;  // trunc
     return ret;
 }
 
