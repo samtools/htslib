@@ -3712,10 +3712,8 @@ void cram_free_container(cram_container *c) {
         kh_destroy(m_tagmap, c->tags_used);
     }
 
-    if (c->ref_free) {
+    if (c->ref_free)
         free(c->ref);
-        free(c->ref_set);
-    }
 
     free(c);
 }

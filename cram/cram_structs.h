@@ -474,7 +474,6 @@ struct cram_container {
 
     uint32_t n_mapped;    // Number of mapped reads
     int ref_free;         // whether 'ref' is owned by us and must be freed.
-    char *ref_set;        // same size as ref.  Only set for auto embed_ref
 };
 
 /*
