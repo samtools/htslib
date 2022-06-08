@@ -844,26 +844,40 @@ const char *faidx_iseq(const faidx_t *fai, int i)
     return fai->name[i];
 }
 
-int faidx_seq_len(const faidx_t *fai, const char *seq)
+hts_pos_t faidx_seq_len64(const faidx_t *fai, const char *seq)
 {
     khint_t k = kh_get(s, fai->hash, seq);
     if ( k == kh_end(fai->hash) ) return -1;
     return kh_val(fai->hash, k).len;
 }
 
-static int faidx_adjust_position(const faidx_t *fai, faidx1_t *val, const char *c_name, hts_pos_t *p_beg_i, hts_pos_t *p_end_i, hts_pos_t *len) {
+int faidx_seq_len(const faidx_t *fai, const char *seq)
+{
+    hts_pos_t len = faidx_seq_len64(fai, seq);
+    return len < INT_MAX ? len : INT_MAX;
+}
+
+static int faidx_adjust_position(const faidx_t *fai, int end_adjust,
+                                 faidx1_t *val_out, const char *c_name,
+                                 hts_pos_t *p_beg_i, hts_pos_t *p_end_i,
+                                 hts_pos_t *len) {
     khiter_t iter;
+    faidx1_t *val;
 
     // Adjust position
     iter = kh_get(s, fai->hash, c_name);
 
     if (iter == kh_end(fai->hash)) {
-        *len = -2;
+        if (len)
+            *len = -2;
         hts_log_error("The sequence \"%s\" was not found", c_name);
         return 1;
     }
 
-    *val = kh_value(fai->hash, iter);
+    val = &kh_value(fai->hash, iter);
+
+    if (val_out)
+        *val_out = *val;
 
     if(*p_end_i < *p_beg_i)
         *p_beg_i = *p_end_i;
@@ -871,14 +885,34 @@ static int faidx_adjust_position(const faidx_t *fai, faidx1_t *val, const char *
     if(*p_beg_i < 0)
         *p_beg_i = 0;
     else if(val->len <= *p_beg_i)
-        *p_beg_i = val->len - 1;
+        *p_beg_i = val->len;
 
     if(*p_end_i < 0)
         *p_end_i = 0;
     else if(val->len <= *p_end_i)
-        *p_end_i = val->len - 1;
+        *p_end_i = val->len - end_adjust;
 
     return 0;
+}
+
+int fai_adjust_region(const faidx_t *fai, int tid,
+                      hts_pos_t *beg, hts_pos_t *end)
+{
+    hts_pos_t orig_beg, orig_end;
+
+    if (!fai || !beg || !end || tid < 0 || tid >= fai->n)
+        return -1;
+
+    orig_beg = *beg;
+    orig_end = *end;
+    if (faidx_adjust_position(fai, 0, NULL, fai->name[tid], beg, end, NULL) != 0) {
+        hts_log_error("Inconsistent faidx internal state - couldn't find \"%s\"",
+                      fai->name[tid]);
+        return -1;
+    }
+
+    return ((orig_beg != *beg ? 1 : 0) |
+            (orig_end != *end && orig_end < HTS_POS_MAX ? 2 : 0));
 }
 
 char *faidx_fetch_seq64(const faidx_t *fai, const char *c_name, hts_pos_t p_beg_i, hts_pos_t p_end_i, hts_pos_t *len)
@@ -886,7 +920,7 @@ char *faidx_fetch_seq64(const faidx_t *fai, const char *c_name, hts_pos_t p_beg_
     faidx1_t val;
 
     // Adjust position
-    if (faidx_adjust_position(fai, &val, c_name, &p_beg_i, &p_end_i, len)) {
+    if (faidx_adjust_position(fai, 1, &val, c_name, &p_beg_i, &p_end_i, len)) {
         return NULL;
     }
 
@@ -907,7 +941,7 @@ char *faidx_fetch_qual64(const faidx_t *fai, const char *c_name, hts_pos_t p_beg
     faidx1_t val;
 
     // Adjust position
-    if (faidx_adjust_position(fai, &val, c_name, &p_beg_i, &p_end_i, len)) {
+    if (faidx_adjust_position(fai, 1, &val, c_name, &p_beg_i, &p_end_i, len)) {
         return NULL;
     }
 
