@@ -723,7 +723,7 @@ Bug fixes
 
 * Fixed potential integer overflows in the VCF parser and ensured that
   the total length of FORMAT fields cannot go over 2Gbytes. [fuzz] (#1044,
-  #1104; latter is CVE-2020-36403 affecting HTSlib versions 1.10 to 1.10.2)
+  #1104; latter is CVE-2020-36403 affecting all HTSlib versions up to 1.10.2)
 
 * Download index files atomically in idx_test_and_fetch().  This prevents
   corruption when running parallel jobs on S3 files.  Thanks to John Marshall.
