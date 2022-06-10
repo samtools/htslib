@@ -4848,7 +4848,19 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 if (!(md5 = hts_md5_init()))
                     return -1;
                 ref = cram_get_ref(fd, i, 1, rlen);
-                if (NULL == ref) return -1;
+                if (NULL == ref) {
+                    if (fd->embed_ref == -1) {
+                        // auto embed-ref
+                        hts_log_warning("No M5 tags present and could not "
+                                        "find reference");
+                        hts_log_warning("Enabling embed_ref=2 option");
+                        hts_log_warning("NOTE: the CRAM file will be bigger "
+                                        "than using an external reference");
+                        fd->embed_ref = 2;
+                        break;
+                    }
+                    return -1;
+                }
                 rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
                 hts_md5_update(md5, ref, rlen);
                 hts_md5_final(buf, md5);
