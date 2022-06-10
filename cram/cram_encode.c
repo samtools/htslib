@@ -160,7 +160,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
                 kh_val(h->preservation_map, k).i = h->qs_seq_orient;
             }
 
-            if (fd->no_ref || fd->embed_ref) {
+            if (fd->no_ref || fd->embed_ref>0) {
                 // Reference Required == No
                 k = kh_put(map, h->preservation_map, "RR", &r);
                 if (-1 == r) return NULL;
@@ -1083,7 +1083,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     int embed_ref;
     enum cram_DS_ID id;
 
-    embed_ref = fd->embed_ref && s->hdr->ref_seq_id != -1 ? 1 : 0;
+    embed_ref = fd->embed_ref>0 && s->hdr->ref_seq_id != -1 ? 1 : 0;
 
     /*
      * Slice external blocks:
@@ -1097,7 +1097,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
      */
 
     /* Create cram slice header */
-    s->hdr->ref_base_id = embed_ref && s->hdr->ref_seq_span > 0
+    s->hdr->ref_base_id = embed_ref>0 && s->hdr->ref_seq_span > 0
         ? DS_ref
         : (CRAM_MAJOR_VERS(fd->version) >= 4 ? 0 : -1);
     s->hdr->record_counter = c->num_records + c->record_counter;
@@ -1125,7 +1125,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     }
 
     // Embedded reference
-    if (embed_ref) {
+    if (embed_ref>0) {
         if (!(s->block[DS_ref] = cram_new_block(EXTERNAL, DS_ref)))
             return -1;
         s->ref_id = DS_ref; // needed?
@@ -1637,7 +1637,13 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
 
     // Add each bam file to the reference/consensus arrays
     int r2;
+    hts_pos_t last_pos = -1;
     for (r2 = 0; r1 < c->curr_c_rec && r2 < s->hdr->num_records; r1++, r2++) {
+        if (c->bams[r1]->core.pos < last_pos) {
+            hts_log_error("Cannot build reference with unsorted data");
+            return -1;
+        }
+        last_pos = c->bams[r1]->core.pos;
         if (cram_add_to_ref(c->bams[r1], &ref, &hist, ref_start, &ref_end) < 0)
             return -1;
     }
@@ -1706,8 +1712,18 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         if (fd->embed_ref <= 1) {
             char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
             if (!ref && bam_ref(b) >= 0) {
-                hts_log_error("Failed to load reference #%d", bam_ref(b));
-                return -1;
+                if (c->multi_seq || fd->embed_ref == 0 || !c->pos_sorted) {
+                    hts_log_error("Failed to load reference #%d", bam_ref(b));
+                    return -1;
+                }
+                hts_log_warning("Failed to load reference #%d", bam_ref(b));
+                hts_log_warning("Enabling embed_ref=2 mode to auto-generate"
+                                " reference");
+                if (fd->embed_ref <= 0)
+                    hts_log_warning("NOTE: the CRAM file will be bigger than"
+                                    " using an external reference");
+                fd->embed_ref=2;
+                goto auto_ref;
             }
             if ((c->ref_id = bam_ref(b)) >= 0) {
                 c->ref_seq_id = c->ref_id;
@@ -1716,6 +1732,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
             }
         } else {
+        auto_ref:
             // Auto-embed ref.
             // This starts as 'N' and is amended on-the-fly as we go
             // based on MD:Z tags.
@@ -3700,7 +3717,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          */
         if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
             fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
-            !fd->embed_ref) {
+            fd->embed_ref<=0) {
             if (!c->multi_seq)
                 hts_log_info("Multi-ref enabled for next container");
             multi_seq = 1;
@@ -3758,8 +3775,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         c->slice_rec = c->curr_rec;
 
         // Have we seen this reference before?
-        if (bam_ref(b) >= 0 && curr_ref >= 0 && bam_ref(b) != curr_ref && !fd->embed_ref &&
-            !fd->unsorted && multi_seq) {
+        if (bam_ref(b) >= 0 && curr_ref >= 0 && bam_ref(b) != curr_ref &&
+            fd->embed_ref<=0 && !fd->unsorted && multi_seq) {
 
             if (!c->refs_used) {
                 pthread_mutex_lock(&fd->ref_lock);

@@ -3561,7 +3561,7 @@ int cram_load_reference(cram_fd *fd, char *fn) {
 
     if (fn) {
         fd->refs = refs_load_fai(fd->refs, fn,
-                                 !(fd->embed_ref && fd->mode == 'r'));
+                                 !(fd->embed_ref>0 && fd->mode == 'r'));
         fn = fd->refs ? fd->refs->fn : NULL;
         if (!fn)
             ret = -1;
@@ -5249,7 +5249,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->seqs_per_slice = SEQS_PER_SLICE;
     fd->bases_per_slice = BASES_PER_SLICE;
     fd->slices_per_container = SLICE_PER_CNT;
-    fd->embed_ref = 0;
+    fd->embed_ref = -1; // automatic selection
     fd->no_ref = 0;
     fd->ap_delta = 0;
     fd->ignore_md5 = 0;
