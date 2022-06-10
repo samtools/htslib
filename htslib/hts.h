@@ -676,7 +676,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...);
   @param fp         The file handle
   @param delimiter  Unused, but must be '\n' (or KS_SEP_LINE)
   @param str        The line (not including the terminator) is written here
-  @return           Length of the string read;
+  @return           Length of the string read (capped at INT_MAX);
                     -1 on end-of-file; <= -2 on error
 */
 HTSLIB_EXPORT
