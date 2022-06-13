@@ -117,3 +117,4 @@ endif
 HTS_CFLAGS_AVX2 = @hts_cflags_avx2@
 HTS_CFLAGS_AVX512 = @hts_cflags_avx512@
 HTS_CFLAGS_SSE4 = @hts_cflags_sse4@
+HTS_HAVE_NEON = @hts_have_neon@

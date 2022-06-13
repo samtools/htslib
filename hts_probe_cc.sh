@@ -95,4 +95,19 @@ if run_compiler "$FLAGS" ; then
     echo "HTS_CFLAGS_AVX512 = $FLAGS"
 fi
 
+# Check for neon
+
+rm -f conftest.c
+cat - <<'EOF' > conftest.c
+#include "arm_neon.h"
+int main(int argc, char **argv) {
+    int32x4_t a = vdupq_n_s32(1);
+    int32x4_t b = vaddq_s32(a, a);
+    return *((char *) &b);
+}
+EOF
+if run_compiler "" ; then
+    echo "HTS_HAVE_NEON = yes"
+fi
+
 rm -f conftest.c
