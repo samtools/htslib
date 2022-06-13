@@ -127,6 +127,21 @@ AX_CHECK_COMPILE_FLAG([-mavx512f], [
     return *((char *) &b);
   ]])])
 
+dnl Detect ARM Neon availability
+AC_CACHE_CHECK([whether C compiler supports ARM Neon], [hts_cv_have_neon], [
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([[
+      #include "arm_neon.h"
+    ]], [[
+      int32x4_t a = vdupq_n_s32(1);
+      int32x4_t b = vaddq_s32(a, a);
+      return *((char *) &b);
+    ]])], [hts_cv_have_neon=yes], [hts_cv_have_neon=no])])
+if test "$hts_cv_have_neon" = yes; then
+  hts_have_neon=yes
+  AC_SUBST([hts_have_neon])
+fi
+
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
