@@ -156,6 +156,13 @@ int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *hdr, const char *str)
     if ( !*beg || *beg=='\n' ) return 0;
     if ( strncmp(beg,"\tFORMAT\t",8) )
     {
+        /* skip trailing tabs */
+        while ( *beg == '\t' ) beg++;
+        if ( !*beg || *beg=='\n' )
+        {
+            hts_log_warning("Ignoring trailing tab(s) in VCF header:\n\t%s",str);
+            return 0;
+        }
         hts_log_error("Could not parse the \"#CHROM..\" line, either FORMAT is missing or spaces are present instead of tabs:\n\t%s",str);
         return -1;
     }
