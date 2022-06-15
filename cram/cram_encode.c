@@ -1722,7 +1722,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 if (fd->embed_ref <= 0)
                     hts_log_warning("NOTE: the CRAM file will be bigger than"
                                     " using an external reference");
+                pthread_mutex_lock(&fd->ref_lock);
                 fd->embed_ref=2;
+                pthread_mutex_unlock(&fd->ref_lock);
                 goto auto_ref;
             }
             if ((c->ref_id = bam_ref(b)) >= 0) {
@@ -3715,9 +3717,12 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          * The multi_seq var here refers to our intention for the next slice.
          * This slice has already been encoded so we output as-is.
          */
+        pthread_mutex_lock(&fd->ref_lock);
+        int embed_ref = fd->embed_ref;
+        pthread_mutex_unlock(&fd->ref_lock);
         if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
             fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
-            fd->embed_ref<=0) {
+            embed_ref<=0) {
             if (!c->multi_seq)
                 hts_log_info("Multi-ref enabled for next container");
             multi_seq = 1;

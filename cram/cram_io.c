@@ -4856,7 +4856,9 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                         hts_log_warning("Enabling embed_ref=2 option");
                         hts_log_warning("NOTE: the CRAM file will be bigger "
                                         "than using an external reference");
+                        pthread_mutex_lock(&fd->ref_lock);
                         fd->embed_ref = 2;
+                        pthread_mutex_lock(&fd->ref_lock);
                         break;
                     }
                     return -1;
