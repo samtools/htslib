@@ -60,6 +60,7 @@ test_rebgzip($opts);
 test_logging($opts);
 test_plugin_loading($opts);
 test_realn($opts);
+test_bcf_set_variant_type($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -1054,4 +1055,18 @@ sub test_realn {
 
     # Revert quality values (using data in ZQ tags)
     test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn02.fa -i $$opts{path}/realn02_exp-a.sam -o -", out => "realn02_exp.sam");
+}
+
+sub test_bcf_set_variant_type
+{
+    my ($opts) = @_;
+    my $test = 'test-bcf_set_variant_type';
+    my $cmd  = "$$opts{path}/test-bcf_set_variant_type";
+    print "$test:\n";
+    print "\t$cmd\n";
+    my ($ret,$out) = _cmd($cmd);
+    if ( $ret ) {
+        print $out;
+        failed($opts,$test);
+    } else { passed($opts,$test); }
 }

@@ -94,7 +94,8 @@ BUILT_TEST_PROGRAMS = \
 	test/fuzz/hts_open_fuzzer.o \
 	test/test-bcf-translate \
 	test/test-parse-reg \
-	test/test_introspection
+	test/test_introspection \
+	test/test-bcf_set_variant_type
 
 BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads1 \
@@ -649,6 +650,9 @@ test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 test/test_introspection: test/test_introspection.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_introspection.o libhts.a $(LIBS) -lpthread
 
+test/test-bcf_set_variant_type: test/test-bcf_set_variant_type.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf_set_variant_type.o libhts.a $(LIBS) -lpthread
+
 # Extra tests for bundled htscodecs
 test_htscodecs_rans4x8: htscodecs/tests/rans4x8
 	cd htscodecs/tests && srcdir=. && export srcdir && ./rans4x8.test
@@ -723,6 +727,7 @@ test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_synced_bcf_reader_h)
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
+test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h)
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a

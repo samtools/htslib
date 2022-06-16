@@ -4179,12 +4179,19 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
         return;
     }
 
+    // Catch "joined before" breakend case
+    if ( alt[0]==']' || alt[0] == '[' )
+    {
+        var->type = VCF_BND; return;
+    }
+
+    // Iterate through alt characters that match the reference
     const char *r = ref, *a = alt;
     while (*r && *a && toupper_c(*r)==toupper_c(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
 
     if ( *a && !*r )
     {
-        if ( *a==']' || *a=='[' ) { var->type = VCF_BND; return; }
+        if ( *a==']' || *a=='[' ) { var->type = VCF_BND; return; } // "joined after" breakend
         while ( *a ) a++;
         var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
     }
