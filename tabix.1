@@ -169,7 +169,7 @@ The default is 3, which turns on error and warning messages;
 Values higher than 3 produce additional informational and debugging messages.
 .PP
 .SH EXAMPLE
-(grep ^"#" in.gff; grep -v ^"#" in.gff | sort -k1,1 -k4,4n) | bgzip > sorted.gff.gz;
+(grep ^"#" in.gff; grep -v ^"#" in.gff | sort -t$'\t' -k1,1 -k4,4n) | bgzip > sorted.gff.gz;
 
 tabix -p gff sorted.gff.gz;
 
