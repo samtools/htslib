@@ -62,7 +62,6 @@ EOF
    AC_MSG_ERROR([$1], [$2])])
 
 AC_PROG_CC
-AC_PROG_RANLIB
 
 dnl Turn on compiler warnings, if possible
 HTS_PROG_CC_WARNINGS

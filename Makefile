@@ -24,7 +24,6 @@
 
 CC     = gcc
 AR     = ar
-RANLIB = ranlib
 
 # Default libraries to link if configure is not used
 htslib_default_libs = -lz -lm -lbz2 -llzma -lcurl
@@ -319,8 +318,7 @@ plugins: $(BUILT_PLUGINS)
 
 libhts.a: $(LIBHTS_OBJS)
 	@-rm -f $@
-	$(AR) -rc $@ $(LIBHTS_OBJS)
-	-$(RANLIB) $@
+	$(AR) -rcs $@ $(LIBHTS_OBJS)
 
 print-config:
 	@echo LDFLAGS = $(LDFLAGS)
