@@ -727,7 +727,7 @@ test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_synced_bcf_reader_h)
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
-test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h)
+test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a

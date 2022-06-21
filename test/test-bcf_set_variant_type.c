@@ -123,7 +123,7 @@ static void test_bcf_set_variant_type()
     bcf_set_variant_type("A", ".", &var7);
     if ( var7.type != VCF_REF)
     {
-        error("A->. was not detected a special reference allele");
+        error("A->. was not detected as a special reference allele");
     }
 }
 
