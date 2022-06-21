@@ -1495,8 +1495,8 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
 
                 if (next_op != BAM_CMATCH &&
                     next_op != BAM_CEQUAL) {
-                    hts_log_warning("MD:Z and CIGAR are incompatible for "
-                                    "record %s", bam_get_qname(b));
+                    hts_log_info("MD:Z and CIGAR are incompatible for "
+                                 "record %s", bam_get_qname(b));
                     return -1;
                 }
 
@@ -1509,6 +1509,8 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                     len--;
                 } while (cig_len && iseq < b->core.l_qseq && len);
             }
+            if (len > 0)
+                return -1; // MD is longer than seq
         } else if (*MD == '^') {
             // deletion
             MD++;
@@ -1522,7 +1524,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                     return -1;
 
                 if (next_op != BAM_CDEL) {
-                    hts_log_warning("MD:Z and CIGAR are incompatible");
+                    hts_log_info("MD:Z and CIGAR are incompatible");
                     return -1;
                 }
 
@@ -1538,7 +1540,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                 return -1;
 
             if (next_op != BAM_CMATCH && next_op != BAM_CDIFF) {
-                hts_log_warning("MD:Z and CIGAR are incompatible");
+                hts_log_info("MD:Z and CIGAR are incompatible");
                 return -1;
             }
 
@@ -1562,9 +1564,14 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
 static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
                            hts_pos_t ref_start, hts_pos_t *ref_end) {
     const uint8_t *MD = bam_aux_get(b, "MD");
-    if (MD && *MD == 'Z')
+    int ret = 0;
+    if (MD && *MD == 'Z') {
         // We can use MD to directly compute the reference
-        return cram_add_to_ref_MD(b, ref, hist, ref_start, ref_end, MD+1);
+        int ret = cram_add_to_ref_MD(b, ref, hist, ref_start, ref_end, MD+1);
+
+        if (ret > 0)
+            return ret;
+    }
 
     // Otherwise we just use SEQ+CIGAR and build a consensus which we later
     // turn into a fake reference
@@ -1591,6 +1598,10 @@ static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
                            ref_start, ref_end) < 0)
                 return -1;
             if (iseq + len <= b->core.l_qseq) {
+                // Nullify failed MD:Z if appropriate
+                if (ret < 0)
+                    memset(&(*ref)[iref], 0, len);
+
                 for (j = 0; j < len; j++, iref++, iseq++)
                     (*hist)[iref][L16[bam_seqi(seq, iseq)]]++;
             } else {
