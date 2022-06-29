@@ -51,6 +51,12 @@ int lookup(void *data, char *str, char **end, hts_expr_val_t *res) {
         *end = str+5;
         res->is_str = 1;
         kputs("plugh", ks_clear(&res->s));
+    } else if (strncmp(str, "empty-but-true", 14) == 0) {
+        // empty string
+        *end = str+14;
+        res->is_true = 1;
+        res->is_str = 1;
+        kputs("", ks_clear(&res->s));
     } else if (strncmp(str, "empty", 5) == 0) {
         // empty string
         *end = str+5;
@@ -70,6 +76,7 @@ int lookup(void *data, char *str, char **end, hts_expr_val_t *res) {
 }
 
 typedef struct {
+    int truth_val;
     double dval;
     char *sval;
     char *str;
@@ -78,108 +85,112 @@ typedef struct {
 int test(void) {
     // These are all valid expressions that should work
     test_ev tests[] = {
-        {  1, NULL, "1"},
-        {  1, NULL, "+1"},
-        { -1, NULL, "-1"},
-        {  0, NULL, "!7"},
-        {  1, NULL, "!0"},
-        {  1, NULL, "!(!7)"},
-        {  1, NULL, "!!7"},
+        { 1,  1, NULL, "1"},
+        { 1,  1, NULL, "+1"},
+        { 1, -1, NULL, "-1"},
+        { 0,  0, NULL, "!7"},
+        { 1,  1, NULL, "!0"},
+        { 1,  1, NULL, "!(!7)"},
+        { 1,  1, NULL, "!!7"},
 
-        {  5, NULL, "2+3"},
-        { -1, NULL, "2+-3"},
-        {  6, NULL, "1+2+3"},
-        {  1, NULL, "-2+3"},
+        { 1,  5, NULL, "2+3"},
+        { 1, -1, NULL, "2+-3"},
+        { 1,  6, NULL, "1+2+3"},
+        { 1,  1, NULL, "-2+3"},
 
-        {  6, NULL, "2*3"},
-        {  6, NULL, "1*2*3"},
-        {  0, NULL, "2*0"},
+        { 1,  6, NULL, "2*3"},
+        { 1,  6, NULL, "1*2*3"},
+        { 0,  0, NULL, "2*0"},
 
-        {  7, NULL, "(7)"},
-        {  7, NULL, "((7))"},
-        { 21, NULL, "(1+2)*(3+4)"},
-        { 14, NULL, "(4*5)-(-2*-3)"},
+        { 1,  7, NULL, "(7)"},
+        { 1,  7, NULL, "((7))"},
+        { 1, 21, NULL, "(1+2)*(3+4)"},
+        { 1, 14, NULL, "(4*5)-(-2*-3)"},
 
-        {  1, NULL, "(1+2)*3==9"},
-        {  1, NULL, "(1+2)*3!=8"},
-        {  0, NULL, "(1+2)*3!=9"},
-        {  0, NULL, "(1+2)*3==8"},
+        { 1,  1, NULL, "(1+2)*3==9"},
+        { 1,  1, NULL, "(1+2)*3!=8"},
+        { 0,  0, NULL, "(1+2)*3!=9"},
+        { 0,  0, NULL, "(1+2)*3==8"},
 
-        {  0, NULL, "1>2"},
-        {  1, NULL, "1<2"},
-        {  0, NULL, "3<3"},
-        {  0, NULL, "3>3"},
-        {  1, NULL, "9<=9"},
-        {  1, NULL, "9>=9"},
-        {  1, NULL, "2*4==8"},
-        {  1, NULL, "16==0x10"},
-        {  1, NULL, "15<0x10"},
-        {  1, NULL, "17>0x10"},
-        {  0, NULL, "2*4!=8"},
-        {  1, NULL, "4+2<3+4"},
-        {  0, NULL, "4*2<3+4"},
-        {  8, NULL, "4*(2<3)+4"},  // boolean; 4*(1)+4
+        { 0,  0, NULL, "1>2"},
+        { 1,  1, NULL, "1<2"},
+        { 0,  0, NULL, "3<3"},
+        { 0,  0, NULL, "3>3"},
+        { 1,  1, NULL, "9<=9"},
+        { 1,  1, NULL, "9>=9"},
+        { 1,  1, NULL, "2*4==8"},
+        { 1,  1, NULL, "16==0x10"},
+        { 1,  1, NULL, "15<0x10"},
+        { 1,  1, NULL, "17>0x10"},
+        { 0,  0, NULL, "2*4!=8"},
+        { 1,  1, NULL, "4+2<3+4"},
+        { 0,  0, NULL, "4*2<3+4"},
+        { 1,  8, NULL, "4*(2<3)+4"}, // boolean; 4*(1)+4
 
-        {  1, NULL, "(1<2) == (3>2)"},
-        {  1, NULL, "1<2 == 3>2"},
+        { 1,  1, NULL, "(1<2) == (3>2)"},
+        { 1,  1, NULL, "1<2 == 3>2"},
 
-        {  1, NULL, "2 && 1"},
-        {  0, NULL, "2 && 0"},
-        {  0, NULL, "0 && 2"},
-        {  1, NULL, "2 || 1"},
-        {  1, NULL, "2 || 0"},
-        {  1, NULL, "0 || 2"},
-        {  1, NULL, "1 || 2 && 3"},
-        {  1, NULL, "2 && 3 || 1"},
-        {  1, NULL, "0 && 3 || 2"},
-        {  0, NULL, "0 && 3 || 0"},
+        { 1,  1, NULL, "2 && 1"},
+        { 0,  0, NULL, "2 && 0"},
+        { 0,  0, NULL, "0 && 2"},
+        { 1,  1, NULL, "2 || 1"},
+        { 1,  1, NULL, "2 || 0"},
+        { 1,  1, NULL, "0 || 2"},
+        { 1,  1, NULL, "1 || 2 && 3"},
+        { 1,  1, NULL, "2 && 3 || 1"},
+        { 1,  1, NULL, "0 && 3 || 2"},
+        { 0,  0, NULL, "0 && 3 || 0"},
 
-        {  1, NULL, "3 & 1"},
-        {  2, NULL, "3 & 2"},
-        {  3, NULL, "1 | 2"},
-        {  3, NULL, "1 | 3"},
-        {  7, NULL, "1 | 6"},
-        {  2, NULL, "1 ^ 3"},
+        { 1,  1, NULL, "3 & 1"},
+        { 1,  2, NULL, "3 & 2"},
+        { 1,  3, NULL, "1 | 2"},
+        { 1,  3, NULL, "1 | 3"},
+        { 1,  7, NULL, "1 | 6"},
+        { 1,  2, NULL, "1 ^ 3"},
 
-        {  1, NULL, "(1^0)&(4^3)"},
-        {  2, NULL, "1 ^(0&4)^ 3"},
-        {  2, NULL, "1 ^ 0&4 ^ 3"},  // precedence, & before ^
+        { 1,  1, NULL, "(1^0)&(4^3)"},
+        { 1,  2, NULL, "1 ^(0&4)^ 3"},
+        { 1,  2, NULL, "1 ^ 0&4 ^ 3"},  // precedence, & before ^
 
-        {  6, NULL, "(1|0)^(4|3)"},
-        {  7, NULL, "1 |(0^4)| 3"},
-        {  7, NULL, "1 | 0^4 | 3"},  // precedence, ^ before |
+        { 1,  6, NULL, "(1|0)^(4|3)"},
+        { 1,  7, NULL, "1 |(0^4)| 3"},
+        { 1,  7, NULL, "1 | 0^4 | 3"},  // precedence, ^ before |
 
-        {  1, NULL, "4 & 2 || 1"},
-        {  1, NULL, "(4 & 2) || 1"},
-        {  0, NULL, "4 & (2 || 1)"},
-        {  1, NULL, "1 || 4 & 2"},
-        {  1, NULL, "1 || (4 & 2)"},
-        {  0, NULL, "(1 || 4) & 2"},
+        { 1,  1, NULL, "4 & 2 || 1"},
+        { 1,  1, NULL, "(4 & 2) || 1"},
+        { 0,  0, NULL, "4 & (2 || 1)"},
+        { 1,  1, NULL, "1 || 4 & 2"},
+        { 1,  1, NULL, "1 || (4 & 2)"},
+        { 0,  0, NULL, "(1 || 4) & 2"},
 
-        {  1, NULL, " (2*3)&7  > 4"},
-        {  0, NULL, " (2*3)&(7 > 4)"}, // C precedence equiv
-        {  1, NULL, "((2*3)&7) > 4"},  // Python precedence equiv
-        {  1, NULL, "((2*3)&7) > 4 && 2*2 <= 4"},
+        { 1,  1, NULL, " (2*3)&7  > 4"},
+        { 0,  0, NULL, " (2*3)&(7 > 4)"}, // C precedence equiv
+        { 1,  1, NULL, "((2*3)&7) > 4"},  // Python precedence equiv
+        { 1,  1, NULL, "((2*3)&7) > 4 && 2*2 <= 4"},
 
-        {  1, "plugh", "magic"},
-        {  1, "",   "empty"},
-        {  1, NULL, "magic == \"plugh\""},
-        {  1, NULL, "magic != \"xyzzy\""},
+        { 1,  1, "plugh", "magic"},
+        { 1,  1, "",  "empty"},
+        { 1,  1, NULL, "magic == \"plugh\""},
+        { 1,  1, NULL, "magic != \"xyzzy\""},
 
-        {  1, NULL, "\"abc\" < \"def\""},
-        {  1, NULL, "\"abc\" <= \"abc\""},
-        {  0, NULL, "\"abc\" < \"ab\""},
-        {  0, NULL, "\"abc\" <= \"ab\""},
+        { 1,  1, NULL, "\"abc\" < \"def\""},
+        { 1,  1, NULL, "\"abc\" <= \"abc\""},
+        { 0,  0, NULL, "\"abc\" < \"ab\""},
+        { 0,  0, NULL, "\"abc\" <= \"ab\""},
 
-        {  0, NULL, "\"abc\" > \"def\""},
-        {  1, NULL, "\"abc\" >= \"abc\""},
-        {  1, NULL, "\"abc\" > \"ab\""},
-        {  1, NULL, "\"abc\" >= \"ab\""},
+        { 0,  0, NULL, "\"abc\" > \"def\""},
+        { 1,  1, NULL, "\"abc\" >= \"abc\""},
+        { 1,  1, NULL, "\"abc\" > \"ab\""},
+        { 1,  1, NULL, "\"abc\" >= \"ab\""},
 
-        {  1, NULL, "\"abbc\" =~ \"^a+b+c+$\""},
-        {  0, NULL, "\"aBBc\" =~ \"^a+b+c+$\""},
-        {  1, NULL, "\"aBBc\" !~ \"^a+b+c+$\""},
-        {  1, NULL, "\"xyzzy plugh abracadabra\" =~ magic"},
+        { 1,  1, NULL, "\"abbc\" =~ \"^a+b+c+$\""},
+        { 0,  0, NULL, "\"aBBc\" =~ \"^a+b+c+$\""},
+        { 1,  1, NULL, "\"aBBc\" !~ \"^a+b+c+$\""},
+        { 1,  1, NULL, "\"xyzzy plugh abracadabra\" =~ magic"},
+
+        { 1,  1, "",   "empty-but-true" },
+        { 1,  1, NULL, "1 && empty-but-true && 1" },
+        { 0,  0, NULL, "1 && empty-but-true && 0" },
     };
 
     int i;
@@ -195,13 +206,18 @@ int test(void) {
         }
 
         if (r.is_str && (strcmp(r.s.s, tests[i].sval) != 0
-                         || r.d != tests[i].dval)) {
-            fprintf(stderr, "Failed test: %s == %s, got %s, %f\n",
-                    tests[i].str, tests[i].sval, r.s.s, r.d);
+                         || r.d != tests[i].dval
+                         || r.is_true != tests[i].truth_val)) {
+            fprintf(stderr,
+                    "Failed test: \"%s\" == \"%s\", got %s, \"%s\", %f\n",
+                    tests[i].str, tests[i].sval,
+                    r.is_true ? "true" : "false", r.s.s, r.d);
             return 1;
-        } else if (!r.is_str && r.d != tests[i].dval) {
-            fprintf(stderr, "Failed test: %s == %f, got %f\n",
-                    tests[i].str, tests[i].dval, r.d);
+        } else if (!r.is_str && (r.d != tests[i].dval
+                                 || r.is_true != tests[i].truth_val)) {
+            fprintf(stderr, "Failed test: %s == %f, got %s, %f\n",
+                    tests[i].str, tests[i].dval,
+                    r.is_true ? "true" : "false", r.d);
             return 1;
         }
 
