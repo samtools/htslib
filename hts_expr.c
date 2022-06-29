@@ -700,12 +700,15 @@ int hts_filter_eval(hts_filter_t *filt,
     }
 
     // Strings evaluate to true.  An empty string is also true, but an
-    // absent (null) string is false.  An empty string has kstring length
-    // of zero, but a pointer as it's nul-terminated.
-    if (res->is_str)
-        res->is_true = res->d = res->s.s != NULL;
-    else
+    // absent (null) string is false, unless overriden by is_true.  An
+    // empty string has kstring length of zero, but a pointer as it's
+    // nul-terminated.
+    if (res->is_str) {
+        res->is_true |= res->s.s != NULL;
+        res->d = res->is_true;
+    } else {
         res->is_true |= res->d != 0;
+    }
 
     return 0;
 }

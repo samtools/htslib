@@ -62,6 +62,11 @@ int lookup(void *data, char *str, char **end, hts_expr_val_t *res) {
         *end = str+5;
         res->is_str = 1;
         kputs("", ks_clear(&res->s));
+    } else if (strncmp(str, "null-but-true", 13) == 0) {
+        *end = str+13;
+        res->is_true = 1;
+        res->is_str = 1;
+        ks_clear(&res->s);
     } else if (strncmp(str, "null", 4) == 0) {
         // null string (eg aux:Z tag is absent)
         *end = str+4;
@@ -206,6 +211,13 @@ int test(void) {
         { 0,  0, NULL, "null"    },
         { 1,  1, NULL, "!null"   },
         { 0,  0, NULL, "!!null", },
+
+        { 1,  1, NULL, "null-but-true"   },
+        { 0,  0, NULL, "!null-but-true"  },
+        { 1,  1, NULL, "!!null-but-true" },
+
+        { 0,  0, NULL, "null || 0" },
+        { 1,  1, NULL, "null-but-true && 1" },
     };
 
     int i, res = 0;
