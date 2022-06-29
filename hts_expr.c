@@ -622,8 +622,8 @@ static int and_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                     char *str, char **end, hts_expr_val_t *res) {
     if (eq_expr(filt, data, fn, str, end, res)) return -1;
 
-    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     for (;;) {
+        hts_expr_val_t val = HTS_EXPR_VAL_INIT;
         str = ws(*end);
         if (str[0] == '&' && str[1] == '&') {
             if (eq_expr(filt, data, fn, str+2, end, &val)) return -1;
@@ -640,8 +640,8 @@ static int and_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         } else {
             break;
         }
+        hts_expr_val_free(&val);
     }
-    hts_expr_val_free(&val);
 
     return 0;
 }
