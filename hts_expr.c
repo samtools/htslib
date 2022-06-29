@@ -352,8 +352,10 @@ static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         else
             break;
 
+        res->is_true = res->d != 0;
         str = *end;
     }
+
     hts_expr_val_free(&val);
 
     return 0;
@@ -390,8 +392,10 @@ static int add_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         else
             break;
 
+        res->is_true = res->d != 0;
         str = *end;
     }
+
     hts_expr_val_free(&val);
 
     return 0;
