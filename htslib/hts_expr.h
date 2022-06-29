@@ -87,11 +87,31 @@ typedef int (hts_expr_sym_func)(void *data, char *str, char **end,
  *  the is_str member.  It can also be explicitly defined to be true even
  *  for a null value.  This may be used to check for the existence of
  *  something, irrespective of whether that something evaluates to zero.
+ *
+ *  @p res must be initialized using HTS_EXPR_VAL_INIT before passing it
+ *  to this function for the first time.
+ */
+HTSLIB_EXPORT
+int hts_filter_eval2(hts_filter_t *filt,
+                     void *data, hts_expr_sym_func *sym_func,
+                     hts_expr_val_t *res);
+
+/// Evaluate a filter expression (derecated API)
+/**
+ *  @copydetails hts_filter_eval2()
+ *
+ *  If calling this function more than once with the same @p res
+ *  parameter, hts_expr_val_free(res) must be used between invocations
+ *  to clear any allocated memory prior to reuse.
+ *
+ *  @deprecated This function has been replaced by hts_filter_eval2(),
+ *              which clears @p res properly itself.
  */
 HTSLIB_EXPORT
 int hts_filter_eval(hts_filter_t *filt,
                     void *data, hts_expr_sym_func *sym_func,
-                    hts_expr_val_t *res);
+                    hts_expr_val_t *res)
+    HTS_DEPRECATED("Please use hts_filter_eval2 instead");
 
 
 #endif /* HTS_EXPR_H */

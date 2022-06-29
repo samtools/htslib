@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 
 #include "htslib/hts_expr.h"
+#include "htslib/hts_log.h"
 #include "textutils_internal.h"
 
 // Could also cache hts_expr_val_t stack here for kstring reuse?
@@ -683,12 +684,10 @@ void hts_filter_free(hts_filter_t *filt) {
     free(filt);
 }
 
-int hts_filter_eval(hts_filter_t *filt,
-                    void *data, hts_expr_sym_func *fn,
-                    hts_expr_val_t *res) {
+static int hts_filter_eval_(hts_filter_t *filt,
+                            void *data, hts_expr_sym_func *fn,
+                            hts_expr_val_t *res) {
     char *end = NULL;
-
-    memset(res, 0, sizeof(*res));
 
     filt->curr_regex = 0;
     if (expression(filt, data, fn, filt->str, &end, res))
@@ -711,4 +710,30 @@ int hts_filter_eval(hts_filter_t *filt,
     }
 
     return 0;
+}
+
+int hts_filter_eval(hts_filter_t *filt,
+                    void *data, hts_expr_sym_func *fn,
+                    hts_expr_val_t *res) {
+    if (res->s.l != 0 || res->s.m != 0 || res->s.s != NULL) {
+        // As *res is cleared below, it's not safe to call this function
+        // with res->s.s set, as memory would be leaked.  It's also not
+        // possible to know is res was initialised correctly, so in
+        // either case we fail.
+        hts_log_error("Results structure must be cleared before calling this function");
+        return -1;
+    }
+
+    memset(res, 0, sizeof(*res));
+
+    return hts_filter_eval_(filt, data, fn, res);
+}
+
+int hts_filter_eval2(hts_filter_t *filt,
+                     void *data, hts_expr_sym_func *fn,
+                     hts_expr_val_t *res) {
+    ks_free(&res->s);
+    memset(res, 0, sizeof(*res));
+
+    return hts_filter_eval_(filt, data, fn, res);
 }

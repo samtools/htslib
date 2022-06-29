@@ -221,12 +221,12 @@ int test(void) {
     };
 
     int i, res = 0;
-    hts_expr_val_t r;
+    hts_expr_val_t r = HTS_EXPR_VAL_INIT;
     for (i = 0; i < sizeof(tests) / sizeof(*tests); i++) {
         hts_filter_t *filt = hts_filter_init(tests[i].str);
         if (!filt)
             return 1;
-        if (hts_filter_eval(filt, NULL, lookup, &r)) {
+        if (hts_filter_eval2(filt, NULL, lookup, &r)) {
             fprintf(stderr, "Failed to parse filter string %s\n",
                     tests[i].str);
             res = 1;
@@ -259,9 +259,9 @@ int test(void) {
 
 int main(int argc, char **argv) {
     if (argc > 1) {
-        hts_expr_val_t v;
+        hts_expr_val_t v = HTS_EXPR_VAL_INIT;
         hts_filter_t *filt = hts_filter_init(argv[1]);
-        if (hts_filter_eval(filt, NULL, lookup, &v))
+        if (hts_filter_eval2(filt, NULL, lookup, &v))
             return 1;
 
         if (v.is_str)
