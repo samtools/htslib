@@ -82,6 +82,13 @@ typedef struct {
     char *str;
 } test_ev;
 
+static inline int strcmpnull(const char *a, const char *b) {
+    if (!a && !b) return  0;
+    if (!a &&  b) return -1;
+    if (a  && !b) return  1;
+    return strcmp(a, b);
+}
+
 int test(void) {
     // These are all valid expressions that should work
     test_ev tests[] = {
@@ -188,12 +195,18 @@ int test(void) {
         { 1,  1, NULL, "\"aBBc\" !~ \"^a+b+c+$\""},
         { 1,  1, NULL, "\"xyzzy plugh abracadabra\" =~ magic"},
 
-        { 1,  1, "",   "empty-but-true" },
+        { 1,  1, "",   "empty-but-true"   },
+        { 0,  0, NULL, "!empty-but-true"  },
+        { 1,  1, NULL, "!!empty-but-true" },
         { 1,  1, NULL, "1 && empty-but-true && 1" },
         { 0,  0, NULL, "1 && empty-but-true && 0" },
+
+        { 0,  0, NULL, "null"    },
+        { 1,  1, NULL, "!null"   },
+        { 0,  0, NULL, "!!null", },
     };
 
-    int i;
+    int i, res = 0;
     hts_expr_val_t r;
     for (i = 0; i < sizeof(tests) / sizeof(*tests); i++) {
         hts_filter_t *filt = hts_filter_init(tests[i].str);
@@ -202,30 +215,32 @@ int test(void) {
         if (hts_filter_eval(filt, NULL, lookup, &r)) {
             fprintf(stderr, "Failed to parse filter string %s\n",
                     tests[i].str);
-            return 1;
+            res = 1;
+            hts_filter_free(filt);
+            continue;
         }
 
-        if (r.is_str && (strcmp(r.s.s, tests[i].sval) != 0
+        if (r.is_str && (strcmpnull(r.s.s, tests[i].sval) != 0
                          || r.d != tests[i].dval
                          || r.is_true != tests[i].truth_val)) {
             fprintf(stderr,
                     "Failed test: \"%s\" == \"%s\", got %s, \"%s\", %f\n",
                     tests[i].str, tests[i].sval,
                     r.is_true ? "true" : "false", r.s.s, r.d);
-            return 1;
+            res = 1;
         } else if (!r.is_str && (r.d != tests[i].dval
                                  || r.is_true != tests[i].truth_val)) {
             fprintf(stderr, "Failed test: %s == %f, got %s, %f\n",
                     tests[i].str, tests[i].dval,
                     r.is_true ? "true" : "false", r.d);
-            return 1;
+            res = 1;
         }
 
         hts_expr_val_free(&r);
         hts_filter_free(filt);
     }
 
-    return 0;
+    return res;
 }
 
 int main(int argc, char **argv) {

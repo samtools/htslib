@@ -296,10 +296,12 @@ static int unary_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         res->is_true = res->d != 0;
     } else if (*str == '!') {
         err = unary_expr(filt, data, fn, str+1, end, res);
-        if (res->is_str) {
+        if (res->is_true) {
+            res->d = res->is_true = 0;
             res->is_str = 0;
-            res->d = 0;
-            res->is_true = !res->is_true;
+        } else if (res->is_str) {
+            res->is_str = 0;
+            res->d = res->is_true = (res->s.s == NULL);
         } else {
             res->d = !(int64_t)res->d;
             res->is_true = res->d != 0;
