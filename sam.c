@@ -1454,8 +1454,8 @@ static int bam_sym_lookup(void *data, char *str, char **end,
 int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b, hts_filter_t *filt)
 {
     hb_pair hb = {h, b};
-    hts_expr_val_t res;
-    if (hts_filter_eval(filt, &hb, bam_sym_lookup, &res)) {
+    hts_expr_val_t res = HTS_EXPR_VAL_INIT;
+    if (hts_filter_eval2(filt, &hb, bam_sym_lookup, &res)) {
         hts_log_error("Couldn't process filter expression");
         hts_expr_val_free(&res);
         return -1;
