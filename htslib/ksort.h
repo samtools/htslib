@@ -88,7 +88,7 @@ typedef struct {
 	int depth;
 } ks_isort_stack_t;
 
-#define KSORT_SWAP(type_t, a, b) { register type_t t=(a); (a)=(b); (b)=t; }
+#define KSORT_SWAP(type_t, a, b) { type_t t=(a); (a)=(b); (b)=t; }
 
 #define KSORT_INIT(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, , type_t, __sort_lt)
 #define KSORT_INIT_STATIC(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, static klib_unused, type_t, __sort_lt)
