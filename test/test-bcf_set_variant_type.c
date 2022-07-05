@@ -46,19 +46,19 @@ static void test_bcf_set_variant_type()
     bcf_set_variant_type("A", "T", &var1);
     if ( var1.type != VCF_SNP)
     {
-        error("A -> T was not detected as a breakend");
+        error("A -> T was not detected as a SNP");
     }
 
     // Test INDEL
     bcf_variant_t var2a;
     bcf_set_variant_type("A", "AA", &var2a);
-    if ( var2a.type != VCF_INDEL)
+    if ( var2a.type != (VCF_INDEL|VCF_INS) )
     {
         error("A -> AA was not detected as an INDEL");
     }
     bcf_variant_t var2b;
     bcf_set_variant_type("AA", "A", &var2b);
-    if ( var2b.type != VCF_INDEL)
+    if ( var2b.type != (VCF_INDEL|VCF_DEL) )
     {
         error("AA -> A was not detected as a INDEL");
     }
