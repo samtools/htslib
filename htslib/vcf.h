@@ -138,13 +138,16 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_FLOAT    5
 #define BCF_BT_CHAR     7
 
-#define VCF_REF      0
-#define VCF_SNP      1
-#define VCF_MNP      2
-#define VCF_INDEL    4
-#define VCF_OTHER    8
-#define VCF_BND     16    // breakend
-#define VCF_OVERLAP 32    // overlapping deletion, ALT=*
+#define VCF_REF         0
+#define VCF_SNP     (1<<0)
+#define VCF_MNP     (1<<1)
+#define VCF_INDEL   (1<<2)
+#define VCF_OTHER   (1<<3)
+#define VCF_BND     (1<<4)      // breakend
+#define VCF_OVERLAP (1<<5)      // overlapping deletion, ALT=*
+#define VCF_INS     (1<<6)      // implies VCF_INDEL
+#define VCF_DEL     (1<<7)      // implies VCF_INDEL
+#define VCF_ANY     (VCF_SNP|VCF_MNP|VCF_INDEL|VCF_OTHER|VCF_BND|VCF_OVERLAP|VCF_INS|VCF_DEL)       // any variant type (but not VCF_REF)
 
 typedef struct bcf_variant_t {
     int type, n;    // variant type and the number of bases affected, negative for deletions
@@ -751,13 +754,26 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *src_line);
 
     /**
-     *  bcf_get_variant_type[s]()  - returns one of VCF_REF, VCF_SNP, etc
+     *  bcf_get_variant_type[s]()  - returns one of VCF_REF, VCF_SNP, etc. (DEPRECATED)
+     *  bcf_has_variant_type[s]()  - the preferred way to query the presence of variant types
+     *  @bitmask:   combination of VCF_* variant type above, VCF_INDEL implies VCF_INS|VCF_DEL
+     *  @mode:      `exact` for an exact match, `overlap` for at least one matching variant,
+     *              `subset` for the listed variants only
      */
     HTSLIB_EXPORT
     int bcf_get_variant_types(bcf1_t *rec);
 
     HTSLIB_EXPORT
     int bcf_get_variant_type(bcf1_t *rec, int ith_allele);
+
+    enum bcf_variant_match { exact, overlap, subset };
+
+    HTSLIB_EXPORT
+    int bcf_has_variant_types(bcf1_t *rec, int bitmask, enum bcf_variant_match mode);
+
+    HTSLIB_EXPORT
+    int bcf_has_variant_type(bcf1_t *rec, int ith_allele, int bitmask, enum bcf_variant_match mode);
+
 
     HTSLIB_EXPORT
     int bcf_is_snp(bcf1_t *v);

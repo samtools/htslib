@@ -4193,12 +4193,12 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     {
         if ( *a==']' || *a=='[' ) { var->type = VCF_BND; return; } // "joined after" breakend
         while ( *a ) a++;
-        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL | VCF_INS; return;
     }
     else if ( *r && !*a )
     {
         while ( *r ) r++;
-        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL | VCF_DEL; return;
     }
     else if ( !*r && !*a )
     {
@@ -4213,13 +4213,13 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     {
         if ( re==r ) { var->n = 1; var->type = VCF_SNP; return; }
         var->n = -(re-r);
-        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL | VCF_DEL; return; }
         var->type = VCF_OTHER; return;
     }
     else if ( re==r )
     {
         var->n = ae-a;
-        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL | VCF_INS; return; }
         var->type = VCF_OTHER; return;
     }
 
@@ -4260,6 +4260,30 @@ int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
 {
     if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
     return rec->d.var[ith_allele].type;
+}
+inline static int _has_variant_type(int type, int bitmask, enum bcf_variant_match mode)
+{
+    if ( mode==overlap ) return type & bitmask;
+
+    // VCF_INDEL is always set with VCF_INS and VCF_DEL by bcf_set_variant_type[s], but the bitmask may
+    // ask for say `VCF_INS` or `VCF_INDEL` only
+    if ( bitmask&(VCF_INS|VCF_DEL) && !(bitmask&VCF_INDEL) ) type &= ~VCF_INDEL;
+    else if ( bitmask&VCF_INDEL && !(bitmask&(VCF_INS|VCF_DEL)) ) type &= ~(VCF_INS|VCF_DEL);
+
+    if ( mode==subset )
+    {
+        if ( ~bitmask & type ) return 0;
+        else return bitmask & type;
+    }
+    return type==bitmask ? type : 0;
+}
+int bcf_has_variant_type(bcf1_t *rec, int ith_allele, int bitmask, enum bcf_variant_match mode)
+{
+    return _has_variant_type(bcf_get_variant_type(rec, ith_allele), bitmask, mode);
+}
+int bcf_has_variant_types(bcf1_t *rec, int bitmask, enum bcf_variant_match mode)
+{
+    return _has_variant_type(bcf_get_variant_types(rec), bitmask, mode);
 }
 
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
