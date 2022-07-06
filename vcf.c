@@ -4254,14 +4254,14 @@ static int bcf_set_variant_types(bcf1_t *b)
 int bcf_get_variant_types(bcf1_t *rec)
 {
     if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return rec->d.var_type;
+    return rec->d.var_type & ~(VCF_INS|VCF_DEL);
 }
 int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
 {
     if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return rec->d.var[ith_allele].type;
+    return rec->d.var[ith_allele].type & ~(VCF_INS|VCF_DEL);
 }
-inline static int _has_variant_type(int type, int bitmask, enum bcf_variant_match mode)
+inline static int has_variant_type(int type, int bitmask, enum bcf_variant_match mode)
 {
     if ( mode==overlap ) return type & bitmask;
 
@@ -4279,11 +4279,13 @@ inline static int _has_variant_type(int type, int bitmask, enum bcf_variant_matc
 }
 int bcf_has_variant_type(bcf1_t *rec, int ith_allele, int bitmask, enum bcf_variant_match mode)
 {
-    return _has_variant_type(bcf_get_variant_type(rec, ith_allele), bitmask, mode);
+    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
+    return has_variant_type(rec->d.var[ith_allele].type, bitmask, mode);
 }
 int bcf_has_variant_types(bcf1_t *rec, int bitmask, enum bcf_variant_match mode)
 {
-    return _has_variant_type(bcf_get_variant_types(rec), bitmask, mode);
+    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
+    return has_variant_type(rec->d.var_type, bitmask, mode);
 }
 
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
