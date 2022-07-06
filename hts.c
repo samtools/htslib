@@ -4588,7 +4588,9 @@ hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags)
 
     hts_idx_t *idx = idx_read(fnidx);
     if (!idx && !(flags & HTS_IDX_SILENT_FAIL))
-        hts_log_error("Could not load local index file '%s'", fnidx);
+        hts_log_error("Could not load local index file '%s'%s%s", fnidx,
+                      errno ? " : " : "", errno ? strerror(errno) : "");
+
 
     free(local_fnidx);
 
