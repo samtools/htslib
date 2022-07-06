@@ -6289,6 +6289,11 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                 state->MLstride [mod_num] = stride;
                 state->implicit [mod_num] = implicit;
 
+                if (delta < 0) {
+                    hts_log_error("MM tag refers to bases beyond sequence "
+                                  "length");
+                    return -1;
+                }
                 state->MMcount  [mod_num] = delta;
                 if (b->core.flag & BAM_FREVERSE) {
                     state->MM   [mod_num] = cp+1;
