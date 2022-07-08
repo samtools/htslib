@@ -229,8 +229,11 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
             case TBX_UCSC: type = "TBX_UCSC"; break;
             default: type = "TBX_GENERIC"; break;
         }
-        hts_log_error("Failed to parse %s, was wrong -p [type] used?\nThe offending line was: \"%s\"",
-            type, str->s);
+        if (hts_is_utf16_text(str))
+            hts_log_error("Failed to parse %s: offending line appears to be encoded as UTF-16", type);
+        else
+            hts_log_error("Failed to parse %s: was wrong -p [type] used?\nThe offending line was: \"%s\"",
+                type, str->s);
         return -1;
     }
 }

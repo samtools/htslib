@@ -431,6 +431,27 @@ static int is_text_only(const unsigned char *u, const unsigned char *ulim)
     return 1;
 }
 
+static inline int
+alternate_zeros(const unsigned char *u, const unsigned char *ulim)
+{
+    for (; u < ulim; u += 2)
+        if (*u != '\0') return 0;
+    return 1;
+}
+
+static int is_utf16_text(const unsigned char *u, const unsigned char *ulim)
+{
+    if (ulim - u >= 6 &&
+        ((u[0] == 0xfe && u[1] == 0xff && alternate_zeros(u+2, ulim)) ||
+         (u[0] == 0xff && u[1] == 0xfe && alternate_zeros(u+3, ulim))))
+        return 2;
+    else if (ulim - u >= 8 &&
+             (alternate_zeros(u, ulim) || alternate_zeros(u+1, ulim)))
+        return 1;
+    else
+        return 0;
+}
+
 static int is_fastaq(const unsigned char *u, const unsigned char *ulim)
 {
     const unsigned char *eol = memchr(u, '\n', ulim - u);
@@ -1961,6 +1982,12 @@ hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname)
     return fp;
 }
 
+int hts_is_utf16_text(const kstring_t *str)
+{
+    const unsigned char *u = (const unsigned char *) (str->s);
+    return (str->l > 0 && str->s)? is_utf16_text(u, u + str->l) : 0;
+}
+
 // For VCF/BCF backward sweeper. Not exposing these functions because their
 // future is uncertain. Things will probably have to change with hFILE...
 BGZF *hts_get_bgzfp(htsFile *fp)
@@ -2030,6 +2057,8 @@ char **hts_readlist(const char *string, int is_file, int *_n)
         while ((ret = bgzf_getline(fp, '\n', &str)) >= 0)
         {
             if (str.l == 0) continue;
+            if (n == 0 && hts_is_utf16_text(&str))
+                hts_log_warning("'%s' appears to be encoded as UTF-16", string);
             if (hts_resize(char*, n + 1, &m, &s, 0) < 0)
                 goto err;
             s[n] = strdup(str.s);
@@ -2089,6 +2118,8 @@ char **hts_readlines(const char *fn, int *_n)
         str.s = 0; str.l = str.m = 0;
         while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
             if (str.l == 0) continue;
+            if (n == 0 && hts_is_utf16_text(&str))
+                hts_log_warning("'%s' appears to be encoded as UTF-16", fn);
             if (hts_resize(char *, n + 1, &m, &s, 0) < 0)
                 goto err;
             s[n] = strdup(str.s);
