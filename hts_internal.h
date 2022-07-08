@@ -87,6 +87,9 @@ typedef struct hts_cram_idx_t {
     struct cram_fd *cram;
 } hts_cram_idx_t;
 
+// Determine whether the string's contents appear to be UTF-16-encoded text.
+// Returns 1 if they are, 2 if there is also a BOM, or 0 otherwise.
+int hts_is_utf16_text(const kstring_t *str);
 
 // Entry point to hFILE_multipart backend.
 struct hFILE *hopen_htsget_redirect(struct hFILE *hfile, const char *mode);
