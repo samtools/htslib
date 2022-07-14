@@ -25,18 +25,30 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTS_EXPR_H
 #define HTS_EXPR_H
 
+#include <math.h>
 #include "kstring.h"
 #include "hts_defs.h"
 
 /// Holds a filter variable.  This is also used to return the results.
 /**
- * Note we cope with zero-but-true in order to implement a basic
- * "exists(something)" check where "something" may even be zero.
+ * The expression language has 3-states of string, numeric, and unknown.
+ * The unknown state is either a NaN numeric or a null string, with both
+ * internally considered to have the same "unknown" meaning.
  *
- * Eg in the aux tag searching syntax, "[NM]" should return true if
- * NM tag exists even if zero.
- * Take care when negating this. "[NM] != 0" will be true when
- * [NM] is absent, thus consider "[NM] && [NM] != 0".
+ * These largely match the IEE 754 semantics for NaN comparisons: <, >, ==,
+ * != all fail, (even NaN == NaN).  Similarly arithmetic (+,-,/,*,%) with
+ * unknown values are still unknown (and false).
+ *
+ * The departure from NaN semantics though is that our unknown/null state is
+ * considered to be false while NaN in C is true.  Similarly the false nature
+ * of our unknown state meants !val becomes true, !!val is once again false,
+ * val && 1 is false, val || 0 is false, and val || 1 is true along with
+ * !val || 0 and !val && 1.
+ *
+ * Note it is possible for empty strings and zero numbers to also be true.
+ * An example of this is the aux string '[NM]' which returns true if the
+ * NM tag is found, regardless of whether it is also zero.  However the
+ * better approach added in 1.16 is 'exists([NM])'.
  */
 typedef struct hts_expr_val_t {
     char is_str;  // Use .s vs .d
@@ -44,6 +56,29 @@ typedef struct hts_expr_val_t {
     kstring_t s;  // is_str and empty s permitted (eval as false)
     double d;     // otherwise this
 } hts_expr_val_t;
+
+/// Returns true if an hts_expr_val_t is defined.
+/* An example usage of this is in the SAM expression filter where an
+ * [X0] aux tag will be the value of X0 (string or numeric) if set, or
+ * a false nul-string (not the same as an empty one) when not set.
+ */
+static inline int hts_expr_val_exists(hts_expr_val_t *v) {
+    return v && !(v->is_str == 1 && v->s.s == NULL)
+             && !(v->is_str == 0 && isnan(v->d));
+}
+
+/// Returns true if an hts_expr_val_t is defined or is undef-but-true
+static inline int hts_expr_val_existsT(hts_expr_val_t *v) {
+    return (v && v->is_true) || hts_expr_val_exists(v);
+}
+
+/// Set a value to be undefined (nan).
+static inline void hts_expr_val_undef(hts_expr_val_t *v) {
+    ks_clear(&v->s);
+    v->is_true = 0;
+    v->is_str = 0;
+    v->d = NAN;
+}
 
 /// Frees a hts_expr_val_t type.
 static inline void hts_expr_val_free(hts_expr_val_t *f) {

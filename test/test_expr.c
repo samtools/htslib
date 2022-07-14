@@ -62,16 +62,23 @@ int lookup(void *data, char *str, char **end, hts_expr_val_t *res) {
         *end = str+5;
         res->is_str = 1;
         kputs("", ks_clear(&res->s));
+    } else if (strncmp(str, "zero-but-true", 13) == 0) {
+        *end = str+13;
+        res->d = 0;
+        res->is_true = 1;
     } else if (strncmp(str, "null-but-true", 13) == 0) {
         *end = str+13;
+        hts_expr_val_undef(res);
         res->is_true = 1;
-        res->is_str = 1;
-        ks_clear(&res->s);
     } else if (strncmp(str, "null", 4) == 0) {
         // null string (eg aux:Z tag is absent)
         *end = str+4;
-        res->is_str = 1;
-        ks_clear(&res->s);
+        hts_expr_val_undef(res);
+    } else if (strncmp(str, "nan", 3) == 0) {
+        // sqrt(-1), 0/0 and similar
+        // Semantically the same operations as null.
+        *end = str+3;
+        hts_expr_val_undef(res);
 
     } else {
         return -1;
@@ -94,130 +101,200 @@ static inline int strcmpnull(const char *a, const char *b) {
     return strcmp(a, b);
 }
 
+// Compare NAN as equal, for testing we returned the correct values
+static inline int cmpfloat(double d1, double d2) {
+    // If needs be, can use DBL_EPSILON in comparisons here.
+    return d1 == d2 || (isnan(d1) && isnan(d2));
+}
+
 int test(void) {
     // These are all valid expressions that should work
     test_ev tests[] = {
-        { 1,  1, NULL, "1"},
-        { 1,  1, NULL, "+1"},
-        { 1, -1, NULL, "-1"},
-        { 0,  0, NULL, "!7"},
-        { 1,  1, NULL, "!0"},
-        { 1,  1, NULL, "!(!7)"},
-        { 1,  1, NULL, "!!7"},
+        { 1,  1,   NULL, "1"},
+        { 1,  1,   NULL, "+1"},
+        { 1, -1,   NULL, "-1"},
+        { 0,  0,   NULL, "!7"},
+        { 1,  1,   NULL, "!0"},
+        { 1,  1,   NULL, "!(!7)"},
+        { 1,  1,   NULL, "!!7"},
 
-        { 1,  5, NULL, "2+3"},
-        { 1, -1, NULL, "2+-3"},
-        { 1,  6, NULL, "1+2+3"},
-        { 1,  1, NULL, "-2+3"},
+        { 1,  5,   NULL, "2+3"},
+        { 1, -1,   NULL, "2+-3"},
+        { 1,  6,   NULL, "1+2+3"},
+        { 1,  1,   NULL, "-2+3"},
+        { 0,  NAN, NULL, "1+null" },
+        { 0,  NAN, NULL, "null-1" },
+        { 0,  NAN, NULL, "-null" },
 
-        { 1,  6, NULL, "2*3"},
-        { 1,  6, NULL, "1*2*3"},
-        { 0,  0, NULL, "2*0"},
+        { 1,  6,   NULL, "2*3"},
+        { 1,  6,   NULL, "1*2*3"},
+        { 0,  0,   NULL, "2*0"},
 
-        { 1,  7, NULL, "(7)"},
-        { 1,  7, NULL, "((7))"},
-        { 1, 21, NULL, "(1+2)*(3+4)"},
-        { 1, 14, NULL, "(4*5)-(-2*-3)"},
+        { 1,  7,   NULL, "(7)"},
+        { 1,  7,   NULL, "((7))"},
+        { 1, 21,   NULL, "(1+2)*(3+4)"},
+        { 1, 14,   NULL, "(4*5)-(-2*-3)"},
 
-        { 1,  1, NULL, "(1+2)*3==9"},
-        { 1,  1, NULL, "(1+2)*3!=8"},
-        { 0,  0, NULL, "(1+2)*3!=9"},
-        { 0,  0, NULL, "(1+2)*3==8"},
+        { 0,  NAN, NULL, "2*null"},
+        { 0,  NAN, NULL, "null/2"},
+        { 0,  NAN, NULL, "0/0"},
 
-        { 0,  0, NULL, "1>2"},
-        { 1,  1, NULL, "1<2"},
-        { 0,  0, NULL, "3<3"},
-        { 0,  0, NULL, "3>3"},
-        { 1,  1, NULL, "9<=9"},
-        { 1,  1, NULL, "9>=9"},
-        { 1,  1, NULL, "2*4==8"},
-        { 1,  1, NULL, "16==0x10"},
-        { 1,  1, NULL, "15<0x10"},
-        { 1,  1, NULL, "17>0x10"},
-        { 0,  0, NULL, "2*4!=8"},
-        { 1,  1, NULL, "4+2<3+4"},
-        { 0,  0, NULL, "4*2<3+4"},
-        { 1,  8, NULL, "4*(2<3)+4"}, // boolean; 4*(1)+4
+        { 1,  1,   NULL, "(1+2)*3==9"},
+        { 1,  1,   NULL, "(1+2)*3!=8"},
+        { 0,  0,   NULL, "(1+2)*3!=9"},
+        { 0,  0,   NULL, "(1+2)*3==8"},
 
-        { 1,  1, NULL, "(1<2) == (3>2)"},
-        { 1,  1, NULL, "1<2 == 3>2"},
+        { 0,  0,   NULL, "1>2"},
+        { 1,  1,   NULL, "1<2"},
+        { 0,  0,   NULL, "3<3"},
+        { 0,  0,   NULL, "3>3"},
+        { 1,  1,   NULL, "9<=9"},
+        { 1,  1,   NULL, "9>=9"},
+        { 1,  1,   NULL, "2*4==8"},
+        { 1,  1,   NULL, "16==0x10"},
+        { 1,  1,   NULL, "15<0x10"},
+        { 1,  1,   NULL, "17>0x10"},
+        { 0,  0,   NULL, "2*4!=8"},
+        { 1,  1,   NULL, "4+2<3+4"},
+        { 0,  0,   NULL, "4*2<3+4"},
+        { 1,  8,   NULL, "4*(2<3)+4"}, // boolean; 4*(1)+4
 
-        { 1,  1, NULL, "2 && 1"},
-        { 0,  0, NULL, "2 && 0"},
-        { 0,  0, NULL, "0 && 2"},
-        { 1,  1, NULL, "2 || 1"},
-        { 1,  1, NULL, "2 || 0"},
-        { 1,  1, NULL, "0 || 2"},
-        { 1,  1, NULL, "1 || 2 && 3"},
-        { 1,  1, NULL, "2 && 3 || 1"},
-        { 1,  1, NULL, "0 && 3 || 2"},
-        { 0,  0, NULL, "0 && 3 || 0"},
-        { 0,  0, NULL, " 5 - 5 && 1"},
-        { 0,  0, NULL, "+5 - 5 && 1"},
+        { 1,  1,   NULL, "(1<2) == (3>2)"},
+        { 1,  1,   NULL, "1<2 == 3>2"},
 
-        { 1,  1, NULL, "3 & 1"},
-        { 1,  2, NULL, "3 & 2"},
-        { 1,  3, NULL, "1 | 2"},
-        { 1,  3, NULL, "1 | 3"},
-        { 1,  7, NULL, "1 | 6"},
-        { 1,  2, NULL, "1 ^ 3"},
+        { 0,  NAN, NULL, "null <= 0" },
+        { 0,  NAN, NULL, "null >= 0" },
+        { 0,  NAN, NULL, "null < 0" },
+        { 0,  NAN, NULL, "null > 0" },
+        { 0,  NAN, NULL, "null == null" },
+        { 0,  NAN, NULL, "null != null" },
+        { 0,  NAN, NULL, "null < 10" },
+        { 0,  NAN, NULL, "10 > null" },
 
-        { 1,  1, NULL, "(1^0)&(4^3)"},
-        { 1,  2, NULL, "1 ^(0&4)^ 3"},
-        { 1,  2, NULL, "1 ^ 0&4 ^ 3"},  // precedence, & before ^
+        { 1,  1,   NULL, "2 && 1"},
+        { 0,  0,   NULL, "2 && 0"},
+        { 0,  0,   NULL, "0 && 2"},
+        { 1,  1,   NULL, "2 || 1"},
+        { 1,  1,   NULL, "2 || 0"},
+        { 1,  1,   NULL, "0 || 2"},
+        { 1,  1,   NULL, "1 || 2 && 3"},
+        { 1,  1,   NULL, "2 && 3 || 1"},
+        { 1,  1,   NULL, "0 && 3 || 2"},
+        { 0,  0,   NULL, "0 && 3 || 0"},
+        { 0,  0,   NULL, " 5 - 5 && 1"},
+        { 0,  0,   NULL, "+5 - 5 && 1"},
+        { 0,  0,   NULL, "null && 1"}, // null && x == null
+        { 0,  0,   NULL, "1 && null"},
+        { 1,  1,   NULL, "!null && 1"},
+        { 1,  1,   NULL, "1 && !null"},
+        { 1,  1,   NULL, "1 && null-but-true"},
+        { 0,  0,   NULL, "null || 0"}, // null || 0 == null
+        { 0,  0,   NULL, "0 || null"},
+        { 1,  1,   NULL, "!null || 0"},
+        { 1,  1,   NULL, "0 || !null"},
+        { 1,  1,   NULL, "0 || null-but-true"},
+        { 1,  1,   NULL, "null || 1"}, // null || 1 == 1
+        { 1,  1,   NULL, "1 || null"},
 
-        { 1,  6, NULL, "(1|0)^(4|3)"},
-        { 1,  7, NULL, "1 |(0^4)| 3"},
-        { 1,  7, NULL, "1 | 0^4 | 3"},  // precedence, ^ before |
+        { 1,  1,   NULL, "3 & 1"},
+        { 1,  2,   NULL, "3 & 2"},
+        { 1,  3,   NULL, "1 | 2"},
+        { 1,  3,   NULL, "1 | 3"},
+        { 1,  7,   NULL, "1 | 6"},
+        { 1,  2,   NULL, "1 ^ 3"},
+        { 0,  NAN, NULL, "1 | null"},
+        { 0,  NAN, NULL, "null | 1"},
+        { 0,  NAN, NULL, "1 & null"},
+        { 0,  NAN, NULL, "null & 1"},
+        { 0,  NAN, NULL, "0 ^ null"},
+        { 0,  NAN, NULL, "null ^ 0"},
+        { 0,  NAN, NULL, "1 ^ null"},
+        { 0,  NAN, NULL, "null ^ 1"},
 
-        { 1,  1, NULL, "4 & 2 || 1"},
-        { 1,  1, NULL, "(4 & 2) || 1"},
-        { 0,  0, NULL, "4 & (2 || 1)"},
-        { 1,  1, NULL, "1 || 4 & 2"},
-        { 1,  1, NULL, "1 || (4 & 2)"},
-        { 0,  0, NULL, "(1 || 4) & 2"},
+        { 1,  1,   NULL, "(1^0)&(4^3)"},
+        { 1,  2,   NULL, "1 ^(0&4)^ 3"},
+        { 1,  2,   NULL, "1 ^ 0&4 ^ 3"},  // precedence, & before ^
 
-        { 1,  1, NULL, " (2*3)&7  > 4"},
-        { 0,  0, NULL, " (2*3)&(7 > 4)"}, // C precedence equiv
-        { 1,  1, NULL, "((2*3)&7) > 4"},  // Python precedence equiv
-        { 1,  1, NULL, "((2*3)&7) > 4 && 2*2 <= 4"},
+        { 1,  6,   NULL, "(1|0)^(4|3)"},
+        { 1,  7,   NULL, "1 |(0^4)| 3"},
+        { 1,  7,   NULL, "1 | 0^4 | 3"},  // precedence, ^ before |
 
-        { 1,  1, "plugh", "magic"},
-        { 1,  1, "",  "empty"},
-        { 1,  1, NULL, "magic == \"plugh\""},
-        { 1,  1, NULL, "magic != \"xyzzy\""},
+        { 1,  1,   NULL, "4 & 2 || 1"},
+        { 1,  1,   NULL, "(4 & 2) || 1"},
+        { 0,  0,   NULL, "4 & (2 || 1)"},
+        { 1,  1,   NULL, "1 || 4 & 2"},
+        { 1,  1,   NULL, "1 || (4 & 2)"},
+        { 0,  0,   NULL, "(1 || 4) & 2"},
 
-        { 1,  1, NULL, "\"abc\" < \"def\""},
-        { 1,  1, NULL, "\"abc\" <= \"abc\""},
-        { 0,  0, NULL, "\"abc\" < \"ab\""},
-        { 0,  0, NULL, "\"abc\" <= \"ab\""},
+        { 1,  1,   NULL, " (2*3)&7  > 4"},
+        { 0,  0,   NULL, " (2*3)&(7 > 4)"}, // C precedence equiv
+        { 1,  1,   NULL, "((2*3)&7) > 4"},  // Python precedence equiv
+        { 1,  1,   NULL, "((2*3)&7) > 4 && 2*2 <= 4"},
 
-        { 0,  0, NULL, "\"abc\" > \"def\""},
-        { 1,  1, NULL, "\"abc\" >= \"abc\""},
-        { 1,  1, NULL, "\"abc\" > \"ab\""},
-        { 1,  1, NULL, "\"abc\" >= \"ab\""},
+        { 1,  1,   "plugh", "magic"},
+        { 1,  1,   "",   "empty"},
+        { 1,  1,   NULL, "magic == \"plugh\""},
+        { 1,  1,   NULL, "magic != \"xyzzy\""},
 
-        { 1,  1, NULL, "\"abbc\" =~ \"^a+b+c+$\""},
-        { 0,  0, NULL, "\"aBBc\" =~ \"^a+b+c+$\""},
-        { 1,  1, NULL, "\"aBBc\" !~ \"^a+b+c+$\""},
-        { 1,  1, NULL, "\"xyzzy plugh abracadabra\" =~ magic"},
+        { 1,  1,   NULL, "\"abc\" < \"def\""},
+        { 1,  1,   NULL, "\"abc\" <= \"abc\""},
+        { 0,  0,   NULL, "\"abc\" < \"ab\""},
+        { 0,  0,   NULL, "\"abc\" <= \"ab\""},
 
-        { 1,  1, "",   "empty-but-true"   },
-        { 0,  0, NULL, "!empty-but-true"  },
-        { 1,  1, NULL, "!!empty-but-true" },
-        { 1,  1, NULL, "1 && empty-but-true && 1" },
-        { 0,  0, NULL, "1 && empty-but-true && 0" },
+        { 0,  0,   NULL, "\"abc\" > \"def\""},
+        { 1,  1,   NULL, "\"abc\" >= \"abc\""},
+        { 1,  1,   NULL, "\"abc\" > \"ab\""},
+        { 1,  1,   NULL, "\"abc\" >= \"ab\""},
 
-        { 0,  0, NULL, "null"    },
-        { 1,  1, NULL, "!null"   },
-        { 0,  0, NULL, "!!null", },
+        { 0,  NAN, NULL, "null == \"x\"" },
+        { 0,  NAN, NULL, "null != \"x\"" },
+        { 0,  NAN, NULL, "null < \"x\"" },
+        { 0,  NAN, NULL, "null > \"x\"" },
 
-        { 1,  1, NULL, "null-but-true"   },
-        { 0,  0, NULL, "!null-but-true"  },
-        { 1,  1, NULL, "!!null-but-true" },
+        { 1,  1,   NULL, "\"abbc\" =~ \"^a+b+c+$\""},
+        { 0,  0,   NULL, "\"aBBc\" =~ \"^a+b+c+$\""},
+        { 1,  1,   NULL, "\"aBBc\" !~ \"^a+b+c+$\""},
+        { 1,  1,   NULL, "\"xyzzy plugh abracadabra\" =~ magic"},
 
-        { 0,  0, NULL, "null || 0" },
-        { 1,  1, NULL, "null-but-true && 1" },
+        { 1,  1,   "",   "empty-but-true"   },
+        { 0,  0,   NULL, "!empty-but-true"  },
+        { 1,  1,   NULL, "!!empty-but-true" },
+        { 1,  1,   NULL, "1 && empty-but-true && 1" },
+        { 0,  0,   NULL, "1 && empty-but-true && 0" },
+
+        { 0,  NAN, NULL, "null"    },
+        { 1,  1,   NULL, "!null"   },
+        { 0,  0,   NULL, "!!null", },
+        { 0,  0,   NULL, "!\"foo\""   },
+        { 1,  1,   NULL, "!!\"foo\""   },
+
+        { 1,  NAN, NULL, "null-but-true"   },
+        { 0,  0,   NULL, "!null-but-true"  },
+        { 1,  1,   NULL, "!!null-but-true" },
+        { 1,  0,   NULL, "zero-but-true"   },
+        { 0,  0,   NULL, "!zero-but-true"  },
+        { 1,  1,   NULL, "!!zero-but-true" },
+
+        { 1,  log(2), NULL, "log(2)"},
+        { 1,  exp(9), NULL, "exp(9)"},
+        { 1,  9,      NULL, "log(exp(9))"},
+        { 1,  8,      NULL, "pow(2,3)"},
+        { 1,  3,      NULL, "sqrt(9)"},
+        { 0,  NAN,    NULL, "sqrt(-9)"},
+
+        { 1,  2,      NULL, "default(2,3)"},
+        { 1,  3,      NULL, "default(null,3)"},
+        { 0,  0,      NULL, "default(null,0)"},
+        { 1,  NAN,    NULL, "default(null-but-true,0)"},
+        { 1,  NAN,    NULL, "default(null-but-true,null)"},
+        { 1,  NAN,    NULL, "default(null,null-but-true)"},
+
+        { 1,  1,      NULL, "exists(\"foo\")"},
+        { 1,  1,      NULL, "exists(12)"},
+        { 1,  1,      NULL, "exists(\"\")"},
+        { 1,  1,      NULL, "exists(0)"},
+        { 0,  0,      NULL, "exists(null)"},
+        { 1,  1,      NULL, "exists(null-but-true)"},
     };
 
     int i, res = 0;
@@ -234,15 +311,24 @@ int test(void) {
             continue;
         }
 
-        if (r.is_str && (strcmpnull(r.s.s, tests[i].sval) != 0
-                         || r.d != tests[i].dval
+        if (!hts_expr_val_exists(&r)) {
+            if (r.is_true != tests[i].truth_val ||
+                !cmpfloat(r.d, tests[i].dval)) {
+                fprintf(stderr,
+                        "Failed test: \"%s\" == \"%f\", got %s, \"%s\", %f\n",
+                        tests[i].str, tests[i].dval,
+                        r.is_true ? "true" : "false", r.s.s, r.d);
+                res = 1;
+            }
+        } else if (r.is_str && (strcmpnull(r.s.s, tests[i].sval) != 0
+                         || !cmpfloat(r.d, tests[i].dval)
                          || r.is_true != tests[i].truth_val)) {
             fprintf(stderr,
                     "Failed test: \"%s\" == \"%s\", got %s, \"%s\", %f\n",
                     tests[i].str, tests[i].sval,
                     r.is_true ? "true" : "false", r.s.s, r.d);
             res = 1;
-        } else if (!r.is_str && (r.d != tests[i].dval
+        } else if (!r.is_str && (!cmpfloat(r.d, tests[i].dval)
                                  || r.is_true != tests[i].truth_val)) {
             fprintf(stderr, "Failed test: %s == %f, got %s, %f\n",
                     tests[i].str, tests[i].dval,
@@ -263,6 +349,8 @@ int main(int argc, char **argv) {
         hts_filter_t *filt = hts_filter_init(argv[1]);
         if (hts_filter_eval2(filt, NULL, lookup, &v))
             return 1;
+
+        printf("%s\t", v.is_true ? "true":"false");
 
         if (v.is_str)
             puts(v.s.s);
