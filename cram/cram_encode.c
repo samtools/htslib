@@ -88,6 +88,11 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
     if (!cb || !map)
         return NULL;
 
+    // Also consider copying embed_ref to cram_container to avoid lock.
+    pthread_mutex_lock(&fd->ref_lock);
+    int embed_ref = fd->embed_ref;
+    pthread_mutex_unlock(&fd->ref_lock);
+
     /*
      * This is a concatenation of several blocks of data:
      * header + landmarks, preservation map, read encoding map, and the tag
@@ -160,7 +165,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
                 kh_val(h->preservation_map, k).i = h->qs_seq_orient;
             }
 
-            if (fd->no_ref || fd->embed_ref>0) {
+            if (fd->no_ref || embed_ref>0) {
                 // Reference Required == No
                 k = kh_put(map, h->preservation_map, "RR", &r);
                 if (-1 == r) return NULL;
@@ -1405,11 +1410,11 @@ static int add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
 // Returns the next cigar op code: one of the BAM_C* codes,
 // or -1 if no more are present.
 static inline
-int next_cigar_op(uint32_t *cigar, int *ncigar, int *skip, int *spos,
+int next_cigar_op(uint32_t *cigar, uint32_t ncigar, int *skip, int *spos,
                   uint32_t *cig_ind, uint32_t *cig_op, uint32_t *cig_len) {
     for(;;) {
         while (*cig_len == 0) {
-            if (*cig_ind < *ncigar) {
+            if (*cig_ind < ncigar) {
                 *cig_op  = cigar[*cig_ind] & BAM_CIGAR_MASK;
                 *cig_len = cigar[*cig_ind] >> BAM_CIGAR_SHIFT;
                 (*cig_ind)++;
@@ -1470,13 +1475,14 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                               const uint8_t *MD) {
     uint8_t *seq = bam_get_seq(b);
     uint32_t *cigar = bam_get_cigar(b);
-    int ncigar = b->core.n_cigar;
+    uint32_t ncigar = b->core.n_cigar;
     uint32_t cig_op = 0, cig_len = 0, cig_ind = 0;
 
     int iseq = 0, next_op;
     hts_pos_t iref = b->core.pos - ref_start;
 
-    int cig_skip[16] = {0,1,0,1,1,1,1,0,0,1,1,1,1,1,1,1};
+    // Skip INS, REF_SKIP, *CLIP, PAD. and BACK.
+    static int cig_skip[16] = {0,1,0,1,1,1,1,0,0,1,1,1,1,1,1,1};
     while (iseq < b->core.l_qseq && *MD) {
         if (isdigit(*MD)) {
             // match
@@ -1488,7 +1494,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                 return -1;
             while (iseq < b->core.l_qseq && len) {
                 // rewrite to have internal loops?
-                if ((next_op = next_cigar_op(cigar, &ncigar, cig_skip,
+                if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
                                              &iseq, &cig_ind, &cig_op,
                                              &cig_len)) < 0)
                     return -1;
@@ -1518,7 +1524,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                 if (extend_ref(ref, hist, iref+ref_start, ref_start,
                                ref_end) < 0)
                     return -1;
-                if ((next_op = next_cigar_op(cigar, &ncigar, cig_skip,
+                if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
                                              &iseq, &cig_ind, &cig_op,
                                              &cig_len)) < 0)
                     return -1;
@@ -1534,7 +1540,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
             // substitution
             if (extend_ref(ref, hist, iref+ref_start, ref_start, ref_end) < 0)
                 return -1;
-            if ((next_op = next_cigar_op(cigar, &ncigar, cig_skip,
+            if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
                                          &iseq, &cig_ind, &cig_op,
                                          &cig_len)) < 0)
                 return -1;
@@ -1558,8 +1564,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
 // We then subsequently convert the 5-way frequencies to a consensus
 // ref in a second pass.
 //
-// Returns >0 on success,
-//          0 on no-MD found,
+// Returns >=0 on success,
 //         -1 on failure (eg inconsistent data)
 static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
                            hts_pos_t ref_start, hts_pos_t *ref_end) {
@@ -1576,9 +1581,9 @@ static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
     // Otherwise we just use SEQ+CIGAR and build a consensus which we later
     // turn into a fake reference
     uint32_t *cigar = bam_get_cigar(b);
-    int ncigar = b->core.n_cigar;
-    int i, j;
-    int iseq = 0, iref = b->core.pos - ref_start;
+    uint32_t ncigar = b->core.n_cigar;
+    uint32_t i, j;
+    hts_pos_t iseq = 0, iref = b->core.pos - ref_start;
     uint8_t *seq = bam_get_seq(b);
     for (i = 0; i < ncigar; i++) {
         switch (bam_cigar_op(cigar[i])) {
@@ -1591,7 +1596,7 @@ static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
         case BAM_CEQUAL:
         case BAM_CDIFF: {
             int len = bam_cigar_oplen(cigar[i]);
-            // Maps an nt16 (A=1 C=2 G=4 T=8 bits) to 0123 plus N=5
+            // Maps an nt16 (A=1 C=2 G=4 T=8 bits) to 0123 plus N=4
             static uint8_t L16[16] = {4,0,1,4, 2,4,4,4, 3,4,4,4, 4,4,4,4};
 
             if (extend_ref(ref, hist, iref+ref_start + len,
@@ -1641,10 +1646,11 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0;
 
     // initial allocation
-    extend_ref(&ref, &hist,
-               c->bams[r1 + s->hdr->num_records-1]->core.pos +
-               c->bams[r1 + s->hdr->num_records-1]->core.l_qseq,
-               ref_start, &ref_end);
+    if (extend_ref(&ref, &hist,
+                   c->bams[r1 + s->hdr->num_records-1]->core.pos +
+                   c->bams[r1 + s->hdr->num_records-1]->core.l_qseq,
+                   ref_start, &ref_end) < 0)
+        return -1;
 
     // Add each bam file to the reference/consensus arrays
     int r2;
@@ -1652,11 +1658,11 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     for (r2 = 0; r1 < c->curr_c_rec && r2 < s->hdr->num_records; r1++, r2++) {
         if (c->bams[r1]->core.pos < last_pos) {
             hts_log_error("Cannot build reference with unsorted data");
-            return -1;
+            goto err;
         }
         last_pos = c->bams[r1]->core.pos;
         if (cram_add_to_ref(c->bams[r1], &ref, &hist, ref_start, &ref_end) < 0)
-            return -1;
+            goto err;
     }
 
     // Compute the consensus
@@ -1680,6 +1686,11 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     c->ref_end   = ref_end+1;
 
     return 0;
+
+ err:
+    free(ref);
+    free(hist);
+    return -1;
 }
 
 /*
@@ -1692,7 +1703,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     cram_block_compression_hdr *h = c->comp_hdr;
     cram_block *c_hdr;
     int multi_ref = 0;
-    int r1, r2, sn, nref;
+    int r1, r2, sn, nref, embed_ref;
     spare_bams *spares;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1)
@@ -1704,6 +1715,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* Cache references up-front if we have unsorted access patterns */
     pthread_mutex_lock(&fd->ref_lock);
     nref = fd->refs->nref;
+    embed_ref = fd->embed_ref;
     pthread_mutex_unlock(&fd->ref_lock);
 
     if (!fd->no_ref && c->refs_used) {
@@ -1720,21 +1732,21 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             goto_err;
         bam_seq_t *b = c->bams[0];
 
-        if (fd->embed_ref <= 1) {
+        if (embed_ref <= 1) {
             char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
             if (!ref && bam_ref(b) >= 0) {
-                if (c->multi_seq || fd->embed_ref == 0 || !c->pos_sorted) {
+                if (c->multi_seq || embed_ref == 0 || !c->pos_sorted) {
                     hts_log_error("Failed to load reference #%d", bam_ref(b));
                     return -1;
                 }
                 hts_log_warning("Failed to load reference #%d", bam_ref(b));
                 hts_log_warning("Enabling embed_ref=2 mode to auto-generate"
                                 " reference");
-                if (fd->embed_ref <= 0)
+                if (embed_ref <= 0)
                     hts_log_warning("NOTE: the CRAM file will be bigger than"
                                     " using an external reference");
                 pthread_mutex_lock(&fd->ref_lock);
-                fd->embed_ref=2;
+                embed_ref = fd->embed_ref = 2;
                 pthread_mutex_unlock(&fd->ref_lock);
                 goto auto_ref;
             }
@@ -1782,7 +1794,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         kstring_t MD = {0};
 
         // Embed consensus / MD-generated ref
-        if (fd->embed_ref == 2) {
+        if (embed_ref == 2) {
             if (cram_generate_reference(c, s, r1) < 0) {
                 hts_log_error("Failed to build reference");
                 return -1;
@@ -3093,8 +3105,12 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     else
         MD->l = 0;
 
+    pthread_mutex_lock(&fd->ref_lock);
+    int embed_ref = fd->embed_ref;
+    pthread_mutex_unlock(&fd->ref_lock);
     int cf_tag = 0;
-    if (fd->embed_ref == 2) {
+
+    if (embed_ref == 2) {
         cf_tag  = MD ? 0 : 1;                   // No MD
         cf_tag |= bam_aux_get(b, "NM") ? 0 : 2; // No NM
     }
@@ -3792,7 +3808,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
         // Have we seen this reference before?
         if (bam_ref(b) >= 0 && curr_ref >= 0 && bam_ref(b) != curr_ref &&
-            fd->embed_ref<=0 && !fd->unsorted && multi_seq) {
+            embed_ref<=0 && !fd->unsorted && multi_seq) {
 
             if (!c->refs_used) {
                 pthread_mutex_lock(&fd->ref_lock);
