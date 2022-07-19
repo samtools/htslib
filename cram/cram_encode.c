@@ -60,7 +60,8 @@ KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
-                            bam_seq_t *b, int rnum, kstring_t *MD);
+                            bam_seq_t *b, int rnum, kstring_t *MD,
+                            int embed_ref);
 
 /*
  * Returns index of val into key.
@@ -80,18 +81,14 @@ static int sub_idx(char *key, char val) {
  *         NULL on failure
  */
 cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
-                                           cram_block_compression_hdr *h) {
+                                           cram_block_compression_hdr *h,
+                                           int embed_ref) {
     cram_block *cb  = cram_new_block(COMPRESSION_HEADER, 0);
     cram_block *map = cram_new_block(COMPRESSION_HEADER, 0);
     int i, mc, r = 0;
 
     if (!cb || !map)
         return NULL;
-
-    // Also consider copying embed_ref to cram_container to avoid lock.
-    pthread_mutex_lock(&fd->ref_lock);
-    int embed_ref = fd->embed_ref;
-    pthread_mutex_unlock(&fd->ref_lock);
 
     /*
      * This is a concatenation of several blocks of data:
@@ -1082,13 +1079,11 @@ static int cram_allocate_block(cram_codec *codec, cram_slice *s, int ds_id) {
  *        -1 on failure
  */
 static int cram_encode_slice(cram_fd *fd, cram_container *c,
-                             cram_block_compression_hdr *h, cram_slice *s) {
+                             cram_block_compression_hdr *h, cram_slice *s,
+                             int embed_ref) {
     int rec, r = 0;
     int64_t last_pos;
-    int embed_ref;
     enum cram_DS_ID id;
-
-    embed_ref = fd->embed_ref>0 && s->hdr->ref_seq_id != -1 ? 1 : 0;
 
     /*
      * Slice external blocks:
@@ -1828,7 +1823,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 }
             }
 
-            if (process_one_read(fd, c, s, cr, b, r2, &MD) != 0) {
+            if (process_one_read(fd, c, s, cr, b, r2, &MD, embed_ref) != 0) {
                 free(MD.s);
                 return -1;
             }
@@ -2216,7 +2211,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     for (i = 0; i < c->curr_slice; i++) {
         hts_log_info("Encode slice %d", i);
 
-        if (cram_encode_slice(fd, c, h, c->slices[i]) != 0)
+        int local_embed_ref =
+            embed_ref>0 && c->slices[i]->hdr->ref_seq_id != -1 ? 1 : 0;
+        if (cram_encode_slice(fd, c, h, c->slices[i], local_embed_ref) != 0)
             return -1;
     }
 
@@ -2231,7 +2228,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->AP_delta      = c->pos_sorted;
         memcpy(h->substitution_matrix, CRAM_SUBST_MATRIX, 20);
 
-        if (!(c_hdr = cram_encode_compression_header(fd, c, h)))
+        if (!(c_hdr = cram_encode_compression_header(fd, c, h, embed_ref)))
             return -1;
     }
 
@@ -3082,7 +3079,8 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
  */
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
-                            bam_seq_t *b, int rnum, kstring_t *MD) {
+                            bam_seq_t *b, int rnum, kstring_t *MD,
+                            int embed_ref) {
     int i, fake_qual = -1, NM = 0;
     char *cp, *rg;
     char *ref, *seq, *qual;
@@ -3105,9 +3103,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     else
         MD->l = 0;
 
-    pthread_mutex_lock(&fd->ref_lock);
-    int embed_ref = fd->embed_ref;
-    pthread_mutex_unlock(&fd->ref_lock);
     int cf_tag = 0;
 
     if (embed_ref == 2) {

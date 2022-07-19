@@ -5410,7 +5410,7 @@ int cram_write_eof_block(cram_fd *fd) {
         //   block CRC
         cram_block_compression_hdr ch;
         memset(&ch, 0, sizeof(ch));
-        c.comp_hdr_block = cram_encode_compression_header(fd, &c, &ch);
+        c.comp_hdr_block = cram_encode_compression_header(fd, &c, &ch, 0);
 
         c.length = c.comp_hdr_block->byte            // Landmark[0]
             + 5                                      // block struct
