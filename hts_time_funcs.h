@@ -44,7 +44,10 @@ DEALINGS IN THE SOFTWARE.  */
   Non-derived code is copyright as above.
 */
 
-#include <config.h>
+#include <stdint.h>
+#include <limits.h>
+#include <errno.h>
+#include <time.h>
 
 static inline int hts_time_normalise(int *tens, int *units, int base) {
     if (*units < 0 || *units >= base) {
