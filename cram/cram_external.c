@@ -331,7 +331,7 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
         return -1;
     if (cram_block_compression_hdr_decoder2encoder(in, ch) != 0)
         return -1;
-    n_blk = cram_encode_compression_header(in, c, ch);
+    n_blk = cram_encode_compression_header(in, c, ch, in->embed_ref);
     cram_free_compression_header(ch);
 
     /*

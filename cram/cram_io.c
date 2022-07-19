@@ -3561,7 +3561,7 @@ int cram_load_reference(cram_fd *fd, char *fn) {
 
     if (fn) {
         fd->refs = refs_load_fai(fd->refs, fn,
-                                 !(fd->embed_ref && fd->mode == 'r'));
+                                 !(fd->embed_ref>0 && fd->mode == 'r'));
         fn = fd->refs ? fd->refs->fn : NULL;
         if (!fn)
             ret = -1;
@@ -3712,10 +3712,8 @@ void cram_free_container(cram_container *c) {
         kh_destroy(m_tagmap, c->tags_used);
     }
 
-    if (c->ref_free) {
+    if (c->ref_free)
         free(c->ref);
-        free(c->ref_set);
-    }
 
     free(c);
 }
@@ -4850,7 +4848,21 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 if (!(md5 = hts_md5_init()))
                     return -1;
                 ref = cram_get_ref(fd, i, 1, rlen);
-                if (NULL == ref) return -1;
+                if (NULL == ref) {
+                    if (fd->embed_ref == -1) {
+                        // auto embed-ref
+                        hts_log_warning("No M5 tags present and could not "
+                                        "find reference");
+                        hts_log_warning("Enabling embed_ref=2 option");
+                        hts_log_warning("NOTE: the CRAM file will be bigger "
+                                        "than using an external reference");
+                        pthread_mutex_lock(&fd->ref_lock);
+                        fd->embed_ref = 2;
+                        pthread_mutex_lock(&fd->ref_lock);
+                        break;
+                    }
+                    return -1;
+                }
                 rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
                 hts_md5_update(md5, ref, rlen);
                 hts_md5_final(buf, md5);
@@ -5251,7 +5263,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->seqs_per_slice = SEQS_PER_SLICE;
     fd->bases_per_slice = BASES_PER_SLICE;
     fd->slices_per_container = SLICE_PER_CNT;
-    fd->embed_ref = 0;
+    fd->embed_ref = -1; // automatic selection
     fd->no_ref = 0;
     fd->ap_delta = 0;
     fd->ignore_md5 = 0;
@@ -5398,7 +5410,7 @@ int cram_write_eof_block(cram_fd *fd) {
         //   block CRC
         cram_block_compression_hdr ch;
         memset(&ch, 0, sizeof(ch));
-        c.comp_hdr_block = cram_encode_compression_header(fd, &c, &ch);
+        c.comp_hdr_block = cram_encode_compression_header(fd, &c, &ch, 0);
 
         c.length = c.comp_hdr_block->byte            // Landmark[0]
             + 5                                      // block struct
