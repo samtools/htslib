@@ -1413,6 +1413,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     if (ks_resize(&v->indiv, indiv_len ? indiv_len : 1) != 0) return -2;
     v->rid  = le_to_i32(x + 8);
     v->pos  = le_to_u32(x + 12);
+    if ( v->pos==UINT32_MAX ) v->pos = -1;  // this is for telomere coordinate, e.g. MT:0
     v->rlen = le_to_i32(x + 16);
     v->qual = le_to_float(x + 20);
     v->n_info = le_to_u16(x + 24);
