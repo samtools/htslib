@@ -2534,15 +2534,17 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
  * Encodes auxiliary data. Largely duplicated from above, but done so to
  * keep it simple and avoid a myriad of version ifs.
  *
- * Returns the read-group parsed out of the BAM aux fields on success
+ * Returns the RG header line pointed to by the BAM aux fields on success,
  *         NULL on failure or no rg present, also sets "*err" to non-zero
  */
-static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
-                             cram_slice *s, cram_record *cr,
-                             int verbatim_NM, int verbatim_MD,
-                             int NM, kstring_t *MD, int cf_tag,
-                             int *err) {
-    char *aux, *orig, *rg = NULL;
+static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
+                                      cram_container *c,
+                                      cram_slice *s, cram_record *cr,
+                                      int verbatim_NM, int verbatim_MD,
+                                      int NM, kstring_t *MD, int cf_tag,
+                                      int *err) {
+    char *aux, *orig;
+    sam_hrec_rg_t *brg = NULL;
     int aux_size = bam_get_l_aux(b);
     cram_block *td_b = c->comp_hdr->TD_blk;
     int TD_blk_size = BLOCK_SIZE(td_b), new;
@@ -2577,11 +2579,17 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
         // RG:Z
         if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
-            rg = &aux[3];
-            while (*aux++);
-            if (CRAM_MAJOR_VERS(fd->version) >= 4)
-                BLOCK_APPEND(td_b, "RG*", 3);
-            continue;
+            char *rg = &aux[3];
+            brg = sam_hrecs_find_rg(fd->header->hrecs, rg);
+            if (brg) {
+                while (*aux++);
+                if (CRAM_MAJOR_VERS(fd->version) >= 4)
+                    BLOCK_APPEND(td_b, "RG*", 3);
+                continue;
+            } else {
+                // RG:Z tag will be stored verbatim
+                hts_log_warning("Missing @RG header for RG \"%s\"", rg);
+            }
         }
 
         // MD:Z
@@ -2938,8 +2946,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
     if (err) *err = 0;
 
-    // rg from within bam_aux, not rg from our aux copy.
-    return rg ? (char *)bam_aux(b) + (rg - orig) : NULL;
+    return brg;
 
  err:
  block_err:
@@ -3082,7 +3089,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                             bam_seq_t *b, int rnum, kstring_t *MD,
                             int embed_ref) {
     int i, fake_qual = -1, NM = 0;
-    char *cp, *rg;
+    char *cp;
     char *ref, *seq, *qual;
 
     // Any places with N in seq and/or reference can lead to ambiguous
@@ -3426,15 +3433,15 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     cr->ntags      = 0; //cram_stats_add(c->stats[DS_TC], cr->ntags);
     int err = 0;
-    rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD,
-                         cf_tag, &err);
+    sam_hrec_rg_t *brg =
+        cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD,
+                        cf_tag, &err);
     if (err)
         goto block_err;
 
     /* Read group, identified earlier */
-    if (rg) {
-        sam_hrec_rg_t *brg = sam_hrecs_find_rg(fd->header->hrecs, rg);
-        cr->rg = brg ? brg->id : -1;
+    if (brg) {
+        cr->rg = brg->id;
     } else if (CRAM_MAJOR_VERS(fd->version) == 1) {
         sam_hrec_rg_t *brg = sam_hrecs_find_rg(fd->header->hrecs, "UNKNOWN");
         if (!brg) goto block_err;
