@@ -4845,8 +4845,6 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                     return -1;
                 }
                 rlen = fd->refs->ref_id[i]->length;
-                if (!(md5 = hts_md5_init()))
-                    return -1;
                 ref = cram_get_ref(fd, i, 1, rlen);
                 if (NULL == ref) {
                     if (fd->embed_ref == -1) {
@@ -4864,6 +4862,8 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                     return -1;
                 }
                 rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
+                if (!(md5 = hts_md5_init()))
+                    return -1;
                 hts_md5_update(md5, ref, rlen);
                 hts_md5_final(buf, md5);
                 hts_md5_destroy(md5);
