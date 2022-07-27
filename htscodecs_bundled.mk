@@ -1,6 +1,6 @@
 # Makefile fragment to add settings needed when bundling htscodecs functions
 #
-#    Copyright (C) 2021 Genome Research Ltd.
+#    Copyright (C) 2021-2022 Genome Research Ltd.
 #
 #    Author: Rob Davies <rmd@sanger.ac.uk>
 #
