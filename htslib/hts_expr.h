@@ -1,6 +1,6 @@
 /*  expr.c -- filter expression parsing and processing.
 
-    Copyright (C) 2020 Genome Research Ltd.
+    Copyright (C) 2020, 2022 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
