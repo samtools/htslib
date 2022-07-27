@@ -637,6 +637,14 @@ sub test_view
             testv $opts, "./compare_sam.pl -Baux $md $sam $jsam";
         }
 
+        # embed_ref=2 mode
+        my $ersam = "ce#1000.sam";
+        my $ercram = "ce#1000_er.tmp.cram";
+        my $ersam2 = "${ercram}.sam";
+        testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
+        testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+        testv $opts, "./compare_sam.pl $ersam $ersam2";
+
         if ($test_view_failures == 0)
         {
             passed($opts, "$sam conversions");
