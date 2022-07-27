@@ -4858,7 +4858,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                                         "than using an external reference");
                         pthread_mutex_lock(&fd->ref_lock);
                         fd->embed_ref = 2;
-                        pthread_mutex_lock(&fd->ref_lock);
+                        pthread_mutex_unlock(&fd->ref_lock);
                         break;
                     }
                     return -1;
