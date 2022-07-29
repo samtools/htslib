@@ -1599,7 +1599,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
-        if (((1 << type) & is_valid_type) == 0) {
+        if (((1 << type) & is_valid_type) == 0
+            || (type == BCF_BT_NULL && num > 0)) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s type %d (%s)", bcf_seqname_safe(hdr,rec), rec->pos+1, "INFO", type, get_type_name(type));
             err |= BCF_ERR_TAG_INVALID;
@@ -1623,7 +1624,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_indiv;
-        if (((1 << type) & is_valid_type) == 0) {
+        if (((1 << type) & is_valid_type) == 0
+            || (type == BCF_BT_NULL && num > 0)) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
