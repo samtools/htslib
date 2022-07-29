@@ -326,6 +326,10 @@ libhts.a: $(LIBHTS_OBJS)
 	-$(RANLIB) $@
 
 print-config:
+	@echo HTS_CFLAGS_AVX2 = $(HTS_CFLAGS_AVX2)
+	@echo HTS_CFLAGS_AVX512 = $(HTS_CFLAGS_AVX512)
+	@echo HTS_CFLAGS_SSE4 = $(HTS_CFLAGS_SSE4)
+	@echo HTS_HAVE_NEON = $(HTS_HAVE_NEON)
 	@echo LDFLAGS = $(LDFLAGS)
 	@echo LIBHTS_OBJS = $(LIBHTS_OBJS)
 	@echo LIBS = $(LIBS)
