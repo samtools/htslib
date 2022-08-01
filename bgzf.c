@@ -574,6 +574,8 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
     } else {
         level = level > 0 ? level : 6; // libdeflate doesn't honour -1 as default
         // NB levels go up to 12 here.
+        int lvl_map[] = {0,1,2,3,5,6,7,8,10,12};
+        level = lvl_map[level>9 ?9 :level];
         struct libdeflate_compressor *z = libdeflate_alloc_compressor(level);
         if (!z) return -1;
 
