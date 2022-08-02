@@ -4238,7 +4238,10 @@ static int bcf_set_variant_types(bcf1_t *b)
     bcf_dec_t *d = &b->d;
     if ( d->n_var < b->n_allele )
     {
-        d->var = (bcf_variant_t *) realloc(d->var, sizeof(bcf_variant_t)*b->n_allele);
+        bcf_variant_t *new_var = realloc(d->var, sizeof(bcf_variant_t)*b->n_allele);
+        if (!new_var)
+            return -1;
+        d->var = new_var;
         d->n_var = b->n_allele;
     }
     int i;
@@ -4254,41 +4257,80 @@ static int bcf_set_variant_types(bcf1_t *b)
     return 0;
 }
 
+// bcf_get_variant_type/bcf_get_variant_types should only return the following,
+// to be compatible with callers that are not expecting newer values
+// like VCF_INS, VCF_DEL.  The full set is available from the newer
+// vcf_has_variant_type* interfaces.
+#define ORIG_VAR_TYPES (VCF_SNP|VCF_MNP|VCF_INDEL|VCF_OTHER|VCF_BND|VCF_OVERLAP)
 int bcf_get_variant_types(bcf1_t *rec)
 {
-    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return rec->d.var_type & ~(VCF_INS|VCF_DEL);
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) {
+            hts_log_error("Couldn't get variant types: %s", strerror(errno));
+            exit(1); // Due to legacy API having no way to report failures
+        }
+    }
+    return rec->d.var_type & ORIG_VAR_TYPES;
 }
+
 int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
 {
-    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return rec->d.var[ith_allele].type & ~(VCF_INS|VCF_DEL);
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) {
+            hts_log_error("Couldn't get variant types: %s", strerror(errno));
+            exit(1); // Due to legacy API having no way to report failures
+        }
+    }
+    if (ith_allele < 0 || ith_allele >= rec->n_allele) {
+        hts_log_error("Requested allele outside valid range");
+        exit(1);
+    }
+    return rec->d.var[ith_allele].type & ORIG_VAR_TYPES;
 }
-inline static int has_variant_type(int type, int bitmask, enum bcf_variant_match mode)
+#undef ORIG_VAR_TYPES
+
+int bcf_has_variant_type(bcf1_t *rec, int ith_allele, uint32_t bitmask)
 {
-    if ( mode==overlap ) return type & bitmask;
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) return -1;
+    }
+    if (ith_allele < 0 || ith_allele >= rec->n_allele) return -1;
+    if (bitmask == VCF_REF) {  // VCF_REF is 0, so handled as a special case
+        return rec->d.var[ith_allele].type == VCF_REF;
+    }
+    return bitmask & rec->d.var[ith_allele].type;
+}
+
+int bcf_variant_length(bcf1_t *rec, int ith_allele)
+{
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) return bcf_int32_missing;
+    }
+    if (ith_allele < 0 || ith_allele >= rec->n_allele) return bcf_int32_missing;
+    return rec->d.var[ith_allele].n;
+}
+
+int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask,
+                          enum bcf_variant_match mode)
+{
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) return -1;
+    }
+    uint32_t type = rec->d.var_type;
+    if ( mode==bcf_match_overlap ) return bitmask & type;
 
     // VCF_INDEL is always set with VCF_INS and VCF_DEL by bcf_set_variant_type[s], but the bitmask may
     // ask for say `VCF_INS` or `VCF_INDEL` only
     if ( bitmask&(VCF_INS|VCF_DEL) && !(bitmask&VCF_INDEL) ) type &= ~VCF_INDEL;
     else if ( bitmask&VCF_INDEL && !(bitmask&(VCF_INS|VCF_DEL)) ) type &= ~(VCF_INS|VCF_DEL);
 
-    if ( mode==subset )
+    if ( mode==bcf_match_subset )
     {
         if ( ~bitmask & type ) return 0;
         else return bitmask & type;
     }
+    // mode == bcf_match_exact
     return type==bitmask ? type : 0;
-}
-int bcf_has_variant_type(bcf1_t *rec, int ith_allele, int bitmask, enum bcf_variant_match mode)
-{
-    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return has_variant_type(rec->d.var[ith_allele].type, bitmask, mode);
-}
-int bcf_has_variant_types(bcf1_t *rec, int bitmask, enum bcf_variant_match mode)
-{
-    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return has_variant_type(rec->d.var_type, bitmask, mode);
 }
 
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
