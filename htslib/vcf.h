@@ -753,27 +753,101 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *src_line);
 
+    /// Get variant types in a BCF record
     /**
-     *  bcf_get_variant_type[s]()  - returns one of VCF_REF, VCF_SNP, etc. (DEPRECATED)
-     *  bcf_has_variant_type[s]()  - the preferred way to query the presence of variant types
-     *  @bitmask:   combination of VCF_* variant type above, VCF_INDEL implies VCF_INS|VCF_DEL
-     *  @mode:      `exact` for an exact match, `overlap` for at least one matching variant,
-     *              `subset` for the listed variants only
+     *  @param rec   BCF/VCF record
+     *  @return Types of variant present
+     *
+     *  The return value will be a bitwise-or of VCF_SNP, VCF_MNP,
+     *  VCF_INDEL, VCF_OTHER, VCF_BND or VCF_OVERLAP.  If will return
+     *  VCF_REF (i.e. 0) if none of the other types is present.
+     *  @deprecated Please use bcf_has_variant_types() instead
      */
     HTSLIB_EXPORT
     int bcf_get_variant_types(bcf1_t *rec);
 
+    /// Get variant type in a BCF record, for a given allele
+    /**
+     *  @param  rec        BCF/VCF record
+     *  @param  ith_allele Allele to check
+     *  @return Type of variant present
+     *
+     *  The return value will be one of VCF_REF, VCF_SNP, VCF_MNP,
+     *  VCF_INDEL, VCF_OTHER, VCF_BND or VCF_OVERLAP.
+     *  @deprecated Please use bcf_has_variant_type() instead
+     */
     HTSLIB_EXPORT
     int bcf_get_variant_type(bcf1_t *rec, int ith_allele);
 
-    enum bcf_variant_match { exact, overlap, subset };
+    /// Match mode for bcf_has_variant_types()
+    enum bcf_variant_match {
+        bcf_match_exact,   ///< Types present exactly match tested for
+        bcf_match_overlap, ///< At least one variant type in common
+        bcf_match_subset,  ///< Test set is a subset of types present
+    };
 
+    /// Check for presence of variant types in a BCF record
+    /**
+     *  @param rec      BCF/VCF record
+     *  @param bitmask  Set of variant types to test for
+     *  @param mode     Match mode
+     *  @return >0 if the variant types are present,
+     *           0 if not present,
+     *          -1 on error
+     *
+     *  @p bitmask should be the bitwise-or of the variant types (VCF_SNP,
+     *     VCF_MNP, etc.) to test for.
+     *
+     *  The return value is the bitwise-and of the set of types present
+     *  and @p bitmask.  Callers that want to check for the presence of more
+     *  than one type can avoid function call overhead by passing all the
+     *  types to be checked for in a single call to this function, in
+     *  bcf_match_overlap mode, and then check for them individually in the
+     *  returned value.
+     *
+     *  As VCF_REF is represented by 0 (i.e. the absence of other variants)
+     *  it should be tested for using
+     *    bcf_has_variant_types(rec, VCF_REF, bcf_match_exact)
+     *  which will return 1 if no other variant type is present, otherwise 0.
+     */
     HTSLIB_EXPORT
-    int bcf_has_variant_types(bcf1_t *rec, int bitmask, enum bcf_variant_match mode);
+    int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask, enum bcf_variant_match mode);
 
+    /// Check for presence of variant types in a BCF record, for a given allele
+    /**
+     *  @param rec         BCF/VCF record
+     *  @param ith_allele  Allele to check
+     *  @param bitmask     Set of variant types to test for
+     *  @return >0 if one of the variant types is present,
+     *           0 if not present,
+     *          -1 on error
+     *
+     *  @p bitmask should be the bitwise-or of the variant types (VCF_SNP,
+     *     VCF_MNP, etc.) to test for, or VCF_REF on its own.
+     *
+     *  The return value is the bitwise-and of the set of types present
+     *  and @p bitmask.  Callers that want to check for the presence of more
+     *  than one type can avoid function call overhead by passing all the
+     *  types to be checked for in a single call to this function, and then
+     *  check for them individually in the returned value.
+     *
+     *  As a special case, if @p bitmask is VCF_REF (i.e. 0), the function
+     *  tests for an exact match.  The return value will be 1 if the
+     *  variant type calculated for the allele is VCF_REF, otherwise if
+     *  any other type is present it will be 0.
+     */
     HTSLIB_EXPORT
-    int bcf_has_variant_type(bcf1_t *rec, int ith_allele, int bitmask, enum bcf_variant_match mode);
+    int bcf_has_variant_type(bcf1_t *rec, int ith_allele, uint32_t bitmask);
 
+    /// Return the number of bases affected by a variant, for a given allele
+    /**
+     *  @param rec         BCF/VCF record
+     *  @param ith_allele  Allele index
+     *  @return The number of bases affected (negative for deletions),
+     *          or bcf_int32_missing on error.
+     */
+    HTSLIB_EXPORT
+    int bcf_variant_length(bcf1_t *rec, int ith_allele);
 
     HTSLIB_EXPORT
     int bcf_is_snp(bcf1_t *v);
