@@ -398,6 +398,30 @@ sub test_bgzip {
     }
     passed($opts,$test);
 
+    # Round-trip test in text mode
+    my $test = sprintf('%s %2s threads', 'bgzip text mode round-trip',
+                       $threads ? $threads : 'no');
+    print "$test: ";
+    my $c = "$$opts{bin}/bgzip $at -a -i -I '$index' < '$data' > '$compressed'";
+    my ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "$$opts{bin}/bgzip $at -d < '$compressed' > '$uncompressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, $out ? $out : "'$data' '$uncompressed' differ");
+        return;
+    }
+    passed($opts,$test);
+
     # Extract from an offset
     $test = sprintf('%s %2s threads', 'bgzip -b',
                     $threads ? $threads : 'no');

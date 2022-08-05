@@ -74,6 +74,13 @@ after decompression completes the input file will be removed.
 
 .SH OPTIONS
 .TP 10
+.B "-a, --text"
+Attempt to ensure BGZF blocks end on a newline.  The exception to this
+is where a single line is larger than a BGZF block (64Kb).  This can
+aid tools that use the index to perform random access on the
+compressed stream, as the start of a block is likely to also be the
+start of a text record.
+.TP
 .BI "-b, --offset " INT
 Decompress to standard output from virtual file position (0-based uncompressed
 offset).
