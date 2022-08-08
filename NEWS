@@ -2,7 +2,7 @@ Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * Make hfile_s3 refresh AWS credentials on expiry in order to make HTSlib work
-  better with AWS IAM credentials; which have a limited lifespan,
+  better with AWS IAM credentials, which have a limited lifespan.
   (PR#1462 and PR#1474, addresses #344)
 
 * Allow BAM headers between 2GB and 4GB in size once more.  This is not
@@ -17,7 +17,7 @@ Noteworthy changes in release a.b
 * Permit MM (base modification) tags containing "." and "?" suffixes.  These
   define implicit vs explicit coordinates.  See the SAM tags specification for
   details.
-  (PR#1423 and PR#1426, fixes #1418.  PR#1469, fixes PR#1466.  Reported
+  (PR#1423 and PR#1426, fixes #1418.  PR#1469, fixes #1466.  Reported
   by cjw85)
 
 * Warn if spaces instead of tabs are detected in a VCF file to prevent
@@ -47,19 +47,30 @@ Noteworthy changes in release a.b
   external reference is specified.
   (PR#1449, addresses some of the issues in #1445)
 
+* The CRAM writer now allows alignment records with RG:Z: aux tags that
+  don't have a corresponding @RG ID in the file header.  Previously these
+  tags would have been silently dropped.  HTSlib will complain whenever it
+  has to add one though, as such tags do not conform to recommended practice
+  for the SAM, BAM and CRAM formats.
+
 * Set tab delimiter in man page for tabix GFF3 sort.
   (PR#1457.  Thanks to Colin Diesh)
+
+* When using libdeflate, the 1...9 scale of BGZF compression levels is
+  now remapped to the 1...12 range used by libdeflate instead of being
+  passed directly.  In particular, HTSlib levels 8 and 9 now map to
+  libdeflate levels 10 and 12, so it is possible to select the highest (but
+  slowest) compression offered by libdeflate.
 
 Build changes
 -------------
 
 These are compiler, configuration and makefile based changes.
 
-* Update htscodecs for new SIMD code + gcc-12 fixes.  Updates the htscodecs
-  submodule and adds changes necessary to make HTSlib build the new SIMD codec
-  implementations. Also includes a somewhat unrelated gcc-12 fix in vcf.c
-  needed to make the tests work.
-  (PR#1438)
+* Update htscodecs to version 1.3.0 for new SIMD code + various fixes.
+  Updates the htscodecs submodule and adds changes necessary to make HTSlib
+  build the new SIMD codec implementations.
+  (PR#1438, PR#1489)
 
 * Fix clang builds under mingw.  Under mingw, clang requires dllexport to be
   applied to both function declarations and function definitions.
@@ -69,19 +80,38 @@ These are compiler, configuration and makefile based changes.
   (PR#1443)
 
 * Detect ARM Neon support and only build appropriate SIMD object files.
-  (PR#1451, fixes #1451.  Thanks to John Marshall)
+  (PR#1451, fixes #1450.  Thanks to John Marshall)
+
+* `make print-config` now reports extra CFLAGS that are needed to build the
+  SIMD parts of htscodecs.  These may be of use to third-party build
+  systems that don't use HTSlib's or htscodecs' build infrastructure. (PR#1485.
+  Thanks to John Marshall)
 
 Bug fixes
 ---------
 
-* Support 0 coordinate in BCF.  Fixes VCF->BCF->VCF conversions that were
-  overflowing.
-  (PR#1476, fixes #1475 and bcftools#1753.  Reported by  Rodrigo Martin)
+* Fix bug when reading position -1 in BCF (0 in VCF), which is used to indicate
+  telomeric  regions.  The BCF reader was incorrectly assuming the value stored
+  in the file was unsigned, so a VCF->BCF->VCF round-trip would change it
+  from 0 to 4294967296.
+  (PR#1476, fixes #1475 and bcftools#1753.  Reported by Rodrigo Martin)
 
-* Fix bug in and_expr() where is_true was being carried over, leading to some
-  records incorrectly passing filter expressions.  Also fixes several other
-  filter expression quirks.
-  (PR#1463, fixes samtools#1670.  Reported by Gert Hulselmans)
+* Various bugs and quirks have been fixed in the filter expression engine,
+  mostly related to the handling of absent tags, and the is_true flag.
+  Note that as a result of these fixes, some filter expressions may give
+  different results:
+  - Fixed and-expressions including aux tag values which could give an invalid
+    true result depending on the order of terms.
+  - The expression `![NM]` is now true if only `NM` does not exist.  In
+    earlier versions it would also report true for tags like `NM:i:0` which
+    exist but have a value of zero.
+  - The expression `[X1] != 0` is now false when `X1` does not exist.  Earlier
+    versions would return true for this comparison when the tag was missing.
+  - NULL values due to missing tags now propagate through string, bitwise
+    and mathematical operations.  Logical operations always treat them as
+    false.
+  (PR#1463, fixes samtools#1670.  Reported by Gert Hulselmans;
+   PR#1478, fixes samtools#1677.  Reported by johnsonzcode)
 
 * Fix buffer overrun in bam_plp_insertion_mod.  Memory now grows to the proper
   size needed for base modification data.
@@ -96,6 +126,11 @@ Bug fixes
 
 * Fix breakend detection and test bcf_set_variant_type().
   (PR#1456, fixes #1455.  Thanks to Martin Pollard)
+
+* Prevent arrays of BCF_BT_NULL values found in BCF files from causing
+  bcf_fmt_array() to call exit() as the type is unsupported.  These are
+  now tested for and caught by bcf_record_check(), which returns an
+  error code instead.  (PR#1486)
 
 Noteworthy changes in release 1.15.1 (7th April 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
