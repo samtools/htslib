@@ -3850,6 +3850,14 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
             return -1;  // EOF
         else if (ret < -1)
             return ret; // ERR
+
+        // Autodetect fastq.  This permits us to use unknown text formats,
+        // where hts_detect_format failed to identify the specifics, as
+        // "fasta_format" and retune to fastq after the first line.
+        if (fp->format.format == fasta_format && *x->name.s=='@') {
+            fp->format.format = fastq_format;
+            x->nprefix = '@';
+        }
     }
 
     // Name
