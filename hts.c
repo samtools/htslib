@@ -417,12 +417,17 @@ static int is_text_only(const unsigned char *u, const unsigned char *ulim)
     return 1;
 }
 
-static int
-secondline_is_bases(const unsigned char *u, const unsigned char *ulim)
+static int is_fastaq(const unsigned char *u, const unsigned char *ulim)
 {
-    // Skip to second line, returning false if there isn't one
-    u = memchr(u, '\n', ulim - u);
-    if (u == NULL || ++u == ulim) return 0;
+    const unsigned char *eol = memchr(u, '\n', ulim - u);
+
+    // Check that the first line is entirely textual
+    if (! is_text_only(u, eol? eol : ulim)) return 0;
+
+    // If the first line is very long, consider the file to indeed be FASTA/Q
+    if (eol == NULL) return 1;
+
+    u = eol+1; // Now points to the first character of the second line
 
     // Scan over all base-encoding letters (including 'N' but not SEQ's '=')
     while (u < ulim && (seq_nt16_table[*u] != 15 || toupper(*u) == 'N')) {
@@ -678,12 +683,12 @@ int hts_detect_format2(hFILE *hfile, const char *fname, htsFormat *fmt)
         fmt->format = hts_crypt4gh_format;
         return 0;
     }
-    else if (len >= 1 && s[0] == '>' && secondline_is_bases(s, &s[len])) {
+    else if (len >= 1 && s[0] == '>' && is_fastaq(s, &s[len])) {
         fmt->category = sequence_data;
         fmt->format = fasta_format;
         return 0;
     }
-    else if (len >= 1 && s[0] == '@' && secondline_is_bases(s, &s[len])) {
+    else if (len >= 1 && s[0] == '@' && is_fastaq(s, &s[len])) {
         fmt->category = sequence_data;
         fmt->format = fastq_format;
         return 0;
