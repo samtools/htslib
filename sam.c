@@ -4109,7 +4109,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
         fp->line.l = 0;
         if (ret < 0) {
             hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
-            if (h->ignore_sam_err) goto err_recover;
+            if (h && h->ignore_sam_err) goto err_recover;
         }
     }
 
