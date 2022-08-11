@@ -103,7 +103,8 @@ Use \fB--force\fR twice to do both without asking.
 .TP
 .B "-g, --rebgzip"
 Try to use an existing index to create a compressed file with matching
-block offsets.
+block offsets.  The index must be specified using the \fB-I
+\fIfile.gzi\fR option.
 Note that this assumes that the same compression library and level are in use
 as when making the original file.
 Don't use it unless you know what you're doing.

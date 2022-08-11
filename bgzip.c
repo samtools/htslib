@@ -245,7 +245,7 @@ int main(int argc, char **argv)
 
         if ( rebgzip && !index_fname )
         {
-            fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
+            fprintf(stderr, "[bgzip] Index file name expected when writing to stdout.  See -I option.\n");
             return 1;
         }
 
