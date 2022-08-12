@@ -113,6 +113,14 @@ typedef uint64_t uint64_u;
 #    endif
 #endif
 
+/// Get a uint8_t value from an unsigned byte array
+/** @param buf Pointer to source byte, may be unaligned
+ *  @return An 8-bit unsigned integer
+ */
+static inline uint8_t le_to_u8(const uint8_t *buf) {
+    return *buf;
+}
+
 /// Get a uint16_t value from an unsigned byte array
 /** @param buf Pointer to source byte, may be unaligned
  *  @return A 16 bit unsigned integer
