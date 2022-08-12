@@ -62,6 +62,12 @@ Noteworthy changes in release a.b
   libdeflate levels 10 and 12, so it is possible to select the highest (but
   slowest) compression offered by libdeflate.
 
+* The VCF variant API has been extended so that it can return separate flags
+  for INS and DEL variants as well as the existing INDEL one.  These flags
+  have not been added to the old bcf_get_variant_types() interface as
+  it could break existing users.  To access them, it is necessary to use new
+  functions bcf_has_variant_type() and bcf_has_variant_types().
+
 Build changes
 -------------
 
