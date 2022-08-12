@@ -52,6 +52,7 @@ Noteworthy changes in release a.b
   tags would have been silently dropped.  HTSlib will complain whenever it
   has to add one though, as such tags do not conform to recommended practice
   for the SAM, BAM and CRAM formats.
+  (PR#1480, fixes #1479.  Reported by Alex Leonard)
 
 * Set tab delimiter in man page for tabix GFF3 sort.
   (PR#1457.  Thanks to Colin Diesh)
@@ -61,12 +62,17 @@ Noteworthy changes in release a.b
   passed directly.  In particular, HTSlib levels 8 and 9 now map to
   libdeflate levels 10 and 12, so it is possible to select the highest (but
   slowest) compression offered by libdeflate.
+  (PR#1488, fixes #1477.  Reported by Gert Hulselmans)
 
 * The VCF variant API has been extended so that it can return separate flags
   for INS and DEL variants as well as the existing INDEL one.  These flags
   have not been added to the old bcf_get_variant_types() interface as
   it could break existing users.  To access them, it is necessary to use new
   functions bcf_has_variant_type() and bcf_has_variant_types().
+  (PR#1467)
+
+* The missing, but trivial, `le_to_u8()` function has been added to hts_endian.
+  (PR#1494, Thanks to John Marshall)
 
 Build changes
 -------------
@@ -137,6 +143,13 @@ Bug fixes
   bcf_fmt_array() to call exit() as the type is unsupported.  These are
   now tested for and caught by bcf_record_check(), which returns an
   error code instead.  (PR#1486)
+
+* Improved detection of fasta and fastq files that have very long comments
+  following identifiers.  (PR#1491, thanks to John Marshall.
+  Fixes samtools/samtools#1689, reported by cjw85)
+
+* Fixed a SEGV triggered by giving a SAM file to `samtools import`.
+  (PR#1492)
 
 Noteworthy changes in release 1.15.1 (7th April 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
