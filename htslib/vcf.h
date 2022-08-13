@@ -1460,21 +1460,23 @@ static inline int bcf_float_is_vector_end(float f)
 static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
     uint32_t e = 0;
-    #define BRANCH(type_t, missing, vector_end) { \
-        type_t *ptr = (type_t*) (fmt->p + isample*fmt->size); \
+    #define BRANCH(type_t, convert, missing, vector_end) { \
+        uint8_t *ptr = fmt->p + isample*fmt->size; \
         int i; \
-        for (i=0; i<fmt->n && ptr[i]!=vector_end; i++) \
+        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
         { \
-            if ( i ) e |= kputc("/|"[ptr[i]&1], str) < 0; \
-            if ( !(ptr[i]>>1) ) e |= kputc('.', str) < 0; \
-            else e |= kputw((ptr[i]>>1) - 1, str) < 0; \
+            type_t val = convert(ptr); \
+            if ( val == vector_end ) break; \
+            if ( i ) e |= kputc("/|"[val&1], str) < 0; \
+            if ( !(val>>1) ) e |= kputc('.', str) < 0; \
+            else e |= kputw((val>>1) - 1, str) < 0; \
         } \
         if (i == 0) e |= kputc('.', str) < 0; \
     }
     switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing, bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing, bcf_int32_vector_end); break;
         case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
         default: hts_log_error("Unexpected type %d", fmt->type); return -2;
     }
