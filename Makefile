@@ -572,8 +572,12 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS) $(HTSCODEC
 	test/test_time_funcs
 	test/fieldarith test/fieldarith.sam
 	test/hfile
-	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -g ./libhts.$(SHLIB_FLAVOUR)
-	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -l ./libhts.$(SHLIB_FLAVOUR)
+	if test "x$(BUILT_PLUGINS)" != "x"; then \
+	    HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -g ./libhts.$(SHLIB_FLAVOUR); \
+	fi
+	if test "x$(BUILT_PLUGINS)" != "x"; then \
+	  HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -l ./libhts.$(SHLIB_FLAVOUR); \
+	fi
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
 	cd test/sam_filter && ./filter.sh filter.tst
