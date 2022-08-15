@@ -64,6 +64,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "hts.h"
 
 #ifndef klib_unused
 #if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
@@ -81,6 +82,7 @@ extern "C" {
 // problems on Windows.  Don't include htslib/hts_os.h for this as it
 // may not get on with older attempts to fix this in code that includes
 // this file.
+HTSLIB_EXPORT
 extern double hts_drand48(void);
 
 typedef struct {
