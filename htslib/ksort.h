@@ -64,7 +64,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include "hts.h"
+#include "hts_defs.h"
 
 #ifndef klib_unused
 #if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
