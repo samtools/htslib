@@ -1354,6 +1354,8 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
     int ret = -1;
 
     if (fn2_len > sizeof(fn_buf)) {
+        if (fn2_len >= INT_MAX) // Silence gcc format-truncation warning
+            return -1;
         fn2 = malloc(fn2_len);
         if (!fn2) return -1;
     }
