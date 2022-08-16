@@ -317,6 +317,9 @@ endif
 
 BUILT_PLUGINS = $(PLUGIN_OBJS:.o=$(PLUGIN_EXT))
 
+ifneq "$(BUILT_PLUGINS)" ""
+plugins: lib-shared
+endif
 plugins: $(BUILT_PLUGINS)
 
 
@@ -563,7 +566,7 @@ SRC = $(srcprefix)
 #
 # If using MSYS, avoid poor shell expansion via:
 #    MSYS2_ARG_CONV_EXCL="*" make check
-check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS) $(HTSCODECS_TEST_TARGETS)
+check test: all $(HTSCODECS_TEST_TARGETS)
 	test/hts_endian
 	test/test_expr
 	test/test_kfunc
