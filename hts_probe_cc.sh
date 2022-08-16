@@ -71,7 +71,8 @@ cat - <<'EOF' > conftest.c
 int main(int argc, char **argv) {
     __m256i a = _mm256_set_epi32(1, 2, 3, 4, 5, 6, 7, 8);
     __m256i b = _mm256_add_epi32(a, a);
-    return *((char *) &b);
+    long long c = _mm256_extract_epi64(b, 0);
+    return (int) c;
 }
 EOF
 FLAGS="-mavx2"
