@@ -110,7 +110,8 @@ AX_CHECK_COMPILE_FLAG([-mavx2], [
   ]],[[
     __m256i a = _mm256_set_epi32(1, 2, 3, 4, 5, 6, 7, 8);
     __m256i b = _mm256_add_epi32(a, a);
-    return *((char *) &b);
+    long long c = _mm256_extract_epi64(b, 0);
+    return (int) c;
   ]])])
 
 dnl Options for rANS32x16 avx512 version
