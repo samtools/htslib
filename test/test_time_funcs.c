@@ -71,7 +71,8 @@ int main(int argc, char **argv) {
     if (test_normalised(0, INT_MAX - 1000, 1000) != 0)
         return EXIT_FAILURE;
     if (sizeof(time_t) >= 8) {
-        if (test_normalised(INT_MAX - 1000, (time_t) INT_MAX * 2, 1000) != 0)
+        if (test_normalised(INT_MAX - 1000,
+                            (time_t)((int64_t) INT_MAX * 2), 1000) != 0)
             return EXIT_FAILURE;
     }
 
@@ -116,7 +117,8 @@ int main(int argc, char **argv) {
         res |= test_specific(2038, 1, 19, 3, 14, 8, (time_t) -1);
     } else {
         // 2038-01-19 03:14:08
-        res |= test_specific(2038, 1, 19, 3, 14, 8, (time_t) INT_MAX + 1);
+        res |= test_specific(2038, 1, 19, 3, 14, 8,
+                             (time_t)((int64_t) INT_MAX + 1));
     }
 
     return res == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
