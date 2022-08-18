@@ -42,12 +42,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 #include "cram.h"
 #include "os.h"
 #include "../sam_internal.h" // for nibble2base
 #include "../htslib/hts.h"
 #include "../htslib/hts_endian.h"
+#include "../textutils_internal.h"
 
 KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
@@ -58,7 +60,8 @@ KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
-                            bam_seq_t *b, int rnum, kstring_t *MD);
+                            bam_seq_t *b, int rnum, kstring_t *MD,
+                            int embed_ref);
 
 /*
  * Returns index of val into key.
@@ -78,7 +81,8 @@ static int sub_idx(char *key, char val) {
  *         NULL on failure
  */
 cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
-                                           cram_block_compression_hdr *h) {
+                                           cram_block_compression_hdr *h,
+                                           int embed_ref) {
     cram_block *cb  = cram_new_block(COMPRESSION_HEADER, 0);
     cram_block *map = cram_new_block(COMPRESSION_HEADER, 0);
     int i, mc, r = 0;
@@ -158,7 +162,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
                 kh_val(h->preservation_map, k).i = h->qs_seq_orient;
             }
 
-            if (fd->no_ref || fd->embed_ref) {
+            if (fd->no_ref || embed_ref>0) {
                 // Reference Required == No
                 k = kh_put(map, h->preservation_map, "RR", &r);
                 if (-1 == r) return NULL;
@@ -1075,13 +1079,11 @@ static int cram_allocate_block(cram_codec *codec, cram_slice *s, int ds_id) {
  *        -1 on failure
  */
 static int cram_encode_slice(cram_fd *fd, cram_container *c,
-                             cram_block_compression_hdr *h, cram_slice *s) {
+                             cram_block_compression_hdr *h, cram_slice *s,
+                             int embed_ref) {
     int rec, r = 0;
     int64_t last_pos;
-    int embed_ref;
     enum cram_DS_ID id;
-
-    embed_ref = fd->embed_ref && s->hdr->ref_seq_id != -1 ? 1 : 0;
 
     /*
      * Slice external blocks:
@@ -1095,7 +1097,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
      */
 
     /* Create cram slice header */
-    s->hdr->ref_base_id = embed_ref && s->hdr->ref_seq_span > 0
+    s->hdr->ref_base_id = embed_ref>0 && s->hdr->ref_seq_span > 0
         ? DS_ref
         : (CRAM_MAJOR_VERS(fd->version) >= 4 ? 0 : -1);
     s->hdr->record_counter = c->num_records + c->record_counter;
@@ -1123,7 +1125,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     }
 
     // Embedded reference
-    if (embed_ref) {
+    if (embed_ref>0) {
         if (!(s->block[DS_ref] = cram_new_block(EXTERNAL, DS_ref)))
             return -1;
         s->ref_id = DS_ref; // needed?
@@ -1400,6 +1402,292 @@ static int add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
 // CRAM version >= 3.1
 #define CRAM_ge31(v) ((v) >= 0x301)
 
+// Returns the next cigar op code: one of the BAM_C* codes,
+// or -1 if no more are present.
+static inline
+int next_cigar_op(uint32_t *cigar, uint32_t ncigar, int *skip, int *spos,
+                  uint32_t *cig_ind, uint32_t *cig_op, uint32_t *cig_len) {
+    for(;;) {
+        while (*cig_len == 0) {
+            if (*cig_ind < ncigar) {
+                *cig_op  = cigar[*cig_ind] & BAM_CIGAR_MASK;
+                *cig_len = cigar[*cig_ind] >> BAM_CIGAR_SHIFT;
+                (*cig_ind)++;
+            } else {
+                return -1;
+            }
+        }
+
+        if (skip[*cig_op]) {
+            *spos += (bam_cigar_type(*cig_op)&1) * *cig_len;
+            *cig_len = 0;
+            continue;
+        }
+
+        (*cig_len)--;
+        break;
+    }
+
+    return *cig_op;
+}
+
+// Ensure ref and hist are large enough.
+static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
+                             hts_pos_t ref_start, hts_pos_t *ref_end) {
+    if (pos < ref_start)
+        return -1;
+    if (pos < *ref_end)
+        return 0;
+
+    // realloc
+    hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
+    hts_pos_t new_end = *ref_end = ref_start + 1000 + (pos-ref_start)*1.5;
+
+    char *tmp = realloc(*ref, *ref_end-ref_start);
+    if (!tmp)
+        return -1;
+    *ref = tmp;
+
+    uint32_t (*tmp5)[5] = realloc(**hist,
+                                  (*ref_end - ref_start)*sizeof(**hist));
+    if (!tmp5)
+        return -1;
+    *hist = tmp5;
+    *ref_end = new_end;
+
+    // initialise
+    old_end -= ref_start;
+    new_end -= ref_start;
+    memset(&(*ref)[old_end],  0,  new_end-old_end);
+    memset(&(*hist)[old_end], 0, (new_end-old_end)*sizeof(**hist));
+
+    return 0;
+}
+
+// Walk through MD + seq to generate ref
+static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
+                              hts_pos_t ref_start, hts_pos_t *ref_end,
+                              const uint8_t *MD) {
+    uint8_t *seq = bam_get_seq(b);
+    uint32_t *cigar = bam_get_cigar(b);
+    uint32_t ncigar = b->core.n_cigar;
+    uint32_t cig_op = 0, cig_len = 0, cig_ind = 0;
+
+    int iseq = 0, next_op;
+    hts_pos_t iref = b->core.pos - ref_start;
+
+    // Skip INS, REF_SKIP, *CLIP, PAD. and BACK.
+    static int cig_skip[16] = {0,1,0,1,1,1,1,0,0,1,1,1,1,1,1,1};
+    while (iseq < b->core.l_qseq && *MD) {
+        if (isdigit(*MD)) {
+            // match
+            int overflow = 0;
+            int len = hts_str2uint((char *)MD, (char **)&MD, 31, &overflow);
+            if (overflow ||
+                extend_ref(ref, hist, iref+ref_start + len,
+                           ref_start, ref_end) < 0)
+                return -1;
+            while (iseq < b->core.l_qseq && len) {
+                // rewrite to have internal loops?
+                if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
+                                             &iseq, &cig_ind, &cig_op,
+                                             &cig_len)) < 0)
+                    return -1;
+
+                if (next_op != BAM_CMATCH &&
+                    next_op != BAM_CEQUAL) {
+                    hts_log_info("MD:Z and CIGAR are incompatible for "
+                                 "record %s", bam_get_qname(b));
+                    return -1;
+                }
+
+                // Short-cut loop over same cigar op for efficiency
+                cig_len++;
+                do {
+                    cig_len--;
+                    (*ref)[iref++] = seq_nt16_str[bam_seqi(seq, iseq)];
+                    iseq++;
+                    len--;
+                } while (cig_len && iseq < b->core.l_qseq && len);
+            }
+            if (len > 0)
+                return -1; // MD is longer than seq
+        } else if (*MD == '^') {
+            // deletion
+            MD++;
+            while (isalpha(*MD)) {
+                if (extend_ref(ref, hist, iref+ref_start, ref_start,
+                               ref_end) < 0)
+                    return -1;
+                if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
+                                             &iseq, &cig_ind, &cig_op,
+                                             &cig_len)) < 0)
+                    return -1;
+
+                if (next_op != BAM_CDEL) {
+                    hts_log_info("MD:Z and CIGAR are incompatible");
+                    return -1;
+                }
+
+                (*ref)[iref++] = *MD++ & ~0x20;
+            }
+        } else {
+            // substitution
+            if (extend_ref(ref, hist, iref+ref_start, ref_start, ref_end) < 0)
+                return -1;
+            if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
+                                         &iseq, &cig_ind, &cig_op,
+                                         &cig_len)) < 0)
+                return -1;
+
+            if (next_op != BAM_CMATCH && next_op != BAM_CDIFF) {
+                hts_log_info("MD:Z and CIGAR are incompatible");
+                return -1;
+            }
+
+            (*ref)[iref++] = *MD++ & ~0x20;
+            iseq++;
+        }
+    }
+
+    return 1;
+}
+
+// Append a sequence to a ref/consensus structure.
+// We maintain both an absolute refefence (ACGTN where MD:Z is
+// present) and a 5-way frequency array for when no MD:Z is known.
+// We then subsequently convert the 5-way frequencies to a consensus
+// ref in a second pass.
+//
+// Returns >=0 on success,
+//         -1 on failure (eg inconsistent data)
+static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
+                           hts_pos_t ref_start, hts_pos_t *ref_end) {
+    const uint8_t *MD = bam_aux_get(b, "MD");
+    int ret = 0;
+    if (MD && *MD == 'Z') {
+        // We can use MD to directly compute the reference
+        int ret = cram_add_to_ref_MD(b, ref, hist, ref_start, ref_end, MD+1);
+
+        if (ret > 0)
+            return ret;
+    }
+
+    // Otherwise we just use SEQ+CIGAR and build a consensus which we later
+    // turn into a fake reference
+    uint32_t *cigar = bam_get_cigar(b);
+    uint32_t ncigar = b->core.n_cigar;
+    uint32_t i, j;
+    hts_pos_t iseq = 0, iref = b->core.pos - ref_start;
+    uint8_t *seq = bam_get_seq(b);
+    for (i = 0; i < ncigar; i++) {
+        switch (bam_cigar_op(cigar[i])) {
+        case BAM_CSOFT_CLIP:
+        case BAM_CINS:
+            iseq += bam_cigar_oplen(cigar[i]);
+            break;
+
+        case BAM_CMATCH:
+        case BAM_CEQUAL:
+        case BAM_CDIFF: {
+            int len = bam_cigar_oplen(cigar[i]);
+            // Maps an nt16 (A=1 C=2 G=4 T=8 bits) to 0123 plus N=4
+            static uint8_t L16[16] = {4,0,1,4, 2,4,4,4, 3,4,4,4, 4,4,4,4};
+
+            if (extend_ref(ref, hist, iref+ref_start + len,
+                           ref_start, ref_end) < 0)
+                return -1;
+            if (iseq + len <= b->core.l_qseq) {
+                // Nullify failed MD:Z if appropriate
+                if (ret < 0)
+                    memset(&(*ref)[iref], 0, len);
+
+                for (j = 0; j < len; j++, iref++, iseq++)
+                    (*hist)[iref][L16[bam_seqi(seq, iseq)]]++;
+            } else {
+                // Probably a 2ndary read with seq "*"
+                iseq += len;
+                iref += len;
+            }
+            break;
+        }
+
+        case BAM_CDEL:
+        case BAM_CREF_SKIP:
+            iref += bam_cigar_oplen(cigar[i]);
+        }
+    }
+
+    return 1;
+}
+
+// Automatically generates the reference and stashed it in c->ref, also
+// setting c->ref_start and c->ref_end.
+//
+// If we have MD:Z tags then we use them to directly infer the reference,
+// along with SEQ + CIGAR.  Otherwise we use SEQ/CIGAR only to build up
+// a consensus and then assume the reference as the majority rule.
+//
+// In this latter scenario we need to be wary of auto-generating MD and NM
+// during decode, but that's handled elsewhere via an additional aux tag.
+//
+// Returns 0 on success,
+//        -1 on failure
+static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
+    // TODO: if we can find an external reference then use it, even if the
+    // user told us to do embed_ref=2.
+    char *ref = NULL;
+    uint32_t (*hist)[5] = NULL;
+    hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0;
+
+    // initial allocation
+    if (extend_ref(&ref, &hist,
+                   c->bams[r1 + s->hdr->num_records-1]->core.pos +
+                   c->bams[r1 + s->hdr->num_records-1]->core.l_qseq,
+                   ref_start, &ref_end) < 0)
+        return -1;
+
+    // Add each bam file to the reference/consensus arrays
+    int r2;
+    hts_pos_t last_pos = -1;
+    for (r2 = 0; r1 < c->curr_c_rec && r2 < s->hdr->num_records; r1++, r2++) {
+        if (c->bams[r1]->core.pos < last_pos) {
+            hts_log_error("Cannot build reference with unsorted data");
+            goto err;
+        }
+        last_pos = c->bams[r1]->core.pos;
+        if (cram_add_to_ref(c->bams[r1], &ref, &hist, ref_start, &ref_end) < 0)
+            goto err;
+    }
+
+    // Compute the consensus
+    hts_pos_t i;
+    for (i = 0; i < ref_end-ref_start; i++) {
+        if (!ref[i]) {
+            int max_v = 0, max_j = 4, j;
+            for (j = 0; j < 4; j++)
+                // don't call N (j==4) unless no coverage
+                if (max_v < hist[i][j])
+                    max_v = hist[i][j], max_j = j;
+            ref[i] = "ACGTN"[max_j];
+        }
+    }
+    free(hist);
+
+    // Put the reference in place so it appears to be an external
+    // ref file.
+    c->ref       = ref;
+    c->ref_start = ref_start+1;
+    c->ref_end   = ref_end+1;
+
+    return 0;
+
+ err:
+    free(ref);
+    free(hist);
+    return -1;
+}
+
 /*
  * Encodes all slices in a container into blocks.
  * Returns 0 on success
@@ -1410,7 +1698,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     cram_block_compression_hdr *h = c->comp_hdr;
     cram_block *c_hdr;
     int multi_ref = 0;
-    int r1, r2, sn, nref;
+    int r1, r2, sn, nref, embed_ref;
     spare_bams *spares;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1)
@@ -1422,6 +1710,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* Cache references up-front if we have unsorted access patterns */
     pthread_mutex_lock(&fd->ref_lock);
     nref = fd->refs->nref;
+    embed_ref = fd->embed_ref;
     pthread_mutex_unlock(&fd->ref_lock);
 
     if (!fd->no_ref && c->refs_used) {
@@ -1438,19 +1727,41 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             goto_err;
         bam_seq_t *b = c->bams[0];
 
-        char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
-        if (!ref && bam_ref(b) >= 0) {
-            hts_log_error("Failed to load reference #%d", bam_ref(b));
-            return -1;
-        }
-        if ((c->ref_id = bam_ref(b)) >= 0) {
-            c->ref_seq_id = c->ref_id;
-            c->ref       = fd->refs->ref_id[c->ref_seq_id]->seq;
-            c->ref_start = 1;
-            c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
+        if (embed_ref <= 1) {
+            char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
+            if (!ref && bam_ref(b) >= 0) {
+                if (c->multi_seq || embed_ref == 0 || !c->pos_sorted) {
+                    hts_log_error("Failed to load reference #%d", bam_ref(b));
+                    return -1;
+                }
+                hts_log_warning("Failed to load reference #%d", bam_ref(b));
+                hts_log_warning("Enabling embed_ref=2 mode to auto-generate"
+                                " reference");
+                if (embed_ref <= 0)
+                    hts_log_warning("NOTE: the CRAM file will be bigger than"
+                                    " using an external reference");
+                pthread_mutex_lock(&fd->ref_lock);
+                embed_ref = fd->embed_ref = 2;
+                pthread_mutex_unlock(&fd->ref_lock);
+                goto auto_ref;
+            }
+            if ((c->ref_id = bam_ref(b)) >= 0) {
+                c->ref_seq_id = c->ref_id;
+                c->ref       = fd->refs->ref_id[c->ref_seq_id]->seq;
+                c->ref_start = 1;
+                c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
+            }
         } else {
-            c->ref_seq_id = c->ref_id; // FIXME remove one var!
+        auto_ref:
+            // Auto-embed ref.
+            // This starts as 'N' and is amended on-the-fly as we go
+            // based on MD:Z tags.
+            if ((c->ref_id = bam_ref(b)) >= 0) {
+                c->ref_free = 1;
+                c->ref = NULL;
+            }
         }
+        c->ref_seq_id = c->ref_id;
     } else {
         c->ref_id = bam_ref(c->bams[0]);
         cram_ref_incr(fd->refs, c->ref_id);
@@ -1476,6 +1787,14 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         // simply to avoid excessive malloc and free calls.  All initialisation
         // is done within process_one_read().
         kstring_t MD = {0};
+
+        // Embed consensus / MD-generated ref
+        if (embed_ref == 2) {
+            if (cram_generate_reference(c, s, r1) < 0) {
+                hts_log_error("Failed to build reference");
+                return -1;
+            }
+        }
 
         // Iterate through records creating the cram blocks for some
         // fields and just gathering stats for others.
@@ -1504,7 +1823,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 }
             }
 
-            if (process_one_read(fd, c, s, cr, b, r2, &MD) != 0) {
+            if (process_one_read(fd, c, s, cr, b, r2, &MD, embed_ref) != 0) {
                 free(MD.s);
                 return -1;
             }
@@ -1515,6 +1834,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             if (last_base < cr->aend)
                 last_base = cr->aend;
         }
+
         free(MD.s);
 
         // Process_one_read doesn't add read names as it can change
@@ -1891,7 +2211,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     for (i = 0; i < c->curr_slice; i++) {
         hts_log_info("Encode slice %d", i);
 
-        if (cram_encode_slice(fd, c, h, c->slices[i]) != 0)
+        int local_embed_ref =
+            embed_ref>0 && c->slices[i]->hdr->ref_seq_id != -1 ? 1 : 0;
+        if (cram_encode_slice(fd, c, h, c->slices[i], local_embed_ref) != 0)
             return -1;
     }
 
@@ -1906,7 +2228,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->AP_delta      = c->pos_sorted;
         memcpy(h->substitution_matrix, CRAM_SUBST_MATRIX, 20);
 
-        if (!(c_hdr = cram_encode_compression_header(fd, c, h)))
+        if (!(c_hdr = cram_encode_compression_header(fd, c, h, embed_ref)))
             return -1;
     }
 
@@ -2212,15 +2534,17 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
  * Encodes auxiliary data. Largely duplicated from above, but done so to
  * keep it simple and avoid a myriad of version ifs.
  *
- * Returns the read-group parsed out of the BAM aux fields on success
+ * Returns the RG header line pointed to by the BAM aux fields on success,
  *         NULL on failure or no rg present, also sets "*err" to non-zero
  */
-static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
-                             cram_slice *s, cram_record *cr,
-                             int verbatim_NM, int verbatim_MD,
-                             int NM, kstring_t *MD,
-                             int *err) {
-    char *aux, *orig, *rg = NULL;
+static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
+                                      cram_container *c,
+                                      cram_slice *s, cram_record *cr,
+                                      int verbatim_NM, int verbatim_MD,
+                                      int NM, kstring_t *MD, int cf_tag,
+                                      int *err) {
+    char *aux, *orig;
+    sam_hrec_rg_t *brg = NULL;
     int aux_size = bam_get_l_aux(b);
     cram_block *td_b = c->comp_hdr->TD_blk;
     int TD_blk_size = BLOCK_SIZE(td_b), new;
@@ -2231,17 +2555,41 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
     orig = aux = (char *)bam_aux(b);
 
+
+    // cF:i  => Extra CRAM bit flags.
+    // 1:  Don't auto-decode MD (may be invalid)
+    // 2:  Don't auto-decode NM (may be invalid)
+    if (cf_tag && CRAM_MAJOR_VERS(fd->version) < 4) {
+        // Temporary copy of aux so we can ammend it.
+        aux = malloc(aux_size+4);
+        if (!aux)
+            return NULL;
+
+        memcpy(aux, orig, aux_size);
+        aux[aux_size++] = 'c';
+        aux[aux_size++] = 'F';
+        aux[aux_size++] = 'C';
+        aux[aux_size++] = cf_tag;
+        orig = aux;
+    }
+
     // Copy aux keys to td_b and aux values to slice aux blocks
     while (aux - orig < aux_size && aux[0] != 0) {
         int r;
 
         // RG:Z
         if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
-            rg = &aux[3];
-            while (*aux++);
-            if (CRAM_MAJOR_VERS(fd->version) >= 4)
-                BLOCK_APPEND(td_b, "RG*", 3);
-            continue;
+            char *rg = &aux[3];
+            brg = sam_hrecs_find_rg(fd->header->hrecs, rg);
+            if (brg) {
+                while (*aux++);
+                if (CRAM_MAJOR_VERS(fd->version) >= 4)
+                    BLOCK_APPEND(td_b, "RG*", 3);
+                continue;
+            } else {
+                // RG:Z tag will be stored verbatim
+                hts_log_warning("Missing @RG header for RG \"%s\"", rg);
+            }
         }
 
         // MD:Z
@@ -2593,11 +2941,17 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     if (cram_stats_add(c->stats[DS_TL], cr->TL) < 0)
         goto block_err;
 
+    if (orig != (char *)bam_aux(b))
+        free(orig);
+
     if (err) *err = 0;
-    return rg;
+
+    return brg;
 
  err:
  block_err:
+    if (orig != (char *)bam_aux(b))
+        free(orig);
     return NULL;
 }
 
@@ -2722,6 +3076,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     return c;
 }
 
+
 /*
  * Converts a single bam record into a cram record.
  * Possibly used within a thread.
@@ -2731,9 +3086,10 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
  */
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
-                            bam_seq_t *b, int rnum, kstring_t *MD) {
+                            bam_seq_t *b, int rnum, kstring_t *MD,
+                            int embed_ref) {
     int i, fake_qual = -1, NM = 0;
-    char *cp, *rg;
+    char *cp;
     char *ref, *seq, *qual;
 
     // Any places with N in seq and/or reference can lead to ambiguous
@@ -2746,16 +3102,24 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     // FIXME: multi-ref containers
 
-    ref = c->ref;
     cr->flags       = bam_flag(b);
     cr->len         = bam_seq_len(b);
-    if (!bam_aux_get(b, "MD"))
+    uint8_t *md;
+    if (!(md = bam_aux_get(b, "MD")))
         MD = NULL;
     else
         MD->l = 0;
 
+    int cf_tag = 0;
+
+    if (embed_ref == 2) {
+        cf_tag  = MD ? 0 : 1;                   // No MD
+        cf_tag |= bam_aux_get(b, "NM") ? 0 : 2; // No NM
+    }
+
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
 
+    ref = c->ref ? c->ref - (c->ref_start-1) : NULL;
     cr->ref_id      = bam_ref(b);
     if (cram_stats_add(c->stats[DS_RI], cr->ref_id) < 0)
         goto block_err;
@@ -3069,14 +3433,15 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     cr->ntags      = 0; //cram_stats_add(c->stats[DS_TC], cr->ntags);
     int err = 0;
-    rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD, &err);
+    sam_hrec_rg_t *brg =
+        cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD,
+                        cf_tag, &err);
     if (err)
         goto block_err;
 
     /* Read group, identified earlier */
-    if (rg) {
-        sam_hrec_rg_t *brg = sam_hrecs_find_rg(fd->header->hrecs, rg);
-        cr->rg = brg ? brg->id : -1;
+    if (brg) {
+        cr->rg = brg->id;
     } else if (CRAM_MAJOR_VERS(fd->version) == 1) {
         sam_hrec_rg_t *brg = sam_hrecs_find_rg(fd->header->hrecs, "UNKNOWN");
         if (!brg) goto block_err;
@@ -3381,9 +3746,12 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          * The multi_seq var here refers to our intention for the next slice.
          * This slice has already been encoded so we output as-is.
          */
+        pthread_mutex_lock(&fd->ref_lock);
+        int embed_ref = fd->embed_ref;
+        pthread_mutex_unlock(&fd->ref_lock);
         if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
             fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
-            !fd->embed_ref) {
+            embed_ref<=0) {
             if (!c->multi_seq)
                 hts_log_info("Multi-ref enabled for next container");
             multi_seq = 1;
@@ -3441,8 +3809,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         c->slice_rec = c->curr_rec;
 
         // Have we seen this reference before?
-        if (bam_ref(b) >= 0 && curr_ref >= 0 && bam_ref(b) != curr_ref && !fd->embed_ref &&
-            !fd->unsorted && multi_seq) {
+        if (bam_ref(b) >= 0 && curr_ref >= 0 && bam_ref(b) != curr_ref &&
+            embed_ref<=0 && !fd->unsorted && multi_seq) {
 
             if (!c->refs_used) {
                 pthread_mutex_lock(&fd->ref_lock);

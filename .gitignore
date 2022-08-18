@@ -56,6 +56,7 @@ shlib-exports-*.txt
 /test/tabix/FAIL*
 /test/test-bcf-sr
 /test/test-bcf-translate
+/test/test-bcf_set_variant_type
 /test/test_bgzf
 /test/test_expr
 /test/test_index
@@ -67,6 +68,7 @@ shlib-exports-*.txt
 /test/test_realn
 /test/test-regidx
 /test/test_str2int
+/test/test_time_funcs
 /test/test-vcf-api
 /test/test-vcf-sweep
 /test/test_view

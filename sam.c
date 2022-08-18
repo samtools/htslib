@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2021 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2022 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -339,17 +339,23 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
 
     if (h->hrecs) {
         if (sam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
-        if (hdr_ks.l > INT32_MAX) {
+        if (hdr_ks.l > UINT32_MAX) {
             hts_log_error("Header too long for BAM format");
             free(hdr_ks.s);
             return -1;
+        } else if (hdr_ks.l > INT32_MAX) {
+            hts_log_warning("Header too long for BAM specification (>2GB)");
+            hts_log_warning("Output file may not be portable");
         }
         text = hdr_ks.s;
         l_text = hdr_ks.l;
     } else {
-        if (h->l_text > INT32_MAX) {
+        if (h->l_text > UINT32_MAX) {
             hts_log_error("Header too long for BAM format");
             return -1;
+        } else if (h->l_text > INT32_MAX) {
+            hts_log_warning("Header too long for BAM specification (>2GB)");
+            hts_log_warning("Output file may not be portable");
         }
         text = h->text;
         l_text = h->l_text;
@@ -1348,6 +1354,33 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             res->s.l = b->core.l_qseq;
             res->is_str = 1;
             return 0;
+        } else if (memcmp(str, "sclen", 5) == 0) {
+            int sclen = 0;
+            uint32_t *cigar = bam_get_cigar(b);
+            int ncigar = b->core.n_cigar;
+            int left = 0;
+
+            // left
+            if (ncigar > 0
+                && bam_cigar_op(cigar[0]) == BAM_CSOFT_CLIP)
+                left = 0, sclen += bam_cigar_oplen(cigar[0]);
+            else if (ncigar > 1
+                     && bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP
+                     && bam_cigar_op(cigar[1]) == BAM_CSOFT_CLIP)
+                left = 1, sclen += bam_cigar_oplen(cigar[1]);
+
+            // right
+            if (ncigar-1 > left
+                && bam_cigar_op(cigar[ncigar-1]) == BAM_CSOFT_CLIP)
+                sclen += bam_cigar_oplen(cigar[ncigar-1]);
+            else if (ncigar-2 > left
+                     && bam_cigar_op(cigar[ncigar-1]) == BAM_CHARD_CLIP
+                     && bam_cigar_op(cigar[ncigar-2]) == BAM_CSOFT_CLIP)
+                sclen += bam_cigar_oplen(cigar[ncigar-2]);
+
+            *end = str+5;
+            res->d = sclen;
+            return 0;
         }
         break;
 
@@ -1421,8 +1454,8 @@ static int bam_sym_lookup(void *data, char *str, char **end,
 int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b, hts_filter_t *filt)
 {
     hb_pair hb = {h, b};
-    hts_expr_val_t res;
-    if (hts_filter_eval(filt, &hb, bam_sym_lookup, &res)) {
+    hts_expr_val_t res = HTS_EXPR_VAL_INIT;
+    if (hts_filter_eval2(filt, &hb, bam_sym_lookup, &res)) {
         hts_log_error("Couldn't process filter expression");
         hts_expr_val_free(&res);
         return -1;
@@ -3448,6 +3481,8 @@ static void *sam_dispatcher_write(void *vp) {
                     i++;
 
                 if (fp->is_bgzf) {
+                    if (bgzf_flush_try(fp->fp.bgzf, i-j) < 0)
+                        goto err;
                     if (bgzf_write(fp->fp.bgzf, &gl->data[j], i-j) != i-j)
                         goto err;
                 } else {
@@ -3487,8 +3522,69 @@ static void *sam_dispatcher_write(void *vp) {
             pthread_mutex_unlock(&fd->lines_m);
         } else {
             if (fp->is_bgzf) {
-                if (bgzf_write(fp->fp.bgzf, gl->data, gl->data_size) != gl->data_size)
-                    goto err;
+                // We keep track of how much in the current block we have
+                // remaining => R.  We look for the last newline in input
+                // [i] to [i+R], backwards => position N.
+                //
+                // If we find a newline, we write out bytes i to N.
+                // We know we cannot fit the next record in this bgzf block,
+                // so we flush what we have and copy input N to i+R into
+                // the start of a new block, and recompute a new R for that.
+                //
+                // If we don't find a newline (i==N) then we cannot extend
+                // the current block at all, so flush whatever is in it now
+                // if it ends on a newline.
+                // We still copy i(==N) to i+R to the next block and
+                // continue as before with a new R.
+                //
+                // The only exception on the flush is when we run out of
+                // data in the input.  In that case we skip it as we don't
+                // yet know if the next record will fit.
+                //
+                // Both conditions share the same code here:
+                // - Look for newline (pos N)
+                // - Write i to N (which maybe 0)
+                // - Flush if block ends on newline and not end of input
+                // - write N to i+R
+
+                int i = 0;
+                BGZF *fb = fp->fp.bgzf;
+                while (i < gl->data_size) {
+                    // remaining space in block
+                    int R = BGZF_BLOCK_SIZE - fb->block_offset;
+                    int eod = 0;
+                    if (R > gl->data_size-i)
+                        R = gl->data_size-i, eod = 1;
+
+                    // Find last newline in input data
+                    int N = i + R;
+                    while (--N > i) {
+                        if (gl->data[N] == '\n')
+                            break;
+                    }
+
+                    if (N != i) {
+                        // Found a newline
+                        N++;
+                        if (bgzf_write(fb, &gl->data[i], N-i) != N-i)
+                            goto err;
+                    }
+
+                    // Flush bgzf block
+                    int b_off = fb->block_offset;
+                    if (!eod && b_off &&
+                        ((char *)fb->uncompressed_block)[b_off-1] == '\n')
+                        if (bgzf_flush_try(fb, BGZF_BLOCK_SIZE) < 0)
+                            goto err;
+
+                    // Copy from N onwards into next block
+                    if (i+R > N)
+                        if (bgzf_write(fb, &gl->data[N], i+R - N)
+                            != i+R - N)
+                            goto err;
+
+                    i = i+R;
+                }
             } else {
                 if (hwrite(fp->fp.hfile, gl->data, gl->data_size) != gl->data_size)
                     goto err;
@@ -4005,7 +4101,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
         fp->line.l = 0;
         if (ret < 0) {
             hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
-            if (h->ignore_sam_err) goto err_recover;
+            if (h && h->ignore_sam_err) goto err_recover;
         }
     }
 
@@ -4354,6 +4450,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
             if (sam_format1(h, b, &fp->line) < 0) return -1;
             kputc('\n', &fp->line);
             if (fp->is_bgzf) {
+                if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
+                    return -1;
                 if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
             } else {
                 if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
@@ -4393,6 +4491,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         if (fastq_format1(fp->state, b, &fp->line) < 0)
             return -1;
         if (fp->is_bgzf) {
+            if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
+                return -1;
             if (bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l)
                 return -1;
         } else {
@@ -5233,6 +5333,7 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
                 hts_base_mod mod[256];
                 if (m && (nm = bam_mods_at_qpos(p->b, p->qpos + j - p->is_del,
                                                 m, mod, 256)) > 0) {
+                    int o_indel = indel;
                     if (ks_resize(ins, ins->l + nm*16+3) < 0)
                         return -1;
                     ins->s[indel++] = '[';
@@ -5256,6 +5357,7 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
                                              qual);
                     }
                     ins->s[indel++] = ']';
+                    ins->l += indel - o_indel; // grow by amount we used
                 }
             }
             break;
@@ -6019,6 +6121,7 @@ struct hts_base_mod_state {
     char *MMend[MAX_BASE_MOD];  // end of pos-delta string
     uint8_t *ML[MAX_BASE_MOD];  // next qual
     int MLstride[MAX_BASE_MOD]; // bytes between quals for this type
+    int implicit[MAX_BASE_MOD]; // treat unlisted positions as non-modified?
     int seq_pos;                // current position along sequence
     int nmods;                  // used array size (0 to MAX_BASE_MOD-1).
 };
@@ -6087,9 +6190,10 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
 
     char *cp = (char *)mm+1;
     int mod_num = 0;
+    int implicit = 1;
     while (*cp) {
         for (; *cp; cp++) {
-            // cp should be [ACGTNU][+-][^,]*(,\d+)*;
+            // cp should be [ACGTNU][+-]([a-zA-Z]+|[0-9]+)[.?]?(,\d+)*;
             unsigned char btype = *cp++;
 
             if (btype != 'A' && btype != 'C' &&
@@ -6109,17 +6213,30 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
             char *ms = cp, *me; // mod code start and end
             char *cp_end = NULL;
             int chebi = 0;
-            if (isdigit(*cp)) {
+            if (isdigit_c(*cp)) {
                 chebi = strtol(cp, &cp_end, 10);
                 cp = cp_end;
                 ms = cp-1;
             } else {
-                while (*cp && *cp != ',' && *cp != ';')
+                while (*cp && isalpha_c(*cp))
                     cp++;
                 if (*cp == '\0')
                     return -1;
             }
+
             me = cp;
+
+            // Optional explicit vs implicit marker
+            if (*cp == '.') {
+                // default is implicit = 1;
+                cp++;
+            } else if (*cp == '?') {
+                implicit = 0;
+                cp++;
+            } else if (*cp != ',' && *cp != ';') {
+                // parse error
+                return -1;
+            }
 
             long delta;
             int n = 0; // nth symbol in a multi-mod string
@@ -6170,7 +6287,13 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                 state->strand   [mod_num] = (strand == '-');
                 state->canonical[mod_num] = btype;
                 state->MLstride [mod_num] = stride;
+                state->implicit [mod_num] = implicit;
 
+                if (delta < 0) {
+                    hts_log_error("MM tag refers to bases beyond sequence "
+                                  "length");
+                    return -1;
+                }
                 state->MMcount  [mod_num] = delta;
                 if (b->core.flag & BAM_FREVERSE) {
                     state->MM   [mod_num] = cp+1;
@@ -6385,4 +6508,45 @@ int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
             break;
 
     return r;
+}
+
+/*
+ * Returns the list of base modification codes provided for this
+ * alignment record as an array of character codes (+ve) or ChEBI numbers
+ * (negative).
+ *
+ * Returns the array, with *ntype filled out with the size.
+ *         The array returned should not be freed.
+ *         It is a valid pointer until the state is freed using
+ *         hts_base_mod_free().
+ */
+int *bam_mods_recorded(hts_base_mod_state *state, int *ntype) {
+    *ntype = state->nmods;
+    return state->type;
+}
+
+/*
+ * Returns data about a specific modification type for the alignment record.
+ * Code is either positive (eg 'm') or negative for ChEBI numbers.
+ *
+ * Return 0 on success or -1 if not found.  The strand, implicit and canonical
+ * fields are filled out if passed in as non-NULL pointers.
+ */
+int bam_mods_query_type(hts_base_mod_state *state, int code,
+                        int *strand, int *implicit, char *canonical) {
+    // Find code entry
+    int i;
+    for (i = 0; i < state->nmods; i++) {
+        if (state->type[i] == code)
+            break;
+    }
+    if (i == state->nmods)
+        return -1;
+
+    // Return data
+    if (strand)    *strand    = state->strand[i];
+    if (implicit)  *implicit  = state->implicit[i];
+    if (canonical) *canonical = "?AC?G???T??????N"[state->canonical[i]];
+
+    return 0;
 }

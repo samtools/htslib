@@ -93,12 +93,11 @@ int tbx_name2id(tbx_t *tbx, const char *ss)
 
 int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
 {
-    int i, b = 0, id = 1, ncols = 0;
+    int i, b = 0, id = 1;
     char *s;
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
     for (i = 0; i <= len; ++i) {
         if (line[i] == '\t' || line[i] == 0) {
-            ++ncols;
             if (id == conf->sc) {
                 intv->ss = line + b; intv->se = line + i;
             } else if (id == conf->bc) {

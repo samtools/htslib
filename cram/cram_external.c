@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015, 2018-2020 Genome Research Ltd.
+Copyright (c) 2015, 2018-2020, 2022 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -188,6 +188,19 @@ int32_t cram_slice_hdr_get_num_blocks(cram_block_slice_hdr *hdr) {
     return hdr->num_blocks;
 }
 
+int cram_slice_hdr_get_embed_ref_id(cram_block_slice_hdr *h) {
+    return h->ref_base_id;
+}
+
+void cram_slice_hdr_get_coords(cram_block_slice_hdr *h,
+                               int *refid, hts_pos_t *start, hts_pos_t *span) {
+    if (refid)
+        *refid = h->ref_seq_id;
+    if (start)
+        *start = h->ref_seq_start;
+    if (span)
+        *span  = h->ref_seq_span;
+}
 
 /*
  *-----------------------------------------------------------------------------
@@ -318,7 +331,7 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
         return -1;
     if (cram_block_compression_hdr_decoder2encoder(in, ch) != 0)
         return -1;
-    n_blk = cram_encode_compression_header(in, c, ch);
+    n_blk = cram_encode_compression_header(in, c, ch, in->embed_ref);
     cram_free_compression_header(ch);
 
     /*

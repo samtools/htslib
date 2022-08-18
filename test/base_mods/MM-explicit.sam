@@ -1,0 +1,27 @@
+@CO	Testing explicit vs implicit base modifications.
+@CO	This covers the case where a lack of a signal could be either
+@CO	implicitly assumed to be no-mod (default) or assumed to be
+@CO	unchecked and require an explicit statement to indicate it was
+@CO	looked at and no base modification was observed.
+@CO	
+@CO	ATCATCATTCCTACCGCTATAGCCT  r1; implicit
+@CO	  -  -   ..  -. -     --
+@CO	         Mm   M
+@CO	  -  -   ..  -. -     --
+@CO	         hH   h
+@CO	
+@CO	ATCATCATTCCTACCGCTATAGCCT  r2; explicit to a small region
+@CO	  -  -   ??  ?? ?     --
+@CO	         Mm  mM m
+@CO	  -  -   ??  ?? ?     --
+@CO	         hH  hh h
+@CO	
+@CO	ATCATCATTCCTACCGCTATAGCCT  r3; mixture
+@CO	  -  -   .   -. -     --
+@CO	         M    M
+@CO       -  -   ??  ?? ?     --
+@CO	         hH  hh h     --
+@CO	
+r1	0	*	0	0	*	*	0	0	ATCATCATTCCTACCGCTATAGCCT	*	Mm:Z:C+mh,2,0,1;	Ml:B:C,200,10,50,170,160,20
+r2	0	*	0	0	*	*	0	0	ATCATCATTCCTACCGCTATAGCCT	*	Mm:Z:C+mh?,2,0,0,0,0;	Ml:B:C,200,10,50,170,10,5,160,20,10,5
+r3	0	*	0	0	*	*	0	0	ATCATCATTCCTACCGCTATAGCCT	*	Mm:Z:C+m.,2,2;C+h?,2,0,0,0,0;	Ml:B:C,200,160,10,170,5,20,5

@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2021 Genome Research Ltd.
+#    Copyright (C) 2012-2022 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -32,6 +32,7 @@ use File::Temp qw/ tempfile tempdir /;
 use IO::Handle;
 
 my $opts = parse_params();
+srand($$opts{seed});
 
 test_bgzip($opts, 0);
 test_bgzip($opts, 4);
@@ -59,6 +60,7 @@ test_rebgzip($opts);
 test_logging($opts);
 test_plugin_loading($opts);
 test_realn($opts);
+test_bcf_set_variant_type($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -79,6 +81,7 @@ sub error
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
         "   -r, --redo-outputs              Recreate expected output files.\n",
+        "   -s, --random-seed <int>         Initialise rand() with a different seed.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
         "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
         "   -h, -?, --help                  This help message.\n",
@@ -104,12 +107,13 @@ sub safe_tempdir
 
 sub parse_params
 {
-    my $opts = { keep_files=>0, nok=>0, nfailed=>0 };
+    my $opts = { keep_files=>0, nok=>0, nfailed=>0, seed=>42 };
     my $help;
     Getopt::Long::Configure('bundling');
     my $ret = GetOptions (
             't|temp-dir:s' => \$$opts{keep_files},
             'r|redo-outputs' => \$$opts{redo_outputs},
+            's|random-seed=i' => \$$opts{seed},
             'f|fail-fast' => \$$opts{fail_fast},
             'h|?|help' => \$help
             );
@@ -614,7 +618,7 @@ sub test_view
 
             ## Experimental CRAM 4.0 support.
             # SAM -> CRAM40 -> SAM
-            my @p = $sam eq "ce#large_seq.sam" || $sam eq "xx#large_aux.sam"
+            @p = $sam eq "ce#large_seq.sam" || $sam eq "xx#large_aux.sam"
                 ? (qw/fast normal small archive/)
                 : (qw/archive/);
             foreach my $profile (@p) {
@@ -632,6 +636,14 @@ sub test_view
             testv $opts, "./test_view $tv_args -i reference=$ref $jcram > $jsam";
             testv $opts, "./compare_sam.pl -Baux $md $sam $jsam";
         }
+
+        # embed_ref=2 mode
+        my $ersam = "ce#1000.sam";
+        my $ercram = "ce#1000_er.tmp.cram";
+        my $ersam2 = "${ercram}.sam";
+        testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
+        testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+        testv $opts, "./compare_sam.pl $ersam $ersam2";
 
         if ($test_view_failures == 0)
         {
@@ -974,7 +986,7 @@ sub test_bcf_sr_sort
     my ($opts, %args) = @_;
     for (my $i=0; $i<10; $i++)
     {
-        my $seed = int(rand(time));
+        my $seed = int(rand(100000000));
         my $test = 'test-bcf-sr';
         my $cmd  = "$$opts{path}/test-bcf-sr.pl -t $$opts{tmp} -s $seed";
         print "$test:\n";
@@ -1051,4 +1063,18 @@ sub test_realn {
 
     # Revert quality values (using data in ZQ tags)
     test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn02.fa -i $$opts{path}/realn02_exp-a.sam -o -", out => "realn02_exp.sam");
+}
+
+sub test_bcf_set_variant_type
+{
+    my ($opts) = @_;
+    my $test = 'test-bcf_set_variant_type';
+    my $cmd  = "$$opts{path}/test-bcf_set_variant_type";
+    print "$test:\n";
+    print "\t$cmd\n";
+    my ($ret,$out) = _cmd($cmd);
+    if ( $ret ) {
+        print $out;
+        failed($opts,$test);
+    } else { passed($opts,$test); }
 }

@@ -930,6 +930,8 @@ bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *key, co
     }
     else if ( type==BCF_HL_STR )
     {
+        if (!str_class)
+            return NULL;
         for (i=0; i<hdr->nhrec; i++)
         {
             if ( hdr->hrec[i]->type!=type ) continue;
@@ -1411,6 +1413,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     if (ks_resize(&v->indiv, indiv_len ? indiv_len : 1) != 0) return -2;
     v->rid  = le_to_i32(x + 8);
     v->pos  = le_to_u32(x + 12);
+    if ( v->pos==UINT32_MAX ) v->pos = -1;  // this is for telomere coordinate, e.g. MT:0
     v->rlen = le_to_i32(x + 16);
     v->qual = le_to_float(x + 20);
     v->n_info = le_to_u16(x + 24);
@@ -1596,7 +1599,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
-        if (((1 << type) & is_valid_type) == 0) {
+        if (((1 << type) & is_valid_type) == 0
+            || (type == BCF_BT_NULL && num > 0)) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s type %d (%s)", bcf_seqname_safe(hdr,rec), rec->pos+1, "INFO", type, get_type_name(type));
             err |= BCF_ERR_TAG_INVALID;
@@ -1620,7 +1624,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_indiv;
-        if (((1 << type) & is_valid_type) == 0) {
+        if (((1 << type) & is_valid_type) == 0
+            || (type == BCF_BT_NULL && num > 0)) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
@@ -2232,10 +2237,12 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
     }
     while (htxt.l && htxt.s[htxt.l-1] == '\0') --htxt.l; // kill trailing zeros
     int ret;
-    if ( fp->format.compression!=no_compression )
+    if ( fp->format.compression!=no_compression ) {
         ret = bgzf_write(fp->fp.bgzf, htxt.s, htxt.l);
-    else
+        if (bgzf_flush(fp->fp.bgzf) != 0) return -1;
+    } else {
         ret = hwrite(fp->fp.hfile, htxt.s, htxt.l);
+    }
     free(htxt.s);
     return ret<0 ? -1 : 0;
 }
@@ -3407,10 +3414,13 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     fp->line.l = 0;
     if (vcf_format1(h, v, &fp->line) != 0)
         return -1;
-    if ( fp->format.compression!=no_compression )
+    if ( fp->format.compression!=no_compression ) {
+        if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
+            return -1;
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
-    else
+    } else {
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+    }
 
     if (fp->idx) {
         int tid;
@@ -4172,19 +4182,26 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
         return;
     }
 
+    // Catch "joined before" breakend case
+    if ( alt[0]==']' || alt[0] == '[' )
+    {
+        var->type = VCF_BND; return;
+    }
+
+    // Iterate through alt characters that match the reference
     const char *r = ref, *a = alt;
     while (*r && *a && toupper_c(*r)==toupper_c(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
 
     if ( *a && !*r )
     {
-        if ( *a==']' || *a=='[' ) { var->type = VCF_BND; return; }
+        if ( *a==']' || *a=='[' ) { var->type = VCF_BND; return; } // "joined after" breakend
         while ( *a ) a++;
-        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL | VCF_INS; return;
     }
     else if ( *r && !*a )
     {
         while ( *r ) r++;
-        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+        var->n = (a-alt)-(r-ref); var->type = VCF_INDEL | VCF_DEL; return;
     }
     else if ( !*r && !*a )
     {
@@ -4199,13 +4216,13 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     {
         if ( re==r ) { var->n = 1; var->type = VCF_SNP; return; }
         var->n = -(re-r);
-        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL | VCF_DEL; return; }
         var->type = VCF_OTHER; return;
     }
     else if ( re==r )
     {
         var->n = ae-a;
-        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL | VCF_INS; return; }
         var->type = VCF_OTHER; return;
     }
 
@@ -4221,7 +4238,10 @@ static int bcf_set_variant_types(bcf1_t *b)
     bcf_dec_t *d = &b->d;
     if ( d->n_var < b->n_allele )
     {
-        d->var = (bcf_variant_t *) realloc(d->var, sizeof(bcf_variant_t)*b->n_allele);
+        bcf_variant_t *new_var = realloc(d->var, sizeof(bcf_variant_t)*b->n_allele);
+        if (!new_var)
+            return -1;
+        d->var = new_var;
         d->n_var = b->n_allele;
     }
     int i;
@@ -4237,15 +4257,80 @@ static int bcf_set_variant_types(bcf1_t *b)
     return 0;
 }
 
+// bcf_get_variant_type/bcf_get_variant_types should only return the following,
+// to be compatible with callers that are not expecting newer values
+// like VCF_INS, VCF_DEL.  The full set is available from the newer
+// vcf_has_variant_type* interfaces.
+#define ORIG_VAR_TYPES (VCF_SNP|VCF_MNP|VCF_INDEL|VCF_OTHER|VCF_BND|VCF_OVERLAP)
 int bcf_get_variant_types(bcf1_t *rec)
 {
-    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return rec->d.var_type;
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) {
+            hts_log_error("Couldn't get variant types: %s", strerror(errno));
+            exit(1); // Due to legacy API having no way to report failures
+        }
+    }
+    return rec->d.var_type & ORIG_VAR_TYPES;
 }
+
 int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
 {
-    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
-    return rec->d.var[ith_allele].type;
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) {
+            hts_log_error("Couldn't get variant types: %s", strerror(errno));
+            exit(1); // Due to legacy API having no way to report failures
+        }
+    }
+    if (ith_allele < 0 || ith_allele >= rec->n_allele) {
+        hts_log_error("Requested allele outside valid range");
+        exit(1);
+    }
+    return rec->d.var[ith_allele].type & ORIG_VAR_TYPES;
+}
+#undef ORIG_VAR_TYPES
+
+int bcf_has_variant_type(bcf1_t *rec, int ith_allele, uint32_t bitmask)
+{
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) return -1;
+    }
+    if (ith_allele < 0 || ith_allele >= rec->n_allele) return -1;
+    if (bitmask == VCF_REF) {  // VCF_REF is 0, so handled as a special case
+        return rec->d.var[ith_allele].type == VCF_REF;
+    }
+    return bitmask & rec->d.var[ith_allele].type;
+}
+
+int bcf_variant_length(bcf1_t *rec, int ith_allele)
+{
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) return bcf_int32_missing;
+    }
+    if (ith_allele < 0 || ith_allele >= rec->n_allele) return bcf_int32_missing;
+    return rec->d.var[ith_allele].n;
+}
+
+int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask,
+                          enum bcf_variant_match mode)
+{
+    if ( rec->d.var_type==-1 ) {
+        if (bcf_set_variant_types(rec) != 0) return -1;
+    }
+    uint32_t type = rec->d.var_type;
+    if ( mode==bcf_match_overlap ) return bitmask & type;
+
+    // VCF_INDEL is always set with VCF_INS and VCF_DEL by bcf_set_variant_type[s], but the bitmask may
+    // ask for say `VCF_INS` or `VCF_INDEL` only
+    if ( bitmask&(VCF_INS|VCF_DEL) && !(bitmask&VCF_INDEL) ) type &= ~VCF_INDEL;
+    else if ( bitmask&VCF_INDEL && !(bitmask&(VCF_INS|VCF_DEL)) ) type &= ~(VCF_INS|VCF_DEL);
+
+    if ( mode==bcf_match_subset )
+    {
+        if ( ~bitmask & type ) return 0;
+        else return bitmask & type;
+    }
+    // mode == bcf_match_exact
+    return type==bitmask ? type : 0;
 }
 
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)

@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2021 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2022 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -168,18 +168,12 @@ const char *hts_test_feature(unsigned int id) {
 // to find the configuration parameters.
 const char *hts_feature_string(void) {
     static char config[1200];
-    const char *fmt=
+    const char *flags=
 
 #ifdef PACKAGE_URL
     "build=configure "
 #else
     "build=Makefile "
-#endif
-
-#ifdef ENABLE_PLUGINS
-    "plugins=yes, plugin-path=%.1000s "
-#else
-    "plugins=no "
 #endif
 
 #ifdef HAVE_LIBCURL
@@ -218,13 +212,21 @@ const char *hts_feature_string(void) {
     "bzip2=no "
 #endif
 
-    "htscodecs=%.40s";
+// "plugins=" must stay at the end as it is followed by "plugin-path="
+#ifdef ENABLE_PLUGINS
+    "plugins=yes";
+#else
+    "plugins=no";
+#endif
 
 #ifdef ENABLE_PLUGINS
-    snprintf(config, sizeof(config), fmt,
-             hts_plugin_path(), htscodecs_version());
+    snprintf(config, sizeof(config),
+             "%s plugin-path=%.1000s htscodecs=%.40s",
+             flags, hts_plugin_path(), htscodecs_version());
 #else
-    snprintf(config, sizeof(config), fmt, htscodecs_version());
+    snprintf(config, sizeof(config),
+             "%s htscodecs=%.40s",
+             flags, htscodecs_version());
 #endif
     return config;
 }
@@ -415,12 +417,17 @@ static int is_text_only(const unsigned char *u, const unsigned char *ulim)
     return 1;
 }
 
-static int
-secondline_is_bases(const unsigned char *u, const unsigned char *ulim)
+static int is_fastaq(const unsigned char *u, const unsigned char *ulim)
 {
-    // Skip to second line, returning false if there isn't one
-    u = memchr(u, '\n', ulim - u);
-    if (u == NULL || ++u == ulim) return 0;
+    const unsigned char *eol = memchr(u, '\n', ulim - u);
+
+    // Check that the first line is entirely textual
+    if (! is_text_only(u, eol? eol : ulim)) return 0;
+
+    // If the first line is very long, consider the file to indeed be FASTA/Q
+    if (eol == NULL) return 1;
+
+    u = eol+1; // Now points to the first character of the second line
 
     // Scan over all base-encoding letters (including 'N' but not SEQ's '=')
     while (u < ulim && (seq_nt16_table[*u] != 15 || toupper(*u) == 'N')) {
@@ -676,12 +683,12 @@ int hts_detect_format2(hFILE *hfile, const char *fname, htsFormat *fmt)
         fmt->format = hts_crypt4gh_format;
         return 0;
     }
-    else if (len >= 1 && s[0] == '>' && secondline_is_bases(s, &s[len])) {
+    else if (len >= 1 && s[0] == '>' && is_fastaq(s, &s[len])) {
         fmt->category = sequence_data;
         fmt->format = fasta_format;
         return 0;
     }
-    else if (len >= 1 && s[0] == '@' && secondline_is_bases(s, &s[len])) {
+    else if (len >= 1 && s[0] == '@' && is_fastaq(s, &s[len])) {
         fmt->category = sequence_data;
         fmt->format = fastq_format;
         return 0;
@@ -1347,6 +1354,8 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
     int ret = -1;
 
     if (fn2_len > sizeof(fn_buf)) {
+        if (fn2_len >= INT_MAX) // Silence gcc format-truncation warning
+            return -1;
         fn2 = malloc(fn2_len);
         if (!fn2) return -1;
     }
@@ -1897,7 +1906,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
     case no_compression:
         str->l = 0;
         ret = kgetline2(str, (kgets_func2 *) hgetln, fp->fp.hfile);
-        if (ret >= 0) ret = str->l;
+        if (ret >= 0) ret = (str->l <= INT_MAX)? (int) str->l : INT_MAX;
         else if (herrno(fp->fp.hfile)) ret = -2, errno = herrno(fp->fp.hfile);
         else ret = -1;
         break;
@@ -4586,7 +4595,9 @@ hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags)
 
     hts_idx_t *idx = idx_read(fnidx);
     if (!idx && !(flags & HTS_IDX_SILENT_FAIL))
-        hts_log_error("Could not load local index file '%s'", fnidx);
+        hts_log_error("Could not load local index file '%s'%s%s", fnidx,
+                      errno ? " : " : "", errno ? strerror(errno) : "");
+
 
     free(local_fnidx);
 

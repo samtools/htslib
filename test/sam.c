@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2020 Genome Research Ltd.
+    Copyright (C) 2014-2020, 2022 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -1525,7 +1525,11 @@ static void test_text_file(const char *filename, int nexp)
     if (in) {
         kstring_t str = KS_INITIALIZE;
         int ret, n = 0;
-        while ((ret = hts_getline(in, '\n', &str)) >= 0) n++;
+        while ((ret = hts_getline(in, '\n', &str)) >= 0) {
+            size_t len = strlen(str.s);
+            n++;
+            if (ret != len) fail("hts_getline read length %d (expected %zu)", ret, len);
+        }
         if (ret != -1) fail("hts_getline got an error from %s", filename);
         if (n != nexp) fail("hts_getline read %d lines from %s (expected %d)", n, filename, nexp);
 

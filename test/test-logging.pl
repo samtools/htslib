@@ -33,7 +33,7 @@ sub check_log_message
   my ($message, $filename, $line_num) = @_;
   $log_message_count++;
 
-  unless ($message =~ /^\"([A-Z]|%s)/)
+  unless ($message =~ /^\"([A-Z!-@]|%s)/)
   {
     print "$filename line $line_num:\n";
     print "Log message should begin with a capital letter: $message.\n";

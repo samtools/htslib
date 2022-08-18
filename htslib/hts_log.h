@@ -58,6 +58,7 @@ enum htsLogLevel hts_get_log_level(void);
  * One of the HTS_LOG_* values. The default is HTS_LOG_WARNING.
  * \note Avoid direct use of this variable. Use hts_set_log_level and hts_get_log_level instead.
  */
+HTSLIB_EXPORT
 extern int hts_verbose;
 
 /*! Logs an event.

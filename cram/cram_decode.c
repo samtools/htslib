@@ -2037,12 +2037,30 @@ static int cram_decode_aux(cram_fd *fd,
             m = map_find(c->comp_hdr->tag_encoding_map, tag_data, id);
             if (!m)
                 return -1;
+
             BLOCK_APPEND(s->aux_blk, (char *)tag_data, 3);
 
             if (!m->codec) return -1;
             r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
             if (r) break;
             cr->aux_size += out_sz + 3;
+
+            // cF CRAM flags.
+            if (TN[-3]=='c' && TN[-2]=='F' && TN[-1]=='C' && out_sz == 1) {
+                // Remove cF tag
+                uint8_t cF = BLOCK_END(s->aux_blk)[-1];
+                BLOCK_SIZE(s->aux_blk) -= out_sz+3;
+                cr->aux_size -= out_sz+3;
+
+                // bit 1 => don't auto-decode MD.
+                // Pretend MD is present verbatim, so we don't auto-generate
+                if ((cF & 1) && has_MD && *has_MD == 0)
+                    *has_MD = 1;
+
+                // bit 1 => don't auto-decode NM
+                if ((cF & 2) && has_NM && *has_NM == 0)
+                    *has_NM = 1;
+            }
         }
     }
 
@@ -2423,10 +2441,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         if ((!s->ref && s->hdr->ref_base_id < 0)
             || memcmp(digest, s->hdr->md5, 16) != 0) {
             char M[33];
-            hts_log_error("MD5 checksum reference mismatch at #%d:%d-%d",
-                          ref_id, s->ref_start, s->ref_end);
-            hts_log_error("CRAM: %s", md5_print(s->hdr->md5, M));
-            hts_log_error("Ref : %s", md5_print(digest, M));
+            const char *rname = sam_hdr_tid2name(sh, ref_id);
+            if (!rname) rname="?"; // cannot happen normally
+            hts_log_error("MD5 checksum reference mismatch at %s:%d-%d",
+                          rname, s->ref_start, s->ref_end);
+            hts_log_error("CRAM  : %s", md5_print(s->hdr->md5, M));
+            hts_log_error("Ref   : %s", md5_print(digest, M));
+            kstring_t ks = KS_INITIALIZE;
+            if (sam_hdr_find_tag_id(sh, "SQ", "SN", rname, "M5", &ks) == 0)
+                hts_log_error("@SQ M5: %s", ks.s);
+            hts_log_error("Please check the reference given is correct");
+            ks_free(&ks);
             return -1;
         }
     }

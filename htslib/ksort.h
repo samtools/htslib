@@ -64,6 +64,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "hts_defs.h"
 
 #ifndef klib_unused
 #if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
@@ -81,6 +82,7 @@ extern "C" {
 // problems on Windows.  Don't include htslib/hts_os.h for this as it
 // may not get on with older attempts to fix this in code that includes
 // this file.
+HTSLIB_EXPORT
 extern double hts_drand48(void);
 
 typedef struct {
@@ -88,7 +90,7 @@ typedef struct {
 	int depth;
 } ks_isort_stack_t;
 
-#define KSORT_SWAP(type_t, a, b) { register type_t t=(a); (a)=(b); (b)=t; }
+#define KSORT_SWAP(type_t, a, b) { type_t t=(a); (a)=(b); (b)=t; }
 
 #define KSORT_INIT(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, , type_t, __sort_lt)
 #define KSORT_INIT_STATIC(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, static klib_unused, type_t, __sort_lt)

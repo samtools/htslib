@@ -44,6 +44,9 @@ P minimal-q.sam $tview minimal.fa
 P multiline.sam $tview multiline.fq
 P multiline-q.sam $tview multiline.fa
 
+# FASTQ with a very long header line
+P longline.sam $tview -i fastq_aux longline.fq
+
 # Single file, unpaired data, with / without aux tags
 P single_noaux.sam $tview single.fq
 P single_noaux-q.sam $tview single.fa

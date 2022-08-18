@@ -1,7 +1,7 @@
 /// @file htslib/hts.h
 /// Format-neutral I/O, indexing, and iterator API functions.
 /*
-    Copyright (C) 2012-2021 Genome Research Ltd.
+    Copyright (C) 2012-2022 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
     Portions copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3@live.co.uk>
 
@@ -456,16 +456,19 @@ The input character may be either an IUPAC ambiguity code, '=' for 0, or
 '0'/'1'/'2'/'3' for a result of 1/2/4/8.  The result is encoded as 1/2/4/8
 for A/C/G/T or combinations of these bits for ambiguous bases.
 */
+HTSLIB_EXPORT
 extern const unsigned char seq_nt16_table[256];
 
 /*! @abstract Table for converting a 4-bit encoded nucleotide to an IUPAC
 ambiguity code letter (or '=' when given 0).
 */
+HTSLIB_EXPORT
 extern const char seq_nt16_str[];
 
 /*! @abstract Table for converting a 4-bit encoded nucleotide to about 2 bits.
 Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
 */
+HTSLIB_EXPORT
 extern const int seq_nt16_int[];
 
 /*!
@@ -486,7 +489,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 101501
+#define HTS_VERSION 101600
 
 /*! @abstract Introspection on the features enabled in htslib
  *
@@ -673,7 +676,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...);
   @param fp         The file handle
   @param delimiter  Unused, but must be '\n' (or KS_SEP_LINE)
   @param str        The line (not including the terminator) is written here
-  @return           Length of the string read;
+  @return           Length of the string read (capped at INT_MAX);
                     -1 on end-of-file; <= -2 on error
 */
 HTSLIB_EXPORT

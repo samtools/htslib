@@ -123,6 +123,7 @@ typedef struct bcf_hdr_t {
     int32_t m[3];          // m: allocated size of the dictionary block in use (see n above)
 } bcf_hdr_t;
 
+HTSLIB_EXPORT
 extern uint8_t bcf_type_shift[];
 
 /**************
@@ -137,13 +138,16 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_FLOAT    5
 #define BCF_BT_CHAR     7
 
-#define VCF_REF      0
-#define VCF_SNP      1
-#define VCF_MNP      2
-#define VCF_INDEL    4
-#define VCF_OTHER    8
-#define VCF_BND     16    // breakend
-#define VCF_OVERLAP 32    // overlapping deletion, ALT=*
+#define VCF_REF         0
+#define VCF_SNP     (1<<0)
+#define VCF_MNP     (1<<1)
+#define VCF_INDEL   (1<<2)
+#define VCF_OTHER   (1<<3)
+#define VCF_BND     (1<<4)      // breakend
+#define VCF_OVERLAP (1<<5)      // overlapping deletion, ALT=*
+#define VCF_INS     (1<<6)      // implies VCF_INDEL
+#define VCF_DEL     (1<<7)      // implies VCF_INDEL
+#define VCF_ANY     (VCF_SNP|VCF_MNP|VCF_INDEL|VCF_OTHER|VCF_BND|VCF_OVERLAP|VCF_INS|VCF_DEL)       // any variant type (but not VCF_REF)
 
 typedef struct bcf_variant_t {
     int type, n;    // variant type and the number of bases affected, negative for deletions
@@ -749,14 +753,101 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *src_line);
 
+    /// Get variant types in a BCF record
     /**
-     *  bcf_get_variant_type[s]()  - returns one of VCF_REF, VCF_SNP, etc
+     *  @param rec   BCF/VCF record
+     *  @return Types of variant present
+     *
+     *  The return value will be a bitwise-or of VCF_SNP, VCF_MNP,
+     *  VCF_INDEL, VCF_OTHER, VCF_BND or VCF_OVERLAP.  If will return
+     *  VCF_REF (i.e. 0) if none of the other types is present.
+     *  @deprecated Please use bcf_has_variant_types() instead
      */
     HTSLIB_EXPORT
     int bcf_get_variant_types(bcf1_t *rec);
 
+    /// Get variant type in a BCF record, for a given allele
+    /**
+     *  @param  rec        BCF/VCF record
+     *  @param  ith_allele Allele to check
+     *  @return Type of variant present
+     *
+     *  The return value will be one of VCF_REF, VCF_SNP, VCF_MNP,
+     *  VCF_INDEL, VCF_OTHER, VCF_BND or VCF_OVERLAP.
+     *  @deprecated Please use bcf_has_variant_type() instead
+     */
     HTSLIB_EXPORT
     int bcf_get_variant_type(bcf1_t *rec, int ith_allele);
+
+    /// Match mode for bcf_has_variant_types()
+    enum bcf_variant_match {
+        bcf_match_exact,   ///< Types present exactly match tested for
+        bcf_match_overlap, ///< At least one variant type in common
+        bcf_match_subset,  ///< Test set is a subset of types present
+    };
+
+    /// Check for presence of variant types in a BCF record
+    /**
+     *  @param rec      BCF/VCF record
+     *  @param bitmask  Set of variant types to test for
+     *  @param mode     Match mode
+     *  @return >0 if the variant types are present,
+     *           0 if not present,
+     *          -1 on error
+     *
+     *  @p bitmask should be the bitwise-or of the variant types (VCF_SNP,
+     *     VCF_MNP, etc.) to test for.
+     *
+     *  The return value is the bitwise-and of the set of types present
+     *  and @p bitmask.  Callers that want to check for the presence of more
+     *  than one type can avoid function call overhead by passing all the
+     *  types to be checked for in a single call to this function, in
+     *  bcf_match_overlap mode, and then check for them individually in the
+     *  returned value.
+     *
+     *  As VCF_REF is represented by 0 (i.e. the absence of other variants)
+     *  it should be tested for using
+     *    bcf_has_variant_types(rec, VCF_REF, bcf_match_exact)
+     *  which will return 1 if no other variant type is present, otherwise 0.
+     */
+    HTSLIB_EXPORT
+    int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask, enum bcf_variant_match mode);
+
+    /// Check for presence of variant types in a BCF record, for a given allele
+    /**
+     *  @param rec         BCF/VCF record
+     *  @param ith_allele  Allele to check
+     *  @param bitmask     Set of variant types to test for
+     *  @return >0 if one of the variant types is present,
+     *           0 if not present,
+     *          -1 on error
+     *
+     *  @p bitmask should be the bitwise-or of the variant types (VCF_SNP,
+     *     VCF_MNP, etc.) to test for, or VCF_REF on its own.
+     *
+     *  The return value is the bitwise-and of the set of types present
+     *  and @p bitmask.  Callers that want to check for the presence of more
+     *  than one type can avoid function call overhead by passing all the
+     *  types to be checked for in a single call to this function, and then
+     *  check for them individually in the returned value.
+     *
+     *  As a special case, if @p bitmask is VCF_REF (i.e. 0), the function
+     *  tests for an exact match.  The return value will be 1 if the
+     *  variant type calculated for the allele is VCF_REF, otherwise if
+     *  any other type is present it will be 0.
+     */
+    HTSLIB_EXPORT
+    int bcf_has_variant_type(bcf1_t *rec, int ith_allele, uint32_t bitmask);
+
+    /// Return the number of bases affected by a variant, for a given allele
+    /**
+     *  @param rec         BCF/VCF record
+     *  @param ith_allele  Allele index
+     *  @return The number of bases affected (negative for deletions),
+     *          or bcf_int32_missing on error.
+     */
+    HTSLIB_EXPORT
+    int bcf_variant_length(bcf1_t *rec, int ith_allele);
 
     HTSLIB_EXPORT
     int bcf_is_snp(bcf1_t *v);
@@ -1341,7 +1432,9 @@ which works for both BCF and VCF.
 #define BCF_MIN_BT_INT16 (-32760)      /* INT16_MIN + 8 */
 #define BCF_MIN_BT_INT32 (-2147483640) /* INT32_MIN + 8 */
 
+HTSLIB_EXPORT
 extern uint32_t bcf_float_vector_end;
+HTSLIB_EXPORT
 extern uint32_t bcf_float_missing;
 static inline void bcf_float_set(float *ptr, uint32_t value)
 {
@@ -1367,21 +1460,23 @@ static inline int bcf_float_is_vector_end(float f)
 static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
     uint32_t e = 0;
-    #define BRANCH(type_t, missing, vector_end) { \
-        type_t *ptr = (type_t*) (fmt->p + isample*fmt->size); \
+    #define BRANCH(type_t, convert, missing, vector_end) { \
+        uint8_t *ptr = fmt->p + isample*fmt->size; \
         int i; \
-        for (i=0; i<fmt->n && ptr[i]!=vector_end; i++) \
+        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
         { \
-            if ( i ) e |= kputc("/|"[ptr[i]&1], str) < 0; \
-            if ( !(ptr[i]>>1) ) e |= kputc('.', str) < 0; \
-            else e |= kputw((ptr[i]>>1) - 1, str) < 0; \
+            type_t val = convert(ptr); \
+            if ( val == vector_end ) break; \
+            if ( i ) e |= kputc("/|"[val&1], str) < 0; \
+            if ( !(val>>1) ) e |= kputc('.', str) < 0; \
+            else e |= kputw((val>>1) - 1, str) < 0; \
         } \
         if (i == 0) e |= kputc('.', str) < 0; \
     }
     switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing, bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing, bcf_int32_vector_end); break;
         case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
         default: hts_log_error("Unexpected type %d", fmt->type); return -2;
     }
