@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Noteworthy changes in release 1.16 (18th August 2022)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 * Make hfile_s3 refresh AWS credentials on expiry in order to make HTSlib work
   better with AWS IAM credentials, which have a limited lifespan.
   (PR#1462 and PR#1474, addresses #344)
