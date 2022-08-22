@@ -93,9 +93,6 @@ static char *find_chrom_header_line(char *s)
 
 static int bcf_hdr_add_sample_len(bcf_hdr_t *h, const char *s, size_t len)
 {
-    if ( !s ) return 0;
-    if (len == 0) len = strlen(s);
-
     const char *ss = s;
     while ( *ss && isspace_c(*ss) && ss - s < len) ss++;
     if ( !*ss || ss - s == len)
@@ -140,7 +137,12 @@ static int bcf_hdr_add_sample_len(bcf_hdr_t *h, const char *s, size_t len)
 
 int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
-    return bcf_hdr_add_sample_len(h, s, 0);
+    if (!s) {
+        // Allowed for backwards-compatibility, calling with s == NULL
+        // used to trigger bcf_hdr_sync(h);
+        return 0;
+    }
+    return bcf_hdr_add_sample_len(h, s, strlen(s));
 }
 
 int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *hdr, const char *str)
