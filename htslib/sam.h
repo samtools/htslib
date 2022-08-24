@@ -1777,11 +1777,13 @@ HTSLIB_EXPORT
 int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
 
 /// Delete tag data from a bam record
-/* @param b The bam record to update
-   @param s Pointer to the tag to delete, as returned by bam_aux_get().
-   @return 0 on success; -1 on failure
-   If the bam record's aux data is corrupt, errno is set to EINVAL and this
-   function returns -1;
+/** @param b   The BAM record to update
+    @param s   Pointer to the aux field to delete, as returned by bam_aux_get()
+               Must not be NULL
+    @return    0 on success; -1 on failure
+
+If the BAM record's aux data is corrupt, errno is set to EINVAL and this
+function returns -1.
 */
 HTSLIB_EXPORT
 int bam_aux_del(bam1_t *b, uint8_t *s);
