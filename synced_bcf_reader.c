@@ -623,7 +623,9 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         {
             if ( reader->file->format.format==vcf )
             {
-                if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
+                ret = hts_getline(reader->file, KS_SEP_LINE, &files->tmps);
+                if ( ret < -1 ) files->errnum = bcf_read_error;
+                if ( ret < 0 ) break; // no more lines or an error
                 ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
                 if ( ret<0 ) { files->errnum = vcf_parse_error; break; }
             }
