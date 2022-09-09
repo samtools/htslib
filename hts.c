@@ -2354,9 +2354,9 @@ int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end)
         return 0;
 
     if (idx->fmt == HTS_FMT_CSI) {
-        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos
-                      " cannot be stored in a csi index. "
-                      "Please check headers match the data",
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" "
+                      "cannot be stored in a csi index with these parameters. "
+                      "Please use a larger min_shift or depth",
                       beg, end);
     } else {
         hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos

@@ -321,8 +321,11 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
             continue;
         }
         if (first == 0) {
-            if (fmt == HTS_FMT_CSI)
+            if (fmt == HTS_FMT_CSI) {
+                if (!max_ref_len)
+                    max_ref_len = (int64_t)100*1024*1024*1024; // 100G default
                 n_lvls = adjust_n_lvls(min_shift, n_lvls, max_ref_len);
+            }
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
             if (!tbx->idx) goto fail;
             first = 1;
