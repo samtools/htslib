@@ -3853,7 +3853,6 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
     }
 
     // Name
-
     if (*x->name.s != x->nprefix)
         return -2;
 
@@ -3893,8 +3892,8 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         if ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) < 0)
             if (fp->format.format == fastq_format || ret < -1)
                 return -2;
-        if (*fp->line.s == (fp->format.format == fastq_format ? '+' : '>')
-            || ret == -1)
+        if (ret == -1 ||
+            *fp->line.s == (fp->format.format == fastq_format ? '+' : '>'))
             break;
         if (kputsn(fp->line.s, fp->line.l, &x->seq) < 0)
             return -2;
