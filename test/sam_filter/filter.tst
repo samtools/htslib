@@ -42,17 +42,17 @@ P string6.out $tv -i 'filter=library=="x"' ../xx#rg.sam
 P string7.out $tv -i 'filter=library!="x"' ../xx#rg.sam
 
 # Integer ops
-P int1.out    $tv -i 'filter=pos % 23 == 11' ../ce#1000.sam |egrep -cv '^@'
-P int2.out    $tv -i 'filter=qlen/(flag*mapq+pos)>5' ../ce#1000.sam |egrep -cv '^@'
+P int1.out    $tv -i 'filter=pos % 23 == 11' ../ce#1000.sam | grep -E -cv '^@'
+P int2.out    $tv -i 'filter=qlen/(flag*mapq+pos)>5' ../ce#1000.sam | grep -E -cv '^@'
 
 # Aux tags
-P int3.out    $tv -i 'filter=[NM]>=10 || [MD]=~"A.*A.*A"' -t4 ../ce#1000.sam |egrep -cv '^@'
+P int3.out    $tv -i 'filter=[NM]>=10 || [MD]=~"A.*A.*A"' -t4 ../ce#1000.sam | grep -E -cv '^@'
 
 # Functions.
-P func1.out   $tv -i 'filter=length(seq) != qlen' ../ce#5b.sam | egrep -cv '^@'
-P func2.out   $tv -i 'filter=min(qual) >= 20' ../ce#1000.sam | egrep -cv '^@'
-P func3.out   $tv -i 'filter=max(qual) <= 20' ../ce#1000.sam | egrep -cv '^@'
-P func4.out   $tv -i 'filter=avg(qual) >= 20 && avg(qual) <= 30' ../ce#1000.sam | egrep -cv '^@'
-P func5.out   $tv -i 'filter=sclen>=20' ../realn02.sam | egrep -v '^@'
-P func6.out   $tv -i 'filter=rlen<50'   ../realn02.sam | egrep -v '^@'
-P func7.out   $tv -i 'filter=qlen>100'   ../realn02.sam | egrep -v '^@'
+P func1.out   $tv -i 'filter=length(seq) != qlen' ../ce#5b.sam | grep -E -cv '^@'
+P func2.out   $tv -i 'filter=min(qual) >= 20' ../ce#1000.sam | grep -E -cv '^@'
+P func3.out   $tv -i 'filter=max(qual) <= 20' ../ce#1000.sam | grep -E -cv '^@'
+P func4.out   $tv -i 'filter=avg(qual) >= 20 && avg(qual) <= 30' ../ce#1000.sam | grep -E -cv '^@'
+P func5.out   $tv -i 'filter=sclen>=20' ../realn02.sam | grep -E -v '^@'
+P func6.out   $tv -i 'filter=rlen<50'   ../realn02.sam | grep -E -v '^@'
+P func7.out   $tv -i 'filter=qlen>100'   ../realn02.sam | grep -E -v '^@'
