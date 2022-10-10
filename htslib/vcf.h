@@ -205,6 +205,9 @@ typedef struct bcf_dec_t {
 #define BCF_ERR_CTG_INVALID   32
 #define BCF_ERR_TAG_INVALID   64
 
+// get the error descriptions
+const char* bcf_strerror(int errorcode, char* buffer, size_t maxbuffer);
+
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
     is slower because the string is first to be parsed, packed into BCF line

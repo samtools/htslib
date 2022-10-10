@@ -1574,6 +1574,17 @@ static inline void *ed_swap_8p(void *x)
     return x;
 }
 
+
+/*
+error description structure definition
+modules can have their own error descriptions until an unified error handling is in place
+*/
+#define MAX_ERR_DESC 255    //max description size
+typedef struct err_desc {
+    int  errorcode;
+    char description[ MAX_ERR_DESC + 1 ];
+}err_desc;
+
 #ifdef __cplusplus
 }
 #endif

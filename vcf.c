@@ -1976,7 +1976,8 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
         // header.  At this point, the header must have been printed,
         // proceeding would lead to a broken BCF file. Errors must be checked
         // and cleared by the caller before we can proceed.
-        hts_log_error("Unchecked error (%d) at %s:%"PRIhts_pos, v->errcode, bcf_seqname_safe(h,v), v->pos+1);
+        char errdescription[1024] = "";
+        hts_log_error("Unchecked error (%d %s) at %s:%"PRIhts_pos, v->errcode, bcf_strerror(v->errcode, errdescription, sizeof(errdescription)), bcf_seqname_safe(h,v), v->pos+1);
         return -1;
     }
     bcf1_sync(v);   // check if the BCF record was modified
@@ -3817,7 +3818,8 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
     int i;
     if ( line->errcode )
     {
-        hts_log_error("Unchecked error (%d) at %s:%"PRIhts_pos", exiting", line->errcode, bcf_seqname_safe(src_hdr,line), line->pos+1);
+        char errordescription[1024] = "";
+        hts_log_error("Unchecked error (%d %s) at %s:%"PRIhts_pos", exiting", line->errcode, bcf_strerror(line->errcode, errordescription, sizeof(errordescription)),  bcf_seqname_safe(src_hdr,line), line->pos+1);
         exit(1);
     }
     if ( src_hdr->ntransl==-1 ) return 0;    // no need to translate, all tags have the same id
@@ -5049,3 +5051,44 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     #undef BRANCH
     return nsmpl*fmt->n;
 }
+
+// error descriptions, max desc size is 255
+static err_desc errdesc_bcf[] = { \
+    { BCF_ERR_CTG_UNDEF, "Undefined contig"}, \
+    { BCF_ERR_TAG_UNDEF, "Undefined tag" }, \
+    { BCF_ERR_NCOLS, "Incorrect number of columns" }, \
+    { BCF_ERR_LIMITS, "Limits reached" }, \
+    { BCF_ERR_CHAR, "Invalid character" }, \
+    { BCF_ERR_CTG_INVALID, "Invalid contig" }, \
+    { BCF_ERR_TAG_INVALID, "Invalid tag" }, \
+};
+
+//get description for given error code. return NULL on error
+const char* bcf_strerror(int errorcode, char* buffer, size_t maxbuffer) {
+    size_t rembuffer = maxbuffer;
+    if (!buffer || maxbuffer < 4)
+        return NULL;		//invalid / insufficient buffer
+
+    if(!errorcode) {
+        buffer[0] = '\0';      //no error, set null
+        return buffer;
+    }
+
+    for(int idx = 0; idx < sizeof(errdesc_bcf) / sizeof(err_desc); ++idx) {
+        if (errorcode & errdesc_bcf[idx].errorcode) {    //error is set, add description if there is enough space for descirption and optional ','
+            if (rembuffer > (strlen(errdesc_bcf[idx].description) + (rembuffer == maxbuffer? 0 : 1))) {
+                rembuffer -= snprintf(buffer + maxbuffer - rembuffer, rembuffer, "%s%s", rembuffer == maxbuffer? "": ",", errdesc_bcf[idx].description);
+            } else {    //not enough space for description, put ...
+                size_t tmppos = (rembuffer <= 4) ? maxbuffer - 4 : maxbuffer - rembuffer;
+                snprintf(buffer + tmppos, maxbuffer - tmppos, "...");
+                break;
+            }
+        }
+    }
+    return buffer;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
