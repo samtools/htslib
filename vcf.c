@@ -5067,7 +5067,7 @@ static err_desc errdesc_bcf[] = { \
 const char* bcf_strerror(int errorcode, char* buffer, size_t maxbuffer) {
     size_t rembuffer = maxbuffer;
     if (!buffer || maxbuffer < 4)
-        return NULL;		//invalid / insufficient buffer
+        return NULL;           //invalid / insufficient buffer
 
     if(!errorcode) {
         buffer[0] = '\0';      //no error, set null
@@ -5087,8 +5087,4 @@ const char* bcf_strerror(int errorcode, char* buffer, size_t maxbuffer) {
     }
     return buffer;
 }
-
-#ifdef __cplusplus
-}
-#endif
 
