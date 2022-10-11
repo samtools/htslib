@@ -13,7 +13,7 @@ libdeflate_template: &LIBDEFLATE
   libdeflate_script: |
     if test "x$USE_LIBDEFLATE" == "xyes"; then
       pushd "$HOME"
-      git clone --depth 1 https://github.com/ebiggers/libdeflate.git
+      git clone -b v1.13 --depth 1 https://github.com/ebiggers/libdeflate.git
       pushd libdeflate
       make -j 4 CFLAGS='-fPIC -O3' libdeflate.a
       popd
