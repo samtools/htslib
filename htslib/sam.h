@@ -189,7 +189,7 @@ extern const int8_t bam_cigar_table[256];
  * Mate position and insert size also need to be 64-bit, but
  * we won't accept more than 32-bit for tid.
  *
- * The bam_core_t structure is the *in memory* layout and not
+ * The bam1_core_t structure is the *in memory* layout and not
  * the same as the on-disk format.  64-bit changes here permit
  * SAM to work with very long chromosomes and permit BAM and CRAM
  * to seamlessly update in the future without further API/ABI
