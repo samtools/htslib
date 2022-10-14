@@ -2521,41 +2521,37 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         // collect fmt stats: max vector size, length, number of alleles
         j = 0;  // j-th format field
         fmt_aux_t *f = fmt;
-        for (;;) {
-            switch (*r) {
-            case ',':
-                m++;
-                break;
 
-            case '|':
-            case '/':
-                if (f->is_gt) g++;
-                break;
-
-            case '\t':
-                *r = 0; // fall through
-
-            case '\0':
-            case ':':
+        l--; r--;
+        do {
+            l++;r++;
+            if (*r == ':') {
                 if (f->max_m < m) f->max_m = m;
                 if (f->max_l < l) f->max_l = l;
                 if (f->is_gt && f->max_g < g) f->max_g = g;
                 l = 0, m = g = 1;
-                if ( *r==':' ) {
-                    j++; f++;
-                    if ( j>=v->n_fmt ) {
-                        hts_log_error("Incorrect number of FORMAT fields at %s:%"PRIhts_pos"",
-                                      h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
-                        v->errcode |= BCF_ERR_NCOLS;
-                        return -1;
-                    }
-                } else goto end_for;
+                j++; f++;
+                if ( j>=v->n_fmt ) {
+                    hts_log_error("Incorrect number of FORMAT fields at %s:%"PRIhts_pos"",
+                                  h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
+                    v->errcode |= BCF_ERR_NCOLS;
+                    return -1;
+                }
+            } else if (*r == ',') {
+                m++;
+            } else if ((*r == '|' || *r == '/') && f->is_gt) {
+                g++;
+            } else if (*r == '\t' || *r == '\0') {
+                if (*r == '\t')
+                    *r = 0;
+                if (f->max_m < m) f->max_m = m;
+                if (f->max_l < l) f->max_l = l;
+                if (f->is_gt && f->max_g < g) f->max_g = g;
+                l = 0, m = g = 1;
                 break;
             }
-            if ( r>=end ) break;
-            r++; l++;
-        }
-    end_for:
+        } while (r<end);
+
         v->n_sample++;
         if ( v->n_sample == bcf_hdr_nsamples(h) ) break;
         r++;
@@ -2662,7 +2658,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 } else {
                     char *x = (char*)z->buf + z->size * (size_t)m;
                     for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
-                    for (; l < z->size; ++l) x[l] = 0;
+                    //for (; l < z->size; ++l) x[l] = 0;
+                    memset(&x[l], 0, z->size - l);
+                    l = z->size;
                 }
             } else if ((z->y>>4&0xf) == BCF_HT_INT) {
                 int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
