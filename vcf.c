@@ -1976,7 +1976,8 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
         // header.  At this point, the header must have been printed,
         // proceeding would lead to a broken BCF file. Errors must be checked
         // and cleared by the caller before we can proceed.
-        hts_log_error("Unchecked error (%d) at %s:%"PRIhts_pos, v->errcode, bcf_seqname_safe(h,v), v->pos+1);
+        char errdescription[1024] = "";
+        hts_log_error("Unchecked error (%d %s) at %s:%"PRIhts_pos, v->errcode, bcf_strerror(v->errcode, errdescription, sizeof(errdescription)), bcf_seqname_safe(h,v), v->pos+1);
         return -1;
     }
     bcf1_sync(v);   // check if the BCF record was modified
@@ -2487,7 +2488,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
 
             k = kh_get(vdict, d, t);
-            v->errcode = BCF_ERR_TAG_UNDEF;
+            v->errcode |= BCF_ERR_TAG_UNDEF;
             if (res || k == kh_end(d)) {
                 hts_log_error("Could not add dummy header for FORMAT '%s' at %s:%"PRIhts_pos, t, bcf_seqname_safe(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_TAG_INVALID;
@@ -2917,7 +2918,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
             if (res < 0) bcf_hrec_destroy(hrec);
             if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
             k = kh_get(vdict, d, key);
-            v->errcode = BCF_ERR_TAG_UNDEF;
+            v->errcode |= BCF_ERR_TAG_UNDEF;
             if (res || k == kh_end(d)) {
                 hts_log_error("Could not add dummy header for INFO '%s' at %s:%"PRIhts_pos, key, bcf_seqname_safe(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_TAG_INVALID;
@@ -3817,7 +3818,8 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
     int i;
     if ( line->errcode )
     {
-        hts_log_error("Unchecked error (%d) at %s:%"PRIhts_pos", exiting", line->errcode, bcf_seqname_safe(src_hdr,line), line->pos+1);
+        char errordescription[1024] = "";
+        hts_log_error("Unchecked error (%d %s) at %s:%"PRIhts_pos", exiting", line->errcode, bcf_strerror(line->errcode, errordescription, sizeof(errordescription)),  bcf_seqname_safe(src_hdr,line), line->pos+1);
         exit(1);
     }
     if ( src_hdr->ntransl==-1 ) return 0;    // no need to translate, all tags have the same id
@@ -5049,3 +5051,74 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     #undef BRANCH
     return nsmpl*fmt->n;
 }
+
+//error description structure definition
+typedef struct err_desc {
+    int  errorcode;
+    const char *description;
+}err_desc;
+
+// error descriptions
+static const err_desc errdesc_bcf[] = {
+    { BCF_ERR_CTG_UNDEF, "Contig not defined in header"},
+    { BCF_ERR_TAG_UNDEF, "Tag not defined in header" },
+    { BCF_ERR_NCOLS, "Incorrect number of columns" },
+    { BCF_ERR_LIMITS, "Limits reached" },
+    { BCF_ERR_CHAR, "Invalid character" },
+    { BCF_ERR_CTG_INVALID, "Invalid contig" },
+    { BCF_ERR_TAG_INVALID, "Invalid tag" },
+};
+
+/// append given description to buffer based on available size and add ... when not enough space
+    /** @param buffer       buffer to which description to be appended
+        @param offset       offset at which to be appended
+        @param maxbuffer    maximum size of the buffer
+        @param description  the description to be appended
+on failure returns -1 - when buffer is not big enough; returns -1 on invalid params and on too small buffer which are improbable due to validation at caller site
+on success returns 0
+    */
+static int add_desc_to_buffer(char *buffer, size_t *offset, size_t maxbuffer, const char *description) {
+
+    if (!description || !buffer || !offset || (maxbuffer < 4))
+        return -1;
+
+    size_t rembuffer = maxbuffer - *offset;
+    if (rembuffer > (strlen(description) + (rembuffer == maxbuffer ? 0 : 1))) {    //add description with optionally required ','
+        *offset += snprintf(buffer + *offset, rembuffer, "%s%s", (rembuffer == maxbuffer)? "": ",", description);
+    } else {    //not enough space for description, put ...
+        size_t tmppos = (rembuffer <= 4) ? maxbuffer - 4 : *offset;
+        snprintf(buffer + tmppos, 4, "...");    //ignore offset update
+        return -1;
+    }
+    return 0;
+}
+
+//get description for given error code. return NULL on error
+const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer) {
+    size_t usedup = 0;
+    int ret = 0;
+
+    if (!buffer || maxbuffer < 4)
+        return NULL;           //invalid / insufficient buffer
+
+    if (!errorcode) {
+        buffer[0] = '\0';      //no error, set null
+        return buffer;
+    }
+
+    for (int idx = 0; idx < sizeof(errdesc_bcf) / sizeof(err_desc); ++idx) {
+        if (errorcode & errdesc_bcf[idx].errorcode) {    //error is set, add description
+            ret = add_desc_to_buffer(buffer, &usedup, maxbuffer, errdesc_bcf[idx].description);
+            if (ret < 0)
+                break;         //not enough space, ... added, no need to continue
+
+            errorcode &= ~errdesc_bcf[idx].errorcode;    //reset the error
+        }
+    }
+
+    if (errorcode && (ret >= 0))  {     //undescribed error is present in error code and had enough buffer, try to add unkonwn error as well§
+        add_desc_to_buffer(buffer, &usedup, maxbuffer, "Unknown error");
+    }
+    return buffer;
+}
+
