@@ -206,15 +206,17 @@ typedef struct bcf_dec_t {
 #define BCF_ERR_TAG_INVALID   64
 
 /// Get error description for bcf error code
-    /** @param errorcode  The error code which is to be described
-        @param buffer     The buffer in which description to be added
-        @param maxbuffer  The size of buffer passed
-        @return NULL on invalid buffer; buffer on other cases
-The buffer will be empty when the errorcode is 0.
-Description of errors present in code will be appeneded to buffer with ',' separation.
-The buffer has to be atleast 4 character long and NULL will be returned if buffer is smaller or when buffer is NULL.
-'...' will be appended if description doesn't fit in given buffer.
-     */
+/** @param errorcode  The error code which is to be described
+    @param buffer     The buffer in which description to be added
+    @param maxbuffer  The size of buffer passed
+    @return NULL on invalid buffer; buffer on other cases
+
+The buffer will be an empty string when @p errorcode is 0.
+Description of errors present in code will be appended to @p buffer with ',' separation.
+The buffer has to be at least 4 characters long. NULL will be returned if it is smaller or when buffer is NULL.
+
+'...' will be appended if the description doesn't fit in the given buffer.
+ */
 
 HTSLIB_EXPORT
 const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer);
