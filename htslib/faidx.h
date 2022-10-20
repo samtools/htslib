@@ -188,6 +188,15 @@ char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
 HTSLIB_EXPORT
 char *fai_fetch64(const faidx_t *fai, const char *reg, hts_pos_t *len);
 
+/// Query the line-wrap length for a chromosome specified as part of a region
+/** @param  fai  Pointer to the faidx_t struct
+    @param  reg  Region in the format "chr2:20,000-30,000"
+    @return      The line length (excluding newline),
+                 negative on error.
+*/
+HTSLIB_EXPORT
+hts_pos_t fai_line_length(const faidx_t *fai, const char *reg);
+
 /// Fetch the quality string for a region for FASTQ files
 /** @param  fai  Pointer to the faidx_t struct
     @param  reg  Region in the format "chr2:20,000-30,000"

@@ -702,6 +702,12 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
         return NULL;
     }
 
+    if (val->line_blen <= 0) {
+        hts_log_error("Invalid line length in index: %d", val->line_blen);
+        *len = -1;
+        return NULL;
+    }
+
     ret = bgzf_useek(fai->bgzf,
                      offset
                      + beg / val->line_blen * val->line_len
@@ -766,6 +772,22 @@ static int fai_get_val(const faidx_t *fai, const char *str,
     return 0;
 }
 
+/*
+ *  The internal still has line_blen as uint32_t, but our references
+ *  can be longer, so for future proofing we use hts_pos_t.  We also needed
+ *  a signed value so we can return negatives as an error.
+ */
+hts_pos_t fai_line_length(const faidx_t *fai, const char *str)
+{
+    faidx1_t val;
+    int64_t beg, end;
+    hts_pos_t len;
+
+    if (fai_get_val(fai, str, &len, &val, &beg, &end))
+        return -1;
+    else
+        return val.line_blen;
+}
 
 char *fai_fetch64(const faidx_t *fai, const char *str, hts_pos_t *len)
 {
