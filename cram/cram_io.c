@@ -3422,6 +3422,9 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
      */
     pthread_mutex_lock(&fd->refs->lock);
     if (r->length == 0) {
+        if (fd->refs->fn)
+            hts_log_warning("Reference file given, but ref '%s' not present",
+                            r->name);
         if (cram_populate_ref(fd, id, r) == -1) {
             hts_log_error("Failed to populate reference for id %d", id);
             pthread_mutex_unlock(&fd->refs->lock);
