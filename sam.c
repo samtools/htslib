@@ -4285,13 +4285,24 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
                      bc ? (char *)bc+1 : "0") < 0)
             return -1;
 
+        if (bc && (*bc != 'Z' || (!isupper_c(bc[1]) && !islower_c(bc[1])))) {
+            hts_log_warning("BC tag starts with non-sequence base; using '0'");
+            str->l -= strlen((char *)bc)-2; // limit to 1 char
+            str->s[str->l-1] = '0';
+            str->s[str->l] = 0;
+            bc = NULL;
+        }
+
         // Replace any non-alpha with '+'.  Ie seq-seq to seq+seq
         if (bc) {
             int l = strlen((char *)bc+1);
             char *c = (char *)str->s + str->l - l;
-            for (i = 0; i < l; i++)
+            for (i = 0; i < l; i++) {
                 if (!isalpha_c(c[i]))
                     c[i] = '+';
+                else if (islower_c(c[i]))
+                    c[i] = toupper_c(c[i]);
+            }
         }
     }
 
