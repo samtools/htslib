@@ -2263,7 +2263,7 @@ int main(int argc, char **argv)
     test_text_file("test/emptyfile", 0);
     test_text_file("test/xx#pair.sam", 7);
     test_text_file("test/xx.fa", 7);
-    test_text_file("test/fastqs.fq", 500);
+    test_text_file("test/faidx/fastqs.fq", 500);
     check_enum1();
     check_cigar_tab();
     check_big_ref(0);

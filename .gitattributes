@@ -20,3 +20,7 @@ README.md       export-ignore
 # Remove the text attribute from index_dos.sam, so that the line separators
 # for the test file don't get converted into Unix format.
 test/index_dos.sam -text
+
+# Remove the text attribute from various faidx test files
+test/faidx/faidx*.fa* -text
+test/faidx/fastqs*.fq* -text

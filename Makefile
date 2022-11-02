@@ -80,6 +80,7 @@ BUILT_TEST_PROGRAMS = \
 	test/sam \
 	test/test_bgzf \
 	test/test_expr \
+	test/test_faidx \
 	test/test_kfunc \
 	test/test_kstring \
 	test/test_mod \
@@ -583,12 +584,13 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	fi
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
+	cd test/faidx && ./test-faidx.sh faidx.tst
 	cd test/sam_filter && ./filter.sh filter.tst
 	cd test/tabix && ./test-tabix.sh tabix.tst
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	cd test/fastq && ./test-fastq.sh
 	cd test/base_mods && ./base-mods.sh base-mods.tst
-	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
+	REF_PATH=: test/sam test/ce.fa test/faidx/faidx.fa test/faidx/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
 
@@ -621,6 +623,9 @@ test/test_bgzf: test/test_bgzf.o libhts.a
 
 test/test_expr: test/test_expr.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_faidx: test/test_faidx.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_faidx.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_kfunc: test/test_kfunc.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
@@ -739,6 +744,7 @@ test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_reg
 test/test_str2int.o: test/test_str2int.c config.h $(textutils_internal_h)
 test/test_time_funcs.o: test/test_time_funcs.c config.h $(hts_time_funcs_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_hts_log_h)
+test/test_faidx.o: test/test_faidx.c config.h $(htslib_faidx_h)
 test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
@@ -845,7 +851,9 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
+	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* test/faidx/FAIL* \
+               test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* \
+               header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	-rm -rf htscodecs/tests/test.out
 
 # Only remove this in git checkouts
