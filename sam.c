@@ -5352,8 +5352,10 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
             break;
         case BAM_CINS:
             for (l = 0; l < (cigar[k]>>BAM_CIGAR_SHIFT); l++, j++) {
-                c = seq_nt16_str[bam_seqi(bam_get_seq(p->b),
-                                          p->qpos + j - p->is_del)];
+                c = p->qpos + j - p->is_del < p->b->core.l_qseq
+                    ? seq_nt16_str[bam_seqi(bam_get_seq(p->b),
+                                            p->qpos + j - p->is_del)]
+                    : 'N';
                 ins->s[indel++] = c;
                 int nm;
                 hts_base_mod mod[256];
