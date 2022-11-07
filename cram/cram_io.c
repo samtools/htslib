@@ -4836,7 +4836,8 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
             if (!(ty = sam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
                 return -1;
 
-            if (!sam_hrecs_find_key(ty, "M5", NULL)) {
+            sam_hrec_tag_t *has_m5 = sam_hrecs_find_key(ty, "M5", NULL);
+            if (!has_m5 || (fd->ref_fn && !fd->ignore_md5)) {
                 char unsigned buf[16];
                 char buf2[33];
                 int rlen;
@@ -4873,6 +4874,14 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 cram_ref_decr(fd->refs, i);
 
                 hts_md5_hex(buf2, buf);
+                if (has_m5 && strcmp(has_m5->str+3, buf2)) {
+                    hts_log_error("SQ header M5 tag discrepancy for "
+                                  "reference '%s'",
+                                  hdr->hrecs->ref[i].name);
+                    hts_log_error("Please use the correct reference, or "
+                                  "consider using embedded references");
+                    return -1;
+                }
                 if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
                     return -1;
             }
