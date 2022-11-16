@@ -137,6 +137,7 @@ rocky_task:
     LC_ALL: C
     CIRRUS_CLONE_DEPTH: 1
     USE_CONFIG: yes
+    CFLAGS: -std=gnu90
 
   # NB: we could consider building a docker image with these
   # preinstalled and specifying that instead, to speed up testing.
