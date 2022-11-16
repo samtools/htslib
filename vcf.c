@@ -5097,6 +5097,7 @@ static int add_desc_to_buffer(char *buffer, size_t *offset, size_t maxbuffer, co
 const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer) {
     size_t usedup = 0;
     int ret = 0;
+    int idx;
 
     if (!buffer || maxbuffer < 4)
         return NULL;           //invalid / insufficient buffer
@@ -5106,7 +5107,7 @@ const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer) {
         return buffer;
     }
 
-    for (int idx = 0; idx < sizeof(errdesc_bcf) / sizeof(err_desc); ++idx) {
+    for (idx = 0; idx < sizeof(errdesc_bcf) / sizeof(err_desc); ++idx) {
         if (errorcode & errdesc_bcf[idx].errorcode) {    //error is set, add description
             ret = add_desc_to_buffer(buffer, &usedup, maxbuffer, errdesc_bcf[idx].description);
             if (ret < 0)
