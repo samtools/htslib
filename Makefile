@@ -161,12 +161,20 @@ show-version:
 	@echo PACKAGE_VERSION = $(PACKAGE_VERSION)
 	@echo NUMERIC_VERSION = $(NUMERIC_VERSION)
 
+config_vars.h: override escape=$(subst ',\x27,$(subst ",\",$(subst \,\\,$(1))))
+config_vars.h: override hts_cc_escaped=$(call escape,$(CC))
+config_vars.h: override hts_cppflags_escaped=$(call escape,$(CPPFLAGS))
+config_vars.h: override hts_cflags_escaped=$(call escape,$(CFLAGS))
+config_vars.h: override hts_ldflags_escaped=$(call escape,$(LDFLAGS))
+config_vars.h: override hts_libs_escaped=$(call escape,$(LIBS))
+
 config_vars.h:
-	echo '#define HTS_CC "$(CC)"' > $@
-	echo '#define HTS_CPPFLAGS "$(CPPFLAGS)"' >> $@
-	echo '#define HTS_CFLAGS "$(CFLAGS)"' >> $@
-	echo '#define HTS_LDFLAGS "$(LDFLAGS)"' >> $@
-	echo '#define HTS_LIBS "$(LIBS)"' >> $@
+	printf '#define HTS_CC "%s"\n#define HTS_CPPFLAGS "%s"\n#define HTS_CFLAGS "%s"\n#define HTS_LDFLAGS "%s"\n#define HTS_LIBS "%s"\n' \
+	'$(hts_cc_escaped)' \
+	'$(hts_cppflags_escaped)' \
+	'$(hts_cflags_escaped)' \
+	'$(hts_ldflags_escaped)' \
+	'$(hts_libs_escaped)' > $@
 
 .SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
