@@ -890,6 +890,8 @@ static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
     if (!bgz) goto fail;
 
+    if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
+
     for (pos = 0; pos < f->ltext; ) {
         const char *end = strchr(text + pos, '\n');
         size_t l = end ? end - (text + pos) : f->ltext - pos;
@@ -909,12 +911,97 @@ static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
                     "Got      : %.*s\n",
                     __func__, f->tmp_bgzf, (int) l, (char *) f->text + pos,
                     (int) str.l, str.s);
+            goto fail;
         }
 
         pos += l + 1;
     }
 
     if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    free(ks_release(&str));
+    return 0;
+
+ fail:
+    if (bgz) bgzf_close(bgz);
+    free(ks_release(&str));
+    return -1;
+}
+
+static int test_bgzf_getline_on_truncated_file(Files *f, const char *mode, int nthreads) {
+    BGZF* bgz = NULL;
+    ssize_t bg_put;
+    size_t pos;
+    kstring_t str = { 0, 0, NULL };
+    const char *text = (const char *) f->text;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
+    if (!bgz) goto fail;
+
+    if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
+
+    const char *text_line2 = strchr(text, '\n') + 1;
+    bg_put = try_bgzf_write(bgz, text, text_line2 - text, f->tmp_bgzf, __func__);
+    if (bg_put < 0) goto fail;
+    if (bgzf_flush(bgz) < 0) goto fail;
+    int64_t block2_start = bgz->block_address;
+
+    const char *text_line3 = strchr(text_line2, '\n') + 1;
+    bg_put = try_bgzf_write(bgz, text_line2, text_line3 - text_line2, f->tmp_bgzf, __func__);
+    if (bg_put < 0) goto fail;
+    if (bgzf_flush(bgz) < 0) goto fail;
+    int64_t block3_start = bgz->block_address;
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+
+    for(int64_t newsize = block3_start - 1; newsize > block2_start; newsize--) {
+        fprintf(stderr, "test truncated %" PRId64 " with threads %d\n", newsize, nthreads);
+
+        if (truncate(f->tmp_bgzf, newsize) != 0) goto fail;
+
+        bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
+        if (!bgz) goto fail;
+
+        if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
+
+        for (pos = 0; pos < f->ltext; ) {
+            const char *end = strchr(text + pos, '\n');
+            size_t l = end ? end - (text + pos) : f->ltext - pos;
+
+            int res = bgzf_getline(bgz, '\n', &str);
+            if (res < -1) {
+                // ok, we expect error from truncated file
+                break;
+            } else if (res == -1) {
+                // truncated file should never return EOF since we do not truncate at block boundary
+                fprintf(stderr, "%s : %s from bgzf_getline on %s\n",
+                        __func__, "Unexpected EOF",
+                        f->tmp_bgzf);
+                goto fail;
+            }
+
+            if (str.l != l || memcmp(text + pos, str.s, l) != 0) {
+                fprintf(stderr,
+                        "%s : Unexpected data from bgzf_getline on %s\n"
+                        "Expected : %.*s\n"
+                        "Got      : %.*s\n",
+                        __func__, f->tmp_bgzf, (int) l, (char *) f->text + pos,
+                        (int) str.l, str.s);
+                goto fail;
+            }
+
+            pos += l + 1;
+        }
+
+        // verify we still get error and don't hang if we try again:
+        int res = bgzf_getline(bgz, '\n', &str);
+        if (res > -2) {
+            fprintf(stderr, "%s : unexpected bgzf_getline result %d\n", __func__, res);
+            goto fail;
+        }
+
+        // closing a stream with error returns error
+        if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) == 0) goto fail;
+    }
     free(ks_release(&str));
     return 0;
 
@@ -999,6 +1086,10 @@ int main(int argc, char **argv) {
     if (test_bgzf_getline(&f, "w", 0) != 0) goto out;
     if (test_bgzf_getline(&f, "w", 1) != 0) goto out;
     if (test_bgzf_getline(&f, "w", 2) != 0) goto out;
+
+    if (test_bgzf_getline_on_truncated_file(&f, "w", 0) != 0) goto out;
+    if (test_bgzf_getline_on_truncated_file(&f, "w", 1) != 0) goto out;
+    if (test_bgzf_getline_on_truncated_file(&f, "w", 2) != 0) goto out;
 
     retval = EXIT_SUCCESS;
 
