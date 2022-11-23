@@ -989,6 +989,8 @@ int bgzf_read_block(BGZF *fp)
 {
     hts_tpool_result *r;
 
+    if (fp->errcode) return -1;
+
     if (fp->mt) {
     again:
         if (fp->mt->hit_eof) {
@@ -1479,6 +1481,8 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     int64_t block_address;
     block_address = htell(fp->fp);
 
+    j->block_address = block_address;  // in case we exit with j->errcode
+
     if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
     count = hpeek(fp->fp, header, sizeof(header));
     if (count == 0) // no data read
@@ -1667,10 +1671,7 @@ restart:
         hts_tpool_process_destroy(mt->out_queue);
         return NULL;
     }
-    if (j->errcode != 0) {
-        hts_tpool_process_destroy(mt->out_queue);
-        return &j->errcode;
-    }
+    // TODO: handle j->errcode correctly when SEEK and HAS_EOF arrive
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
@@ -1706,6 +1707,9 @@ restart:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             hts_tpool_process_destroy(mt->out_queue);
+            if (j->errcode != 0) {
+                return &j->errcode;
+            }
             return NULL;
         }
     }
@@ -2285,6 +2289,7 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
             fp->block_length = 0;
         }
     } while (state == 0);
+    if (state < -1) return state;
     if (str->l == 0 && state < 0) return state;
     fp->uncompressed_address += str->l + 1;
     if ( delim=='\n' && str->l>0 && str->s[str->l-1]=='\r' ) str->l--;
