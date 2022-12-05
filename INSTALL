@@ -110,6 +110,7 @@ The 'make install' command installs the libraries, library header files,
 utilities, several manual pages, and a pkgconfig file to /usr/local.
 The installation location can be changed by configuring with --prefix=DIR
 or via 'make prefix=DIR install' (see Installation Locations below).
+Shared library permissions can be set via e.g. 'make install LIB_PERM=755'.
 
 
 Configuration
@@ -291,3 +292,13 @@ mingw-w64-x86_64-xz mingw-w64-x86_64-curl mingw-w64-x86_64-autotools
 mingw-w64-x86_64-tools-git
 
 (The last is only needed for building libraries compatible with MSVC.)
+
+HP-UX
+-----
+
+HP-UX requires that shared libraries have execute permission.  The
+default for HTSlib is to install with permission 644 (read-write for
+owner and read-only for group / other). This can be overridden by
+setting the LIB_PERM variable at install time with:
+
+    make install LIB_PERM=755
