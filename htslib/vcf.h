@@ -636,7 +636,11 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 
-    /** Creates a list of sequence names. It is up to the caller to free the list (but not the sequence names) */
+    /**
+     *  Creates a list of sequence names. It is up to the caller to free the list (but not the sequence names).
+     *  NB: sequence name indexes returned by bcf_hdr_seqnames() may not correspond to bcf1_t.rid, use
+     *  bcf_hdr_id2name() or bcf_seqname() instead.
+     */
     HTSLIB_EXPORT
     const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *nseqs);
 
