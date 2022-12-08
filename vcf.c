@@ -2214,20 +2214,44 @@ char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
 const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
 {
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
-    int tid, m = kh_size(d);
+    int i, tid, m = kh_size(d);
     const char **names = (const char**) calloc(m,sizeof(const char*));
+    if ( !names )
+    {
+        hts_log_error("Failed to allocate memory");
+        *n = 0;
+        return NULL;
+    }
     khint_t k;
     for (k=kh_begin(d); k<kh_end(d); k++)
     {
         if ( !kh_exist(d,k) ) continue;
+        if ( !kh_val(d, k).hrec[0] ) continue;  // removed via bcf_hdr_remove
         tid = kh_val(d,k).id;
-        assert( tid<m );
+        if ( tid >= m )
+        {
+            // This can happen after a contig has been removed from BCF header via bcf_hdr_remove()
+            if ( hts_resize(const char*, tid + 1, &m, &names, HTS_RESIZE_CLEAR)<0 )
+            {
+                hts_log_error("Failed to allocate memory");
+                *n = 0;
+                free(names);
+                return NULL;
+            }
+            m = tid + 1;
+        }
         names[tid] = kh_key(d,k);
     }
-    // sanity check: there should be no gaps
-    for (tid=0; tid<m; tid++)
-        assert(names[tid]);
-    *n = m;
+    // ensure there are no gaps
+    for (i=0,tid=0; tid<m; i++,tid++)
+    {
+        while ( tid<m && !names[tid] ) tid++;
+        if ( tid==m ) break;
+        if ( i==tid ) continue;
+        names[i] = names[tid];
+        names[tid] = 0;
+    }
+    *n = i;
     return names;
 }
 
