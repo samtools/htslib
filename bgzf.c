@@ -1020,6 +1020,7 @@ int bgzf_read_block(BGZF *fp)
             hts_log_error("BGZF decode jobs returned error %d "
                           "for block offset %"PRId64,
                           j->errcode, j->block_address);
+            hts_tpool_delete_result(r, 0);
             return -1;
         }
 

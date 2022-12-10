@@ -954,7 +954,7 @@ static int test_bgzf_getline_on_truncated_file(Files *f, const char *mode, int n
     if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
 
     for(int64_t newsize = block3_start - 1; newsize > block2_start; newsize--) {
-        fprintf(stderr, "test truncated %" PRId64 " with threads %d\n", newsize, nthreads);
+        //fprintf(stderr, "test truncated %" PRId64 " with threads %d\n", newsize, nthreads);
 
         if (truncate(f->tmp_bgzf, newsize) != 0) goto fail;
 
