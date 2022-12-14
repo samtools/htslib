@@ -953,8 +953,9 @@ static int test_bgzf_getline_on_truncated_file(Files *f, const char *mode, int n
 
     if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
 
-    for(int64_t newsize = block3_start - 1; newsize > block2_start; newsize--) {
-        //fprintf(stderr, "test truncated %" PRId64 " with threads %d\n", newsize, nthreads);
+    int64_t newsize;
+    for(newsize = block3_start - 1; newsize > block2_start; newsize--) {
+        //fprintf(stderr, "test_bgzf_getline_on_truncated_file : size truncated to %" PRId64 " with threads %d\n", newsize, nthreads);
 
         if (truncate(f->tmp_bgzf, newsize) != 0) goto fail;
 
@@ -988,17 +989,18 @@ static int test_bgzf_getline_on_truncated_file(Files *f, const char *mode, int n
                         (int) str.l, str.s);
                 goto fail;
             }
-
             pos += l + 1;
         }
 
-        // verify we still get error and don't hang if we try again:
-        int res = bgzf_getline(bgz, '\n', &str);
-        if (res > -2) {
-            fprintf(stderr, "%s : unexpected bgzf_getline result %d\n", __func__, res);
-            goto fail;
+        // verify error is persistent
+        int k;
+        for(k = 0; k < 3; k++) {
+            int res = bgzf_getline(bgz, '\n', &str);
+            if (res > -2) {
+                fprintf(stderr, "%s : unexpected bgzf_getline result %d\n", __func__, res);
+                goto fail;
+            }
         }
-
         // closing a stream with error returns error
         if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) == 0) goto fail;
     }

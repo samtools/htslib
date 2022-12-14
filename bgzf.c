@@ -1007,11 +1007,14 @@ int bgzf_read_block(BGZF *fp)
                 if (fp->uncompressed_block == NULL) return -1;
                 fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
             } // else it's already allocated with malloc, maybe even in-use.
-            if (mt_destroy(fp->mt) < 0)
+            if (mt_destroy(fp->mt) < 0) {
                 fp->errcode = BGZF_ERR_IO;
+            }
             fp->mt = NULL;
             hts_tpool_delete_result(r, 0);
-
+            if (fp->errcode) {
+                return -1;
+            }
             goto single_threaded;
         }
 
@@ -1672,7 +1675,10 @@ restart:
         hts_tpool_process_destroy(mt->out_queue);
         return NULL;
     }
-    // TODO: handle j->errcode correctly when SEEK and HAS_EOF arrive
+    if (j->errcode != 0) {
+        hts_tpool_process_destroy(mt->out_queue);
+        return &j->errcode;
+    }
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
@@ -1708,9 +1714,6 @@ restart:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             hts_tpool_process_destroy(mt->out_queue);
-            if (j->errcode != 0) {
-                return &j->errcode;
-            }
             return NULL;
         }
     }
