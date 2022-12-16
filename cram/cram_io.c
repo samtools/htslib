@@ -4829,6 +4829,11 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 return -1;
     }
 
+    if (-1 == refs_from_header(fd))
+        return -1;
+    if (-1 == refs2id(fd->refs, fd->header))
+        return -1;
+
     /* Fix M5 strings */
     if (fd->refs && !fd->no_ref && fd->embed_ref <= 1) {
         int i;
@@ -5003,11 +5008,6 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
         cram_free_block(b);
         cram_free_container(c);
     }
-
-    if (-1 == refs_from_header(fd))
-        return -1;
-    if (-1 == refs2id(fd->refs, fd->header))
-        return -1;
 
     if (0 != hflush(fd->fp))
         return -1;
