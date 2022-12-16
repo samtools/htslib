@@ -2586,6 +2586,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         e->seq = NULL;
         e->mf = NULL;
         e->is_md5 = 0;
+        e->validated_md5 = 0;
 
         k = kh_put(refs, r->h_meta, e->name, &n);
         if (-1 == n)  {
@@ -3022,6 +3023,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
             fd->refs->fp = fp;
             fd->refs->fn = r->fn;
             r->is_md5 = 1;
+            r->validated_md5 = 1;
 
             // Fall back to cram_get_ref() where it'll do the actual
             // reading of the file.
@@ -3043,6 +3045,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         }
         r->length = sz;
         r->is_md5 = 1;
+        r->validated_md5 = 1;
     } else {
         refs_t *refs;
         const char *fn;
@@ -4836,8 +4839,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
             if (!(ty = sam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
                 return -1;
 
-            sam_hrec_tag_t *has_m5 = sam_hrecs_find_key(ty, "M5", NULL);
-            if (!has_m5 || (fd->ref_fn && !fd->ignore_md5)) {
+            if (!sam_hrecs_find_key(ty, "M5", NULL)) {
                 char unsigned buf[16];
                 char buf2[33];
                 int rlen;
@@ -4874,14 +4876,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 cram_ref_decr(fd->refs, i);
 
                 hts_md5_hex(buf2, buf);
-                if (has_m5 && strcmp(has_m5->str+3, buf2)) {
-                    hts_log_error("SQ header M5 tag discrepancy for "
-                                  "reference '%s'",
-                                  hdr->hrecs->ref[i].name);
-                    hts_log_error("Please use the correct reference, or "
-                                  "consider using embedded references");
-                    return -1;
-                }
+                fd->refs->ref_id[i]->validated_md5 = 1;
                 if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
                     return -1;
             }

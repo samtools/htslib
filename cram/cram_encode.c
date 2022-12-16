@@ -1688,6 +1688,54 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     return -1;
 }
 
+// Check if the SQ M5 tag matches the reference we've loaded.
+static int validate_md5(cram_fd *fd, int ref_id) {
+    if (fd->ignore_md5 || ref_id < 0 || ref_id >= fd->refs->nref)
+        return 0;
+
+    // Have we already checked this ref?
+    if (fd->refs->ref_id[ref_id]->validated_md5)
+        return 0;
+
+    // Check if we have the MD5 known.
+    // We should, but maybe we're using embedded references?
+    sam_hrecs_t *hrecs = fd->header->hrecs;
+    sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, "SQ", "SN",
+                                                 hrecs->ref[ref_id].name);
+    if (!ty)
+        return 0;
+
+    sam_hrec_tag_t *m5tag = sam_hrecs_find_key(ty, "M5", NULL);
+    if (!m5tag)
+        return 0;
+
+    // It's known, so compute md5 on the loaded reference sequence.
+    char *ref = fd->refs->ref_id[ref_id]->seq;
+    int64_t len = fd->refs->ref_id[ref_id]->length;
+    hts_md5_context *md5;
+    char unsigned buf[16];
+    char buf2[33];
+
+    if (!(md5 = hts_md5_init()))
+        return -1;
+    hts_md5_update(md5, ref, len);
+    hts_md5_final(buf, md5);
+    hts_md5_destroy(md5);
+    hts_md5_hex(buf2, buf);
+
+    // Compare it to header @SQ M5 tag
+    if (strcmp(m5tag->str+3, buf2)) {
+        hts_log_error("SQ header M5 tag discrepancy for reference '%s'",
+                      hrecs->ref[ref_id].name);
+        hts_log_error("Please use the correct reference, or "
+                      "consider using embed_ref=2");
+        return -1;
+    }
+    fd->refs->ref_id[ref_id]->validated_md5 = 1;
+
+    return 0;
+}
+
 /*
  * Encodes all slices in a container into blocks.
  * Returns 0 on success
@@ -1715,8 +1763,11 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
     if (!fd->no_ref && c->refs_used) {
         for (i = 0; i < nref; i++) {
-            if (c->refs_used[i])
+            if (c->refs_used[i]) {
                 cram_get_ref(fd, i, 1, 0);
+                if (validate_md5(fd, i) < 0)
+                    goto_err;
+            }
         }
     }
 
@@ -1744,6 +1795,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 embed_ref = fd->embed_ref = 2;
                 pthread_mutex_unlock(&fd->ref_lock);
                 goto auto_ref;
+            } else if (ref) {
+                if (validate_md5(fd, c->ref_seq_id) < 0)
+                    goto_err;
             }
             if ((c->ref_id = bam_ref(b)) >= 0) {
                 c->ref_seq_id = c->ref_id;
@@ -1813,6 +1867,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                         free(MD.s);
                         return -1;
                     }
+                    if (validate_md5(fd, bam_ref(b)) < 0)
+                        return -1;
 
                     c->ref_seq_id = bam_ref(b); // overwritten later by -2
                     if (!fd->refs->ref_id[c->ref_seq_id]->seq)
