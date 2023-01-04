@@ -3437,7 +3437,7 @@ int vcf_write_line(htsFile *fp, kstring_t *line)
 
 int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
-    int ret;
+    ssize_t ret;
     fp->line.l = 0;
     if (vcf_format1(h, v, &fp->line) != 0)
         return -1;
