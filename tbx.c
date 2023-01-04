@@ -91,9 +91,10 @@ int tbx_name2id(tbx_t *tbx, const char *ss)
     return get_tid(tbx, ss, 0);
 }
 
-int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
+int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
 {
-    int i, b = 0, id = 1;
+    size_t i, b = 0;
+    int id = 1;
     char *s;
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
     for (i = 0; i <= len; ++i) {
