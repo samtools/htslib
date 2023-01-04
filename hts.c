@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2022 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2023 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1934,8 +1934,9 @@ char **hts_readlist(const char *string, int is_file, int *_n)
         if ( !fp ) return NULL;
 
         kstring_t str;
+        int ret;
         str.s = 0; str.l = str.m = 0;
-        while (bgzf_getline(fp, '\n', &str) >= 0)
+        while ((ret = bgzf_getline(fp, '\n', &str)) >= 0)
         {
             if (str.l == 0) continue;
             if (hts_resize(char*, n + 1, &m, &s, 0) < 0)
@@ -1945,6 +1946,8 @@ char **hts_readlist(const char *string, int is_file, int *_n)
                 goto err;
             n++;
         }
+        if (ret < -1) // Read error
+            goto err;
         bgzf_close(fp);
         free(str.s);
     }
@@ -1991,8 +1994,9 @@ char **hts_readlines(const char *fn, int *_n)
     BGZF *fp = bgzf_open(fn, "r");
     if ( fp ) { // read from file
         kstring_t str;
+        int ret;
         str.s = 0; str.l = str.m = 0;
-        while (bgzf_getline(fp, '\n', &str) >= 0) {
+        while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
             if (str.l == 0) continue;
             if (hts_resize(char *, n + 1, &m, &s, 0) < 0)
                 goto err;
@@ -2001,6 +2005,8 @@ char **hts_readlines(const char *fn, int *_n)
                 goto err;
             n++;
         }
+        if (ret < -1) // Read error
+            goto err;
         bgzf_close(fp);
         free(str.s);
     } else if (*fn == ':') { // read from string
