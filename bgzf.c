@@ -2298,7 +2298,7 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
     fp->uncompressed_address += str->l + 1;
     if ( delim=='\n' && str->l>0 && str->s[str->l-1]=='\r' ) str->l--;
     str->s[str->l] = 0;
-    return str->l;
+    return str->l <= INT_MAX ? (int) str->l : INT_MAX;
 }
 
 void bgzf_index_destroy(BGZF *fp)

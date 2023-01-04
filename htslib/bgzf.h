@@ -303,7 +303,8 @@ typedef struct BGZF BGZF;
      * @param fp     BGZF file handler
      * @param delim  delimiter
      * @param str    string to write to; must be initialized
-     * @return       length of the string; -1 on end-of-file; <= -2 on error
+     * @return       length of the string (capped at INT_MAX);
+     *               -1 on end-of-file; <= -2 on error
      */
     HTSLIB_EXPORT
     int bgzf_getline(BGZF *fp, int delim, struct kstring_t *str);
