@@ -947,6 +947,11 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
     test_cmd($opts, %args, out => "vcf_meta_meta.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf_meta_meta.vcf");
+
+    # VCF file with contig IDX=1, simulating an edited BCF file
+    # See htslib issue 1534
+    test_cmd($opts, %args, out => "modhdr.expected.vcf",
+        cmd => "$$opts{path}/test_view $$opts{path}/modhdr.vcf.gz chr22:1-2");
 }
 
 sub write_multiblock_bgzf {

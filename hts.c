@@ -3077,13 +3077,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 free(iter);
                 iter = NULL;
             }
+        } else if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
+            iter->finished = 1;
         } else {
             if (beg < 0) beg = 0;
             if (end < beg) {
-              free(iter);
-              return NULL;
-            }
-            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
               free(iter);
               return NULL;
             }
