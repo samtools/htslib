@@ -1,7 +1,7 @@
 /// @file htslib/cram.h
 /// CRAM format-specific API functions.
 /*
-    Copyright (C) 2015, 2016, 2018-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2015, 2016, 2018-2020, 2022-2023 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -97,6 +97,7 @@ typedef struct cram_slice cram_slice;
 typedef struct cram_metrics cram_metrics;
 typedef struct cram_block_slice_hdr cram_block_slice_hdr;
 typedef struct cram_block_compression_hdr cram_block_compression_hdr;
+typedef struct cram_codec cram_codec;
 typedef struct refs_t refs_t;
 
 struct hFILE;
@@ -147,6 +148,10 @@ int32_t *cram_container_get_landmarks(cram_container *c, int32_t *num_landmarks)
 HTSLIB_EXPORT
 void cram_container_set_landmarks(cram_container *c, int32_t num_landmarks,
                                   int32_t *landmarks);
+HTSLIB_EXPORT
+int32_t cram_container_get_num_records(cram_container *c);
+HTSLIB_EXPORT
+int32_t cram_container_get_num_bases(cram_container *c);
 
 /* Returns true if the container is empty (EOF marker) */
 HTSLIB_EXPORT
@@ -167,9 +172,10 @@ HTSLIB_EXPORT
 int32_t cram_block_get_crc32(cram_block *b);
 HTSLIB_EXPORT
 void *  cram_block_get_data(cram_block *b);
-
 HTSLIB_EXPORT
 enum cram_content_type cram_block_get_content_type(cram_block *b);
+HTSLIB_EXPORT
+int cram_block_get_method(cram_block *b);
 
 HTSLIB_EXPORT
 void cram_block_set_content_id(cram_block *b, int32_t id);
@@ -199,6 +205,27 @@ void cram_block_set_offset(cram_block *b, size_t offset);
  */
 HTSLIB_EXPORT
 uint32_t cram_block_size(cram_block *b);
+
+/*
+ * Returns the Block Content ID values referred to by a cram_codec in
+ * ids[2].
+ *
+ * -2 is unused.
+ * -1 is CORE
+ * >= 0 is the block with that Content ID
+ */
+HTSLIB_EXPORT
+void cram_codec_get_content_ids(cram_codec *c, int ids[2]);
+
+/*
+ * Produces a human readable description of the codec parameters.
+ * This ia appended to an existing kstring 'ks'.
+ *
+ * Returns 0 on succes,
+ *        <0 on failure
+ */
+HTSLIB_EXPORT
+int cram_codec_describe(cram_codec *c, kstring_t *ks);
 
 /*
  * Renumbers RG numbers in a cram compression header.
@@ -246,6 +273,66 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
  */
 HTSLIB_EXPORT
 int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice);
+
+/*
+ * Decodes a CRAM block compression header.
+ * Returns header ptr on success
+ *         NULL on failure
+ */
+HTSLIB_EXPORT
+cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
+                                                           cram_block *b);
+/*
+ * Frees a cram_block_compression_hdr structure.
+ */
+HTSLIB_EXPORT
+void cram_free_compression_header(cram_block_compression_hdr *hdr);
+
+typedef struct cram_cid2ds_t cram_cid2ds_t;
+
+/*
+ * Map cram block numbers to data-series.  It's normally a 1:1 mapping,
+ * but in rare cases it can be 1:many (or even many:many).
+ * The key is the block number and the value is an index into the data-series
+ * array, which we iterate over until reaching a negative value.
+ *
+ * Provide cid2ds as NULL to allocate a new map or pass in an existing one
+ * to append to this map.  The new (or existing) map is returned.
+ *
+ * Returns the cid2ds (newly allocated or as provided) on success,
+ *         NULL on failure.
+ */
+HTSLIB_EXPORT
+cram_cid2ds_t *cram_update_cid2ds_map(cram_block_compression_hdr *hdr,
+                                      cram_cid2ds_t *cid2ds);
+
+/*
+ * Return a list of data series observed as belonging to a block with
+ * the specified content_id.  *n is the number of data series
+ * returned, or 0 if block is unused.
+ * Block content_id of -1 is used to indicate the CORE block.
+ *
+ * The pointer returned is owned by the cram_cid2ds state and should
+ * not be freed by the caller.
+ */
+HTSLIB_EXPORT
+int *cram_cid2ds_query(cram_cid2ds_t *c2d, int content_id, int *n);
+
+/*
+ * Frees a cram_cid2ds_t allocated by cram_update_cid2ds_map
+ */
+HTSLIB_EXPORT
+void cram_cid2ds_free(cram_cid2ds_t *cid2ds);
+
+/*
+ * Produces a description of the record and tag encodings held within
+ * a compression header and appends to 'ks'.
+ *
+ * Returns 0 on success,
+ *        <0 on failure.
+ */
+HTSLIB_EXPORT
+int cram_describe_encodings(cram_block_compression_hdr *hdr, kstring_t *ks);
 
 /*
  *-----------------------------------------------------------------------------

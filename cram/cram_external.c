@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015, 2018-2020, 2022 Genome Research Ltd.
+Copyright (c) 2015, 2018-2020, 2022-2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -80,6 +80,14 @@ int32_t cram_container_get_num_blocks(cram_container *c) {
 
 void cram_container_set_num_blocks(cram_container *c, int32_t num_blocks) {
     c->num_blocks = num_blocks;
+}
+
+int32_t cram_container_get_num_records(cram_container *c) {
+    return c->num_records;
+}
+
+int32_t cram_container_get_num_bases(cram_container *c) {
+    return c->num_bases;
 }
 
 
@@ -180,6 +188,294 @@ int cram_block_compression_hdr_decoder2encoder(cram_fd *fd,
     return 0;
 }
 
+typedef struct {
+    cram_block_compression_hdr *hdr;
+    cram_map *curr_map;
+    int idx;
+    int is_tag; // phase 2 using tag_encoding_map
+} cram_codec_iter;
+
+void cram_codec_iter_init(cram_block_compression_hdr *hdr,
+                          cram_codec_iter *iter) {
+    iter->hdr = hdr;
+    iter->curr_map = NULL;
+    iter->idx = 0;
+    iter->is_tag = 0;
+}
+
+// See enum cram_DS_ID in cram/cram_structs
+static int cram_ds_to_key(enum cram_DS_ID ds) {
+    switch(ds) {
+    case DS_RN: return 256*'R'+'N';
+    case DS_QS: return 256*'Q'+'S';
+    case DS_IN: return 256*'I'+'N';
+    case DS_SC: return 256*'S'+'C';
+    case DS_BF: return 256*'B'+'F';
+    case DS_CF: return 256*'C'+'F';
+    case DS_AP: return 256*'A'+'P';
+    case DS_RG: return 256*'R'+'G';
+    case DS_MQ: return 256*'M'+'Q';
+    case DS_NS: return 256*'N'+'S';
+    case DS_MF: return 256*'M'+'F';
+    case DS_TS: return 256*'T'+'S';
+    case DS_NP: return 256*'N'+'P';
+    case DS_NF: return 256*'N'+'F';
+    case DS_RL: return 256*'R'+'L';
+    case DS_FN: return 256*'F'+'N';
+    case DS_FC: return 256*'F'+'C';
+    case DS_FP: return 256*'F'+'P';
+    case DS_DL: return 256*'D'+'L';
+    case DS_BA: return 256*'B'+'A';
+    case DS_BS: return 256*'B'+'S';
+    case DS_TL: return 256*'T'+'L';
+    case DS_RI: return 256*'R'+'I';
+    case DS_RS: return 256*'R'+'S';
+    case DS_PD: return 256*'P'+'D';
+    case DS_HC: return 256*'H'+'C';
+    case DS_BB: return 256*'B'+'B';
+    case DS_QQ: return 256*'Q'+'Q';
+    case DS_TN: return 256*'T'+'N';
+    case DS_TC: return 256*'T'+'C';
+    case DS_TM: return 256*'T'+'M';
+    case DS_TV: return 256*'T'+'V';
+    default: break;
+    }
+
+    return -1; // unknown
+}
+
+static cram_codec *cram_codec_iter_next(cram_codec_iter *iter,
+                                        int *key) {
+    cram_codec *cc = NULL;
+    cram_block_compression_hdr *hdr = iter->hdr;
+
+    if (!iter->is_tag) {
+        // 1: Iterating through main data-series
+        do {
+            cc = hdr->codecs[iter->idx++];
+        } while(!cc && iter->idx < DS_END);
+        if (cc) {
+            *key = cram_ds_to_key(iter->idx-1);
+            return cc;
+        }
+
+        // Reset index for phase 2
+        iter->idx = 0;
+        iter->is_tag = 1;
+    }
+
+    do {
+        if (!iter->curr_map)
+            iter->curr_map = hdr->tag_encoding_map[iter->idx++];
+
+        cc = iter->curr_map ? iter->curr_map->codec : NULL;
+        if (cc) {
+            *key = iter->curr_map->key;
+            iter->curr_map = iter->curr_map->next;
+            return cc;
+        }
+    } while (iter->idx <= CRAM_MAP_HASH);
+
+    // End of codecs
+    return NULL;
+}
+
+/*
+ * A list of data-series, used to create a linked list threaded through
+ * a single array.
+ */
+typedef struct ds_list {
+    int data_series;
+    int next;
+} ds_list;
+
+KHASH_MAP_INIT_INT(cid, int64_t)
+
+// Opaque struct for the CRAM block content-id -> data-series map.
+struct cram_cid2ds_t {
+    ds_list *ds;        // array of data-series with linked lists threading through it
+    int ds_size;
+    int ds_idx;
+    khash_t(cid) *hash; // key=content_id,  value=index to ds array
+    int *ds_a;          // serialised array of data-series returned by queries.
+};
+
+void cram_cid2ds_free(cram_cid2ds_t *cid2ds) {
+    if (cid2ds) {
+        if (cid2ds->hash)
+            kh_destroy(cid, cid2ds->hash);
+        free(cid2ds->ds);
+        free(cid2ds->ds_a);
+        free(cid2ds);
+    }
+}
+
+/*
+ * Map cram block numbers to data-series.  It's normally a 1:1 mapping,
+ * but in rare cases it can be 1:many (or even many:many).
+ * The key is the block number and the value is an index into the data-series
+ * array, which we iterate over until reaching a negative value.
+ *
+ * Provide cid2ds as NULL to allocate a new map or pass in an existing one
+ * to append to this map.  The new (or existing) map is returned.
+ *
+ * Returns the cid2ds (newly allocated or as provided) on success,
+ *         NULL on failure.
+ */
+cram_cid2ds_t *cram_update_cid2ds_map(cram_block_compression_hdr *hdr,
+                                      cram_cid2ds_t *cid2ds) {
+    cram_cid2ds_t *c2d = cid2ds;
+    if (!c2d) {
+        c2d = calloc(1, sizeof(*c2d));
+        if (!c2d)
+            return NULL;
+
+        c2d->hash = kh_init(cid);
+        if (!c2d->hash)
+            goto err;
+    }
+
+    // Iterate through codecs.  Initially primary two-left ones in
+    // rec_encoding_map, and then the three letter in tag_encoding_map.
+    cram_codec_iter citer;
+    cram_codec_iter_init(hdr, &citer);
+    cram_codec *codec;
+    int key;
+
+    while ((codec = cram_codec_iter_next(&citer, &key))) {
+        // Having got a codec, we can then use cram_codec_to_id to get
+        // the block IDs utilised by that codec.  This is then our
+        // map for allocating data blocks to data series, but for shared
+        // blocks we can't separate out how much is used by each DS.
+        int bnum[2];
+        cram_codec_get_content_ids(codec, bnum);
+
+        khiter_t k;
+        int ret, i;
+        for (i = 0; i < 2; i++) {
+            if (bnum[i] > -2) {
+                k = kh_put(cid, c2d->hash, bnum[i], &ret);
+                if (ret < 0)
+                    goto err;
+
+                if (c2d->ds_idx >= c2d->ds_size) {
+                    c2d->ds_size += 100;
+                    c2d->ds_size *= 2;
+                    ds_list *ds_new = realloc(c2d->ds,
+                                              c2d->ds_size * sizeof(*ds_new));
+                    if (!ds_new)
+                        goto err;
+                    c2d->ds = ds_new;
+                }
+
+                if (ret == 0) {
+                    // Shared content_id, so add to list of DS
+
+                    // Maybe data-series should be part of the hash key?
+                    //
+                    // So top-32 bit is content-id, bot-32 bit is key.
+                    // Sort hash by key and then can group all the data-series
+                    // known together. ??
+                    //
+                    // Brute force for now, scan to see if recorded.
+                    // Typically this is minimal effort as we almost always
+                    // have 1 data-series per block content-id, so the list to
+                    // search is of size 1.
+                    int dsi = kh_value(c2d->hash, k);
+                    while (dsi >= 0) {
+                        if (c2d->ds[dsi].data_series == key)
+                            break;
+                        dsi = c2d->ds[dsi].next;
+                    }
+
+                    if (dsi == -1) {
+                        // Block content_id seen before, but not with this DS
+                        c2d->ds[c2d->ds_idx].data_series = key;
+                        c2d->ds[c2d->ds_idx].next = kh_value(c2d->hash, k);
+                        kh_value(c2d->hash, k) = c2d->ds_idx;
+                        c2d->ds_idx++;
+                    }
+                } else {
+                    // First time this content id has been used
+                    c2d->ds[c2d->ds_idx].data_series = key;
+                    c2d->ds[c2d->ds_idx].next = -1;
+                    kh_value(c2d->hash, k) = c2d->ds_idx;
+                    c2d->ds_idx++;
+                }
+            }
+        }
+    }
+
+    return c2d;
+
+ err:
+    if (c2d != cid2ds)
+        cram_cid2ds_free(c2d);
+    return NULL;
+}
+
+/*
+ * Return a list of data series observed as belonging to a block with
+ * the specified content_id.  *n is the number of data series
+ * returned, or 0 if block is unused.
+ * Block content_id of -1 is used to indicate the CORE block.
+ *
+ * The pointer returned is owned by the cram_cid2ds state and should
+ * not be freed by the caller.
+ */
+int *cram_cid2ds_query(cram_cid2ds_t *c2d, int content_id, int *n) {
+    *n = 0;
+    if (!c2d || !c2d->hash)
+        return NULL;
+
+    khiter_t k = kh_get(cid, c2d->hash, content_id);
+    if (k == kh_end(c2d->hash))
+        return NULL;
+
+    if (!c2d->ds_a) {
+        c2d->ds_a = malloc(c2d->ds_idx * sizeof(int));
+        if (!c2d->ds_a)
+            return NULL;
+    }
+
+    int dsi = kh_value(c2d->hash, k); // initial ds array index from hash
+    int idx = 0;
+    while (dsi >= 0) {
+        c2d->ds_a[idx++] = c2d->ds[dsi].data_series;
+        dsi = c2d->ds[dsi].next;      // iterate over list within ds array
+    }
+
+    *n = idx;
+    return c2d->ds_a;
+}
+
+/*
+ * Produces a description of the record and tag encodings held within
+ * a compression header and appends to 'ks'.
+ *
+ * Returns 0 on success,
+ *        <0 on failure.
+ */
+int cram_describe_encodings(cram_block_compression_hdr *hdr, kstring_t *ks) {
+    cram_codec_iter citer;
+    cram_codec_iter_init(hdr, &citer);
+    cram_codec *codec;
+    int key, r = 0;
+
+    while ((codec = cram_codec_iter_next(&citer, &key))) {
+        char key_s[4] = {0};
+        int key_i = 0;
+        if (key>>16) key_s[key_i++] = key>>16;
+        key_s[key_i++] = (key>>8)&0xff;
+        key_s[key_i++] = key&0xff;
+        ksprintf(ks, "\t%s\t", key_s);
+        r |= cram_codec_describe(codec, ks) < 0;
+        kputc('\n', ks);
+    }
+
+    return r ? -1 : 0;
+}
+
 /*
  *-----------------------------------------------------------------------------
  * cram_slice
@@ -206,12 +502,15 @@ void cram_slice_hdr_get_coords(cram_block_slice_hdr *h,
  *-----------------------------------------------------------------------------
  * cram_block
  */
-int32_t cram_block_get_content_id(cram_block *b)  { return b->content_id; }
+int32_t cram_block_get_content_id(cram_block *b)  {
+    return b->content_type == CORE ? -1 : b->content_id;
+}
 int32_t cram_block_get_comp_size(cram_block *b)   { return b->comp_size; }
 int32_t cram_block_get_uncomp_size(cram_block *b) { return b->uncomp_size; }
 int32_t cram_block_get_crc32(cram_block *b)       { return b->crc32; }
 void *  cram_block_get_data(cram_block *b)        { return BLOCK_DATA(b); }
 int32_t cram_block_get_size(cram_block *b)        { return BLOCK_SIZE(b); }
+int     cram_block_get_method(cram_block *b)      { return b->orig_method; }
 enum cram_content_type cram_block_get_content_type(cram_block *b) {
     return b->content_type;
 }
@@ -236,6 +535,22 @@ void cram_block_update_size(cram_block *b) { BLOCK_UPLEN(b); }
 size_t cram_block_get_offset(cram_block *b) { return BLOCK_SIZE(b); }
 void cram_block_set_offset(cram_block *b, size_t offset) { BLOCK_SIZE(b) = offset; }
 
+/*
+ *-----------------------------------------------------------------------------
+ * cram_codecs
+ */
+
+// -2 is unused.
+// -1 is CORE
+// >= 0 is the block with that Content ID
+void cram_codec_get_content_ids(cram_codec *c, int ids[2]) {
+    ids[0] = cram_codec_to_id(c, &ids[1]);
+}
+
+/*
+ *-----------------------------------------------------------------------------
+ * Utility functions
+ */
 
 /*
  * Copies the blocks representing the next num_slice slices from a
