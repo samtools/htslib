@@ -40,6 +40,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
+#include <stdint.h>
+
+#if defined(HAVE_EXTERNAL_LIBHTSCODECS)
+#include <htscodecs/rANS_static4x16.h.h>
+#else
+#include "../htscodecs/htscodecs/rANS_static4x16.h"
+#endif
 
 #include "../htslib/hfile.h"
 #include "cram.h"
@@ -86,7 +93,7 @@ int32_t cram_container_get_num_records(cram_container *c) {
     return c->num_records;
 }
 
-int32_t cram_container_get_num_bases(cram_container *c) {
+int64_t cram_container_get_num_bases(cram_container *c) {
     return c->num_bases;
 }
 
@@ -195,8 +202,8 @@ typedef struct {
     int is_tag; // phase 2 using tag_encoding_map
 } cram_codec_iter;
 
-void cram_codec_iter_init(cram_block_compression_hdr *hdr,
-                          cram_codec_iter *iter) {
+static void cram_codec_iter_init(cram_block_compression_hdr *hdr,
+                                 cram_codec_iter *iter) {
     iter->hdr = hdr;
     iter->curr_map = NULL;
     iter->idx = 0;
@@ -510,7 +517,9 @@ int32_t cram_block_get_uncomp_size(cram_block *b) { return b->uncomp_size; }
 int32_t cram_block_get_crc32(cram_block *b)       { return b->crc32; }
 void *  cram_block_get_data(cram_block *b)        { return BLOCK_DATA(b); }
 int32_t cram_block_get_size(cram_block *b)        { return BLOCK_SIZE(b); }
-int     cram_block_get_method(cram_block *b)      { return b->orig_method; }
+enum cram_block_method cram_block_get_method(cram_block *b) {
+    return (enum cram_block_method)b->orig_method;
+}
 enum cram_content_type cram_block_get_content_type(cram_block *b) {
     return b->content_type;
 }
@@ -534,6 +543,110 @@ void cram_block_update_size(cram_block *b) { BLOCK_UPLEN(b); }
 // Offset is known as "size" internally, but it can be confusing.
 size_t cram_block_get_offset(cram_block *b) { return BLOCK_SIZE(b); }
 void cram_block_set_offset(cram_block *b, size_t offset) { BLOCK_SIZE(b) = offset; }
+
+/*
+ * Given a compressed block of data in a specified compression method,
+ * fill out the 'cm' field with meta-data gleaned from the compressed
+ * block.
+ *
+ * If comp is CRAM_COMP_UNKNOWN, we attempt to auto-detect the compression
+ * format, but this doesn't work for all methods.
+ *
+ * Retuns the detected or specified comp method, and fills out *cm
+ * if non-NULL.
+ */
+enum cram_block_method cram_expand_method(uint8_t *data, int32_t size,
+                                          enum cram_block_method comp,
+                                          cram_method_details *cm) {
+    if (cm) {
+        memset(cm, 0, sizeof(*cm));
+        cm->method = comp;
+    }
+
+    const char *xz_header = "\xFD""7zXZ"; // including nul
+
+    if (comp == CRAM_COMP_UNKNOWN) {
+        // Auto-detect
+        if (size >= 2 && data[0] == 0x1f && data[1] == 0x8b)
+            comp = CRAM_COMP_GZIP;
+        else if (size >= 3 && data[1] == 'B' && data[2] == 'Z'
+                 && data[3] == 'h')
+            comp = CRAM_COMP_BZIP2;
+        else if (size >= 6 && memcmp(xz_header, data, 6) == 0)
+            comp = CRAM_COMP_LZMA;
+        else
+            return CRAM_COMP_UNKNOWN;
+    }
+
+    if (!cm)
+        return comp;
+
+    // Interrogate the compressed data stream to fill out additional fields.
+    switch (comp) {
+    case CRAM_COMP_GZIP:
+        if (size > 8) {
+            if (data[8] == 4)
+                cm->level = 1;
+            else if (data[8] == 2)
+                cm->level = 9;
+            else
+                cm->level = 5;
+        }
+        break;
+
+    case CRAM_COMP_BZIP2:
+        if (size > 3 && data[3] >= '1' && data[3] <= '9')
+            cm->level = data[3]-'0';
+        break;
+
+    case CRAM_COMP_RANS4x8:
+        cm->Nway = 4;
+        if (size > 0 && data[0] == 1)
+            cm->order = 1;
+        else
+            cm->order = 0;
+        break;
+
+    case CRAM_COMP_RANSNx16:
+        if (size > 0) {
+            cm->order  = data[0] & 1;
+            cm->Nway   = data[0] & RANS_ORDER_X32    ? 32 : 4;
+            cm->rle    = data[0] & RANS_ORDER_RLE    ?  1 : 0;
+            cm->pack   = data[0] & RANS_ORDER_PACK   ?  1 : 0;
+            cm->cat    = data[0] & RANS_ORDER_CAT    ?  1 : 0;
+            cm->stripe = data[0] & RANS_ORDER_STRIPE ?  1 : 0;
+            cm->nosz   = data[0] & RANS_ORDER_NOSZ   ?  1 : 0;
+        }
+        break;
+
+    case CRAM_COMP_ARITH:
+        if (size > 0) {
+            // Not in a public header, but the same transforms as rANSNx16
+            cm->order  = data[0] & 3;
+            cm->rle    = data[0] & RANS_ORDER_RLE    ?  1 : 0;
+            cm->pack   = data[0] & RANS_ORDER_PACK   ?  1 : 0;
+            cm->cat    = data[0] & RANS_ORDER_CAT    ?  1 : 0;
+            cm->stripe = data[0] & RANS_ORDER_STRIPE ?  1 : 0;
+            cm->nosz   = data[0] & RANS_ORDER_NOSZ   ?  1 : 0;
+            cm->ext    = data[0] & 4 /*external*/    ?  1 : 0;
+        }
+        break;
+
+    case CRAM_COMP_TOK3:
+        if (size > 8) {
+            if (data[8] == 1)
+                cm->level = 11;
+            else if (data[8] == 0)
+                cm->level = 1;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    return comp;
+}
 
 /*
  *-----------------------------------------------------------------------------

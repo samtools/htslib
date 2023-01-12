@@ -76,7 +76,53 @@ enum cram_block_method {
     RANS1    = 10,
     GZIP_RLE = 11,
 };
+#else
+
+// Values as defined in the CRAM specifications.
+// See cram/cram_structs.h cram_block_method_int for an expanded version of
+// this with local specialisations assigned to codes.
+enum cram_block_method {
+    CRAM_COMP_UNKNOWN = -1,
+
+    // CRAM 2.x and 3.0
+    CRAM_COMP_RAW      = 0,
+    CRAM_COMP_GZIP     = 1,
+    CRAM_COMP_BZIP2    = 2,
+
+    // CRAM 3.0
+    CRAM_COMP_LZMA     = 3,
+    CRAM_COMP_RANS4x8  = 4, // 4-way interleaving, 8-bit renormalisation
+
+    // CRAM 3.1
+    CRAM_COMP_RANSNx16 = 5, // both 4x16 and 32x16 variants, plus transforms
+    CRAM_COMP_ARITH    = 6, // aka Range coding
+    CRAM_COMP_FQZ      = 7, // FQZComp
+    CRAM_COMP_TOK3     = 8, // Name tokeniser
+};
 #endif
+
+typedef struct {
+    enum cram_block_method method;
+
+    // Generic compression level if known (0 if not).
+    // 1 or 9 for gzip min/max flag (else 5).  1-9 for bzip2
+    // 1 or 11 for for tok3 (rans/arith encoder).
+    int level;
+
+    // For rans* and arith codecs
+    int order;
+
+    // ransNx16/arith specific
+    int rle;
+    int pack;
+    int stripe;
+    int cat;
+    int nosz;
+    int Nway;
+
+    // Arithmetic coder only
+    int ext; // external: use gz, xz or bzip2
+} cram_method_details;
 
 enum cram_content_type {
     CT_ERROR           = -1,
@@ -151,7 +197,7 @@ void cram_container_set_landmarks(cram_container *c, int32_t num_landmarks,
 HTSLIB_EXPORT
 int32_t cram_container_get_num_records(cram_container *c);
 HTSLIB_EXPORT
-int32_t cram_container_get_num_bases(cram_container *c);
+int64_t cram_container_get_num_bases(cram_container *c);
 
 /* Returns true if the container is empty (EOF marker) */
 HTSLIB_EXPORT
@@ -175,7 +221,12 @@ void *  cram_block_get_data(cram_block *b);
 HTSLIB_EXPORT
 enum cram_content_type cram_block_get_content_type(cram_block *b);
 HTSLIB_EXPORT
-int cram_block_get_method(cram_block *b);
+enum cram_block_method cram_block_get_method(cram_block *b);
+
+HTSLIB_EXPORT
+enum cram_block_method cram_expand_method(uint8_t *data, int32_t size,
+                                          enum cram_block_method comp,
+                                          cram_method_details *cm);
 
 HTSLIB_EXPORT
 void cram_block_set_content_id(cram_block *b, int32_t id);
