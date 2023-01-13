@@ -675,6 +675,7 @@ typedef struct ref_entry {
     char *seq;
     mFILE *mf;
     int is_md5;            // Reference comes from a raw seq found by MD5
+    int validated_md5;
 } ref_entry;
 
 KHASH_MAP_INIT_STR(refs, ref_entry*)
