@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2022 Genome Research Ltd.
+    Copyright (C) 2012-2023 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -51,6 +51,10 @@ DEALINGS IN THE SOFTWARE.  */
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
 
+KHASH_MAP_INIT_STR(hdict, bcf_hrec_t*)
+typedef khash_t(hdict) hdict_t;
+
+
 #include "htslib/kseq.h"
 HTSLIB_EXPORT
 uint32_t bcf_float_missing    = 0x7F800001;
@@ -78,6 +82,22 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
 
 #define BCF_IS_64BIT (1<<30)
 
+
+// Opaque structure with auxilary data which allows to extend bcf_hdr_t without breaking ABI.
+// Note that this preserving API and ABI requires that the first element is vdict_t struct
+// rather than a pointer, as user programs may (and in some cases do) access the dictionary
+// directly as (vdict_t*)hdr->dict.
+typedef struct
+{
+    vdict_t dict;   // bcf_hdr_t.dict[0] vdict_t dictionary which keeps bcf_idinfo_t for BCF_HL_FLT,BCF_HL_INFO,BCF_HL_FMT
+    hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
+}
+bcf_hdr_aux_t;
+
+static inline bcf_hdr_aux_t *get_hdr_aux(const bcf_hdr_t *hdr)
+{
+    return (bcf_hdr_aux_t *)hdr->dict[0];
+}
 
 static char *find_chrom_header_line(char *s)
 {
@@ -866,8 +886,45 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return 1;
 }
 
+int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
+{
+    // currently only for bcf_hdr_set_version
+    assert( hrec->type==BCF_HL_GEN );
+    int ret;
+    khint_t k;
+    bcf_hdr_aux_t *aux = get_hdr_aux(hdr);
+    for (k=kh_begin(aux->gen); k<kh_end(aux->gen); k++)
+    {
+        if ( !kh_exist(aux->gen,k) ) continue;
+        if ( hrec!=(bcf_hrec_t*)kh_val(aux->gen,k) ) continue;
+        break;
+    }
+    assert( k<kh_end(aux->gen) );   // something went wrong, should never happen
+    free((char*)kh_key(aux->gen,k));
+    kh_del(hdict,aux->gen,k);
+    kstring_t str = {0,0,0};
+    if ( ksprintf(&str, "##%s=%s", tmp->key,tmp->value) < 0 )
+    {
+        free(str.s);
+        return -1;
+    }
+    k = kh_put(hdict, aux->gen, str.s, &ret);
+    if ( ret<0 )
+    {
+        free(str.s);
+        return -1;
+    }
+    free(hrec->value);
+    hrec->value = strdup(tmp->value);
+    if ( !hrec->value ) return -1;
+    return 0;
+}
+
 int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
+    kstring_t str = {0,0,0};
+    bcf_hdr_aux_t *aux = get_hdr_aux(hdr);
+
     int res;
     if ( !hrec ) return 0;
 
@@ -885,18 +942,48 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         }
 
         // Is one of the generic fields and already present?
-        int i;
-        for (i=0; i<hdr->nhrec; i++)
+        if ( ksprintf(&str, "##%s=%s", hrec->key,hrec->value) < 0 )
         {
-            if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
-            if ( !strcmp(hdr->hrec[i]->key,hrec->key) && !strcmp(hrec->key,"fileformat") ) break;
-            if ( !strcmp(hdr->hrec[i]->key,hrec->key) && !strcmp(hdr->hrec[i]->value,hrec->value) ) break;
+            free(str.s);
+            return -1;
         }
-        if ( i<hdr->nhrec )
+        khint_t k = kh_get(hdict, aux->gen, str.s);
+        if ( k != kh_end(aux->gen) )
         {
+            // duplicate record
             bcf_hrec_destroy(hrec);
+            free(str.s);
             return 0;
         }
+    }
+
+    int i;
+    if ( hrec->type==BCF_HL_STR && (i=bcf_hrec_find_key(hrec,"ID"))>=0 )
+    {
+        if ( ksprintf(&str, "##%s=<ID=%s>", hrec->key,hrec->vals[i]) < 0 )
+        {
+            free(str.s);
+            return -1;
+        }
+        khint_t k = kh_get(hdict, aux->gen, str.s);
+        if ( k != kh_end(aux->gen) )
+        {
+            // duplicate record
+            bcf_hrec_destroy(hrec);
+            free(str.s);
+            return 0;
+        }
+    }
+    if ( str.s )
+    {
+        khint_t k = kh_put(hdict, aux->gen, str.s, &res);
+        if ( res<0 )
+        {
+            bcf_hrec_destroy(hrec);
+            free(str.s);
+            return -1;
+        }
+        kh_val(aux->gen,k) = hrec;
     }
 
     // New record, needs to be added
@@ -911,29 +998,47 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return hrec->type==BCF_HL_GEN ? 0 : 1;
 }
 
-/*
- *  Note that while querying of FLT,INFO,FMT,CTG lines is fast (the keys are hashed),
- *  the STR,GEN lines are searched for linearly in a linked list of all header lines.
- *  This may become a problem for VCFs with huge headers, we might need to build a
- *  dictionary for these lines as well.
- */
 bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *key, const char *value, const char *str_class)
 {
     int i;
     if ( type==BCF_HL_GEN )
     {
+        // e.g. ##fileformat=VCFv4.2
+        //      ##source=GenomicsDBImport
+        //      ##bcftools_viewVersion=1.16-80-gdfdb0923+htslib-1.16-34-g215d364
+        if ( value )
+        {
+            kstring_t str = {0,0,0};
+            ksprintf(&str, "##%s=%s", key,value);
+            bcf_hdr_aux_t *aux = get_hdr_aux(hdr);
+            khint_t k = kh_get(hdict, aux->gen, str.s);
+            free(str.s);
+            if ( k == kh_end(aux->gen) ) return NULL;
+            return kh_val(aux->gen, k);
+        }
         for (i=0; i<hdr->nhrec; i++)
         {
             if ( hdr->hrec[i]->type!=type ) continue;
             if ( strcmp(hdr->hrec[i]->key,key) ) continue;
-            if ( !value || !strcmp(hdr->hrec[i]->value,value) ) return hdr->hrec[i];
+            return hdr->hrec[i];
         }
         return NULL;
     }
     else if ( type==BCF_HL_STR )
     {
-        if (!str_class)
-            return NULL;
+        // e.g. ##GATKCommandLine=<ID=GenomicsDBImport,CommandLine="GenomicsDBImport....">
+        //      ##ALT=<ID=NON_REF,Description="Represents any possible alternative allele not already represented at this location by REF and ALT">
+        if (!str_class) return NULL;
+        if ( !strcmp("ID",key) )
+        {
+            kstring_t str = {0,0,0};
+            ksprintf(&str, "##%s=<%s=%s>",str_class,key,value);
+            bcf_hdr_aux_t *aux = get_hdr_aux(hdr);
+            khint_t k = kh_get(hdict, aux->gen, str.s);
+            free(str.s);
+            if ( k == kh_end(aux->gen) ) return NULL;
+            return kh_val(aux->gen, k);
+        }
         for (i=0; i<hdr->nhrec; i++)
         {
             if ( hdr->hrec[i]->type!=type ) continue;
@@ -1070,6 +1175,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
     bcf_hrec_t *hrec;
     if ( !key )
     {
+        // no key, remove all entries of this type
         while ( i<hdr->nhrec )
         {
             if ( hdr->hrec[i]->type!=type ) { i++; continue; }
@@ -1185,14 +1291,19 @@ int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
     {
         int len;
         kstring_t str = {0,0,0};
-        ksprintf(&str,"##fileformat=%s", version);
+        if ( ksprintf(&str,"##fileformat=%s", version) < 0 ) return -1;
         hrec = bcf_hdr_parse_line(hdr, str.s, &len);
         free(str.s);
     }
     else
     {
-        free(hrec->value);
-        hrec->value = strdup(version);
+        bcf_hrec_t *tmp = bcf_hrec_dup(hrec);
+        if ( !tmp ) return -1;
+        free(tmp->value);
+        tmp->value = strdup(version);
+        if ( !tmp->value ) return -1;
+        bcf_hdr_update_hrec(hdr, hrec, tmp);
+        bcf_hrec_destroy(tmp);
     }
     hdr->dirty = 1;
     return 0; // FIXME: check for errs in this function (return < 0 if so)
@@ -1206,6 +1317,14 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     if (!h) return NULL;
     for (i = 0; i < 3; ++i)
         if ((h->dict[i] = kh_init(vdict)) == NULL) goto fail;
+
+    bcf_hdr_aux_t *aux = (bcf_hdr_aux_t*)calloc(1,sizeof(bcf_hdr_aux_t));
+    if ( !aux ) goto fail;
+    if ( (aux->gen = kh_init(hdict))==NULL ) { free(aux); goto fail; }
+    aux->dict = *((vdict_t*)h->dict[0]);
+    free(h->dict[0]);
+    h->dict[0] = aux;
+
     if ( strchr(mode,'w') )
     {
         bcf_hdr_append(h, "##fileformat=VCFv4.2");
@@ -1231,6 +1350,13 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
         if (d == 0) continue;
         for (k = kh_begin(d); k != kh_end(d); ++k)
             if (kh_exist(d, k)) free((char*)kh_key(d, k));
+        if ( i==0 )
+        {
+            bcf_hdr_aux_t *aux = get_hdr_aux(h);
+            for (k=kh_begin(aux->gen); k<kh_end(aux->gen); k++)
+                if ( kh_exist(aux->gen,k) ) free((char*)kh_key(aux->gen,k));
+            kh_destroy(hdict, aux->gen);
+        }
         kh_destroy(vdict, d);
         free(h->id[i]);
     }
