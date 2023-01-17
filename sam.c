@@ -5264,9 +5264,24 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
         if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) { // peek the next operation
             int op2 = _cop(cigar[s->k+1]);
             int l2 = _cln(cigar[s->k+1]);
-            if (op2 == BAM_CDEL) p->indel = -(int)l2;
-            else if (op2 == BAM_CINS) p->indel = l2;
-            else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) { // no working for adjacent padding
+            if (op2 == BAM_CDEL && op != BAM_CDEL) {
+                // At start of a new deletion, merge e.g. 1D2D to 3D.
+                // Within a deletion (the 2D in 1D2D) we keep p->indel=0
+                // and rely on is_del=1 as we would for 3D.
+                p->indel = -(int)l2;
+                for (k = s->k+2; k < c->n_cigar; ++k) {
+                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
+                    if (op2 == BAM_CDEL) p->indel -= l2;
+                    else break;
+                }
+            } else if (op2 == BAM_CINS) {
+                p->indel = l2;
+                for (k = s->k+2; k < c->n_cigar; ++k) {
+                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
+                    if (op2 == BAM_CINS) p->indel += l2;
+                    else if (op2 != BAM_CPAD) break;
+                }
+            } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
                 int l3 = 0;
                 for (k = s->k + 2; k < c->n_cigar; ++k) {
                     op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
