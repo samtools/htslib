@@ -3216,6 +3216,10 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
     /*
      * Compute locations in file. This is trivial for the MD5 files, but
      * is still necessary for the fasta variants.
+     *
+     * Note the offset here, as with faidx, has the assumption that white-
+     * space (the diff between line_length and bases_per_line) only occurs
+     * at the end of a line of text.
      */
     offset = e->line_length
         ? e->offset + (start-1)/e->bases_per_line * e->line_length +
@@ -3244,14 +3248,34 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
 
     /* Strip white-space if required. */
     if (len != end-start+1) {
-        int i, j;
+        hts_pos_t i, j;
         char *cp = seq;
         char *cp_to;
 
+        // Copy up to the first white-space, and then repeatedly just copy
+        // bases_per_line verbatim, and use the slow method to end again.
+        //
+        // This may seem excessive, but this code can be a significant
+        // portion of total CRAM decode CPU time for shallow data sets.
         for (i = j = 0; i < len; i++) {
-            if (cp[i] >= '!' && cp[i] <= '~')
-                cp[j++] = toupper_c(cp[i]);
+            if (!isspace_c(cp[i]))
+                cp[j++] = cp[i] & ~0x20;
+            else
+                break;
         }
+        while (i < len && isspace_c(cp[i]))
+            i++;
+        while (i < len - e->line_length) {
+            hts_pos_t j_end = j + e->bases_per_line;
+            while (j < j_end)
+                cp[j++] = cp[i++] & ~0x20; // toupper equiv
+            i += e->line_length - e->bases_per_line;
+        }
+        for (; i < len; i++) {
+            if (!isspace_c(cp[i]))
+                cp[j++] = cp[i] & ~0x20;
+        }
+
         cp_to = cp+j;
 
         if (cp_to - seq != end-start+1) {
