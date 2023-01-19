@@ -475,9 +475,9 @@ int cram_describe_encodings(cram_block_compression_hdr *hdr, kstring_t *ks) {
         if (key>>16) key_s[key_i++] = key>>16;
         key_s[key_i++] = (key>>8)&0xff;
         key_s[key_i++] = key&0xff;
-        ksprintf(ks, "\t%s\t", key_s);
+        r |= ksprintf(ks, "\t%s\t", key_s) < 0;
         r |= cram_codec_describe(codec, ks) < 0;
-        kputc('\n', ks);
+        r |= kputc('\n', ks) < 0;
     }
 
     return r ? -1 : 0;
@@ -555,31 +555,27 @@ void cram_block_set_offset(cram_block *b, size_t offset) { BLOCK_SIZE(b) = offse
  * Retuns the detected or specified comp method, and fills out *cm
  * if non-NULL.
  */
-enum cram_block_method cram_expand_method(uint8_t *data, int32_t size,
-                                          enum cram_block_method comp,
-                                          cram_method_details *cm) {
-    if (cm) {
-        memset(cm, 0, sizeof(*cm));
-        cm->method = comp;
-    }
+cram_method_details *cram_expand_method(uint8_t *data, int32_t size,
+                                        enum cram_block_method comp) {
+    cram_method_details *cm = calloc(1, sizeof(*cm));
+    if (!cm)
+        return NULL;
 
     const char *xz_header = "\xFD""7zXZ"; // including nul
 
     if (comp == CRAM_COMP_UNKNOWN) {
         // Auto-detect
-        if (size >= 2 && data[0] == 0x1f && data[1] == 0x8b)
+        if (size > 1 && data[0] == 0x1f && data[1] == 0x8b)
             comp = CRAM_COMP_GZIP;
-        else if (size >= 3 && data[1] == 'B' && data[2] == 'Z'
+        else if (size > 3 && data[1] == 'B' && data[2] == 'Z'
                  && data[3] == 'h')
             comp = CRAM_COMP_BZIP2;
-        else if (size >= 6 && memcmp(xz_header, data, 6) == 0)
+        else if (size > 6 && memcmp(xz_header, data, 6) == 0)
             comp = CRAM_COMP_LZMA;
         else
-            return CRAM_COMP_UNKNOWN;
+            comp = CRAM_COMP_UNKNOWN;
     }
-
-    if (!cm)
-        return comp;
+    cm->method = comp;
 
     // Interrogate the compressed data stream to fill out additional fields.
     switch (comp) {
@@ -645,7 +641,7 @@ enum cram_block_method cram_expand_method(uint8_t *data, int32_t size,
         break;
     }
 
-    return comp;
+    return cm;
 }
 
 /*

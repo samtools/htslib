@@ -101,6 +101,11 @@ enum cram_block_method {
 };
 #endif
 
+/* NOTE this structure may be expanded in future releases by appending
+ * additional fields.
+ *
+ * Do not assume the size is fixed and avoid using arrays of this struct.
+ */
 typedef struct {
     enum cram_block_method method;
 
@@ -224,9 +229,8 @@ HTSLIB_EXPORT
 enum cram_block_method cram_block_get_method(cram_block *b);
 
 HTSLIB_EXPORT
-enum cram_block_method cram_expand_method(uint8_t *data, int32_t size,
-                                          enum cram_block_method comp,
-                                          cram_method_details *cm);
+cram_method_details *cram_expand_method(uint8_t *data, int32_t size,
+                                        enum cram_block_method comp);
 
 HTSLIB_EXPORT
 void cram_block_set_content_id(cram_block *b, int32_t id);
@@ -270,7 +274,7 @@ void cram_codec_get_content_ids(cram_codec *c, int ids[2]);
 
 /*
  * Produces a human readable description of the codec parameters.
- * This ia appended to an existing kstring 'ks'.
+ * This is appended to an existing kstring 'ks'.
  *
  * Returns 0 on succes,
  *        <0 on failure
