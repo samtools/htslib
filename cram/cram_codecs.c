@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2021 Genome Research Ltd.
+Copyright (c) 2012-2021,2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -447,6 +447,11 @@ cram_block *cram_external_get_block(cram_slice *slice, cram_codec *c) {
     return cram_get_block_by_id(slice, c->u.external.content_id);
 }
 
+int cram_external_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "EXTERNAL(id=%d)",
+                    c->u.external.content_id) < 0 ? -1 : 0;
+}
+
 cram_codec *cram_external_decode_init(cram_block_compression_hdr *hdr,
                                       char *data, int size,
                                       enum cram_encoding codec,
@@ -494,6 +499,7 @@ cram_codec *cram_external_decode_init(cram_block_compression_hdr *hdr,
     c->free   = cram_external_decode_free;
     c->size   = cram_external_decode_size;
     c->get_block = cram_external_get_block;
+    c->describe = cram_external_describe;
 
     c->u.external.content_id = vv->varint_get32(&cp, data+size, NULL);
 
@@ -739,6 +745,14 @@ cram_block *cram_varint_get_block(cram_slice *slice, cram_codec *c) {
     return cram_get_block_by_id(slice, c->u.varint.content_id);
 }
 
+int cram_varint_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "VARINT(id=%d,offset=%"PRId64",type=%d)",
+                    c->u.varint.content_id,
+                    c->u.varint.offset,
+                    c->u.varint.type)
+        < 0 ? -1 : 0;
+}
+
 cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
                                     char *data, int size,
                                     enum cram_encoding codec,
@@ -774,6 +788,7 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
     c->free   = cram_varint_decode_free;
     c->size   = cram_varint_decode_size;
     c->get_block = cram_varint_get_block;
+    c->describe = cram_varint_describe;
 
     c->u.varint.content_id = vv->varint_get32 (&cp, cp_end, NULL);
     c->u.varint.offset     = vv->varint_get64s(&cp, cp_end, NULL);
@@ -942,6 +957,11 @@ int cram_const_decode_size(cram_slice *slice, cram_codec *c) {
     return 0;
 }
 
+int cram_const_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "CONST(val=%"PRId64")",
+                    c->u.xconst.val) < 0 ? -1 : 0;
+}
+
 cram_codec *cram_const_decode_init(cram_block_compression_hdr *hdr,
                                    char *data, int size,
                                    enum cram_encoding codec,
@@ -963,6 +983,7 @@ cram_codec *cram_const_decode_init(cram_block_compression_hdr *hdr,
     c->free   = cram_const_decode_free;
     c->size   = cram_const_decode_size;
     c->get_block = NULL;
+    c->describe = cram_const_describe;
 
     c->u.xconst.val = vv->varint_get64s(&cp, data+size, NULL);
 
@@ -1091,6 +1112,12 @@ void cram_beta_decode_free(cram_codec *c) {
         free(c);
 }
 
+int cram_beta_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "BETA(offset=%d, nbits=%d)",
+                    c->u.beta.offset, c->u.beta.nbits)
+        < 0 ? -1 : 0;
+}
+
 cram_codec *cram_beta_decode_init(cram_block_compression_hdr *hdr,
                                   char *data, int size,
                                   enum cram_encoding codec,
@@ -1115,6 +1142,7 @@ cram_codec *cram_beta_decode_init(cram_block_compression_hdr *hdr,
         return NULL;
     }
     c->free   = cram_beta_decode_free;
+    c->describe = cram_beta_describe;
 
     c->u.beta.nbits = -1;
     c->u.beta.offset = vv->varint_get32(&cp, data + size, NULL);
@@ -1405,6 +1433,7 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
     c->free = cram_xpack_decode_free;
     c->size = cram_xpack_decode_size;
     c->get_block = cram_xpack_get_block;
+    c->describe = NULL;
 
     c->u.xpack.nbits = vv->varint_get32(&cp, endp, NULL);
     c->u.xpack.nval  = vv->varint_get32(&cp, endp, NULL);
@@ -1735,6 +1764,7 @@ cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
     c->free = cram_xdelta_decode_free;
     c->size = cram_xdelta_decode_size;
     c->get_block = cram_xdelta_get_block;
+    c->describe = NULL;
 
     c->u.xdelta.word_size = vv->varint_get32(&cp, endp, NULL);
     c->u.xdelta.last = 0;
@@ -2135,6 +2165,7 @@ cram_codec *cram_xrle_decode_init(cram_block_compression_hdr *hdr,
     c->free   = cram_xrle_decode_free;
     c->size   = cram_xrle_decode_size;
     c->get_block = cram_xrle_get_block;
+    c->describe = NULL;
     c->u.xrle.cur_len = 0;
     c->u.xrle.cur_lit = -1;
 
@@ -2423,6 +2454,13 @@ void cram_subexp_decode_free(cram_codec *c) {
         free(c);
 }
 
+int cram_subexp_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "SUBEXP(offset=%d,k=%d)",
+                    c->u.subexp.offset,
+                    c->u.subexp.k)
+        < 0 ? -1 : 0;
+}
+
 cram_codec *cram_subexp_decode_init(cram_block_compression_hdr *hdr,
                                     char *data, int size,
                                     enum cram_encoding codec,
@@ -2442,6 +2480,7 @@ cram_codec *cram_subexp_decode_init(cram_block_compression_hdr *hdr,
     c->codec  = E_SUBEXP;
     c->decode = cram_subexp_decode;
     c->free   = cram_subexp_decode_free;
+    c->describe = cram_subexp_describe;
     c->u.subexp.k = -1;
 
     c->u.subexp.offset = vv->varint_get32(&cp, data + size, NULL);
@@ -2489,6 +2528,11 @@ void cram_gamma_decode_free(cram_codec *c) {
         free(c);
 }
 
+int cram_gamma_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "GAMMA(offset=%d)", c->u.subexp.offset)
+        < 0 ? -1 : 0;
+}
+
 cram_codec *cram_gamma_decode_init(cram_block_compression_hdr *hdr,
                                    char *data, int size,
                                    enum cram_encoding codec,
@@ -2511,6 +2555,7 @@ cram_codec *cram_gamma_decode_init(cram_block_compression_hdr *hdr,
     c->codec  = E_GAMMA;
     c->decode = cram_gamma_decode;
     c->free   = cram_gamma_decode_free;
+    c->describe = cram_gamma_describe;
 
     c->u.gamma.offset = vv->varint_get32(&cp, data+size, NULL);
 
@@ -2703,6 +2748,22 @@ int cram_huffman_decode_long(cram_slice *slice, cram_codec *c,
     return 0;
 }
 
+int cram_huffman_describe(cram_codec *c, kstring_t *ks) {
+    int r = 0, n;
+    r |= ksprintf(ks, "HUFFMAN(codes={") < 0;
+    for (n = 0; n < c->u.huffman.ncodes; n++) {
+        r |= ksprintf(ks, "%s%"PRId64, n?",":"",
+                      c->u.huffman.codes[n].symbol);
+    }
+    r |= ksprintf(ks, "},lengths={") < 0;
+    for (n = 0; n < c->u.huffman.ncodes; n++) {
+        r |= ksprintf(ks, "%s%d", n?",":"",
+                      c->u.huffman.codes[n].len);
+    }
+    r |= ksprintf(ks, "})") < 0;
+    return r;
+}
+
 /*
  * Initialises a huffman decoder from an encoding data stream.
  */
@@ -2865,6 +2926,7 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
     } else {
         return NULL;
     }
+    h->describe = cram_huffman_describe;
 
     return (cram_codec *)h;
 
@@ -3293,6 +3355,22 @@ void cram_byte_array_len_decode_free(cram_codec *c) {
     free(c);
 }
 
+int cram_byte_array_len_describe(cram_codec *c, kstring_t *ks) {
+    int r = 0;
+    r |= ksprintf(ks, "BYTE_ARRAY_LEN(len_codec={") < 0;
+    cram_byte_array_len_decoder *l = &c->u.byte_array_len;
+    r |=  l->len_codec->describe
+        ? l->len_codec->describe(l->len_codec, ks)
+        : (ksprintf(ks, "?")<0);
+    r |= ksprintf(ks, "},val_codec={") < 0;
+    r |=  l->val_codec->describe
+        ? l->val_codec->describe(l->val_codec, ks)
+        : (ksprintf(ks, "?")<0);
+    r |= ksprintf(ks, "}") < 0;
+
+    return r;
+}
+
 cram_codec *cram_byte_array_len_decode_init(cram_block_compression_hdr *hdr,
                                             char *data, int size,
                                             enum cram_encoding codec,
@@ -3308,6 +3386,7 @@ cram_codec *cram_byte_array_len_decode_init(cram_block_compression_hdr *hdr,
     c->codec  = E_BYTE_ARRAY_LEN;
     c->decode = cram_byte_array_len_decode;
     c->free   = cram_byte_array_len_decode_free;
+    c->describe = cram_byte_array_len_describe;
     c->u.byte_array_len.len_codec = NULL;
     c->u.byte_array_len.val_codec = NULL;
 
@@ -3532,6 +3611,13 @@ void cram_byte_array_stop_decode_free(cram_codec *c) {
     free(c);
 }
 
+int cram_byte_array_stop_describe(cram_codec *c, kstring_t *ks) {
+    return ksprintf(ks, "BYTE_ARRAY_STOP(stop=%d,id=%d)",
+                    c->u.byte_array_stop.stop,
+                    c->u.byte_array_stop.content_id)
+        < 0 ? -1 : 0;
+}
+
 cram_codec *cram_byte_array_stop_decode_init(cram_block_compression_hdr *hdr,
                                              char *data, int size,
                                              enum cram_encoding codec,
@@ -3561,6 +3647,7 @@ cram_codec *cram_byte_array_stop_decode_init(cram_block_compression_hdr *hdr,
         return NULL;
     }
     c->free   = cram_byte_array_stop_decode_free;
+    c->describe = cram_byte_array_stop_describe;
 
     c->u.byte_array_stop.stop = *cp++;
     if (CRAM_MAJOR_VERS(version) == 1) {
@@ -4031,4 +4118,11 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
     }
 
     return 0;
+}
+
+int cram_codec_describe(cram_codec *c, kstring_t *ks) {
+    if (c && c->describe)
+        return c->describe(c, ks);
+    else
+        return ksprintf(ks, "?");
 }

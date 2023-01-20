@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2015, 2018, 2020 Genome Research Ltd.
+Copyright (c) 2012-2015, 2018, 2020, 2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -160,7 +160,7 @@ typedef struct {
 /*
  * A generic codec structure.
  */
-typedef struct cram_codec {
+struct cram_codec {
     enum cram_encoding codec;
     cram_block *out;
     varint_vec *vv;
@@ -175,6 +175,7 @@ typedef struct cram_codec {
     int (*size)(cram_slice *slice, struct cram_codec *codec);
     int (*flush)(struct cram_codec *codec);
     cram_block *(*get_block)(cram_slice *slice, struct cram_codec *codec);
+    int (*describe)(struct cram_codec *codec, kstring_t *ks);
 
     union {
         cram_huffman_decoder         huffman;
@@ -201,7 +202,7 @@ typedef struct cram_codec {
         cram_const_codec             e_xconst;
         cram_varint_decoder          e_varint;
     } u;
-} cram_codec;
+};
 
 const char *cram_encoding2str(enum cram_encoding t);
 
