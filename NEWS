@@ -1,6 +1,114 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* A new API for iterating through a BAM record's aux field.
+  (PR#1354, addresses #1319.  Thanks to John Marshall)
+
+* Text mode for bgzip. Allows bgzip to compress lines of text with block breaks
+  at newlines.
+  (PR#1493, thanks to Mike Lin for the initial version PR#1369)
+
+* Make tabix support CSI indices with large positions.  Unlike SAM and VCF
+  files, BED files do not set a maximum reference length which hindered CSI
+  support.  This change sets an arbitrary large size of 100G to enable it to
+  work.
+  (PR#1506)
+
+* Add a fai_line_length function.  Exposes the internal line-wrap length.
+  (PR#1516)
+
+* Check for invalid barcode tags in fastq output.
+  (PR#1518, fixes samtools#1728.  Reported by Poshi)
+
+* Warn if reference found in a CRAM file is not contained in the specified
+  reference file.
+  (PR#1517 and PR#1521, adds diagnostics for #1515. Reported by Wei WeiDeng)
+
+* Add a faidx_seq_len64 function that can return sequence lengths longer than
+  INT_MAX.  At the same time limit faidx_seq_len to INT_MAX output.  Also add a
+  fai_adjust_region to ensure given ranges do not go beyond the end of the
+  requested sequence.
+  (PR#1519)
+
+* Add a bcf_strerror function to give text descriptions of BCF errors.
+  (PR#1510)
+
+* Add CRAM SQ/M5 header checking when specifying a fasta file.  This is to
+  prevent creating a CRAM that cannot be decoded again.
+  (PR#1522.  In response to samtools#1748 though not a direct fix)
+
+* Improve support for very long input lines (> 2Gbyte).  This is mostly useful
+  for tabix which does not do much interpretation of its input.
+  (PR#1542, a partial fix for #1539)
+
+* Speed up load_ref_portion.  This function has been sped up by about 7x, which
+  speeds up low-depth CRAM decoding by about 10%.
+  (PR#1551)
+
+* Expand CRAM API to cope with new samtools cram_size command.
+  (PR#1546)
+
+* Merges neighbouring I and D ops into one op within pileup. This means
+  4M1D1D1D3M is reported as 4M3D3M.   Fixing this in sam.c means not only is
+  samtools mpileup now looking better, but any tool using the mpileup API will
+  be getting consistent results.
+  (PR#1552, fixes the last remaining part of samtools#139)
+
+
+Build changes
+-------------
+
+* Use POSIX grep in testing as egrep and fgrep are considered obsolete.
+  (PR#1509, thanks to David Seifert)
+
+* Switch to building libdefalte with cmake for Cirris CI.
+  (PR#1511)
+
+* Ensure strings in config_vars.h are escaped correctly.
+  (PR#1530, fixes #1527. Reported by Lucas Czech)
+
+* Easier modification of shared library permissions during install.
+  (PR#1532, fixes #1525. Reported by StephDC)
+
+* Fix build on ancient compilers.  Added -std=gnu90 to build tests so older
+  C compilers will still be happy.
+  (PR#1524, fixes #1523.  Reported by Martin Jakt)
+
+* Switch MacOS CI tests to an ARM-based image.
+  (PR#1536)
+
+* Cut down the number of embed_ref=2 tests that get run.
+  (PR#1537)
+
+Bug fixes
+---------
+
+* VCF. Fix n-squared complexity in sample line with many adjacent tabs [fuzz].
+  (PR#1503)
+
+* Fix error code returned by bcftools.  Error code was returning 0 (success)
+  even on a fail.  Replaced by -1.
+  (PR#1504, thanks to Lilian Janin)
+
+* Prevent crash when the only FASTA entry has no sequence [fuzz].
+  (PR#1507)
+
+* Fixed typo in sam.h documentation.
+  (PR#1512, thanks to kojix2)
+
+* Fix buffer read-overrun in bam_plp_insertion mod.
+  (PR#1520)
+
+* Fix hash keys being left behind by bcf_hdr_remove.
+  (PR#1535, fixes #1533.  Reported by Giulio Genovese in #842)
+
+* Added return on an error to bgzf_read_block.
+  (PR#1529, fixes #1528.  Thanks to Bergur Ragnarsson)
+
+* Make bcf_hdr_idinfo_exists more robust by checking id value exists.
+  (PR#1544, fixes #1538.  Reported by Giulio Genovese)
+
+
 Noteworthy changes in release 1.16 (18th August 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
