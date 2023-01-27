@@ -3829,7 +3829,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             if (NULL == (c = cram_next_container(fd, b))) {
                 if (fd->ctr) {
                     // prevent cram_close attempting to flush
-                    cram_free_container(fd->ctr);
+                    fd->ctr_mt = fd->ctr; // delay free when threading
                     fd->ctr = NULL;
                 }
                 return -1;
