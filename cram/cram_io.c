@@ -3203,7 +3203,7 @@ void cram_ref_decr(refs_t *r, int id) {
 }
 
 /*
- * Used by cram_ref_load and cram_ref_get. The file handle will have
+ * Used by cram_ref_load and cram_get_ref. The file handle will have
  * already been opened, so we can catch it. The ref_entry *e informs us
  * of whether this is a multi-line fasta file or a raw MD5 style file.
  * Either way we create a single contiguous sequence.
@@ -3455,7 +3455,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
             hts_log_warning("Reference file given, but ref '%s' not present",
                             r->name);
         if (cram_populate_ref(fd, id, r) == -1) {
-            hts_log_error("Failed to populate reference for id %d", id);
+            hts_log_warning("Failed to populate reference for id %d", id);
             pthread_mutex_unlock(&fd->refs->lock);
             pthread_mutex_unlock(&fd->ref_lock);
             return NULL;
@@ -3652,6 +3652,8 @@ cram_container *cram_new_container(int nrec, int nslice) {
     c->max_apos   = 0;
     c->multi_seq  = 0;
     c->qs_seq_orient = 1;
+    c->no_ref = 0;
+    c->embed_ref = -1; // automatic selection
 
     c->bams = NULL;
 

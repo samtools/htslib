@@ -2438,8 +2438,9 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             }
         }
 
-        if ((!s->ref && s->hdr->ref_base_id < 0)
-            || memcmp(digest, s->hdr->md5, 16) != 0) {
+        if (!c->comp_hdr->no_ref &&
+            ((!s->ref && s->hdr->ref_base_id < 0)
+             || memcmp(digest, s->hdr->md5, 16) != 0)) {
             char M[33];
             const char *rname = sam_hdr_tid2name(sh, ref_id);
             if (!rname) rname="?"; // cannot happen normally

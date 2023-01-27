@@ -457,6 +457,8 @@ struct cram_container {
     /* Copied from fd before encoding, to allow multi-threading */
     int ref_start, first_base, last_base, ref_id, ref_end;
     char *ref;
+    int embed_ref;               // 1 if embedding ref, 2 if embedding cons
+    int no_ref;                  // true if referenceless
     //struct ref_entry *ref;
 
     /* For multi-threading */
@@ -793,14 +795,14 @@ struct cram_fd {
     cram_container *ctr_mt;
 
     // positions for encoding or decoding
-    int first_base, last_base;
+    int first_base, last_base; // copied to container
 
     // cached reference portion
     refs_t *refs;              // ref meta-data structure
     char *ref, *ref_free;      // current portion held in memory
-    int   ref_id;
-    int   ref_start;
-    int   ref_end;
+    int   ref_id;              // copied to container
+    int   ref_start;           // copied to container
+    int   ref_end;             // copied to container
     char *ref_fn;   // reference fasta filename
 
     // compression level and metrics
@@ -813,8 +815,8 @@ struct cram_fd {
     int seqs_per_slice;
     int bases_per_slice;
     int slices_per_container;
-    int embed_ref;
-    int no_ref;
+    int embed_ref; // copied to container
+    int no_ref;    // copied to container
     int ignore_md5;
     int use_bz2;
     int use_rans;
