@@ -813,6 +813,31 @@ shlib-exports-dylib.txt: libhts.dylib
 shlib-exports-dll.txt: hts.dll.a
 	nm -g hts.dll.a | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
 
+$(srcprefix)htslib.map: libhts.so
+	LC_ALL=C ; export LC_ALL; \
+	curr_vers=`expr 'X$(PACKAGE_VERSION)' : 'X\([0-9]*\.[0-9.]*\)'` ; \
+	last_vers=`awk '/^HTSLIB_[0-9](\.[0-9]+)+/ { lv = $$1 } END { print lv }' htslib.map` ; \
+	if test "x$$curr_vers" = 'x' || test "x$$last_vers" = 'x' ; then \
+	    echo "Version check failed : $$curr_vers / $$las_vers" 1>&2 ; \
+	    exit 1 ; \
+	fi && \
+	if test "HTSLIB_$$curr_vers" = "$$last_vers" ; then \
+	    echo "Refusing to update $@ - HTSlib version not changed" 1>&2 ; \
+	    exit 1 ; \
+	fi && \
+	nm --with-symbol-versions -D libhts.so | awk '$$2 ~ /^[DGRT]$$/ && $$3 ~ /@@Base$$/ && $$3 !~ /^(_init|_fini|_edata)@@/ { sub(/@@Base$$/, ";", $$3); print "    " $$3 }' > $@.tmp && \
+	if [ -s $@.tmp ] ; then \
+	    cat $@ > $@.new.tmp && \
+	    printf '\n%s {\n' "HTSLIB_$$curr_vers" >> $@.new.tmp && \
+	    cat $@.tmp >> $@.new.tmp && \
+	    printf '} %s;\n' "$$last_vers" >> $@.new.tmp && \
+	        rm -f $@.tmp && \
+	        mv $@.new.tmp $@ ; \
+	    fi ; \
+	else \
+	    rm -f $@.tmp ; \
+	fi
+
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
