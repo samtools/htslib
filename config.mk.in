@@ -1,6 +1,6 @@
 #  Optional configure Makefile overrides for htslib.
 #
-#    Copyright (C) 2015-2017, 2019 Genome Research Ltd.
+#    Copyright (C) 2015-2017, 2019, 2023 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -43,6 +43,7 @@ RANLIB = @RANLIB@
 CPPFLAGS = @CPPFLAGS@
 CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
+VERSION_SCRIPT_LDFLAGS = @VERSION_SCRIPT_LDFLAGS@
 LIBS     = @LIBS@
 
 PLATFORM   = @PLATFORM@

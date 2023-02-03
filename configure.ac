@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2022 Genome Research Ltd.
+#    Copyright (C) 2015-2023 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -155,6 +155,11 @@ static_LDFLAGS=$LDFLAGS
 static_LIBS='-lpthread -lz -lm'
 private_LIBS=$LDFLAGS
 
+AC_ARG_ENABLE([versioned-symbols],
+  [AS_HELP_STRING([--disable-versioned-symbols],
+                  [disable versioned symbols in shared library])],
+  [], [enable_versioned_symbols=yes])
+
 AC_ARG_ENABLE([bz2],
   [AS_HELP_STRING([--disable-bz2],
                   [omit support for BZ2-compressed CRAM files])],
@@ -248,6 +253,24 @@ case $basic_host in
 esac
 AC_MSG_RESULT([$host_result])
 AC_SUBST([PLATFORM])
+
+dnl Check for versioned symbol support
+dnl Only try for .so shared libraries as other types won't work
+AS_IF([test x"$PLATFORM" = xdefault && test x"$enable_versioned_symbols" = xyes],
+  [AC_CACHE_CHECK([whether the linker supports versioned symbols],
+    [hts_cv_have_versioned_symbols], [
+      save_LDFLAGS=$LDFLAGS
+      LDFLAGS="-Wl,-version-script,$srcdir/htslib.map $LDFLAGS"
+      AC_LINK_IFELSE([AC_LANG_PROGRAM()],
+                     [hts_cv_have_versioned_symbols=yes],
+                     [hts_cv_have_versioned_symbols=no])
+      LDFLAGS=$save_LDFLAGS
+    ])
+   AS_IF([test "x$hts_cv_have_versioned_symbols" = xyes],[
+     VERSION_SCRIPT_LDFLAGS='-Wl,-version-script,$(srcprefix)htslib.map'
+     AC_SUBST([VERSION_SCRIPT_LDFLAGS])
+   ])
+])
 
 dnl Try to get more control over which symbols are exported in the shared
 dnl library.
