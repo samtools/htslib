@@ -1,0 +1,214 @@
+CRAM encoding internals
+=======================
+
+A quick summary of functions involved.
+
+The encoder works by accumulating a bunch of BAM records (via the
+cram_put_bam_seq function), and at a certain point (eg counter of
+records, or switching reference) the array of BAM records it turned
+into a container, which in turn creates slices, holding CRAM
+data-series in blocks.  The function that turns an array of BAM
+objects into the container is below.
+
+cram_encode_container func:
+    Validate references MD5 against header, unless no_ref mode
+    If embed_ref <= 1, fetch ref
+        Switch to embed_ref=2 if failed
+
+    Foreach slice:
+        If embed_ref == 2
+	    call cram_generate_reference
+	        if failed switch to no_ref mode
+	Foreach sequence
+	    call process_one_read to append BAM onto each data series (DS)
+	        call cram_stats_add for each DS to gather metrics
+		call cram_encode_aux
+
+    # We now have cram DS, per slice
+    call cram_encoder_init, per DS (based on cram_stats_add data)
+
+    Foreach slice:
+        call cram_encode_slice to turn DS to blocks
+	    call cram_compess_slice
+
+    call cram_encode_compression_header
+
+Threading
+---------
+
+CRAM can be multi-threaded, but this brings complications.
+
+The above function is the main CPU user, so it is this bit which can
+be executed in parallel from multiple threads.  To understand this we
+need to now look at how the primary loop works when writing a CRAM:
+
+Encoding main thread:
+    repeatedly calls cram_put_bam_seq
+        calls cram_new_container on first time through to initialise
+	calls cram_next_container when current is full or we need to flush
+	    calls cram_flush_container_mt to flush last container
+        pushes BAM object onto current container
+
+If non-threaded, cram_flush_container_mt does:
+    call cram_flush_container
+        call cram_encode_container to go from BAM to CRAM data-series
+ 	call cram_flush_container2 (writes it out)
+
+If threaded, cram_flush_container_mt does:
+    Main: Dispatch cram_flush_thread job
+        Thread: call cram_encode_container to go from BAM to CRAM data-series
+    Main: Call cram_flush_result to drain queue of encoded containers
+        Main: Call cram_flush_container2 (writes it out);
+
+
+
+Decisions on when to create new containers, detection of sorted vs unsorted,
+switching to multi-seq mode, etc occur at the main thread in
+cram_put_bam_seq.
+
+We can change our mind on container parameters at any point up until
+the cram_encode_container call.  At that point these parameters get
+baked into a container compression header and all data-series
+generated need to be in sync with the parameters.
+
+It is possible that some parameter changes can get detected while
+encoding the container, as it is there where we fetch references.  Eg
+the need to enable embedded reference or switch to non-ref mode.
+
+While encoding a container, we can change the parameters for *this*
+container, and we can also set the default parameter for subsequent
+new parameters via the global cram fd to avoid spamming attempts to
+load a reference which doesn't exist, but we cannot change other
+containers that are being processed in parallel.  They'll fend for
+themselves.
+
+References
+----------
+
+To avoid spamming the reference servers, there is a shared cache of
+references being currently used by all the worker threads (leading to
+confusing terminology of reference-counting of references).  So each
+container fetches its section of reference, but the memory for that is
+handled via its own layer.
+
+The shared references and ref meta-data is held in cram_fd -> refs (a
+refs_t pointer):
+
+    // References structure.
+    struct refs_t {
+        string_alloc_t *pool;  // String pool for holding filenames and SN vals
+    
+        khash_t(refs) *h_meta; // ref_entry*, index by name
+        ref_entry **ref_id;    // ref_entry*, index by ID
+        int nref;              // number of ref_entry
+    
+        char *fn;              // current file opened
+        BGZF *fp;              // and the hFILE* to go with it.
+    
+        int count;             // how many cram_fd sharing this refs struct
+    
+        pthread_mutex_t lock;  // Mutex for multi-threaded updating
+        ref_entry *last;       // Last queried sequence
+        int last_id;           // Used in cram_ref_decr_locked to delay free
+    };
+
+Within this, ref_entry is the per-reference information:
+
+    typedef struct ref_entry {
+        char *name;
+        char *fn;
+        int64_t length;
+        int64_t offset;
+        int bases_per_line;
+        int line_length;
+        int64_t count;     // for shared references so we know to dealloc seq
+        char *seq;
+        mFILE *mf;
+        int is_md5;        // Reference comes from a raw seq found by MD5
+        int validated_md5;
+    } ref_entry;
+
+Sharing of references to track use between threads is via
+cram_ref_incr* and cram_ref_decr* (which locked and unlocked
+variants).  We free a reference when the usage count hits zero.  To
+avoid spamming discard and reload in single-thread creation of a
+pos-sorted CRAM, we keep track of the last reference in cram_fd and
+delay discard by one loop iteration.
+
+There are complexities here around whether the references come from a
+single ref.fa file, are from a local MD5sum cache with one file per
+reference (mmapped), or whether they're fetched from some remote
+REF_PATH query such as the EBI.  (This later case typically downloads
+to a local md5 based ref-cache first and mmaps from there.)
+
+The refs struct start off by being populated from the SAM header.  We
+have M5 tag and name known, maybe a filename, but length is 0 and seq
+is NULL.  This is done by cram_load_reference:
+
+cram_load_reference (cram_fd, filename):
+    if filename non-NULL
+        call refs_load_fai
+	    Populates ref_entry with filename, name, length, line-len, etc
+    	sanitise_SQ_lines
+    If no refs loaded
+        call refs_from_header
+	    populates ref_entry with name.
+	    Sets length=0 as marker for not-yet-loaded
+
+The main interface used from the code is cram_get_ref().  It takes a
+reference ID, start and end coordinate and returns a pointer to the
+relevant sub-sequence.
+
+cram_get_ref:
+    r = fd->refs->ref_id[id];    // current ref
+    call cram_populate_ref if stored length is 0 (ie ref.fa set)
+        search REF_PATH / REF_CACHE
+	call bgzf_open if local_path
+	call open_path_mfile otherwise
+	copy to local REF_CACHE if required (eg remote fetch)
+
+    If start = 1 and end = ref-length
+       If ref seq unknown
+           call cram_ref_load to load entire ref and use that
+
+    If ref seq now known, return it
+
+    // Otherwise known via .fai or we've errored by now.
+    call load_ref_portion to return a sub-seq from index fasta
+
+The encoder asks for the entire reference rather than a small portion
+of it as we're usually encoding a large amount.  The decoder may be
+dealing with small range queries, so it only asks for the relevant
+sub-section of reference as specified in the cram slice headers.
+
+
+TODO
+====
+
+- Multi-ref mode is enabled when we have too many small containers in
+  a row.
+
+  Instead of firing off new containers when we switch reference, we
+  could always make a new container after N records, separating off
+  M <= N to make the container such that all M are the same reference,
+  and shuffling any remaining N-M down as the start of the next.
+
+  This means we can detect how many new containers we would create,
+  and enable multi-ref mode straight away rather than keeping a recent
+  history of how many small containers we've emitted.
+
+- The cache of references currently being used is a better place to
+  track the global embed-ref and non-ref logic.  Better than cram_fd.
+  Cram_fd is a one-way change, as once we enable non-ref we'll stick
+  with it.
+
+  However if it was per-ref in the ref-cache then we'd probe and try
+  each reference once, and then all new containers for that ref would
+  honour the per-ref parameters.  So a single missing reference in the
+  middle of a large file wouldn't change behaviour for all subsequence
+  references.
+
+  Optionally we could still do meta-analysis on how many references
+  are failing, and switch the global cram_fd params to avoid repeated
+  testing of reference availability if it's becoming obvious that none
+  of them are known.
