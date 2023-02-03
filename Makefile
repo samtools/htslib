@@ -805,7 +805,7 @@ header-exports.txt: test/header_syms.pl htslib/*.h
 	test/header_syms.pl htslib/*.h | sort -u -o $@
 
 shlib-exports-so.txt: libhts.so
-	nm -D -g libhts.so | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
+	nm -D -g libhts.so | awk '$$2 == "T" { sub("@.*", "", $$3); print $$3 }' | sort -u -o $@
 
 shlib-exports-dylib.txt: libhts.dylib
 	nm -Ug libhts.dylib | awk '$$2 == "T" { sub("^_", "", $$3); print $$3 }' | sort -u -o $@
@@ -825,7 +825,7 @@ $(srcprefix)htslib.map: libhts.so
 	    echo "Refusing to update $@ - HTSlib version not changed" 1>&2 ; \
 	    exit 1 ; \
 	fi && \
-	nm --with-symbol-versions -D libhts.so | awk '$$2 ~ /^[DGRT]$$/ && $$3 ~ /@@Base$$/ && $$3 !~ /^(_init|_fini|_edata)@@/ { sub(/@@Base$$/, ";", $$3); print "    " $$3 }' > $@.tmp && \
+	nm --with-symbol-versions -D -g libhts.so | awk '$$2 ~ /^[DGRT]$$/ && $$3 ~ /@@Base$$/ && $$3 !~ /^(_init|_fini|_edata)@@/ { sub(/@@Base$$/, ";", $$3); print "    " $$3 }' > $@.tmp && \
 	if [ -s $@.tmp ] ; then \
 	    cat $@ > $@.new.tmp && \
 	    printf '\n%s {\n' "HTSLIB_$$curr_vers" >> $@.new.tmp && \
