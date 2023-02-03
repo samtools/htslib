@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2022 Genome Research Ltd.
+#    Copyright (C) 2013-2023 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -39,6 +39,7 @@ CFLAGS   = -g -Wall -O2 -fvisibility=hidden
 EXTRA_CFLAGS_PIC = -fpic
 TARGET_CFLAGS =
 LDFLAGS  = -fvisibility=hidden
+VERSION_SCRIPT_LDFLAGS = -Wl,-version-script,$(srcprefix)htslib.map
 LIBS     = $(htslib_default_libs)
 
 prefix      = /usr/local
@@ -354,7 +355,7 @@ print-config:
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
 libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -Wl,-version-script,$(srcprefix)htslib.map $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS) -lpthread
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(VERSION_SCRIPT_LDFLAGS) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS) -lpthread
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
