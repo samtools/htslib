@@ -2183,6 +2183,8 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 case FQZ_b:    strat = CRAM_MAJOR_VERS(fd->version)+256; break;
                 case FQZ_c:    strat = CRAM_MAJOR_VERS(fd->version)+2*256; break;
                 case FQZ_d:    strat = CRAM_MAJOR_VERS(fd->version)+3*256; break;
+                case TOK3:     strat = 0; break;
+                case TOKA:     strat = 1; break;
                 default:       strat = 0;
                 }
                 metrics->strat  = strat;
