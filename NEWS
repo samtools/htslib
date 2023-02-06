@@ -53,6 +53,10 @@ Noteworthy changes in release a.b
   samtools mpileup now looking better, but any tool using the mpileup API will
   be getting consistent results.
   (PR#1552, fixes the last remaining part of samtools#139)
+  
+* Update the API documentation for bgzf_mt as it refered to a previous
+  iteration.
+  (PR#1556, fixes #1553.  Reported by Raghavendra Padmanabhan)
 
 
 Build changes
@@ -107,6 +111,18 @@ Bug fixes
 
 * Make bcf_hdr_idinfo_exists more robust by checking id value exists.
   (PR#1544, fixes #1538.  Reported by Giulio Genovese)
+
+* Catch errors from bgzf_getline in hts_readlist and hts_readlines.  There were
+  a couple of places where the returned error was ignored.
+  (PR#1554)
+
+* Fix a bug in the codec learning algorithm for TOKA.  The name tokeniser has a
+  rANS vs Arithmetic coder choice as a parameter (in the "strat" variable). We
+  lacked this distinction when learning which method works best, so in the
+  choice of toka (tok3+arith) vs bzip2 vs gzip etc we selected tok3 and switched
+  back to strat 0, disabling the arithmetic coder.his only affects archive mode,
+  or where requested eg "samtools view -O cram,version=3.1,use_arith".
+  (PR#1559)
 
 
 Noteworthy changes in release 1.16 (18th August 2022)
