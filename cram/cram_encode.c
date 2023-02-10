@@ -70,7 +70,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 static int sub_idx(char *key, char val) {
     int i;
 
-    for (i = 0; *key && *key++ != val; i++);
+    for (i = 0; i < 4 && *key++ != val; i++);
     return i;
 }
 
@@ -205,31 +205,38 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
             case CRAM_KEY('S','M'): {
                 char smat[5], *mp = smat;
+                // Output format is for order ACGTN (minus ref base)
+                // to store the code value 0-3 for each symbol.
+                //
+                // Note this is different to storing the symbols in order
+                // that the codes occur from 0-3, which is what we used to
+                // do.  (It didn't matter as we always had a fixed table in
+                // the order.)
                 *mp++ =
-                    (sub_idx("CGTN", h->substitution_matrix[0][0]) << 6) |
-                    (sub_idx("CGTN", h->substitution_matrix[0][1]) << 4) |
-                    (sub_idx("CGTN", h->substitution_matrix[0][2]) << 2) |
-                    (sub_idx("CGTN", h->substitution_matrix[0][3]) << 0);
+                    (sub_idx(h->substitution_matrix[0], 'C') << 6) |
+                    (sub_idx(h->substitution_matrix[0], 'G') << 4) |
+                    (sub_idx(h->substitution_matrix[0], 'T') << 2) |
+                    (sub_idx(h->substitution_matrix[0], 'N') << 0);
                 *mp++ =
-                    (sub_idx("AGTN", h->substitution_matrix[1][0]) << 6) |
-                    (sub_idx("AGTN", h->substitution_matrix[1][1]) << 4) |
-                    (sub_idx("AGTN", h->substitution_matrix[1][2]) << 2) |
-                    (sub_idx("AGTN", h->substitution_matrix[1][3]) << 0);
+                    (sub_idx(h->substitution_matrix[1], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[1], 'G') << 4) |
+                    (sub_idx(h->substitution_matrix[1], 'T') << 2) |
+                    (sub_idx(h->substitution_matrix[1], 'N') << 0);
                 *mp++ =
-                    (sub_idx("ACTN", h->substitution_matrix[2][0]) << 6) |
-                    (sub_idx("ACTN", h->substitution_matrix[2][1]) << 4) |
-                    (sub_idx("ACTN", h->substitution_matrix[2][2]) << 2) |
-                    (sub_idx("ACTN", h->substitution_matrix[2][3]) << 0);
+                    (sub_idx(h->substitution_matrix[2], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[2], 'C') << 4) |
+                    (sub_idx(h->substitution_matrix[2], 'T') << 2) |
+                    (sub_idx(h->substitution_matrix[2], 'N') << 0);
                 *mp++ =
-                    (sub_idx("ACGN", h->substitution_matrix[3][0]) << 6) |
-                    (sub_idx("ACGN", h->substitution_matrix[3][1]) << 4) |
-                    (sub_idx("ACGN", h->substitution_matrix[3][2]) << 2) |
-                    (sub_idx("ACGN", h->substitution_matrix[3][3]) << 0);
+                    (sub_idx(h->substitution_matrix[3], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[3], 'C') << 4) |
+                    (sub_idx(h->substitution_matrix[3], 'G') << 2) |
+                    (sub_idx(h->substitution_matrix[3], 'N') << 0);
                 *mp++ =
-                    (sub_idx("ACGT", h->substitution_matrix[4][0]) << 6) |
-                    (sub_idx("ACGT", h->substitution_matrix[4][1]) << 4) |
-                    (sub_idx("ACGT", h->substitution_matrix[4][2]) << 2) |
-                    (sub_idx("ACGT", h->substitution_matrix[4][3]) << 0);
+                    (sub_idx(h->substitution_matrix[4], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[4], 'C') << 4) |
+                    (sub_idx(h->substitution_matrix[4], 'G') << 2) |
+                    (sub_idx(h->substitution_matrix[4], 'T') << 0);
                 BLOCK_APPEND(map, smat, 5);
                 break;
             }
