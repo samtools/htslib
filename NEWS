@@ -53,7 +53,7 @@ Noteworthy changes in release a.b
   samtools mpileup now looking better, but any tool using the mpileup API will
   be getting consistent results.
   (PR#1552, fixes the last remaining part of samtools#139)
-  
+
 * Update the API documentation for bgzf_mt as it refered to a previous
   iteration.
   (PR#1556, fixes #1553.  Reported by Raghavendra Padmanabhan)
@@ -84,15 +84,18 @@ Build changes
 * Cut down the number of embed_ref=2 tests that get run.
   (PR#1537)
 
+* Add symbol versions to libhts.so.  This is to aid package developers.
+  (PR#1560 addresses #1505, thanks to John Marshall. Reported by Stefan Bruens)
+
 Bug fixes
 ---------
 
 * VCF. Fix n-squared complexity in sample line with many adjacent tabs [fuzz].
   (PR#1503)
 
-* Fix error code returned by bcftools.  Error code was returning 0 (success)
-  even on a fail.  Replaced by -1.
-  (PR#1504, thanks to Lilian Janin)
+* Improved bcftools detection and reporting of bgzf decode errors.
+  (PR#1504, thanks to Lilian Janin. PR#1529 thanks to Bergur Ragnarsson, fixes
+  #1528. PR#1554)
 
 * Prevent crash when the only FASTA entry has no sequence [fuzz].
   (PR#1507)
@@ -106,24 +109,13 @@ Bug fixes
 * Fix hash keys being left behind by bcf_hdr_remove.
   (PR#1535, fixes #1533.  Reported by Giulio Genovese in #842)
 
-* Added return on an error to bgzf_read_block.
-  (PR#1529, fixes #1528.  Thanks to Bergur Ragnarsson)
-
 * Make bcf_hdr_idinfo_exists more robust by checking id value exists.
   (PR#1544, fixes #1538.  Reported by Giulio Genovese)
 
-* Catch errors from bgzf_getline in hts_readlist and hts_readlines.  There were
-  a couple of places where the returned error was ignored.
-  (PR#1554)
-
-* Fix a bug in the codec learning algorithm for TOKA.  The name tokeniser has a
-  rANS vs Arithmetic coder choice as a parameter (in the "strat" variable). We
-  lacked this distinction when learning which method works best, so in the
-  choice of toka (tok3+arith) vs bzip2 vs gzip etc we selected tok3 and switched
-  back to strat 0, disabling the arithmetic coder.his only affects archive mode,
-  or where requested eg "samtools view -O cram,version=3.1,use_arith".
-  (PR#1559)
-
+* CRAM improvements. Fixed crash with multi-threaded CRAM.Fixed a bug in the
+  codec parameter learning for CRAM 3.1 name tokeniser. Fixed Cram compression
+  container substitution matrix generation,
+  (PR#1558, PR#1559 and PR#1562) 
 
 Noteworthy changes in release 1.16 (18th August 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
