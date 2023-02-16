@@ -115,7 +115,7 @@ Bug fixes
 * Make bcf_hdr_idinfo_exists more robust by checking id value exists.
   (PR#1544, fixes #1538.  Reported by Giulio Genovese)
 
-* CRAM improvements. Fixed crash with multi-threaded CRAM.Fixed a bug in the
+* CRAM improvements. Fixed crash with multi-threaded CRAM.  Fixed a bug in the
   codec parameter learning for CRAM 3.1 name tokeniser. Fixed Cram compression
   container substitution matrix generation,
   (PR#1558, PR#1559 and PR#1562) 
