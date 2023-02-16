@@ -87,6 +87,9 @@ Build changes
 * Add symbol versions to libhts.so.  This is to aid package developers.
   (PR#1560 addresses #1505, thanks to John Marshall. Reported by Stefan Bruens)
 
+* htscodecs now updated to v1.4.0.
+  (PR#1563)
+
 Bug fixes
 ---------
 
