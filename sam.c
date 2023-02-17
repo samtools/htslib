@@ -6220,9 +6220,6 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
     // so such records are invalid
     if( !(b->core.flag & BAM_FUNMAP) && b->core.n_cigar > 0 ) {
         const uint32_t *cigar = bam_get_cigar(b);
-
-        // bam_cigar_type returns 0 when neither the query nor reference
-        // are consumed. Whenever this is true we can't parse MM
         if( bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP ||
             bam_cigar_op(cigar[b->core.n_cigar - 1]) == BAM_CHARD_CLIP ) {
             return -1;
