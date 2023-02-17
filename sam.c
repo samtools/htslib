@@ -6215,6 +6215,19 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
         return -1;
     }
 
+    // check whether the read is aligned and hardclipped
+    // hardclipping breaks the correspondance between SEQ and MM
+    // so such records are invalid
+    if( !(b->core.flag & BAM_FUNMAP) && b->core.n_cigar > 0 ) {
+        const uint32_t *cigar = bam_get_cigar(b);
+
+        // bam_cigar_type returns 0 when neither the query nor reference
+        // are consumed. Whenever this is true we can't parse MM
+        if( bam_cigar_type(bam_cigar_op(cigar[0])) == 0 ||
+            bam_cigar_type(bam_cigar_op(cigar[b->core.n_cigar - 1])) == 0)
+            return -1;
+    }
+
     uint8_t *ml = bam_aux_get(b, "ML");
     if (!ml) ml = bam_aux_get(b, "Ml");
     if (ml && (ml[0] != 'B' || ml[1] != 'C')) {
