@@ -90,6 +90,9 @@ Build changes
 * htscodecs now updated to v1.4.0.
   (PR#1563)
 
+* Cleaned up misleading system error reports in test_bgzf.
+  (PR#1565)
+
 Bug fixes
 ---------
 
@@ -106,7 +109,7 @@ Bug fixes
 * Fixed typo in sam.h documentation.
   (PR#1512, thanks to kojix2)
 
-* Fix buffer read-overrun in bam_plp_insertion mod.
+* Fix buffer read-overrun in bam_plp_insertion_mod.
   (PR#1520)
 
 * Fix hash keys being left behind by bcf_hdr_remove.
