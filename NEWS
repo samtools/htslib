@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Noteworthy changes in release 1.17 (21st February 2023)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 * A new API for iterating through a BAM record's aux field.
   (PR#1354, addresses #1319.  Thanks to John Marshall)
 

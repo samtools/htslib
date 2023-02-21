@@ -608,3 +608,25 @@ HTSLIB_1.16 {
     cram_slice_hdr_get_num_blocks;
     hts_filter_eval2;
 } HTSLIB_1.15;
+
+HTSLIB_1.17 {
+    bam_aux_first;
+    bam_aux_next;
+    bam_aux_remove;
+    bcf_strerror;
+    cram_block_get_method;
+    cram_cid2ds_free;
+    cram_cid2ds_query;
+    cram_codec_describe;
+    cram_codec_get_content_ids;
+    cram_container_get_num_bases;
+    cram_container_get_num_records;
+    cram_decode_compression_header;
+    cram_describe_encodings;
+    cram_expand_method;
+    cram_free_compression_header;
+    cram_update_cid2ds_map;
+    fai_adjust_region;
+    fai_line_length;
+    faidx_seq_len64;
+} HTSLIB_1.16;
