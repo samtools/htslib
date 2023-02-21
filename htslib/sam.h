@@ -189,7 +189,7 @@ extern const int8_t bam_cigar_table[256];
  * Mate position and insert size also need to be 64-bit, but
  * we won't accept more than 32-bit for tid.
  *
- * The bam_core_t structure is the *in memory* layout and not
+ * The bam1_core_t structure is the *in memory* layout and not
  * the same as the on-disk format.  64-bit changes here permit
  * SAM to work with very long chromosomes and permit BAM and CRAM
  * to seamlessly update in the future without further API/ABI
@@ -1438,7 +1438,6 @@ int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b,
 
 /// Converts a BAM aux tag to SAM format
 /*
- * @param b    Pointer to the bam record
  * @param key  Two letter tag key
  * @param type Single letter type code: ACcSsIifHZB.
  * @param tag  Tag data pointer, in BAM format
@@ -1628,6 +1627,29 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
     return NULL;
 }
 
+/// Return a pointer to a BAM record's first aux field
+/** @param b   Pointer to the BAM record
+    @return    Aux field pointer, or NULL if the record has none
+
+When NULL is returned, errno will also be set to ENOENT. ("Aux field pointers"
+point to the TYPE byte within the auxiliary data for that field; but in general
+it is unnecessary for user code to be aware of this.)
+ */
+HTSLIB_EXPORT
+uint8_t *bam_aux_first(const bam1_t *b);
+
+/// Return a pointer to a BAM record's next aux field
+/** @param b   Pointer to the BAM record
+    @param s   Aux field pointer, as returned by bam_aux_first()/_next()/_get()
+    @return    Pointer to the next aux field, or NULL if no next field or error
+
+Whenever NULL is returned, errno will also be set: ENOENT if @p s was the
+record's last aux field; otherwise EINVAL, indicating that the BAM record's
+aux data is corrupt.
+ */
+HTSLIB_EXPORT
+uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s);
+
 /// Return a pointer to an aux record
 /** @param b   Pointer to the bam record
     @param tag Desired aux tag
@@ -1639,6 +1661,19 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
  */
 HTSLIB_EXPORT
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
+
+/// Return the aux field's 2-character tag
+/** @param s   Aux field pointer, as returned by bam_aux_first()/_next()/_get()
+    @return    Pointer to the tag characters, NOT NUL-terminated
+ */
+static inline
+const char *bam_aux_tag(const uint8_t *s) { return (const char *) (s-2); }
+
+/// Return the aux field's type character
+/** @param s   Aux field pointer, as returned by bam_aux_first()/_next()/_get()
+    @return    The type character: one of cCsSiI/fd/A/Z/H/B
+ */
+static inline char bam_aux_type(const uint8_t *s) { return *s; }
 
 /// Return a SAM formatting string containing a BAM tag
 /** @param b   Pointer to the bam record
@@ -1742,14 +1777,32 @@ HTSLIB_EXPORT
 int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
 
 /// Delete tag data from a bam record
-/* @param b The bam record to update
-   @param s Pointer to the tag to delete, as returned by bam_aux_get().
-   @return 0 on success; -1 on failure
-   If the bam record's aux data is corrupt, errno is set to EINVAL and this
-   function returns -1;
+/** @param b   The BAM record to update
+    @param s   Pointer to the aux field to delete, as returned by bam_aux_get()
+               Must not be NULL
+    @return    0 on success; -1 on failure
+
+If the BAM record's aux data is corrupt, errno is set to EINVAL and this
+function returns -1.
 */
 HTSLIB_EXPORT
 int bam_aux_del(bam1_t *b, uint8_t *s);
+
+/// Delete an aux field from a BAM record
+/** @param b   The BAM record to update
+    @param s   Pointer to the aux field to delete, as returned by
+               bam_aux_first()/_next()/_get(); must not be NULL
+    @return    Pointer to the following aux field, or NULL if none or on error
+
+Identical to @c bam_aux_del() apart from the return value, which is an
+aux iterator suitable for use with @c bam_aux_next()/etc.
+
+Whenever NULL is returned, errno will also be set: ENOENT if the aux field
+deleted was the record's last one; otherwise EINVAL, indicating that the
+BAM record's aux data is corrupt.
+ */
+HTSLIB_EXPORT
+uint8_t *bam_aux_remove(bam1_t *b, uint8_t *s);
 
 /// Update or add a string-type tag
 /* @param b    The bam record to update

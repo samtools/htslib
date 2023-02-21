@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2022 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2023 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -3853,7 +3853,6 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
     }
 
     // Name
-
     if (*x->name.s != x->nprefix)
         return -2;
 
@@ -3893,8 +3892,8 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         if ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) < 0)
             if (fp->format.format == fastq_format || ret < -1)
                 return -2;
-        if (*fp->line.s == (fp->format.format == fastq_format ? '+' : '>')
-            || ret == -1)
+        if (ret == -1 ||
+            *fp->line.s == (fp->format.format == fastq_format ? '+' : '>'))
             break;
         if (kputsn(fp->line.s, fp->line.l, &x->seq) < 0)
             return -2;
@@ -4286,13 +4285,24 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
                      bc ? (char *)bc+1 : "0") < 0)
             return -1;
 
+        if (bc && (*bc != 'Z' || (!isupper_c(bc[1]) && !islower_c(bc[1])))) {
+            hts_log_warning("BC tag starts with non-sequence base; using '0'");
+            str->l -= strlen((char *)bc)-2; // limit to 1 char
+            str->s[str->l-1] = '0';
+            str->s[str->l] = 0;
+            bc = NULL;
+        }
+
         // Replace any non-alpha with '+'.  Ie seq-seq to seq+seq
         if (bc) {
             int l = strlen((char *)bc+1);
             char *c = (char *)str->s + str->l - l;
-            for (i = 0; i < l; i++)
+            for (i = 0; i < l; i++) {
                 if (!isalpha_c(c[i]))
                     c[i] = '+';
+                else if (islower_c(c[i]))
+                    c[i] = toupper_c(c[i]);
+            }
         }
     }
 
@@ -4614,31 +4624,42 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
     }
 }
 
+uint8_t *bam_aux_first(const bam1_t *b)
+{
+    uint8_t *s = bam_get_aux(b);
+    uint8_t *end = b->data + b->l_data;
+    if (s >= end) { errno = ENOENT; return NULL; }
+    return s+2;
+}
+
+uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s)
+{
+    uint8_t *end = b->data + b->l_data;
+    uint8_t *next = s? skip_aux((uint8_t *) s, end) : end;
+    if (next == NULL) goto bad_aux;
+    if (next >= end) { errno = ENOENT; return NULL; }
+    return next+2;
+
+ bad_aux:
+    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
+    errno = EINVAL;
+    return NULL;
+}
+
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
 {
-    uint8_t *s, *end, *t = (uint8_t *) tag;
-    uint16_t y = (uint16_t) t[0]<<8 | t[1];
-    s = bam_get_aux(b);
-    end = b->data + b->l_data;
-    while (s != NULL && end - s >= 3) {
-        uint16_t x = (uint16_t) s[0]<<8 | s[1];
-        s += 2;
-        if (x == y) {
+    uint8_t *s;
+    for (s = bam_aux_first(b); s; s = bam_aux_next(b, s))
+        if (s[-2] == tag[0] && s[-1] == tag[1]) {
             // Check the tag value is valid and complete
-            uint8_t *e = skip_aux(s, end);
-            if ((*s == 'Z' || *s == 'H') && *(e - 1) != '\0') {
-                goto bad_aux;  // Unterminated string
-            }
-            if (e != NULL) {
-                return s;
-            } else {
-                goto bad_aux;
-            }
+            uint8_t *e = skip_aux(s, b->data + b->l_data);
+            if (e == NULL) goto bad_aux;
+            if ((*s == 'Z' || *s == 'H') && *(e - 1) != '\0') goto bad_aux;
+
+            return s;
         }
-        s = skip_aux(s, end);
-    }
-    if (s == NULL) goto bad_aux;
-    errno = ENOENT;
+
+    // errno now as set by bam_aux_first()/bam_aux_next()
     return NULL;
 
  bad_aux:
@@ -4647,23 +4668,28 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
     return NULL;
 }
 
-// s MUST BE returned by bam_aux_get()
 int bam_aux_del(bam1_t *b, uint8_t *s)
 {
-    uint8_t *p, *aux;
-    int l_aux = bam_get_l_aux(b);
-    aux = bam_get_aux(b);
-    p = s - 2;
-    s = skip_aux(s, aux + l_aux);
-    if (s == NULL) goto bad_aux;
-    memmove(p, s, l_aux - (s - aux));
-    b->l_data -= s - p;
-    return 0;
+    s = bam_aux_remove(b, s);
+    return (s || errno == ENOENT)? 0 : -1;
+}
+
+uint8_t *bam_aux_remove(bam1_t *b, uint8_t *s)
+{
+    uint8_t *end = b->data + b->l_data;
+    uint8_t *next = skip_aux(s, end);
+    if (next == NULL) goto bad_aux;
+
+    b->l_data -= next - (s-2);
+    if (next >= end) { errno = ENOENT; return NULL; }
+
+    memmove(s-2, next, end - next);
+    return s;
 
  bad_aux:
     hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
     errno = EINVAL;
-    return -1;
+    return NULL;
 }
 
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
@@ -5238,9 +5264,24 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
         if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) { // peek the next operation
             int op2 = _cop(cigar[s->k+1]);
             int l2 = _cln(cigar[s->k+1]);
-            if (op2 == BAM_CDEL) p->indel = -(int)l2;
-            else if (op2 == BAM_CINS) p->indel = l2;
-            else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) { // no working for adjacent padding
+            if (op2 == BAM_CDEL && op != BAM_CDEL) {
+                // At start of a new deletion, merge e.g. 1D2D to 3D.
+                // Within a deletion (the 2D in 1D2D) we keep p->indel=0
+                // and rely on is_del=1 as we would for 3D.
+                p->indel = -(int)l2;
+                for (k = s->k+2; k < c->n_cigar; ++k) {
+                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
+                    if (op2 == BAM_CDEL) p->indel -= l2;
+                    else break;
+                }
+            } else if (op2 == BAM_CINS) {
+                p->indel = l2;
+                for (k = s->k+2; k < c->n_cigar; ++k) {
+                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
+                    if (op2 == BAM_CINS) p->indel += l2;
+                    else if (op2 != BAM_CPAD) break;
+                }
+            } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
                 int l3 = 0;
                 for (k = s->k + 2; k < c->n_cigar; ++k) {
                     op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
@@ -5326,8 +5367,10 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
             break;
         case BAM_CINS:
             for (l = 0; l < (cigar[k]>>BAM_CIGAR_SHIFT); l++, j++) {
-                c = seq_nt16_str[bam_seqi(bam_get_seq(p->b),
-                                          p->qpos + j - p->is_del)];
+                c = p->qpos + j - p->is_del < p->b->core.l_qseq
+                    ? seq_nt16_str[bam_seqi(bam_get_seq(p->b),
+                                            p->qpos + j - p->is_del)]
+                    : 'N';
                 ins->s[indel++] = c;
                 int nm;
                 hts_base_mod mod[256];

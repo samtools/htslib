@@ -15,7 +15,8 @@ libdeflate_template: &LIBDEFLATE
       pushd "$HOME"
       git clone --depth 1 https://github.com/ebiggers/libdeflate.git
       pushd libdeflate
-      make -j 4 CFLAGS='-fPIC -O3' libdeflate.a
+      cmake -B build -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_BUILD_GZIP=OFF -DCMAKE_C_FLAGS='-g -O3 -fPIC'
+      cmake --build build --verbose
       popd
       popd
     fi
@@ -27,7 +28,7 @@ compile_template: &COMPILE
   compile_script: |
     git submodule update --init --recursive
     if test "x$USE_LIBDEFLATE" = "xyes"; then
-      CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="$LDFLAGS -L$HOME/libdeflate" --with-libdeflate'
+      CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="$LDFLAGS -L$HOME/libdeflate/build" --with-libdeflate'
     else
       CONFIG_OPTS='--without-libdeflate'
     fi
@@ -74,6 +75,13 @@ gcc_task:
        USE_CONFIG: yes
        CFLAGS: -std=c99 -pedantic -Wformat=2
        USE_LIBDEFLATE: yes
+
+  install_script: |
+    apt-get update
+    apt-get install -y --no-install-suggests --no-install-recommends     \
+        ca-certificates libc-dev make git autoconf automake              \
+        zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev \
+        cmake
 
   << : *LIBDEFLATE
   << : *COMPILE
@@ -129,6 +137,7 @@ rocky_task:
     LC_ALL: C
     CIRRUS_CLONE_DEPTH: 1
     USE_CONFIG: yes
+    CFLAGS: -std=gnu90
 
   # NB: we could consider building a docker image with these
   # preinstalled and specifying that instead, to speed up testing.
@@ -172,8 +181,8 @@ arm_ubuntu_task:
 
 macosx_task:
   name: macosx + clang
-  osx_instance:
-    image: monterey-base
+  macos_instance:
+    image: ghcr.io/cirruslabs/macos-ventura-base:latest
 
   environment:
     CC: clang
@@ -187,8 +196,9 @@ macosx_task:
        USE_CONFIG: yes
        USE_LIBDEFLATE: yes
 
-  package_install_script:
-    - HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool xz git
+  package_install_script: |
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool xz git \
+        cmake
 
   << : *LIBDEFLATE
   << : *COMPILE

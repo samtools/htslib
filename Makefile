@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2022 Genome Research Ltd.
+#    Copyright (C) 2013-2023 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -39,6 +39,7 @@ CFLAGS   = -g -Wall -O2 -fvisibility=hidden
 EXTRA_CFLAGS_PIC = -fpic
 TARGET_CFLAGS =
 LDFLAGS  = -fvisibility=hidden
+VERSION_SCRIPT_LDFLAGS = -Wl,-version-script,$(srcprefix)htslib.map
 LIBS     = $(htslib_default_libs)
 
 prefix      = /usr/local
@@ -58,7 +59,8 @@ MKDIR_P = mkdir -p
 INSTALL = install -p
 INSTALL_DATA    = $(INSTALL) -m 644
 INSTALL_DIR     = $(MKDIR_P) -m 755
-INSTALL_LIB     = $(INSTALL_DATA)
+LIB_PERM        = 644
+INSTALL_LIB     = $(INSTALL) -m $(LIB_PERM)
 INSTALL_MAN     = $(INSTALL_DATA)
 INSTALL_PROGRAM = $(INSTALL)
 
@@ -80,6 +82,7 @@ BUILT_TEST_PROGRAMS = \
 	test/sam \
 	test/test_bgzf \
 	test/test_expr \
+	test/test_faidx \
 	test/test_kfunc \
 	test/test_kstring \
 	test/test_mod \
@@ -140,8 +143,8 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.16
-MACH_O_CURRENT_VERSION = 3.1.16
+MACH_O_COMPATIBILITY_VERSION = 3.1.17
+MACH_O_CURRENT_VERSION = 3.1.17
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
@@ -160,12 +163,20 @@ show-version:
 	@echo PACKAGE_VERSION = $(PACKAGE_VERSION)
 	@echo NUMERIC_VERSION = $(NUMERIC_VERSION)
 
+config_vars.h: override escape=$(subst ',\x27,$(subst ",\",$(subst \,\\,$(1))))
+config_vars.h: override hts_cc_escaped=$(call escape,$(CC))
+config_vars.h: override hts_cppflags_escaped=$(call escape,$(CPPFLAGS))
+config_vars.h: override hts_cflags_escaped=$(call escape,$(CFLAGS))
+config_vars.h: override hts_ldflags_escaped=$(call escape,$(LDFLAGS))
+config_vars.h: override hts_libs_escaped=$(call escape,$(LIBS))
+
 config_vars.h:
-	echo '#define HTS_CC "$(CC)"' > $@
-	echo '#define HTS_CPPFLAGS "$(CPPFLAGS)"' >> $@
-	echo '#define HTS_CFLAGS "$(CFLAGS)"' >> $@
-	echo '#define HTS_LDFLAGS "$(LDFLAGS)"' >> $@
-	echo '#define HTS_LIBS "$(LIBS)"' >> $@
+	printf '#define HTS_CC "%s"\n#define HTS_CPPFLAGS "%s"\n#define HTS_CFLAGS "%s"\n#define HTS_LDFLAGS "%s"\n#define HTS_LIBS "%s"\n' \
+	'$(hts_cc_escaped)' \
+	'$(hts_cppflags_escaped)' \
+	'$(hts_cflags_escaped)' \
+	'$(hts_ldflags_escaped)' \
+	'$(hts_libs_escaped)' > $@
 
 .SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
@@ -344,7 +355,7 @@ print-config:
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
 libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS) -lpthread
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(VERSION_SCRIPT_LDFLAGS) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS) -lpthread
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
@@ -494,7 +505,7 @@ htsfile: htsfile.o libhts.a
 tabix: tabix.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS) -lpthread
 
-bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h)
+bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hfile_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
 
@@ -583,12 +594,13 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	fi
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
+	cd test/faidx && ./test-faidx.sh faidx.tst
 	cd test/sam_filter && ./filter.sh filter.tst
 	cd test/tabix && ./test-tabix.sh tabix.tst
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	cd test/fastq && ./test-fastq.sh
 	cd test/base_mods && ./base-mods.sh base-mods.tst
-	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
+	REF_PATH=: test/sam test/ce.fa test/faidx/faidx.fa test/faidx/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
 
@@ -621,6 +633,9 @@ test/test_bgzf: test/test_bgzf.o libhts.a
 
 test/test_expr: test/test_expr.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_faidx: test/test_faidx.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_faidx.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_kfunc: test/test_kfunc.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
@@ -739,6 +754,7 @@ test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_reg
 test/test_str2int.o: test/test_str2int.c config.h $(textutils_internal_h)
 test/test_time_funcs.o: test/test_time_funcs.c config.h $(hts_time_funcs_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_hts_log_h)
+test/test_faidx.o: test/test_faidx.c config.h $(htslib_faidx_h)
 test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
@@ -789,13 +805,38 @@ header-exports.txt: test/header_syms.pl htslib/*.h
 	test/header_syms.pl htslib/*.h | sort -u -o $@
 
 shlib-exports-so.txt: libhts.so
-	nm -D -g libhts.so | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
+	nm -D -g libhts.so | awk '$$2 == "T" { sub("@.*", "", $$3); print $$3 }' | sort -u -o $@
 
 shlib-exports-dylib.txt: libhts.dylib
 	nm -Ug libhts.dylib | awk '$$2 == "T" { sub("^_", "", $$3); print $$3 }' | sort -u -o $@
 
 shlib-exports-dll.txt: hts.dll.a
 	nm -g hts.dll.a | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
+
+$(srcprefix)htslib.map: libhts.so
+	LC_ALL=C ; export LC_ALL; \
+	curr_vers=`expr 'X$(PACKAGE_VERSION)' : 'X\([0-9]*\.[0-9.]*\)'` ; \
+	last_vers=`awk '/^HTSLIB_[0-9](\.[0-9]+)+/ { lv = $$1 } END { print lv }' htslib.map` ; \
+	if test "x$$curr_vers" = 'x' || test "x$$last_vers" = 'x' ; then \
+	    echo "Version check failed : $$curr_vers / $$las_vers" 1>&2 ; \
+	    exit 1 ; \
+	fi && \
+	if test "HTSLIB_$$curr_vers" = "$$last_vers" ; then \
+	    echo "Refusing to update $@ - HTSlib version not changed" 1>&2 ; \
+	    exit 1 ; \
+	fi && \
+	nm --with-symbol-versions -D -g libhts.so | awk '$$2 ~ /^[DGRT]$$/ && $$3 ~ /@@Base$$/ && $$3 !~ /^(_init|_fini|_edata)@@/ { sub(/@@Base$$/, ";", $$3); print "    " $$3 }' > $@.tmp && \
+	if [ -s $@.tmp ] ; then \
+	    cat $@ > $@.new.tmp && \
+	    printf '\n%s {\n' "HTSLIB_$$curr_vers" >> $@.new.tmp && \
+	    cat $@.tmp >> $@.new.tmp && \
+	    printf '} %s;\n' "$$last_vers" >> $@.new.tmp && \
+	        rm -f $@.tmp && \
+	        mv $@.new.tmp $@ ; \
+	    fi ; \
+	else \
+	    rm -f $@.tmp ; \
+	fi
 
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
@@ -845,7 +886,9 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
+	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* test/faidx/FAIL* \
+               test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* \
+               header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	-rm -rf htscodecs/tests/test.out
 
 # Only remove this in git checkouts

@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -204,6 +204,22 @@ typedef struct bcf_dec_t {
 #define BCF_ERR_CHAR     16
 #define BCF_ERR_CTG_INVALID   32
 #define BCF_ERR_TAG_INVALID   64
+
+/// Get error description for bcf error code
+/** @param errorcode  The error code which is to be described
+    @param buffer     The buffer in which description to be added
+    @param maxbuffer  The size of buffer passed
+    @return NULL on invalid buffer; buffer on other cases
+
+The buffer will be an empty string when @p errorcode is 0.
+Description of errors present in code will be appended to @p buffer with ',' separation.
+The buffer has to be at least 4 characters long. NULL will be returned if it is smaller or when buffer is NULL.
+
+'...' will be appended if the description doesn't fit in the given buffer.
+ */
+
+HTSLIB_EXPORT
+const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer);
 
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
@@ -620,7 +636,11 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 
-    /** Creates a list of sequence names. It is up to the caller to free the list (but not the sequence names) */
+    /**
+     *  Creates a list of sequence names. It is up to the caller to free the list (but not the sequence names).
+     *  NB: sequence name indexes returned by bcf_hdr_seqnames() may not correspond to bcf1_t.rid, use
+     *  bcf_hdr_id2name() or bcf_seqname() instead.
+     */
     HTSLIB_EXPORT
     const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *nseqs);
 
@@ -1210,7 +1230,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_hdr_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
     #define bcf_hdr_id2type(hdr,type,int_id)    (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
     #define bcf_hdr_id2coltype(hdr,type,int_id) (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
-    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id)>=0 && bcf_hdr_id2coltype((hdr),(type),(int_id))!=0xf)
+    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id)>=0 && (int_id)<(hdr)->n[BCF_DT_ID] && (hdr)->id[BCF_DT_ID][int_id].val && bcf_hdr_id2coltype((hdr),(type),(int_id))!=0xf)
     #define bcf_hdr_id2hrec(hdr,dict_type,col_type,int_id)    ((hdr)->id[(dict_type)==BCF_DT_CTG?BCF_DT_CTG:BCF_DT_ID][int_id].val->hrec[(dict_type)==BCF_DT_CTG?0:(col_type)])
     /// Convert BCF FORMAT data to string form
     /**

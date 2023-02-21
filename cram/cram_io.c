@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2022 Genome Research Ltd.
+Copyright (c) 2012-2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -2183,6 +2183,8 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 case FQZ_b:    strat = CRAM_MAJOR_VERS(fd->version)+256; break;
                 case FQZ_c:    strat = CRAM_MAJOR_VERS(fd->version)+2*256; break;
                 case FQZ_d:    strat = CRAM_MAJOR_VERS(fd->version)+3*256; break;
+                case TOK3:     strat = 0; break;
+                case TOKA:     strat = 1; break;
                 default:       strat = 0;
                 }
                 metrics->strat  = strat;
@@ -2586,6 +2588,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         e->seq = NULL;
         e->mf = NULL;
         e->is_md5 = 0;
+        e->validated_md5 = 0;
 
         k = kh_put(refs, r->h_meta, e->name, &n);
         if (-1 == n)  {
@@ -3022,6 +3025,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
             fd->refs->fp = fp;
             fd->refs->fn = r->fn;
             r->is_md5 = 1;
+            r->validated_md5 = 1;
 
             // Fall back to cram_get_ref() where it'll do the actual
             // reading of the file.
@@ -3043,6 +3047,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         }
         r->length = sz;
         r->is_md5 = 1;
+        r->validated_md5 = 1;
     } else {
         refs_t *refs;
         const char *fn;
@@ -3198,7 +3203,7 @@ void cram_ref_decr(refs_t *r, int id) {
 }
 
 /*
- * Used by cram_ref_load and cram_ref_get. The file handle will have
+ * Used by cram_ref_load and cram_get_ref. The file handle will have
  * already been opened, so we can catch it. The ref_entry *e informs us
  * of whether this is a multi-line fasta file or a raw MD5 style file.
  * Either way we create a single contiguous sequence.
@@ -3216,6 +3221,10 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
     /*
      * Compute locations in file. This is trivial for the MD5 files, but
      * is still necessary for the fasta variants.
+     *
+     * Note the offset here, as with faidx, has the assumption that white-
+     * space (the diff between line_length and bases_per_line) only occurs
+     * at the end of a line of text.
      */
     offset = e->line_length
         ? e->offset + (start-1)/e->bases_per_line * e->line_length +
@@ -3244,14 +3253,34 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
 
     /* Strip white-space if required. */
     if (len != end-start+1) {
-        int i, j;
+        hts_pos_t i, j;
         char *cp = seq;
         char *cp_to;
 
+        // Copy up to the first white-space, and then repeatedly just copy
+        // bases_per_line verbatim, and use the slow method to end again.
+        //
+        // This may seem excessive, but this code can be a significant
+        // portion of total CRAM decode CPU time for shallow data sets.
         for (i = j = 0; i < len; i++) {
-            if (cp[i] >= '!' && cp[i] <= '~')
-                cp[j++] = toupper_c(cp[i]);
+            if (!isspace_c(cp[i]))
+                cp[j++] = cp[i] & ~0x20;
+            else
+                break;
         }
+        while (i < len && isspace_c(cp[i]))
+            i++;
+        while (i < len - e->line_length) {
+            hts_pos_t j_end = j + e->bases_per_line;
+            while (j < j_end)
+                cp[j++] = cp[i++] & ~0x20; // toupper equiv
+            i += e->line_length - e->bases_per_line;
+        }
+        for (; i < len; i++) {
+            if (!isspace_c(cp[i]))
+                cp[j++] = cp[i] & ~0x20;
+        }
+
         cp_to = cp+j;
 
         if (cp_to - seq != end-start+1) {
@@ -3422,8 +3451,11 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
      */
     pthread_mutex_lock(&fd->refs->lock);
     if (r->length == 0) {
+        if (fd->ref_fn)
+            hts_log_warning("Reference file given, but ref '%s' not present",
+                            r->name);
         if (cram_populate_ref(fd, id, r) == -1) {
-            hts_log_error("Failed to populate reference for id %d", id);
+            hts_log_warning("Failed to populate reference for id %d", id);
             pthread_mutex_unlock(&fd->refs->lock);
             pthread_mutex_unlock(&fd->ref_lock);
             return NULL;
@@ -3620,6 +3652,8 @@ cram_container *cram_new_container(int nrec, int nslice) {
     c->max_apos   = 0;
     c->multi_seq  = 0;
     c->qs_seq_orient = 1;
+    c->no_ref = 0;
+    c->embed_ref = -1; // automatic selection
 
     c->bams = NULL;
 
@@ -4823,6 +4857,11 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 return -1;
     }
 
+    if (-1 == refs_from_header(fd))
+        return -1;
+    if (-1 == refs2id(fd->refs, fd->header))
+        return -1;
+
     /* Fix M5 strings */
     if (fd->refs && !fd->no_ref && fd->embed_ref <= 1) {
         int i;
@@ -4870,6 +4909,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 cram_ref_decr(fd->refs, i);
 
                 hts_md5_hex(buf2, buf);
+                fd->refs->ref_id[i]->validated_md5 = 1;
                 if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
                     return -1;
             }
@@ -4996,11 +5036,6 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
         cram_free_block(b);
         cram_free_container(c);
     }
-
-    if (-1 == refs_from_header(fd))
-        return -1;
-    if (-1 == refs2id(fd->refs, fd->header))
-        return -1;
 
     if (0 != hflush(fd->fp))
         return -1;

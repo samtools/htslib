@@ -989,6 +989,8 @@ int bgzf_read_block(BGZF *fp)
 {
     hts_tpool_result *r;
 
+    if (fp->errcode) return -1;
+
     if (fp->mt) {
     again:
         if (fp->mt->hit_eof) {
@@ -1005,11 +1007,14 @@ int bgzf_read_block(BGZF *fp)
                 if (fp->uncompressed_block == NULL) return -1;
                 fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
             } // else it's already allocated with malloc, maybe even in-use.
-            if (mt_destroy(fp->mt) < 0)
+            if (mt_destroy(fp->mt) < 0) {
                 fp->errcode = BGZF_ERR_IO;
+            }
             fp->mt = NULL;
             hts_tpool_delete_result(r, 0);
-
+            if (fp->errcode) {
+                return -1;
+            }
             goto single_threaded;
         }
 
@@ -1018,6 +1023,7 @@ int bgzf_read_block(BGZF *fp)
             hts_log_error("BGZF decode jobs returned error %d "
                           "for block offset %"PRId64,
                           j->errcode, j->block_address);
+            hts_tpool_delete_result(r, 0);
             return -1;
         }
 
@@ -1478,6 +1484,8 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     // Reading compressed file
     int64_t block_address;
     block_address = htell(fp->fp);
+
+    j->block_address = block_address;  // in case we exit with j->errcode
 
     if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
     count = hpeek(fp->fp, header, sizeof(header));
@@ -2285,11 +2293,12 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
             fp->block_length = 0;
         }
     } while (state == 0);
+    if (state < -1) return state;
     if (str->l == 0 && state < 0) return state;
     fp->uncompressed_address += str->l + 1;
     if ( delim=='\n' && str->l>0 && str->s[str->l-1]=='\r' ) str->l--;
     str->s[str->l] = 0;
-    return str->l;
+    return str->l <= INT_MAX ? (int) str->l : INT_MAX;
 }
 
 void bgzf_index_destroy(BGZF *fp)

@@ -303,7 +303,8 @@ typedef struct BGZF BGZF;
      * @param fp     BGZF file handler
      * @param delim  delimiter
      * @param str    string to write to; must be initialized
-     * @return       length of the string; -1 on end-of-file; <= -2 on error
+     * @return       length of the string (capped at INT_MAX);
+     *               -1 on end-of-file; <= -2 on error
      */
     HTSLIB_EXPORT
     int bgzf_getline(BGZF *fp, int delim, struct kstring_t *str);
@@ -315,23 +316,22 @@ typedef struct BGZF BGZF;
     int bgzf_read_block(BGZF *fp) HTS_RESULT_USED;
 
     /**
-     * Enable multi-threading (when compiled with -DBGZF_MT) via a shared
-     * thread pool.  This means both encoder and decoder can balance
-     * usage across a single pool of worker jobs.
+     * Enable multi-threading via a shared thread pool.  This means
+     * both encoder and decoder can balance usage across a single pool
+     * of worker jobs.
      *
-     * @param fp          BGZF file handler; must be opened for writing
+     * @param fp          BGZF file handler
      * @param pool        The thread pool (see hts_create_threads)
      */
     HTSLIB_EXPORT
     int bgzf_thread_pool(BGZF *fp, struct hts_tpool *pool, int qsize);
 
     /**
-     * Enable multi-threading (only effective when the library was compiled
-     * with -DBGZF_MT)
+     * Enable multi-threading
      *
-     * @param fp          BGZF file handler; must be opened for writing
-     * @param n_threads   #threads used for writing
-     * @param n_sub_blks  #blocks processed by each thread; a value 64-256 is recommended
+     * @param fp          BGZF file handler
+     * @param n_threads   #threads used for reading / writing
+     * @param n_sub_blks  Unused (was #blocks processed by each thread)
      */
     HTSLIB_EXPORT
     int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);

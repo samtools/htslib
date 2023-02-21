@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2020, 2022 Genome Research Ltd.
+Copyright (c) 2012-2020, 2022-2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -61,7 +61,7 @@ KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
                             bam_seq_t *b, int rnum, kstring_t *MD,
-                            int embed_ref);
+                            int embed_ref, int no_ref);
 
 /*
  * Returns index of val into key.
@@ -70,7 +70,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 static int sub_idx(char *key, char val) {
     int i;
 
-    for (i = 0; *key && *key++ != val; i++);
+    for (i = 0; i < 4 && *key++ != val; i++);
     return i;
 }
 
@@ -86,6 +86,8 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
     cram_block *cb  = cram_new_block(COMPRESSION_HEADER, 0);
     cram_block *map = cram_new_block(COMPRESSION_HEADER, 0);
     int i, mc, r = 0;
+
+    int no_ref = c->no_ref;
 
     if (!cb || !map)
         return NULL;
@@ -162,7 +164,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
                 kh_val(h->preservation_map, k).i = h->qs_seq_orient;
             }
 
-            if (fd->no_ref || embed_ref>0) {
+            if (no_ref || embed_ref>0) {
                 // Reference Required == No
                 k = kh_put(map, h->preservation_map, "RR", &r);
                 if (-1 == r) return NULL;
@@ -203,31 +205,38 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
             case CRAM_KEY('S','M'): {
                 char smat[5], *mp = smat;
+                // Output format is for order ACGTN (minus ref base)
+                // to store the code value 0-3 for each symbol.
+                //
+                // Note this is different to storing the symbols in order
+                // that the codes occur from 0-3, which is what we used to
+                // do.  (It didn't matter as we always had a fixed table in
+                // the order.)
                 *mp++ =
-                    (sub_idx("CGTN", h->substitution_matrix[0][0]) << 6) |
-                    (sub_idx("CGTN", h->substitution_matrix[0][1]) << 4) |
-                    (sub_idx("CGTN", h->substitution_matrix[0][2]) << 2) |
-                    (sub_idx("CGTN", h->substitution_matrix[0][3]) << 0);
+                    (sub_idx(h->substitution_matrix[0], 'C') << 6) |
+                    (sub_idx(h->substitution_matrix[0], 'G') << 4) |
+                    (sub_idx(h->substitution_matrix[0], 'T') << 2) |
+                    (sub_idx(h->substitution_matrix[0], 'N') << 0);
                 *mp++ =
-                    (sub_idx("AGTN", h->substitution_matrix[1][0]) << 6) |
-                    (sub_idx("AGTN", h->substitution_matrix[1][1]) << 4) |
-                    (sub_idx("AGTN", h->substitution_matrix[1][2]) << 2) |
-                    (sub_idx("AGTN", h->substitution_matrix[1][3]) << 0);
+                    (sub_idx(h->substitution_matrix[1], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[1], 'G') << 4) |
+                    (sub_idx(h->substitution_matrix[1], 'T') << 2) |
+                    (sub_idx(h->substitution_matrix[1], 'N') << 0);
                 *mp++ =
-                    (sub_idx("ACTN", h->substitution_matrix[2][0]) << 6) |
-                    (sub_idx("ACTN", h->substitution_matrix[2][1]) << 4) |
-                    (sub_idx("ACTN", h->substitution_matrix[2][2]) << 2) |
-                    (sub_idx("ACTN", h->substitution_matrix[2][3]) << 0);
+                    (sub_idx(h->substitution_matrix[2], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[2], 'C') << 4) |
+                    (sub_idx(h->substitution_matrix[2], 'T') << 2) |
+                    (sub_idx(h->substitution_matrix[2], 'N') << 0);
                 *mp++ =
-                    (sub_idx("ACGN", h->substitution_matrix[3][0]) << 6) |
-                    (sub_idx("ACGN", h->substitution_matrix[3][1]) << 4) |
-                    (sub_idx("ACGN", h->substitution_matrix[3][2]) << 2) |
-                    (sub_idx("ACGN", h->substitution_matrix[3][3]) << 0);
+                    (sub_idx(h->substitution_matrix[3], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[3], 'C') << 4) |
+                    (sub_idx(h->substitution_matrix[3], 'G') << 2) |
+                    (sub_idx(h->substitution_matrix[3], 'N') << 0);
                 *mp++ =
-                    (sub_idx("ACGT", h->substitution_matrix[4][0]) << 6) |
-                    (sub_idx("ACGT", h->substitution_matrix[4][1]) << 4) |
-                    (sub_idx("ACGT", h->substitution_matrix[4][2]) << 2) |
-                    (sub_idx("ACGT", h->substitution_matrix[4][3]) << 0);
+                    (sub_idx(h->substitution_matrix[4], 'A') << 6) |
+                    (sub_idx(h->substitution_matrix[4], 'C') << 4) |
+                    (sub_idx(h->substitution_matrix[4], 'G') << 2) |
+                    (sub_idx(h->substitution_matrix[4], 'T') << 0);
                 BLOCK_APPEND(map, smat, 5);
                 break;
             }
@@ -1688,6 +1697,54 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     return -1;
 }
 
+// Check if the SQ M5 tag matches the reference we've loaded.
+static int validate_md5(cram_fd *fd, int ref_id) {
+    if (fd->ignore_md5 || ref_id < 0 || ref_id >= fd->refs->nref)
+        return 0;
+
+    // Have we already checked this ref?
+    if (fd->refs->ref_id[ref_id]->validated_md5)
+        return 0;
+
+    // Check if we have the MD5 known.
+    // We should, but maybe we're using embedded references?
+    sam_hrecs_t *hrecs = fd->header->hrecs;
+    sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, "SQ", "SN",
+                                                 hrecs->ref[ref_id].name);
+    if (!ty)
+        return 0;
+
+    sam_hrec_tag_t *m5tag = sam_hrecs_find_key(ty, "M5", NULL);
+    if (!m5tag)
+        return 0;
+
+    // It's known, so compute md5 on the loaded reference sequence.
+    char *ref = fd->refs->ref_id[ref_id]->seq;
+    int64_t len = fd->refs->ref_id[ref_id]->length;
+    hts_md5_context *md5;
+    char unsigned buf[16];
+    char buf2[33];
+
+    if (!(md5 = hts_md5_init()))
+        return -1;
+    hts_md5_update(md5, ref, len);
+    hts_md5_final(buf, md5);
+    hts_md5_destroy(md5);
+    hts_md5_hex(buf2, buf);
+
+    // Compare it to header @SQ M5 tag
+    if (strcmp(m5tag->str+3, buf2)) {
+        hts_log_error("SQ header M5 tag discrepancy for reference '%s'",
+                      hrecs->ref[ref_id].name);
+        hts_log_error("Please use the correct reference, or "
+                      "consider using embed_ref=2");
+        return -1;
+    }
+    fd->refs->ref_id[ref_id]->validated_md5 = 1;
+
+    return 0;
+}
+
 /*
  * Encodes all slices in a container into blocks.
  * Returns 0 on success
@@ -1698,7 +1755,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     cram_block_compression_hdr *h = c->comp_hdr;
     cram_block *c_hdr;
     int multi_ref = 0;
-    int r1, r2, sn, nref, embed_ref;
+    int r1, r2, sn, nref, embed_ref, no_ref;
     spare_bams *spares;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1)
@@ -1707,22 +1764,17 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 //#define goto_err {fprintf(stderr, "ERR at %s:%d\n", __FILE__, __LINE__);goto err;}
 #define goto_err goto err
 
+ restart:
     /* Cache references up-front if we have unsorted access patterns */
     pthread_mutex_lock(&fd->ref_lock);
     nref = fd->refs->nref;
-    embed_ref = fd->embed_ref;
     pthread_mutex_unlock(&fd->ref_lock);
-
-    if (!fd->no_ref && c->refs_used) {
-        for (i = 0; i < nref; i++) {
-            if (c->refs_used[i])
-                cram_get_ref(fd, i, 1, 0);
-        }
-    }
+    embed_ref = c->embed_ref;
+    no_ref = c->no_ref;
 
     /* To create M5 strings */
     /* Fetch reference sequence */
-    if (!fd->no_ref) {
+    if (!no_ref) {
         if (!c->bams || !c->bams[0])
             goto_err;
         bam_seq_t *b = c->bams[0];
@@ -1730,7 +1782,20 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         if (embed_ref <= 1) {
             char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
             if (!ref && bam_ref(b) >= 0) {
-                if (c->multi_seq || embed_ref == 0 || !c->pos_sorted) {
+                if (!c->pos_sorted) {
+                    // TODO: maybe also check fd->no_ref?
+                    hts_log_warning("Failed to load reference #%d",
+                                    bam_ref(b));
+                    hts_log_warning("Switching to non-ref mode");
+
+                    pthread_mutex_lock(&fd->ref_lock);
+                    c->embed_ref = fd->embed_ref = 0;
+                    c->no_ref = fd->no_ref = 1;
+                    pthread_mutex_unlock(&fd->ref_lock);
+                    goto restart;
+                }
+
+                if (c->multi_seq || embed_ref == 0) {
                     hts_log_error("Failed to load reference #%d", bam_ref(b));
                     return -1;
                 }
@@ -1741,9 +1806,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                     hts_log_warning("NOTE: the CRAM file will be bigger than"
                                     " using an external reference");
                 pthread_mutex_lock(&fd->ref_lock);
-                embed_ref = fd->embed_ref = 2;
+                embed_ref = c->embed_ref = fd->embed_ref = 2;
                 pthread_mutex_unlock(&fd->ref_lock);
                 goto auto_ref;
+            } else if (ref) {
+                if (validate_md5(fd, c->ref_seq_id) < 0)
+                    goto_err;
             }
             if ((c->ref_id = bam_ref(b)) >= 0) {
                 c->ref_seq_id = c->ref_id;
@@ -1766,6 +1834,21 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         c->ref_id = bam_ref(c->bams[0]);
         cram_ref_incr(fd->refs, c->ref_id);
         c->ref_seq_id = c->ref_id;
+    }
+
+    if (!no_ref && c->refs_used) {
+        for (i = 0; i < nref; i++) {
+            if (c->refs_used[i]) {
+                if (cram_get_ref(fd, i, 1, 0)) {
+                    if (validate_md5(fd, i) < 0)
+                        goto_err;
+                } else {
+                    hts_log_warning("Failed to find reference, "
+                                    "switching to non-ref mode");
+                    no_ref = c->no_ref = 1;
+                }
+            }
+        }
     }
 
     /* Turn bams into cram_records and gather basic stats */
@@ -1791,8 +1874,27 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         // Embed consensus / MD-generated ref
         if (embed_ref == 2) {
             if (cram_generate_reference(c, s, r1) < 0) {
-                hts_log_error("Failed to build reference");
-                return -1;
+                // Should this be a permanent thing via fd->no_ref?
+                // Doing so means we cannot easily switch back again should
+                // things fix themselves later on.  This is likely not a
+                // concern though as failure to generate a reference implies
+                // unsorted data which is rarely recovered from.
+
+                // Only if sn == 0.  We're hosed if we're on the 2nd slice and
+                // the first worked, as no-ref is a container global param.
+                if (sn > 0) {
+                    hts_log_error("Failed to build reference, "
+                                  "switching to non-ref mode");
+                    return -1;
+                } else {
+                    hts_log_warning("Failed to build reference, "
+                                    "switching to non-ref mode");
+                }
+                pthread_mutex_lock(&fd->ref_lock);
+                c->embed_ref = fd->embed_ref = 0;
+                c->no_ref = fd->no_ref = 1;
+                pthread_mutex_unlock(&fd->ref_lock);
+                goto restart;
             }
         }
 
@@ -1803,7 +1905,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             bam_seq_t *b = c->bams[r1];
 
             /* If multi-ref we need to cope with changing reference per seq */
-            if (c->multi_seq && !fd->no_ref) {
+            if (c->multi_seq && !no_ref) {
                 if (bam_ref(b) != c->ref_seq_id && bam_ref(b) >= 0) {
                     if (c->ref_seq_id >= 0)
                         cram_ref_decr(fd->refs, c->ref_seq_id);
@@ -1813,6 +1915,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                         free(MD.s);
                         return -1;
                     }
+                    if (validate_md5(fd, bam_ref(b)) < 0)
+                        return -1;
 
                     c->ref_seq_id = bam_ref(b); // overwritten later by -2
                     if (!fd->refs->ref_id[c->ref_seq_id]->seq)
@@ -1823,7 +1927,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 }
             }
 
-            if (process_one_read(fd, c, s, cr, b, r2, &MD, embed_ref) != 0) {
+            if (process_one_read(fd, c, s, cr, b, r2, &MD, embed_ref,
+                                 no_ref) != 0) {
                 free(MD.s);
                 return -1;
             }
@@ -1890,7 +1995,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         }
     }
 
-    if (c->multi_seq && !fd->no_ref) {
+    if (c->multi_seq && !no_ref) {
         if (c->ref_seq_id >= 0)
             cram_ref_decr(fd->refs, c->ref_seq_id);
     }
@@ -1922,12 +2027,14 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
 
     /* Compute MD5s */
+    no_ref = c->no_ref;
     int is_v4 = CRAM_MAJOR_VERS(fd->version) >= 4 ? 1 : 0;
+
     for (i = 0; i < c->curr_slice; i++) {
         cram_slice *s = c->slices[i];
 
         if (CRAM_MAJOR_VERS(fd->version) != 1) {
-            if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !fd->no_ref) {
+            if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !no_ref) {
                 hts_md5_context *md5 = hts_md5_init();
                 if (!md5)
                     return -1;
@@ -2304,7 +2411,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     }
 
     /* Cache references up-front if we have unsorted access patterns */
-    if (!fd->no_ref && c->refs_used) {
+    if (!no_ref && c->refs_used) {
         for (i = 0; i < fd->refs->nref; i++) {
             if (c->refs_used[i])
                 cram_ref_decr(fd->refs, i);
@@ -2542,7 +2649,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                                       cram_slice *s, cram_record *cr,
                                       int verbatim_NM, int verbatim_MD,
                                       int NM, kstring_t *MD, int cf_tag,
-                                      int *err) {
+                                      int no_ref, int *err) {
     char *aux, *orig;
     sam_hrec_rg_t *brg = NULL;
     int aux_size = bam_get_l_aux(b);
@@ -2594,7 +2701,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
         // MD:Z
         if (aux[0] == 'M' && aux[1] == 'D' && aux[2] == 'Z') {
-            if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_MD) {
+            if (cr->len && !no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_MD) {
                 if (MD && MD->s && strncasecmp(MD->s, aux+3, orig + aux_size - (aux+3)) == 0) {
                     while (*aux++);
                     if (CRAM_MAJOR_VERS(fd->version) >= 4)
@@ -2606,7 +2713,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
         // NM:i
         if (aux[0] == 'N' && aux[1] == 'M') {
-            if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_NM) {
+            if (cr->len && !no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_NM) {
                 int NM_ = bam_aux2i((uint8_t *)aux+2);
                 if (NM_ == NM) {
                     switch(aux[2]) {
@@ -3040,7 +3147,12 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
                                          fd->slices_per_container);
         if (!c)
             return NULL;
+
+        pthread_mutex_lock(&fd->ref_lock);
+        c->no_ref = fd->no_ref;
+        c->embed_ref = fd->embed_ref;
         c->record_counter = fd->record_counter;
+        pthread_mutex_unlock(&fd->ref_lock);
         c->curr_ref = bam_ref(b);
     }
 
@@ -3087,7 +3199,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
                             bam_seq_t *b, int rnum, kstring_t *MD,
-                            int embed_ref) {
+                            int embed_ref, int no_ref) {
     int i, fake_qual = -1, NM = 0;
     char *cp;
     char *ref, *seq, *qual;
@@ -3128,7 +3240,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     // Non reference based encoding means storing the bases verbatim as features, which in
     // turn means every base also has a quality already stored.
-    if (!fd->no_ref || CRAM_MAJOR_VERS(fd->version) >= 3)
+    if (!no_ref || CRAM_MAJOR_VERS(fd->version) >= 3)
         cr->cram_flags |= CRAM_FLAG_PRESERVE_QUAL_SCORES;
 
     if (cr->len <= 0 && CRAM_MAJOR_VERS(fd->version) >= 3)
@@ -3206,7 +3318,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 //fprintf(stderr, "\nBAM_CMATCH\nR: %.*s\nS: %.*s\n",
                 //      cig_len, &ref[apos], cig_len, &seq[spos]);
                 l = 0;
-                if (!fd->no_ref && cr->len) {
+                if (!no_ref && cr->len) {
                     int end = cig_len+apos < c->ref_end
                         ? cig_len : c->ref_end - apos;
                     char *sp = &seq[spos];
@@ -3301,7 +3413,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 }
 
                 if (l < cig_len && cr->len) {
-                    if (fd->no_ref) {
+                    if (no_ref) {
                         if (CRAM_MAJOR_VERS(fd->version) == 3) {
                             if (cram_add_bases(fd, c, s, cr, spos,
                                                cig_len-l, &seq[spos]))
@@ -3360,7 +3472,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 if (cram_add_insertion(c, s, cr, spos, cig_len,
                                        cr->len ? &seq[spos] : NULL))
                     return -1;
-                if (fd->no_ref && cr->len) {
+                if (no_ref && cr->len) {
                     for (l = 0; l < cig_len; l++, spos++) {
                         cram_add_quality(fd, c, s, cr, spos, qual[spos]);
                     }
@@ -3376,7 +3488,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                                       fd->version))
                     return -1;
 
-                if (fd->no_ref &&
+                if (no_ref &&
                     !(cr->cram_flags & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
                     if (cr->len) {
                         for (l = 0; l < cig_len; l++, spos++) {
@@ -3412,7 +3524,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             return -1;
         }
         fake_qual = spos;
-        cr->aend = fd->no_ref ? apos : MIN(apos, c->ref_end);
+        cr->aend = no_ref ? apos : MIN(apos, c->ref_end);
         if (cram_stats_add(c->stats[DS_FN], cr->nfeature) < 0)
             goto block_err;
 
@@ -3435,7 +3547,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     int err = 0;
     sam_hrec_rg_t *brg =
         cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD,
-                        cf_tag, &err);
+                        cf_tag, no_ref, &err);
     if (err)
         goto block_err;
 
@@ -3728,8 +3840,15 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         if (!fd->ctr)
             return -1;
         fd->ctr->record_counter = fd->record_counter;
+
+        pthread_mutex_lock(&fd->ref_lock);
+        fd->ctr->no_ref = fd->no_ref;
+        fd->ctr->embed_ref = fd->embed_ref;
+        pthread_mutex_unlock(&fd->ref_lock);
     }
     c = fd->ctr;
+
+    int embed_ref = c->embed_ref;
 
     if (!c->slice || c->curr_rec == c->max_rec ||
         (bam_ref(b) != c->curr_ref && c->curr_ref >= -1) ||
@@ -3746,9 +3865,6 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          * The multi_seq var here refers to our intention for the next slice.
          * This slice has already been encoded so we output as-is.
          */
-        pthread_mutex_lock(&fd->ref_lock);
-        int embed_ref = fd->embed_ref;
-        pthread_mutex_unlock(&fd->ref_lock);
         if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
             fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
             embed_ref<=0) {
@@ -3773,7 +3889,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             if (NULL == (c = cram_next_container(fd, b))) {
                 if (fd->ctr) {
                     // prevent cram_close attempting to flush
-                    cram_free_container(fd->ctr);
+                    fd->ctr_mt = fd->ctr; // delay free when threading
                     fd->ctr = NULL;
                 }
                 return -1;
@@ -3795,6 +3911,27 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             fd->multi_seq = 1;
             c->multi_seq = 1;
             c->pos_sorted = 0;
+
+            // Cram_next_container may end up flushing an existing one and
+            // triggering fd->embed_ref=2 if no reference is found.
+            // Embedded refs are incompatible with multi-seq, so we bail
+            // out and switch to no_ref in this scenario.  We do this
+            // within the container only, as multi_seq may be temporary
+            // and we switch back away from it again.
+            pthread_mutex_lock(&fd->ref_lock);
+            if (fd->embed_ref > 0 && c->curr_rec == 0 && c->curr_slice == 0) {
+                hts_log_warning("Changing from embed_ref to no_ref mode");
+                // Should we update fd->embed_ref and no_ref here too?
+                // Doing so means if we go into multi-seq and back out
+                // again, eg due a cluster of tiny refs in the middle of
+                // much larger ones, then we bake in no-ref mode.
+                //
+                // However for unsorted data we're realistically not
+                // going to switch back.
+                c->embed_ref = fd->embed_ref = 0; // or -1 for auto?
+                c->no_ref = fd->no_ref = 1;
+            }
+            pthread_mutex_unlock(&fd->ref_lock);
 
             if (!c->refs_used) {
                 pthread_mutex_lock(&fd->ref_lock);
@@ -3821,8 +3958,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             } else if (c->refs_used && c->refs_used[bam_ref(b)]) {
                 pthread_mutex_lock(&fd->ref_lock);
                 fd->unsorted = 1;
-                pthread_mutex_unlock(&fd->ref_lock);
                 fd->multi_seq = 1;
+                pthread_mutex_unlock(&fd->ref_lock);
             }
         }
 

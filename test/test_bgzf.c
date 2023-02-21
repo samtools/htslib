@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "../htslib/bgzf.h"
 #include "../htslib/hfile.h"
+#include "../htslib/hts_log.h"
 #include "../hfile_internal.h"
 
 const char *bgzf_suffix = ".gz";
@@ -159,13 +160,19 @@ static BGZF * try_bgzf_hopen(const char *name, const char *mode,
     return bgz;
 }
 
-static int try_bgzf_close(BGZF **bgz, const char *name, const char *func) {
+static int try_bgzf_close(BGZF **bgz, const char *name, const char *func, int expected_fail) {
     BGZF *to_close = *bgz;
     *bgz = NULL;
     if (bgzf_close(to_close) != 0) {
-        fprintf(stderr, "%s : bgzf_close failed on %s : %s\n",
-                func, name, strerror(errno));
+        if (!expected_fail)
+            fprintf(stderr, "%s : bgzf_close failed on %s%s%s\n",
+                    func, name,
+                    errno ? " : " : "",
+                    errno ? strerror(errno) : "");
         return -1;
+    } else if (expected_fail) {
+        fprintf(stderr, "%s : bgzf_close worked on %s, but expected failure\n",
+                func, name);
     }
     return 0;
 }
@@ -398,6 +405,7 @@ static int test_read(Files *f) {
     ssize_t bg_got, f_got;
     unsigned char bg_buf[BUFSZ], f_buf[BUFSZ];
 
+    errno = 0;
     bgz = try_bgzf_open(f->src_bgzf, "r", __func__);
     if (!bgz) return -1;
 
@@ -414,7 +422,7 @@ static int test_read(Files *f) {
         }
     } while (bg_got > 0 && f_got > 0);
 
-    if (try_bgzf_close(&bgz, f->src_bgzf, __func__) != 0) return -1;
+    if (try_bgzf_close(&bgz, f->src_bgzf, __func__, 0) != 0) return -1;
     if (try_fseek_start(f->f_plain, f->src_plain, __func__) != 0) return -1;
 
     return 0;
@@ -449,7 +457,7 @@ static int test_write_read(Files *f, const char *mode, Open_method method,
     bg_put = try_bgzf_write(bgz, f->text, f->ltext, f->tmp_bgzf, __func__);
     if (bg_put < 0) goto fail;
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     switch (method) {
     case USE_BGZF_DOPEN:
@@ -491,7 +499,7 @@ static int test_write_read(Files *f, const char *mode, Open_method method,
         goto fail;
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     return 0;
 
@@ -521,7 +529,7 @@ static int test_embed_eof(Files *f, const char *mode, int nthreads) {
     bg_put = try_bgzf_write(bgz, f->text, half, f->tmp_bgzf, __func__);
     if (bg_put < 0) goto fail;
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
 
     // Write second half.  Append mode, so an EOF block should be in the
@@ -535,7 +543,7 @@ static int test_embed_eof(Files *f, const char *mode, int nthreads) {
                             __func__);
     if (bg_put < 0) goto fail;
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     // Try reading
     pos = 0;
@@ -564,7 +572,7 @@ static int test_embed_eof(Files *f, const char *mode, int nthreads) {
         goto fail;
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     return 0;
 
@@ -601,7 +609,7 @@ static int test_index_load_dump(Files *f) {
     } while (got_src > 0 && got_dest > 0);
     if (try_fclose(&fdest, f->tmp_idx, __func__) != 0) goto fail;
 
-    if (try_bgzf_close(&bgz, f->src_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->src_bgzf, __func__, 0) != 0) goto fail;
 
     return 0;
 
@@ -624,7 +632,7 @@ static int test_check_EOF(char *name, int expected) {
         return -1;
     }
 
-    return try_bgzf_close(&bgz, name, __func__);
+    return try_bgzf_close(&bgz, name, __func__, 0);
 }
 
 static int test_index_useek_getc(Files *f, const char *mode,
@@ -651,7 +659,7 @@ static int test_index_useek_getc(Files *f, const char *mode,
         }
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
     if (!bgz) goto fail;
@@ -710,7 +718,7 @@ static int test_index_useek_getc(Files *f, const char *mode,
         }
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     return 0;
 
@@ -741,7 +749,7 @@ static int test_tell_seek_getc(Files *f, const char *mode,
         if (bg_put < 0) goto fail;
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
     if (!bgz) goto fail;
@@ -811,7 +819,7 @@ static int test_tell_seek_getc(Files *f, const char *mode,
         }
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     return 0;
 
@@ -841,7 +849,7 @@ static int test_tell_read(Files *f, const char *mode) {
         if (bg_put < 0) goto fail;
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
     if (!bgz) goto fail;
@@ -859,7 +867,7 @@ static int test_tell_read(Files *f, const char *mode) {
         }
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
     free(bg_buf);
     return 0;
 
@@ -885,10 +893,12 @@ static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
     bg_put = try_bgzf_write(bgz, f->text, f->ltext, f->tmp_bgzf, __func__);
     if (bg_put < 0) goto fail;
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
 
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
     if (!bgz) goto fail;
+
+    if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
 
     for (pos = 0; pos < f->ltext; ) {
         const char *end = strchr(text + pos, '\n');
@@ -909,16 +919,109 @@ static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
                     "Got      : %.*s\n",
                     __func__, f->tmp_bgzf, (int) l, (char *) f->text + pos,
                     (int) str.l, str.s);
+            goto fail;
         }
 
         pos += l + 1;
     }
 
-    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
     free(ks_release(&str));
     return 0;
 
  fail:
+    if (bgz) bgzf_close(bgz);
+    free(ks_release(&str));
+    return -1;
+}
+
+static int test_bgzf_getline_on_truncated_file(Files *f, const char *mode, int nthreads) {
+    BGZF* bgz = NULL;
+    ssize_t bg_put;
+    size_t pos;
+    kstring_t str = { 0, 0, NULL };
+    const char *text = (const char *) f->text;
+
+    // Turn off bgzf errors as they're expected.
+    enum htsLogLevel lvl = hts_get_log_level();
+    hts_set_log_level(HTS_LOG_OFF);
+
+    bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
+    if (!bgz) goto fail;
+
+    if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
+
+    const char *text_line2 = strchr(text, '\n') + 1;
+    bg_put = try_bgzf_write(bgz, text, text_line2 - text, f->tmp_bgzf, __func__);
+    if (bg_put < 0) goto fail;
+    if (bgzf_flush(bgz) < 0) goto fail;
+    int64_t block2_start = bgz->block_address;
+
+    const char *text_line3 = strchr(text_line2, '\n') + 1;
+    bg_put = try_bgzf_write(bgz, text_line2, text_line3 - text_line2, f->tmp_bgzf, __func__);
+    if (bg_put < 0) goto fail;
+    if (bgzf_flush(bgz) < 0) goto fail;
+    int64_t block3_start = bgz->block_address;
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
+
+    int64_t newsize;
+    for(newsize = block3_start - 1; newsize > block2_start; newsize--) {
+        //fprintf(stderr, "test_bgzf_getline_on_truncated_file : size truncated to %" PRId64 " with threads %d\n", newsize, nthreads);
+
+        if (truncate(f->tmp_bgzf, newsize) != 0) goto fail;
+
+        bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
+        if (!bgz) goto fail;
+
+        if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
+
+        for (pos = 0; pos < f->ltext; ) {
+            const char *end = strchr(text + pos, '\n');
+            size_t l = end ? end - (text + pos) : f->ltext - pos;
+
+            int res = bgzf_getline(bgz, '\n', &str);
+            if (res < -1) {
+                // ok, we expect error from truncated file
+                break;
+            } else if (res == -1) {
+                // truncated file should never return EOF since we do not truncate at block boundary
+                fprintf(stderr, "%s : %s from bgzf_getline on %s\n",
+                        __func__, "Unexpected EOF",
+                        f->tmp_bgzf);
+                goto fail;
+            }
+
+            if (str.l != l || memcmp(text + pos, str.s, l) != 0) {
+                fprintf(stderr,
+                        "%s : Unexpected data from bgzf_getline on %s\n"
+                        "Expected : %.*s\n"
+                        "Got      : %.*s\n",
+                        __func__, f->tmp_bgzf, (int) l, (char *) f->text + pos,
+                        (int) str.l, str.s);
+                goto fail;
+            }
+            pos += l + 1;
+        }
+
+        // verify error is persistent
+        int k;
+        for(k = 0; k < 3; k++) {
+            int res = bgzf_getline(bgz, '\n', &str);
+            if (res > -2) {
+                fprintf(stderr, "%s : unexpected bgzf_getline result %d\n", __func__, res);
+                goto fail;
+            }
+        }
+        // closing a stream with error returns error
+        if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 1) == 0) goto fail;
+    }
+    free(ks_release(&str));
+    hts_set_log_level(lvl);
+    return 0;
+
+ fail:
+    hts_set_log_level(lvl);
     if (bgz) bgzf_close(bgz);
     free(ks_release(&str));
     return -1;
@@ -999,6 +1102,10 @@ int main(int argc, char **argv) {
     if (test_bgzf_getline(&f, "w", 0) != 0) goto out;
     if (test_bgzf_getline(&f, "w", 1) != 0) goto out;
     if (test_bgzf_getline(&f, "w", 2) != 0) goto out;
+
+    if (test_bgzf_getline_on_truncated_file(&f, "w", 0) != 0) goto out;
+    if (test_bgzf_getline_on_truncated_file(&f, "w", 1) != 0) goto out;
+    if (test_bgzf_getline_on_truncated_file(&f, "w", 2) != 0) goto out;
 
     retval = EXIT_SUCCESS;
 

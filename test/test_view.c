@@ -224,7 +224,8 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
             hts_itr_t *iter;
             if ((iter = bcf_itr_querys(idx, h, argv[i])) == 0) {
                 fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
-                continue;
+                exit_code = 1;
+                break;
             }
             while ((r = bcf_itr_next(in, iter, b)) >= 0) {
                 if (!opts->benchmark && bcf_write1(out, h, b) < 0) {

@@ -398,6 +398,30 @@ sub test_bgzip {
     }
     passed($opts,$test);
 
+    # Round-trip test of text in binary mode
+    $test = sprintf('%s %2s threads', 'bgzip text mode round-trip',
+                       $threads ? $threads : 'no');
+    print "$test: ";
+    $c = "$$opts{bin}/bgzip $at --binary -i -I '$index' < '$data' > '$compressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "$$opts{bin}/bgzip $at -d < '$compressed' > '$uncompressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, $out ? $out : "'$data' '$uncompressed' differ");
+        return;
+    }
+    passed($opts,$test);
+
     # Extract from an offset
     $test = sprintf('%s %2s threads', 'bgzip -b',
                     $threads ? $threads : 'no');
@@ -637,14 +661,6 @@ sub test_view
             testv $opts, "./compare_sam.pl -Baux $md $sam $jsam";
         }
 
-        # embed_ref=2 mode
-        my $ersam = "ce#1000.sam";
-        my $ercram = "ce#1000_er.tmp.cram";
-        my $ersam2 = "${ercram}.sam";
-        testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
-        testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
-        testv $opts, "./compare_sam.pl $ersam $ersam2";
-
         if ($test_view_failures == 0)
         {
             passed($opts, "$sam conversions");
@@ -653,6 +669,21 @@ sub test_view
         {
             failed($opts, "$sam conversions", "$test_view_failures subtests failed");
         }
+    }
+
+    # embed_ref=2 mode
+    print "test_view testing embed_ref=2:\n";
+    $test_view_failures = 0;
+    my $ersam = "ce#1000.sam";
+    my $ercram = "ce#1000_er.tmp.cram";
+    my $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+    if ($test_view_failures == 0) {
+        passed($opts, "embed_ref=2 tests");
+    } else {
+        failed($opts, "embed_ref=2 tests", "$test_view_failures subtests failed");
     }
 
     # BAM and CRAM range queries on prebuilt BAM and CRAM
@@ -916,6 +947,11 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
     test_cmd($opts, %args, out => "vcf_meta_meta.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf_meta_meta.vcf");
+
+    # VCF file with contig IDX=1, simulating an edited BCF file
+    # See htslib issue 1534
+    test_cmd($opts, %args, out => "modhdr.expected.vcf",
+        cmd => "$$opts{path}/test_view $$opts{path}/modhdr.vcf.gz chr22:1-2");
 }
 
 sub write_multiblock_bgzf {

@@ -1,10 +1,10 @@
-.TH tabix 1 "18 August 2022" "htslib-1.16" "Bioinformatics tools"
+.TH tabix 1 "21 February 2023" "htslib-1.17" "Bioinformatics tools"
 .SH NAME
 .PP
 tabix \- Generic indexer for TAB-delimited genome position files
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
-.\" Copyright (C) 2014, 2016, 2018, 2020 Genome Research Ltd.
+.\" Copyright (C) 2014, 2016, 2018, 2020, 2022 Genome Research Ltd.
 .\"
 .\" Author: Heng Li <lh3@sanger.ac.uk>
 .\"
@@ -101,7 +101,7 @@ start column. [5]
 Force to overwrite the index file if it is present.
 .TP
 .BI "-m, --min-shift " INT
-set minimal interval size for CSI indices to 2^INT [14]
+Set minimal interval size for CSI indices to 2^INT [14]
 .TP
 .BI "-p, --preset " STR
 Input format for indexing. Valid values are: gff, bed, sam, vcf.
@@ -199,6 +199,5 @@ implemented by Bob Handsaker and modified by Heng Li for remote file
 access and in-memory caching.
 
 .SH SEE ALSO
-.PP
-.BR bgzip (1),
-.BR samtools (1)
+.IR bgzip (1),
+.IR samtools (1)

@@ -1,10 +1,10 @@
-.TH bgzip 1 "18 August 2022" "htslib-1.16" "Bioinformatics tools"
+.TH bgzip 1 "21 February 2023" "htslib-1.17" "Bioinformatics tools"
 .SH NAME
 .PP
 bgzip \- Block compression/decompression utility
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
-.\" Copyright (C) 2018, 2021 Genome Research Limited.
+.\" Copyright (C) 2018, 2021-2022 Genome Research Limited.
 .\"
 .\" Author: Heng Li <lh3@sanger.ac.uk>
 .\"
@@ -74,6 +74,17 @@ after decompression completes the input file will be removed.
 
 .SH OPTIONS
 .TP 10
+.B "--binary"
+Bgzip will attempt to ensure BGZF blocks end on a newline when the
+input is a text file.  The exception to this is where a single line is
+larger than a BGZF block (64Kb).  This can aid tools that use the
+index to perform random access on the compressed stream, as the start
+of a block is likely to also be the start of a text record.
+
+This option processes text files as if they were binary content,
+ignoring the location of newlines.  This also restores the behaviour
+for text files to bgzip version 1.15 and earlier.
+.TP
 .BI "-b, --offset " INT
 Decompress to standard output from virtual file position (0-based uncompressed
 offset).
@@ -92,7 +103,8 @@ Use \fB--force\fR twice to do both without asking.
 .TP
 .B "-g, --rebgzip"
 Try to use an existing index to create a compressed file with matching
-block offsets.
+block offsets.  The index must be specified using the \fB-I
+\fIfile.gzi\fR option.
 Note that this assumes that the same compression library and level are in use
 as when making the original file.
 Don't use it unless you know what you're doing.
@@ -181,6 +193,5 @@ The BGZF library was originally implemented by Bob Handsaker and modified
 by Heng Li for remote file access and in-memory caching.
 
 .SH SEE ALSO
-.PP
-.BR gzip (1),
-.BR tabix (1)
+.IR gzip (1),
+.IR tabix (1)

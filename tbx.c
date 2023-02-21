@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015, 2017-2020 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -91,9 +91,10 @@ int tbx_name2id(tbx_t *tbx, const char *ss)
     return get_tid(tbx, ss, 0);
 }
 
-int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
+int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
 {
-    int i, b = 0, id = 1;
+    size_t i, b = 0;
+    int id = 1;
     char *s;
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
     for (i = 0; i <= len; ++i) {
@@ -321,8 +322,11 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
             continue;
         }
         if (first == 0) {
-            if (fmt == HTS_FMT_CSI)
+            if (fmt == HTS_FMT_CSI) {
+                if (!max_ref_len)
+                    max_ref_len = (int64_t)100*1024*1024*1024; // 100G default
                 n_lvls = adjust_n_lvls(min_shift, n_lvls, max_ref_len);
+            }
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
             if (!tbx->idx) goto fail;
             first = 1;

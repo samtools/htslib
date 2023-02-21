@@ -1,7 +1,7 @@
 /// @file htslib/faidx.h
 /// FASTA random access.
 /*
-   Copyright (C) 2008, 2009, 2013, 2014, 2016, 2017-2020 Genome Research Ltd.
+   Copyright (C) 2008, 2009, 2013, 2014, 2016, 2017-2020, 2022 Genome Research Ltd.
 
    Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -188,6 +188,15 @@ char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
 HTSLIB_EXPORT
 char *fai_fetch64(const faidx_t *fai, const char *reg, hts_pos_t *len);
 
+/// Query the line-wrap length for a chromosome specified as part of a region
+/** @param  fai  Pointer to the faidx_t struct
+    @param  reg  Region in the format "chr2:20,000-30,000"
+    @return      The line length (excluding newline),
+                 negative on error.
+*/
+HTSLIB_EXPORT
+hts_pos_t fai_line_length(const faidx_t *fai, const char *reg);
+
 /// Fetch the quality string for a region for FASTQ files
 /** @param  fai  Pointer to the faidx_t struct
     @param  reg  Region in the format "chr2:20,000-30,000"
@@ -283,7 +292,22 @@ int faidx_nseq(const faidx_t *fai);
 HTSLIB_EXPORT
 const char *faidx_iseq(const faidx_t *fai, int i);
 
-/// Return sequence length, -1 if not present
+/// Return sequence length
+/** @param  fai  Pointer to the faidx_t struct
+    @param  seq  Name of the sequence
+    @return Sequence length, or -1 if not present
+*/
+HTSLIB_EXPORT
+hts_pos_t faidx_seq_len64(const faidx_t *fai, const char *seq);
+
+/// Return sequence length
+/** @param  fai  Pointer to the faidx_t struct
+    @param  seq  Name of the sequence
+    @return Sequence length, or -1 if not present
+
+    @deprecated This funtion cannot handle very long sequences.
+                Use faidx_seq_len64() instead.
+*/
 HTSLIB_EXPORT
 int faidx_seq_len(const faidx_t *fai, const char *seq);
 
@@ -304,6 +328,27 @@ HTSLIB_EXPORT
 const char *fai_parse_region(const faidx_t *fai, const char *s,
                              int *tid, hts_pos_t *beg, hts_pos_t *end,
                              int flags);
+
+/// Adjust region to the actual sequence length
+/** @param  fai   Pointer to the faidx_t struct
+    @param  tid   Sequence index, as returned by fai_parse_region()
+    @param  beg[in,out]   The start of the region (0 based)
+    @param  end[in,out]   One past end of the region (0 based)
+    @return 1, 2, or 3 if @p beg, @p end, or both are adjusted,
+            0 if @p beg and @p end are unchanged
+            -1 on error
+
+    Looks up the length of @p tid, and then adjusts the values of @p beg
+    and @p end if they fall outside the boundaries of the sequence.
+
+    If @p beg > @p end, it will be set to @p end.
+
+    The return value indicates which, if any, of the inputs have been
+    adjusted.  -1 will be returned if @p tid is not a valid sequence index.
+*/
+HTSLIB_EXPORT
+int fai_adjust_region(const faidx_t *fai, int tid,
+                      hts_pos_t *beg, hts_pos_t *end);
 
 /// Sets the cache size of the underlying BGZF compressed file
 /** @param  fai         Pointer to the faidx_t struct
