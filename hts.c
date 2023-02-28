@@ -3408,14 +3408,12 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     }
 
                     if (e) {
-                        off[n_off++].v = e->next
-                            ? e->next
+                        off[n_off++].v = e->e_next
+                            ? e->e_next->offset
                             : e->offset + e->slice + e->len;
                     } else {
                         hts_log_warning("Could not set offset end for region %d:%"PRIhts_pos"-%"PRIhts_pos". Skipping", tid, beg, end);
                     }
-                } else {
-                    hts_log_warning("No index entry for region %d:%"PRIhts_pos"-%"PRIhts_pos"", tid, beg, end);
                 }
             }
         } else {

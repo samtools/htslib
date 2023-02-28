@@ -725,7 +725,10 @@ typedef struct cram_index {
     int     slice;  // 1.0 landmark index, 1.1 landmark value
     int     len;    //                     1.1 - size of slice in bytes
     int64_t offset; // 1.0                 1.1
-    int64_t next;   // derived: offset of next container.
+
+    // Linked list of cram_index entries. Used to convert recursive
+    // NCList back to a linear list.
+    struct cram_index *e_next;
 } cram_index;
 
 typedef struct {
