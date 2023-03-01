@@ -3232,9 +3232,13 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             v->rid = kh_val(d, k).id;
         } else if (i == 1) { // POS
             overflow = 0;
+            char *tmp = p;
             v->pos = hts_str2uint(p, &p, 63, &overflow);
             if (overflow) {
-                hts_log_error("Position value '%s' is too large", p);
+                hts_log_error("Position value '%s' is too large", tmp);
+                goto err;
+            } else if ( *p ) {
+                hts_log_error("Could not parse the position '%s'", tmp);
                 goto err;
             } else {
                 v->pos -= 1;
