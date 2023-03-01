@@ -1349,6 +1349,7 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
     hFILE *hfile1 = *hfile_ptr;
     hFILE *hfile2 = NULL;
     char fn_buf[512], *fn2 = fn_buf;
+    char mode2[102]; // Size set by sizeof(simple_mode) in hts_hopen()
     const char *prefix = "crypt4gh:";
     size_t fn2_len = strlen(prefix) + strlen(fn) + 1;
     int ret = -1;
@@ -1362,7 +1363,8 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
 
     // Reopen fn using the crypt4gh plug-in (if available)
     snprintf(fn2, fn2_len, "%s%s", prefix, fn);
-    hfile2 = hopen(fn2, mode, "parent", hfile1, NULL);
+    snprintf(mode2, sizeof(mode2), "%s%s", mode, strchr(mode, ':') ? "" : ":");
+    hfile2 = hopen(fn2, mode2, "parent", hfile1, NULL);
     if (hfile2) {
         // Replace original hfile with the new one.  The original is now
         // enclosed within hfile2
