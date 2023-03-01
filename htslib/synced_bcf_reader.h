@@ -64,6 +64,8 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+#define CSI_COOR_EMPTY   -2
+
 /*
     When reading multiple files in parallel, duplicate records within each
     file will be reordered and offered in intuitive order. For example,

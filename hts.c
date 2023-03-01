@@ -2205,6 +2205,8 @@ static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t of
 {
     int i;
     hts_pos_t beg, end;
+    if ( _beg<0 ) _beg = 0;
+    if ( _end<=_beg ) _end = _beg+1;
     beg = _beg >> min_shift;
     end = (_end - 1) >> min_shift;
     if (l->m < end + 1) {
@@ -2905,6 +2907,8 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
     if (beg >= end) return 0;
+    if (beg < 0 ) beg = 0;
+    if (beg==end) end = 1;
     if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
         hts_pos_t b, e;
@@ -3086,7 +3090,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
         } else if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
             iter->finished = 1;
         } else {
-            if (beg < 0) beg = 0;
+            if (beg < -1) beg = -1;
             if (end < beg) {
               free(iter);
               return NULL;
@@ -3103,7 +3107,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
 
             if ( !kh_size(bidx) ) { iter->finished = 1; return iter; }
 
-            rel_off = beg>>idx->min_shift;
+            rel_off = (beg>=0 ? beg : 0) >> idx->min_shift;
             // compute min_off
             bin = hts_bin_first(idx->n_lvls) + rel_off;
             do {
@@ -3138,8 +3142,6 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                         min_off = kh_val(bidx, k).loff;
                 }
             } else if (unmapped) { //CSI index
-                if (k != kh_end(bidx))
-                    min_off = kh_val(bidx, k).loff;
             }
 
             // compute max_off: a virtual offset from a bin to the right of end
