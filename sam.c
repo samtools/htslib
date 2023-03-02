@@ -4257,8 +4257,6 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 
     str->l = 0;
 
-    if (len == 0) return 0;
-
     // Name
     if (kputc(x->nprefix, str) == EOF || kputs(bam_get_qname(b), str) == EOF)
         return -1;
