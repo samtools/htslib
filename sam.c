@@ -598,9 +598,19 @@ int bam_set1(bam1_t *bam,
     }
     cp += n_cigar * 4;
 
-    for (i = 0; i + 1 < l_seq; i += 2) {
-        *cp++ = (seq_nt16_table[(unsigned char)seq[i]] << 4) | seq_nt16_table[(unsigned char)seq[i + 1]];
+#define NN 16
+    const uint8_t *useq = (uint8_t *)seq;
+    for (i = 0; i + NN < l_seq; i += NN) {
+        int j;
+        const uint8_t *u2 = useq+i;
+        for (j = 0; j < NN/2; j++)
+            cp[j] = (seq_nt16_table[u2[j*2]]<<4) | seq_nt16_table[u2[j*2+1]];
+        cp += NN/2;
     }
+    for (; i + 1 < l_seq; i += 2) {
+        *cp++ = (seq_nt16_table[useq[i]] << 4) | seq_nt16_table[useq[i + 1]];
+    }
+
     for (; i < l_seq; i++) {
         *cp++ = seq_nt16_table[(unsigned char)seq[i]] << 4;
     }
