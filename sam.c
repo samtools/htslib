@@ -1067,7 +1067,7 @@ int sam_idx_save(htsFile *fp) {
             errno = -ret;
             return -1;
         }
-        if (bgzf_flush(fp->fp.bgzf) < 0)
+        if (!fp->is_bgzf || bgzf_flush(fp->fp.bgzf) < 0)
             return -1;
         hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
 
