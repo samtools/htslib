@@ -24,8 +24,6 @@
    SOFTWARE.
 */
 
-/* Last Modified: 05MAR2012 */
-
 #ifndef AC_KSEQ_H
 #define AC_KSEQ_H
 
@@ -57,6 +55,7 @@
 		unsigned char *buf; \
 	} kstream_t;
 
+#define ks_err(ks) ((ks)->end == -1)
 #define ks_eof(ks) ((ks)->is_eof && (ks)->begin >= (ks)->end)
 #define ks_rewind(ks) ((ks)->is_eof = (ks)->begin = (ks)->end = 0)
 
@@ -78,11 +77,13 @@
 #define __KS_INLINED(__read) \
 	static inline klib_unused int ks_getc(kstream_t *ks) \
 	{ \
+		if (ks_err(ks)) return -3; \
 		if (ks->is_eof && ks->begin >= ks->end) return -1; \
 		if (ks->begin >= ks->end) { \
 			ks->begin = 0; \
 			ks->end = __read(ks->f, ks->buf, ks->bufsize); \
 			if (ks->end == 0) { ks->is_eof = 1; return -1; } \
+			if (ks->end == -1) { ks->is_eof = 1; return -3; } \
 		} \
         ks->seek_pos++; \
 		return (int)ks->buf[ks->begin++]; \
@@ -99,11 +100,13 @@
         uint64_t seek_pos = str->l; \
 		for (;;) { \
 			int i; \
+			if (ks_err(ks)) return -3; \
 			if (ks->begin >= ks->end) { \
 				if (!ks->is_eof) { \
 					ks->begin = 0; \
 					ks->end = __read(ks->f, ks->buf, ks->bufsize); \
 					if (ks->end == 0) { ks->is_eof = 1; break; } \
+					if (ks->end == -1) { ks->is_eof = 1; return -3; } \
 				} else break; \
 			} \
 			if (delimiter == KS_SEP_LINE) {  \
@@ -180,25 +183,27 @@
    >=0  length of the sequence (normal)
    -1   end-of-file
    -2   truncated quality string
+   -3   error reading stream
+   -4   overflow error
  */
 #define __KSEQ_READ(SCOPE) \
 	SCOPE int kseq_read(kseq_t *seq) \
 	{ \
-		int c; \
+		int c,r; \
 		kstream_t *ks = seq->f; \
 		if (seq->last_char == 0) { /* then jump to the next header line */ \
-			while ((c = ks_getc(ks)) != -1 && c != '>' && c != '@'); \
-			if (c == -1) return -1; /* end of file */ \
+			while ((c = ks_getc(ks)) >= 0 && c != '>' && c != '@'); \
+			if (c < 0) return c; /* end of file or error */ \
 			seq->last_char = c; \
 		} /* else: the first header char has been read in the previous call */ \
 		seq->comment.l = seq->seq.l = seq->qual.l = 0; /* reset all members */ \
-		if (ks_getuntil(ks, 0, &seq->name, &c) < 0) return -1; /* normal exit: EOF */ \
+		if ((r=ks_getuntil(ks, 0, &seq->name, &c)) < 0) return r; /* normal exit: EOF or error */ \
 		if (c != '\n') ks_getuntil(ks, KS_SEP_LINE, &seq->comment, 0); /* read FASTA/Q comment */ \
 		if (seq->seq.s == 0) { /* we can do this in the loop below, but that is slower */ \
 			seq->seq.m = 256; \
 			seq->seq.s = (char*)malloc(seq->seq.m); \
 		} \
-		while ((c = ks_getc(ks)) != -1 && c != '>' && c != '+' && c != '@') { \
+		while ((c = ks_getc(ks)) >= 0 && c != '>' && c != '+' && c != '@') { \
 			if (c == '\n') continue; /* skip empty lines */ \
 			seq->seq.s[seq->seq.l++] = c; /* this is safe: we always have enough space for 1 char */ \
 			ks_getuntil2(ks, KS_SEP_LINE, &seq->seq, 0, 1); /* read the rest of the line */ \
@@ -207,7 +212,7 @@
 		if (seq->seq.l + 1 >= seq->seq.m) { /* seq->seq.s[seq->seq.l] below may be out of boundary */ \
 			seq->seq.m = seq->seq.l + 2; \
 			kroundup32(seq->seq.m); /* rounded to the next closest 2^k */ \
-			if (seq->seq.l + 1 >= seq->seq.m) return -3; /* error: adjusting m overflowed */ \
+			if (seq->seq.l + 1 >= seq->seq.m) return -4; /* error: adjusting m overflowed */ \
 			seq->seq.s = (char*)realloc(seq->seq.s, seq->seq.m); \
 		} \
 		seq->seq.s[seq->seq.l] = 0;	/* null terminated string */ \
@@ -216,9 +221,10 @@
 			seq->qual.m = seq->seq.m; \
 			seq->qual.s = (char*)realloc(seq->qual.s, seq->qual.m); \
 		} \
-		while ((c = ks_getc(ks)) != -1 && c != '\n'); /* skip the rest of '+' line */ \
+		while ((c = ks_getc(ks)) >= 0 && c != '\n'); /* skip the rest of '+' line */ \
 		if (c == -1) return -2; /* error: no quality string */ \
-		while (ks_getuntil2(ks, KS_SEP_LINE, &seq->qual, 0, 1) >= 0 && seq->qual.l < seq->seq.l); \
+		while ((c = ks_getuntil2(ks, KS_SEP_LINE, &seq->qual, 0, 1)) >= 0 && seq->qual.l < seq->seq.l); \
+		if (c == -3) return -3; /* stream error */ \
 		seq->last_char = 0;	/* we have not come to the next header line */ \
 		if (seq->seq.l != seq->qual.l) return -2; /* error: qual string is of a different length */ \
 		return seq->seq.l; \
