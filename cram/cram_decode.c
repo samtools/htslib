@@ -1221,27 +1221,33 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     // 'N' in both ref and seq is also mismatch for NM/MD
                     if (ref_pos + pos-seq_pos > s->ref_end)
                         goto beyond_slice;
-                    if (decode_md || decode_nm) {
-                        int i, nm_start = nm;
-                        const char *refp = s->ref + ref_pos - s->ref_start + 1;
-                        if (!memchr(refp, 'N', pos-seq_pos)) {
-                            md_dist += pos-seq_pos;
-                        } else {
-                            for (i = 0; i < pos - seq_pos; i++) {
-                                if (refp[i] != 'N')
-                                    continue;
 
-                                if (add_md_char(s, decode_md, refp[i],
-                                                &md_dist) < 0)
-                                    return -1;
-                                nm++;
+                    const char *refp = s->ref + ref_pos - s->ref_start + 1;
+                    const int frag_len = pos - seq_pos;
+                    int do_cpy = 1;
+                    if (decode_md || decode_nm) {
+                        char *N = memchr(refp, 'N', frag_len);
+                        if (N) {
+                            int i;
+                            for (i = 0; i < frag_len; i++) {
+                                char base = refp[i];
+                                if (base == 'N') {
+                                    if (add_md_char(s, decode_md,
+                                                    'N', &md_dist) < 0)
+                                        return -1;
+                                    nm++;
+                                } else {
+                                    md_dist++;
+                                }
+                                seq[seq_pos-1+i] = base;
                             }
-                            md_dist += pos - seq_pos - (nm - nm_start);
+                            do_cpy = 0;
+                        } else {
+                            md_dist += frag_len;
                         }
                     }
-
-                    memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
-                           pos - seq_pos);
+                    if (do_cpy)
+                        memcpy(&seq[seq_pos-1], refp, frag_len);
                 }
             }
 #ifdef USE_X
@@ -1695,31 +1701,32 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 if (cr->len - seq_pos + 1 > 0) {
                     if (ref_pos + cr->len-seq_pos +1 > s->ref_end)
                         goto beyond_slice;
+                    int remainder = cr->len - (seq_pos-1);
+                    int j = ref_pos - s->ref_start + 1;
                     if (decode_md || decode_nm) {
-                        int i, j = ref_pos - s->ref_start + 1;
-                        // FIXME: Update this to match spec once we're also
-                        // ready to update samtools calmd. (N vs any ambig)
-                        if (memchr(&s->ref[j], 'N', cr->len - (seq_pos-1))) {
-                            for (i = seq_pos-1, j -= i; i < cr->len; i++) {
-                                char base = s->ref[j+i];
+                        int i;
+                        char *N = memchr(&s->ref[j], 'N', remainder);
+                        if (!N) {
+                            // short cut the common case
+                            md_dist += cr->len - (seq_pos-1);
+                        } else {
+                            char *refp = &s->ref[j-(seq_pos-1)];
+                            md_dist += N-&s->ref[j];
+                            int i_start = seq_pos-1 + (N - &s->ref[j]);
+                            for (i = i_start; i < cr->len; i++) {
+                                char base = refp[i];
                                 if (base == 'N') {
-                                    if (add_md_char(s, decode_md, 'N', &md_dist) < 0)
+                                    if (add_md_char(s, decode_md, 'N',
+                                                    &md_dist) < 0)
                                         return -1;
                                     nm++;
                                 } else {
                                     md_dist++;
                                 }
-                                seq[i] = base;
                             }
-                        } else {
-                            // faster than above code
-                            memcpy(&seq[seq_pos-1], &s->ref[j], cr->len - (seq_pos-1));
-                            md_dist += cr->len - (seq_pos-1);
                         }
-                    } else {
-                        memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
-                               cr->len - (seq_pos-1));
                     }
+                    memcpy(&seq[seq_pos-1], &s->ref[j], remainder);
                 }
                 ref_pos += cr->len - seq_pos + 1;
             }
