@@ -5776,7 +5776,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
             return -1;
         }
 
-        if (major > 3 || (major == 3 && minor > 0)) {
+        if (major > 3 || (major == 3 && minor > 1)) {
             hts_log_warning(
                 "CRAM version %s is still a draft and subject to change.\n"
                 "This is a technology demonstration that should not be "
