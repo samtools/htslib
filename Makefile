@@ -126,9 +126,17 @@ srcdir = .
 srcprefix =
 HTSPREFIX =
 
+# Flags for SIMD code
 HTS_CFLAGS_AVX2 =
 HTS_CFLAGS_AVX512 =
 HTS_CFLAGS_SSE4 =
+
+# Control building of SIMD code.  Not used if configure has been run.
+HTS_BUILD_AVX2 =
+HTS_BUILD_AVX512 =
+HTS_BUILD_SSSE3 =
+HTS_BUILD_POPCNT =
+HTS_BUILD_SSE4_1 =
 
 include htslib_vars.mk
 include htscodecs.mk
@@ -274,7 +282,9 @@ config.h:
 	echo '#endif' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
 	echo '#define HAVE_LIBCURL 1' >> $@
-	if [ "x$(HTS_CFLAGS_SSE4)" != "x" ] ; then \
+	if [ "x$(HTS_BUILD_POPCNT)" != "x" ] && \
+	   [ "x$(HTS_BUILD_SSE4_1)" != "x" ] && \
+	   [ "x$(HTS_BUILD_SSSE3)" != "x" ]; then \
 	    echo '#define HAVE_POPCNT 1' >> $@ ; \
 	    echo '#define HAVE_SSE4_1 1' >> $@ ; \
 	    echo '#define HAVE_SSSE3 1' >> $@ ; \
@@ -282,10 +292,10 @@ config.h:
 	    echo '#define UBSAN 1' >> $@ ; \
 	    echo '#endif' >> $@ ; \
 	fi
-	if [ "x$(HTS_CFLAGS_AVX2)" != "x" ] ; then \
+	if [ "x$(HTS_BUILD_AVX2)" != "x" ] ; then \
 	    echo '#define HAVE_AVX2 1' >> $@ ; \
 	fi
-	if [ "x$(HTS_CFLAGS_AVX512)" != "x" ] ; then \
+	if [ "x$(HTS_BUILD_AVX512)" != "x" ] ; then \
 	    echo '#define HAVE_AVX512 1' >> $@ ; \
 	fi
 
