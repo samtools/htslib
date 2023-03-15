@@ -30,7 +30,7 @@ AC_CONFIG_SRCDIR(hts.c)
 AC_CONFIG_HEADERS(config.h)
 
 m4_include([m4/hts_prog_cc_warnings.m4])
-m4_include([m4/ax_check_compile_flag.m4])
+m4_include([m4/hts_check_compile_flags_needed.m4])
 m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
@@ -71,16 +71,53 @@ dnl later as they can interfere with some of the tests (notably AC_SEARCH_LIBS)
 HTS_PROG_CC_WERROR(hts_late_cflags)
 
 dnl Check for various compiler flags to enable SIMD features
-dnl Options for rANS32x16 sse4.1 version
-AX_CHECK_COMPILE_FLAG([-mssse3 -mpopcnt -msse4.1], [
-  hts_cflags_sse4="-mssse3 -mpopcnt -msse4.1"
-  AC_SUBST([hts_cflags_sse4])
-  AC_DEFINE([HAVE_SSSE3],1,
-            [Defined to 1 if the compiler can issue SSSE3 instructions.])
-  AC_DEFINE([HAVE_POPCNT],1,
-            [Defined to 1 if the compiler can issue popcnt instructions.])
-  AC_DEFINE([HAVE_SSE4_1],1,
-            [Defined to 1 if the compiler can issue SSE4.1 instructions.])
+dnl Options for rANS32x16 sse4.1 version - ssse3
+hts_cflags_sse4=""
+HTS_CHECK_COMPILE_FLAGS_NEEDED([ssse3], [-mssse3], [AC_LANG_PROGRAM([[
+    #ifdef __x86_64__
+    #include "x86intrin.h"
+    #endif
+  ]],[[
+    #ifdef __x86_64__
+    __m128i a = _mm_set_epi32(1, 2, 3, 4), b = _mm_set_epi32(4, 3, 2, 1);
+    __m128i c = _mm_shuffle_epi8(a, b);
+    return *((char *) &c);
+    #endif
+  ]])], [
+  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
+  AC_DEFINE([HAVE_SSSE3],1,[Defined to 1 if rANS source using SSSE3 can be compiled.])
+])
+
+dnl Options for rANS32x16 sse4.1 version - popcnt
+HTS_CHECK_COMPILE_FLAGS_NEEDED([popcnt], [-mpopcnt], [AC_LANG_PROGRAM([[
+    #ifdef __x86_64__
+    #include "x86intrin.h"
+    #endif
+  ]],[[
+    #ifdef __x86_64__
+    unsigned int i = _mm_popcnt_u32(1);
+    return i != 1;
+    #endif
+  ]])], [
+  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
+])
+
+dnl Options for rANS32x16 sse4.1 version - sse4.1
+HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1], [AC_LANG_PROGRAM([[
+    #ifdef __x86_64__
+    #include "x86intrin.h"
+    #endif
+  ]],[[
+    #ifdef __x86_64__
+    __m128i a = _mm_set_epi32(1, 2, 3, 4), b = _mm_set_epi32(4, 3, 2, 1);
+    __m128i c = _mm_max_epu32(a, b);
+    return *((char *) &c);
+    #endif
+  ]])], [
+  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
+  AC_DEFINE([HAVE_SSE4_1],1,[Defined to 1 if rANS source using SSE4.1 can be compiled.
+])
 dnl Propagate HTSlib's unaligned access preference to htscodecs
   AH_VERBATIM([UBSAN],[
 /* Prevent unaligned access in htscodecs SSE4 rANS codec */
@@ -89,60 +126,43 @@ dnl Propagate HTSlib's unaligned access preference to htscodecs
 #endif
   ])
   AC_DEFINE([UBSAN],1,[])
-  ], [], [], [AC_LANG_PROGRAM([[
-    #include "x86intrin.h"
-  ]],[[
-    unsigned int i = _mm_popcnt_u32(1);
-    __m128i a = _mm_set_epi32(1, 2, 3, i), b = _mm_set_epi32(4, 3, 2, 1);
-    __m128i c = _mm_max_epu32(a, b);
-    b = _mm_shuffle_epi8(a, c);
-    return *((char *) &b);
-  ]])])
+])
+AC_SUBST([hts_cflags_sse4])
 
 dnl Options for rANS32x16 avx2 version
-AX_CHECK_COMPILE_FLAG([-mavx2], [
-  hts_cflags_avx2="-mavx2"
-  AC_SUBST([hts_cflags_avx2])
-  AC_DEFINE([HAVE_AVX2],1,
-            [Defined to 1 if the compiler can issue AVX2 instructions.])
-  ], [], [], [AC_LANG_PROGRAM([[
-  #include "x86intrin.h"
+HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2], [AC_LANG_PROGRAM([[
+    #ifdef __x86_64__
+    #include "x86intrin.h"
+    #endif
   ]],[[
+    #ifdef __x86_64__
     __m256i a = _mm256_set_epi32(1, 2, 3, 4, 5, 6, 7, 8);
     __m256i b = _mm256_add_epi32(a, a);
     long long c = _mm256_extract_epi64(b, 0);
     return (int) c;
-  ]])])
+    #endif
+  ]])], [
+  hts_cflags_avx2="$flags_needed"
+  AC_SUBST([hts_cflags_avx2])
+  AC_DEFINE([HAVE_AVX2],1,[Defined to 1 if rANS source using AVX2 can be compiled.])
+])
 
 dnl Options for rANS32x16 avx512 version
-AX_CHECK_COMPILE_FLAG([-mavx512f], [
-  hts_cflags_avx512="-mavx512f"
-  AC_SUBST([hts_cflags_avx512])
-  AC_DEFINE([HAVE_AVX512],1,
-            [Defined to 1 if the compiler can issue AVX512 instructions.])
-  ], [], [], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f], [AC_LANG_PROGRAM([[
+    #ifdef __x86_64__
     #include "x86intrin.h"
+    #endif
   ]],[[
+    #ifdef __x86_64__
     __m512i a = _mm512_set1_epi32(1);
     __m512i b = _mm512_add_epi32(a, a);
     return *((char *) &b);
-  ]])])
-
-dnl Detect ARM Neon availability
-AC_CACHE_CHECK([whether C compiler supports ARM Neon], [hts_cv_have_neon], [
-  AC_COMPILE_IFELSE([
-    AC_LANG_PROGRAM([[
-      #include "arm_neon.h"
-    ]], [[
-      int32x4_t a = vdupq_n_s32(1);
-      int32x4_t b = vaddq_s32(a, a);
-      return *((char *) &b);
-    ]])], [hts_cv_have_neon=yes], [hts_cv_have_neon=no])])
-if test "$hts_cv_have_neon" = yes; then
-  hts_have_neon=yes
-  AC_SUBST([hts_have_neon])
-fi
-
+    #endif
+  ]])], [
+  hts_cflags_avx512="$flags_needed"
+  AC_SUBST([hts_cflags_avx512])
+  AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
+])
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
