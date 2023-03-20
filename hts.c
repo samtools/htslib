@@ -2900,23 +2900,55 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
  *** Iterator ***
  ****************/
 
+static inline int grow_itr_bins(hts_itr_t *itr, int num)
+{
+    if (itr->bins.m - itr->bins.n < num) {
+        size_t new_n = (size_t) itr->bins.n + num;
+        size_t new_m = (size_t) itr->bins.m + (itr->bins.m >> 1);
+        if (new_m < new_n)
+            new_m = new_n;
+        if (new_m > INT_MAX || new_m > SIZE_MAX / sizeof(int)) {
+            errno = ENOMEM;
+            return -1;
+        }
+        int *new_a = realloc(itr->bins.a, sizeof(int) * new_m);
+        if (!new_a)
+            return -1;
+        itr->bins.m = (int) new_m;
+        itr->bins.a = new_a;
+    }
+    return 0;
+}
+
 // Note: even with 32-bit hts_pos_t, end needs to be 64-bit here due to 1LL<<s.
 static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
     if (beg >= end) return 0;
-    if (beg < 0 ) beg = 0;
-    if (beg==end) end = 1;
+    if (beg < 0 ) {
+        // Deal with historic difference of opinion about which bin the
+        // range [-1, 0) should end up in.  HTSlib since 2016 says the
+        // smallest position 0 bin; before that it would crash when trying
+        // to make the index.  htsjdk and the SAM specification say
+        // they should go into the bin before this instead, which is the
+        // largest one on the previous level - and all other ranges
+        // starting -1 will go into bin 0 (the SAM spec. lists other
+        // possibilities, but they can't actually occur).  To ensure
+        // compatibility, we need to add this extra bin to the search list
+        // as a special case.
+        beg = 0;
+        if (end == 0) end = 1;
+        if (grow_itr_bins(itr, 1) < 0)
+            return -1;
+        itr->bins.a[itr->bins.n++] = hts_bin_first(n_lvls) - 1;
+    }
     if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
         hts_pos_t b, e;
         int n, i;
         b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
-        if (itr->bins.n + n > itr->bins.m) {
-            itr->bins.m = itr->bins.n + n;
-            kroundup32(itr->bins.m);
-            itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
-        }
+        if (grow_itr_bins(itr, n) < 0)
+            return -1;
         for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
     }
     return itr->bins.n;
@@ -3120,6 +3152,15 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             } while (bin);
             if (bin == 0) k = kh_get(bin, bidx, bin);
             min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+
+            if (beg < 0 && min_off > 0) {
+                // Regions [-1, 0) may be in hts_bin_first(idx->n_lvls) - 1
+                // which could give a lower min_off
+                k = kh_get(bin, bidx, hts_bin_first(idx->n_lvls) - 1);
+                if (k != kh_end(bidx) && kh_val(bidx, k).loff < min_off)
+                    min_off = kh_val(bidx, k).loff;
+            }
+
             // min_off can be calculated more accurately if the
             // linear index is available
             if (idx->lidx[tid].offset
@@ -3159,7 +3200,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // retrieve bins
-            reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
+            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls) < 0) {
+                hts_itr_destroy(iter);
+                return NULL;
+            }
 
             for (i = n_off = 0; i < iter->bins.n; ++i)
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
