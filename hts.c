@@ -3089,6 +3089,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             iter->finished = 1;
         } else {
             if (beg < -1) beg = -1;
+            if (end >= 1LL << (idx->min_shift + 3 * idx->n_lvls))
+                end = (1LL << (idx->min_shift + 3 * idx->n_lvls)) - 1;
             if (end < beg) {
               free(iter);
               return NULL;
