@@ -3661,6 +3661,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     const char *colon = NULL, *comma = NULL;
     int quoted = 0;
+    hts_pos_t first_base = flags & HTS_PARSE_REF_START_MINUS_1 ? -1 : 0;
 
     if (flags & HTS_PARSE_LIST)
         flags &= ~HTS_PARSE_THOUSANDS_SEP;
@@ -3706,7 +3707,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     // No colon is simplest case; just check and return.
     if (colon == NULL) {
-        *beg = 0; *end = HTS_POS_MAX;
+        *beg = first_base; *end = HTS_POS_MAX;
         kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -2;
@@ -3721,7 +3722,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     // Has a colon, but check whole name first.
     if (!quoted) {
-        *beg = 0; *end = HTS_POS_MAX;
+        *beg = first_base; *end = HTS_POS_MAX;
         kputsn(s, s_len, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -2;
@@ -3768,39 +3769,46 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     // Finally parse the post-colon coordinates
     char *hyphen;
-    *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
-    if (*beg < 0) {
-        if (*beg != -1 && *hyphen == '-' && colon[1] != '\0') {
-            // User specified zero, but we're 1-based.
-            hts_log_error("Coordinates must be > 0");
-            return NULL;
-        }
-        if (isdigit_c(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
-            // interpret chr:-100 as chr:1-100
-            *end = *beg==-1 ? HTS_POS_MAX : -(*beg+1);
-            *beg = 0;
-            return s_end;
-        } else if (*beg < -1) {
-            hts_log_error("Unexpected string \"%s\" after region", hyphen);
-            return NULL;
+    const char *from_pos = colon + 1;
+    int have_start_pos = 0;
+    while (isspace_c(*from_pos)) from_pos++;
+    if (*from_pos == '-') {
+        // interpret chr:-100 as chr:1-100
+        *beg = first_base;
+        hyphen = (char *) from_pos;
+    } else {
+        *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
+        if (hyphen != colon+1) {
+            have_start_pos = 1;
+        } else {
+            *beg = first_base;
         }
     }
 
     if (*hyphen == '\0' || ((flags & HTS_PARSE_LIST) && *hyphen == ',')) {
         *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : HTS_POS_MAX;
-    } else if (*hyphen == '-') {
-        *end = hts_parse_decimal(hyphen+1, &hyphen, flags);
-        if (*hyphen != '\0' && *hyphen != ',') {
-            hts_log_error("Unexpected string \"%s\" after region", hyphen);
-            return NULL;
-        }
-    } else {
+        return s_end;
+    } else if (*hyphen != '-') {
         hts_log_error("Unexpected string \"%s\" after region", hyphen);
         return NULL;
     }
 
-    if (*end == 0)
-        *end = HTS_POS_MAX; // interpret chr:100- as chr:100-<end>
+    char *last;
+    *end = hts_parse_decimal(hyphen+1, &last, flags);
+    if (!have_start_pos &&
+        (*last == '-' || *end < 0 || (flags & HTS_PARSE_ONE_COORD))) {
+        // Attempt to use a negative position, e.g. chr:-100-101
+        // or chr:--100
+        hts_log_error("Coordinates must be > 0");
+        return NULL;
+    } else if (last == hyphen + 1) {
+        if (*last != '\0' && !((flags & HTS_PARSE_LIST) && *last == ',')) {
+            hts_log_error("Unexpected string \"%s\" after region", last);
+            return NULL;
+        } else {
+            *end = HTS_POS_MAX; // interpret chr:100- as chr:100-<end>
+        }
+    }
 
     if (*beg >= *end) return NULL;
 
@@ -3852,15 +3860,25 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
+    extern int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, hts_pos_t *beg, hts_pos_t *end);
     int tid;
     hts_pos_t beg, end;
+    int flags = HTS_PARSE_THOUSANDS_SEP;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") == 0)
         return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 
-    if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
+    if (readrec == bcf_readrec) {
+        flags |= HTS_PARSE_REF_START_MINUS_1;
+    } else if (readrec == tbx_readrec) {
+        tbx_t *tbx = (tbx_t *) hdr;
+        if ((tbx->conf.preset&0xffff) == TBX_VCF)
+            flags |= HTS_PARSE_REF_START_MINUS_1;
+    }
+
+    if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, flags))
         return NULL;
 
     return itr_query(idx, tid, beg, end, readrec);

@@ -1132,6 +1132,7 @@ int hts_idx_nseq(const hts_idx_t *idx);
 #define HTS_PARSE_THOUSANDS_SEP 1  ///< Ignore ',' separators within numbers
 #define HTS_PARSE_ONE_COORD     2  ///< chr:pos means chr:pos-pos and not chr:pos-end
 #define HTS_PARSE_LIST          4  ///< Expect a comma separated list of regions. (Disables HTS_PARSE_THOUSANDS_SEP)
+#define HTS_PARSE_REF_START_MINUS_1 8 ///< Return -1 for the start of a complete reference (mainly for VCF)
 
 /// Parse a numeric string
 /** The number may be expressed in scientific notation, and optionally may
