@@ -2205,8 +2205,6 @@ static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t of
 {
     int i;
     hts_pos_t beg, end;
-    if ( _beg<0 ) _beg = 0;
-    if ( _end<=_beg ) _end = _beg+1;
     beg = _beg >> min_shift;
     end = (_end - 1) >> min_shift;
     if (l->m < end + 1) {
