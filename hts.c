@@ -3145,17 +3145,24 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // compute max_off: a virtual offset from a bin to the right of end
-            bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
-            if (bin >= idx->n_bins) bin = 0;
-            while (1) {
-                // search for an extant bin by moving right, but moving up to the
-                // parent whenever we get to a first child (which also covers falling
-                // off the RHS, which wraps around and immediately goes up to bin 0)
-                while (bin % 8 == 1) bin = hts_bin_parent(bin);
-                if (bin == 0) { max_off = (uint64_t)-1; break; }
-                k = kh_get(bin, bidx, bin);
-                if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) { max_off = kh_val(bidx, k).list[0].u; break; }
-                bin++;
+            // First check if end lies within the range of the index (it won't
+            // if it's HTS_POS_MAX)
+            if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+                bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+                if (bin >= idx->n_bins) bin = 0;
+                while (1) {
+                    // search for an extant bin by moving right, but moving up to the
+                    // parent whenever we get to a first child (which also covers falling
+                    // off the RHS, which wraps around and immediately goes up to bin 0)
+                    while (bin % 8 == 1) bin = hts_bin_parent(bin);
+                    if (bin == 0) { max_off = UINT64_MAX; break; }
+                    k = kh_get(bin, bidx, bin);
+                    if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) { max_off = kh_val(bidx, k).list[0].u; break; }
+                    bin++;
+                }
+            } else {
+                // Searching to end of reference
+                max_off = UINT64_MAX;
             }
 
             // retrieve bins
@@ -3314,20 +3321,27 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 }
 
                 // compute max_off: a virtual offset from a bin to the right of end
-                bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
-                if (bin >= idx->n_bins) bin = 0;
-                while (1) {
-                    // search for an extant bin by moving right, but moving up to the
-                    // parent whenever we get to a first child (which also covers falling
-                    // off the RHS, which wraps around and immediately goes up to bin 0)
-                    while (bin % 8 == 1) bin = hts_bin_parent(bin);
-                    if (bin == 0) { max_off = (uint64_t)-1; break; }
-                    k = kh_get(bin, bidx, bin);
-                    if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
-                        max_off = kh_val(bidx, k).list[0].u;
-                        break;
+                // First check if end lies within the range of the index (it
+                // won't if it's HTS_POS_MAX)
+                if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+                    bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+                    if (bin >= idx->n_bins) bin = 0;
+                    while (1) {
+                        // search for an extant bin by moving right, but moving up to the
+                        // parent whenever we get to a first child (which also covers falling
+                        // off the RHS, which wraps around and immediately goes up to bin 0)
+                        while (bin % 8 == 1) bin = hts_bin_parent(bin);
+                        if (bin == 0) { max_off = UINT64_MAX; break; }
+                        k = kh_get(bin, bidx, bin);
+                        if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
+                            max_off = kh_val(bidx, k).list[0].u;
+                            break;
+                        }
+                        bin++;
                     }
-                    bin++;
+                } else {
+                    // Searching to end of reference
+                    max_off = UINT64_MAX;
                 }
 
                 //convert coordinates to file offsets
