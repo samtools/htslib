@@ -1042,11 +1042,20 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         if ( *ep==':' )
         {
             sp = ep+1;
-            from = hts_parse_decimal(sp,(char**)&ep,0);
-            if ( sp==ep )
+            while (isspace((uint8_t) *sp)) sp++;
+            if (*sp == '-')
             {
-                hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                ep = sp;
+                from = -1;
+            }
+            else
+            {
+                from = hts_parse_decimal(sp,(char**)&ep,0);
+                if ( sp==ep )
+                {
+                    hts_log_error("Could not parse the region(s): %s", str);
+                    free(reg); free(tmp.s); return NULL;
+                }
             }
             if ( !*ep || *ep==',' )
             {
