@@ -15,7 +15,7 @@ libdeflate_template: &LIBDEFLATE
       pushd "$HOME"
       git clone --depth 1 https://github.com/ebiggers/libdeflate.git
       pushd libdeflate
-      cmake -B build -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_BUILD_GZIP=OFF -DCMAKE_C_FLAGS='-g -O3 -fPIC'
+      cmake -B build -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_BUILD_GZIP=OFF -DCMAKE_C_FLAGS="-g -O3 -fPIC $LIBDEFLATE_CFLAGS"
       cmake --build build --verbose
       popd
       popd
@@ -186,6 +186,9 @@ macosx_task:
 
   environment:
     CC: clang
+    CFLAGS: "-Wall -arch arm64 -arch x86_64"
+    LDFLAGS: "-arch arm64 -arch x86_64"
+    LIBDEFLATE_CFLAGS: "-arch arm64 -arch x86_64"
     LC_ALL: C
     CIRRUS_CLONE_DEPTH: 1
 
