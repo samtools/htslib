@@ -2903,23 +2903,78 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
  ****************/
 
 // Note: even with 32-bit hts_pos_t, end needs to be 64-bit here due to 1LL<<s.
-static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
+static inline int reg2bins_narrow(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
-    if (beg >= end) return 0;
-    if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
         hts_pos_t b, e;
-        int n, i;
-        b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
-        if (itr->bins.n + n > itr->bins.m) {
-            itr->bins.m = itr->bins.n + n;
-            kroundup32(itr->bins.m);
-            itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
+        int i;
+        b = t + (beg>>s); e = t + (end>>s);
+        for (i = b; i <= e; ++i) {
+            if (kh_get(bin, bidx, i) != kh_end(bidx)) {
+                assert(itr->bins.n < itr->bins.m);
+                itr->bins.a[itr->bins.n++] = i;
+            }
         }
-        for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
     }
     return itr->bins.n;
+}
+
+static inline int reg2bins_wide(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
+{
+    khint_t i;
+    hts_pos_t max_shift = 3 * n_lvls + min_shift;
+    --end;
+    if (beg < 0) beg = 0;
+    for (i = kh_begin(bidx); i != kh_end(bidx); i++) {
+        if (!kh_exist(bidx, i)) continue;
+        hts_pos_t bin = (hts_pos_t) kh_key(bidx, i);
+        int level = hts_bin_level(bin);
+        if (level > n_lvls) continue; // Dodgy index?
+        hts_pos_t first = hts_bin_first(level);
+        hts_pos_t beg_at_level = first + (beg >> (max_shift - 3 * level));
+        hts_pos_t end_at_level = first + (end >> (max_shift - 3 * level));
+        if (beg_at_level <= bin && bin <= end_at_level) {
+            assert(itr->bins.n < itr->bins.m);
+            itr->bins.a[itr->bins.n++] = bin;
+        }
+    }
+    return itr->bins.n;
+}
+
+static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
+{
+    int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
+    size_t reg_bin_count = 0, hash_bin_count = kh_n_buckets(bidx), max_bins;
+    hts_pos_t end1;
+    if (end >= 1LL<<s) end = 1LL<<s;
+    if (beg >= end) return 0;
+    end1 = end - 1;
+
+    // Count bins to see if it's faster to iterate through the hash table
+    // or the set of bins covering the region
+    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+        reg_bin_count += (end1 >> s) - (beg >> s) + 1;
+    }
+    max_bins = reg_bin_count < kh_size(bidx) ? reg_bin_count : kh_size(bidx);
+    if (itr->bins.m - itr->bins.n < max_bins) {
+        // Worst-case memory usage.  May be wasteful on very sparse
+        // data, but the bin list usually won't be too big anyway.
+        size_t new_m = max_bins + itr->bins.n;
+        if (new_m > INT_MAX || new_m > SIZE_MAX / sizeof(int)) {
+            errno = ENOMEM;
+            return -1;
+        }
+        int *new_a = realloc(itr->bins.a, new_m * sizeof(*new_a));
+        if (!new_a) return -1;
+        itr->bins.a = new_a;
+        itr->bins.m = new_m;
+    }
+    if (reg_bin_count < hash_bin_count) {
+        return reg2bins_narrow(beg, end, itr, min_shift, n_lvls, bidx);
+    } else {
+        return reg2bins_wide(beg, end, itr, min_shift, n_lvls, bidx);
+    }
 }
 
 static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
@@ -3159,7 +3214,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // retrieve bins
-            reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
+            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, bidx) < 0) {
+                hts_itr_destroy(iter);
+                return NULL;
+            }
 
             for (i = n_off = 0; i < iter->bins.n; ++i)
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
