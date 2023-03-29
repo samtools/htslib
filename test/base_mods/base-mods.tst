@@ -42,3 +42,9 @@ P MM-explicit-x.out  $test_mod -x MM-explicit.sam
 # Pileup testing
 P MM-pileup.out $pileup_mod < MM-pileup.sam
 P MM-pileup2.out $pileup_mod < MM-pileup2.sam
+
+# Validation testing.  We just care about exit status here, but the
+# test data is a copy of MM-pileup.sam so that suffices too.
+P MM-pileup.out $pileup_mod < MM-MZp.sam
+F MM-pileup.out $pileup_mod < MM-MZf1.sam
+F MM-pileup.out $pileup_mod < MM-MZf2.sam
