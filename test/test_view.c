@@ -362,7 +362,8 @@ int main(int argc, char *argv[])
     }
 
     strcpy(modew, "w");
-    if (opts.clevel >= 0 && opts.clevel <= 9) sprintf(modew + 1, "%d", opts.clevel);
+    if (opts.clevel >= 0 && opts.clevel <= 9)
+        snprintf(modew + 1, sizeof(modew) - 1, "%d", opts.clevel);
     if (opts.flag & WRITE_CRAM) strcat(modew, "c");
     else if (opts.flag & WRITE_BINARY_COMP) strcat(modew, "b");
     else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");

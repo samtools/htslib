@@ -304,20 +304,20 @@ void test_explicit(char *tgt, char *qry, char *exp)
     regidx_destroy(idx);
 }
 
-void create_line_bed(char *line, char *chr, int start, int end)
+void create_line_bed(char *line, size_t size, char *chr, int start, int end)
 {
-    sprintf(line,"%s\t%d\t%d\n",chr,start-1,end);
+    snprintf(line,size,"%s\t%d\t%d\n",chr,start-1,end);
 }
-void create_line_tab(char *line, char *chr, int start, int end)
+void create_line_tab(char *line, size_t size, char *chr, int start, int end)
 {
-    sprintf(line,"%s\t%d\t%d\n",chr,start,end);
+    snprintf(line,size,"%s\t%d\t%d\n",chr,start,end);
 }
-void create_line_reg(char *line, char *chr, int start, int end)
+void create_line_reg(char *line, size_t size, char *chr, int start, int end)
 {
-    sprintf(line,"%s:%d-%d\n",chr,start,end);
+    snprintf(line,size,"%s:%d-%d\n",chr,start,end);
 }
 
-typedef void (*set_line_f)(char *line, char *chr, int start, int end);
+typedef void (*set_line_f)(char *line, size_t size, char *chr, int start, int end);
 
 void test(set_line_f set_line, regidx_parse_f parse)
 {
@@ -329,17 +329,17 @@ void test(set_line_f set_line, regidx_parse_f parse)
     for (i=1; i<n; i++)
     {
         start = end = 10*i;
-        set_line(line,chr,start,end);
+        set_line(line,sizeof(line),chr,start,end);
         debug("insert: %s", line);
         if ( regidx_insert(idx,line)!=0 ) error("insert failed: %s\n", line);
 
         start = end = 10*i + 1;
-        set_line(line,chr,start,end);
+        set_line(line,sizeof(line),chr,start,end);
         debug("insert: %s", line);
         if ( regidx_insert(idx,line)!=0 ) error("insert failed: %s\n", line);
 
         start = 20000*i; end = start + 2000;
-        set_line(line,chr,start,end);
+        set_line(line,sizeof(line),chr,start,end);
         debug("insert: %s", line);
         if ( regidx_insert(idx,line)!=0 ) error("insert failed: %s\n", line);
     }
@@ -396,7 +396,7 @@ void test(set_line_f set_line, regidx_parse_f parse)
 
         // fully contained interval, one hit
         start = 20000*i - 5000; end = 20000*i + 3000;
-        set_line(line,chr,start,end);
+        set_line(line,sizeof(line),chr,start,end);
         if ( !regidx_overlap(idx,chr,start-1,end-1,itr) ) error("query failed, there should be a hit: %s:%d-%d\n",chr,start,end);
         debug("ok: overlap(s) found for %s:%d-%d\n",chr,start,end);
         nhit = 0;

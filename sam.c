@@ -5392,20 +5392,22 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
                     for (j = 0; j < nm; j++) {
                         char qual[20];
                         if (mod[j].qual >= 0)
-                            sprintf(qual, "%d", mod[j].qual);
+                            snprintf(qual, sizeof(qual), "%d", mod[j].qual);
                         else
                             *qual=0;
                         if (mod[j].modified_base < 0)
                             // ChEBI
-                            indel += sprintf(&ins->s[indel], "%c(%d)%s",
-                                             "+-"[mod[j].strand],
-                                             -mod[j].modified_base,
-                                             qual);
+                            indel += snprintf(&ins->s[indel], ins->m - indel,
+                                              "%c(%d)%s",
+                                              "+-"[mod[j].strand],
+                                              -mod[j].modified_base,
+                                              qual);
                         else
-                            indel += sprintf(&ins->s[indel], "%c%c%s",
-                                             "+-"[mod[j].strand],
-                                             mod[j].modified_base,
-                                             qual);
+                            indel += snprintf(&ins->s[indel], ins->m - indel,
+                                              "%c%c%s",
+                                              "+-"[mod[j].strand],
+                                              mod[j].modified_base,
+                                              qual);
                     }
                     ins->s[indel++] = ']';
                     ins->l += indel - o_indel; // grow by amount we used
