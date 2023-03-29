@@ -176,7 +176,7 @@ int main(void)
     original = slurp("vcf.c");
     for (i = 1; i <= 6; i++) {
         char *text;
-        sprintf(buffer, "test/hfile%d.tmp", i);
+        snprintf(buffer, sizeof(buffer), "test/hfile%d.tmp", i);
         text = slurp(buffer);
         if (strcmp(original, text) != 0) {
             fprintf(stderr, "%s differs from vcf.c\n", buffer);

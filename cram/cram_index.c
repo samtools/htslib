@@ -656,9 +656,10 @@ static int cram_index_build_multiref(cram_fd *fd,
         }
 
         if (ref != -2) {
-            sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
-                    ref, ref_start, ref_end - ref_start + 1,
-                    (int64_t)cpos, landmark, sz);
+            snprintf(buf, sizeof(buf),
+                     "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+                     ref, ref_start, ref_end - ref_start + 1,
+                     (int64_t)cpos, landmark, sz);
             if (bgzf_write(fp, buf, strlen(buf)) < 0)
                 return -4;
         }
@@ -669,9 +670,10 @@ static int cram_index_build_multiref(cram_fd *fd,
     }
 
     if (ref != -2) {
-        sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
-                ref, ref_start, ref_end - ref_start + 1,
-                (int64_t)cpos, landmark, sz);
+        snprintf(buf, sizeof(buf),
+                 "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+                 ref, ref_start, ref_end - ref_start + 1,
+                 (int64_t)cpos, landmark, sz);
         if (bgzf_write(fp, buf, strlen(buf)) < 0)
             return -4;
     }
@@ -701,9 +703,10 @@ int cram_index_slice(cram_fd *fd,
     if (s->hdr->ref_seq_id == -2) {
         ret = cram_index_build_multiref(fd, c, s, fp, cpos, spos, sz);
     } else {
-        sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
-                s->hdr->ref_seq_id, s->hdr->ref_seq_start,
-                s->hdr->ref_seq_span, (int64_t)cpos, (int)spos, (int)sz);
+        snprintf(buf, sizeof(buf),
+                 "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+                 s->hdr->ref_seq_id, s->hdr->ref_seq_start,
+                 s->hdr->ref_seq_span, (int64_t)cpos, (int)spos, (int)sz);
         ret = (bgzf_write(fp, buf, strlen(buf)) >= 0)? 0 : -4;
     }
 

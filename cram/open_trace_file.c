@@ -242,7 +242,7 @@ static char *expand_path(const char *file, char *dirname, int max_s_digits) {
 
     /* Special case for "./" or absolute filenames */
     if (*file == '/' || (len==1 && *dirname == '.')) {
-        sprintf(path, "%s", file);
+        memcpy(path, file, lenf + 1);
     } else {
         /* Handle %[0-9]*s expansions, if required */
         char *path_end = path;

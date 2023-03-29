@@ -79,7 +79,7 @@ static char *code(int id) {
         code[0] = id;
         code[1] = 0;
     } else {
-        sprintf(code, "(%d)", -id);
+        snprintf(code, sizeof(code), "(%d)", -id);
     }
 
     return code;
@@ -119,10 +119,10 @@ int main(int argc, char **argv) {
         int i, j, n;
         hts_base_mod mods[5];
         for (i = 0; i < b->core.l_qseq; i++) {
-            char line[8192], *lp = line;
+            char line[8192], *lp = line, *ep = line + sizeof(line);
             n = bam_mods_at_next_pos(b, m, mods, 5);
-            lp += sprintf(lp, "%d\t%c\t",
-                          i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
+            lp += snprintf(lp, ep - lp, "%d\t%c\t",
+                           i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
             for (j = 0; j < n && j < 5; j++) {
                 if (extended) {
                     int m_strand, m_implicit;
@@ -134,18 +134,18 @@ int main(int argc, char **argv) {
                         m_canonical != mods[j].canonical_base ||
                         m_strand    != mods[j].strand)
                         goto err;
-                    lp += sprintf(lp, "%c%c%s%c%d ",
-                                  mods[j].canonical_base,
-                                  "+-"[mods[j].strand],
-                                  code(mods[j].modified_base),
-                                  "?."[m_implicit],
-                                  mods[j].qual);
+                    lp += snprintf(lp, ep - lp, "%c%c%s%c%d ",
+                                   mods[j].canonical_base,
+                                   "+-"[mods[j].strand],
+                                   code(mods[j].modified_base),
+                                   "?."[m_implicit],
+                                   mods[j].qual);
                 } else {
-                    lp += sprintf(lp, "%c%c%s%d ",
-                                  mods[j].canonical_base,
-                                  "+-"[mods[j].strand],
-                                  code(mods[j].modified_base),
-                                  mods[j].qual);
+                    lp += snprintf(lp, ep - lp, "%c%c%s%d ",
+                                   mods[j].canonical_base,
+                                   "+-"[mods[j].strand],
+                                   code(mods[j].modified_base),
+                                   mods[j].qual);
                 }
             }
             *lp++ = '\n';
@@ -172,15 +172,15 @@ int main(int argc, char **argv) {
 
         int pos;
         while ((n=bam_next_basemod(b, m, mods, 5, &pos)) > 0) {
-            char line[8192]={0}, *lp = line;
-            lp += sprintf(lp, "%d\t%c\t", pos,
-                          seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
+            char line[8192]={0}, *lp = line, *ep = line + sizeof(line);
+            lp += snprintf(lp, ep - lp, "%d\t%c\t", pos,
+                           seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
             for (j = 0; j < n && j < 5; j++) {
-                lp += sprintf(lp, "%c%c%s%d ",
-                              mods[j].canonical_base,
-                              "+-"[mods[j].strand],
-                              code(mods[j].modified_base),
-                              mods[j].qual);
+                lp += snprintf(lp, ep - lp, "%c%c%s%d ",
+                               mods[j].canonical_base,
+                               "+-"[mods[j].strand],
+                               code(mods[j].modified_base),
+                               mods[j].qual);
             }
             *lp++ = '\n';
             *lp++ = 0;

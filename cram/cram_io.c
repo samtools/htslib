@@ -2531,7 +2531,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         /* Only the reference file provided. Get the index file name from it */
             if (!(r->fn = string_dup(r->pool, fn)))
                 goto err;
-            sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, fn);
+            snprintf(fai_fn, PATH_MAX, "%.*s.fai", PATH_MAX-5, fn);
         }
     }
 
@@ -4816,7 +4816,7 @@ static void full_path(char *out, char *in) {
         strncpy(out, in, PATH_MAX-1);
         out[PATH_MAX-1] = 0;
     } else {
-        int len;
+        size_t len;
 
         // unable to get dir or out+in is too long
         if (!getcwd(out, PATH_MAX) ||
@@ -4826,7 +4826,7 @@ static void full_path(char *out, char *in) {
             return;
         }
 
-        sprintf(out+len, "/%.*s", PATH_MAX - 2 - len, in);
+        snprintf(out+len, PATH_MAX - len, "/%s", in);
 
         // FIXME: cope with `pwd`/../../../foo.fa ?
     }

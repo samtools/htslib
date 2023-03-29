@@ -57,7 +57,7 @@ int kputd(double d, kstring_t *s) {
 		if (ks_resize(s, s->l + 50) < 0)
 			return EOF;
 		// We let stdio handle the exponent cases
-		int s2 = sprintf(s->s + s->l, "%g", d);
+		int s2 = snprintf(s->s + s->l, s->m - s->l, "%g", d);
 		len += s2;
 		s->l += s2;
 		return len;
