@@ -48,7 +48,7 @@ then
     v1=`expr "$VERSION" : '\([0-9]*\)'`
     v2=`expr "$VERSION" : '[0-9]*.\([0-9]*\)'`
     v3=`expr "$VERSION" : '[0-9]*.[0-9]*.\([0-9]*\)'`
-    if [ -z "`expr "$VERSION" : '^\([0-9.]*\)$'`" ]
+    if [ -z "`expr "$VERSION" : '\([0-9.]*\)$'`" ]
     then
         VERSION="$v1.$v2.255"
     else
