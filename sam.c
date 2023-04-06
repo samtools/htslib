@@ -6221,14 +6221,24 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
     if (!mm)
         return 0;
     if (mm[0] != 'Z') {
-        hts_log_error("MM tag is not of type Z");
+        hts_log_error("%s: MM tag is not of type Z", bam_get_qname(b));
+        return -1;
+    }
+
+    uint8_t *mi = bam_aux_get(b, "MZ");
+    if (mi && bam_aux2i(mi) != b->core.l_qseq) {
+        // bam_aux2i with set errno = EINVAL and return 0 if the tag
+        // isn't integer, but 0 will be a seq-length mismatch anyway so
+        // triggers an error here too.
+        hts_log_error("%s: MM/MZ data length is incompatible with"
+                      " SEQ length", bam_get_qname(b));
         return -1;
     }
 
     uint8_t *ml = bam_aux_get(b, "ML");
     if (!ml) ml = bam_aux_get(b, "Ml");
     if (ml && (ml[0] != 'B' || ml[1] != 'C')) {
-        hts_log_error("ML tag is not of type B,C");
+        hts_log_error("%s: ML tag is not of type B,C", bam_get_qname(b));
         return -1;
     }
     uint8_t *ml_end = ml ? ml+6 + le_to_u32(ml+2) : NULL;
@@ -6314,7 +6324,8 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
 
                     delta = strtol(cp, &cp_end, 10);
                     if (cp_end == cp) {
-                        hts_log_error("Hit end of MM tag. Missing semicolon?");
+                        hts_log_error("%s: Hit end of MM tag. Missing "
+                                      "semicolon?", bam_get_qname(b));
                         return -1;
                     }
 
@@ -6343,8 +6354,8 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                 state->implicit [mod_num] = implicit;
 
                 if (delta < 0) {
-                    hts_log_error("MM tag refers to bases beyond sequence "
-                                  "length");
+                    hts_log_error("%s: MM tag refers to bases beyond sequence "
+                                  "length", bam_get_qname(b));
                     return -1;
                 }
                 state->MMcount  [mod_num] = delta;
@@ -6359,7 +6370,8 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                 }
 
                 if (++mod_num >= MAX_BASE_MOD) {
-                    hts_log_error("Too many base modification types");
+                    hts_log_error("%s: Too many base modification types",
+                                  bam_get_qname(b));
                     return -1;
                 }
                 ms++; n++;
@@ -6377,7 +6389,8 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                     }
                 }
                 if (ml > ml_end) {
-                    hts_log_error("Insufficient number of entries in ML tag");
+                    hts_log_error("%s: Insufficient number of entries in ML "
+                                  "tag", bam_get_qname(b));
                     return -1;
                 }
             } else {
@@ -6389,7 +6402,8 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
                         cp++;
             }
             if (!*cp) {
-                hts_log_error("Hit end of MM tag. Missing semicolon?");
+                hts_log_error("%s: Hit end of MM tag. Missing semicolon?",
+                              bam_get_qname(b));
                 return -1;
             }
         }
