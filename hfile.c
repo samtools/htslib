@@ -564,6 +564,16 @@ static ssize_t fd_write(hFILE *fpv, const void *buffer, size_t nbytes)
 static off_t fd_seek(hFILE *fpv, off_t offset, int whence)
 {
     hFILE_fd *fp = (hFILE_fd *) fpv;
+#ifdef _WIN32
+    // On windows lseek can return non-zero values even on a pipe.  Instead
+    // it's likely to seek somewhere within the pipe memory buffer.
+    // This breaks bgzf_check_EOF among other things.
+    if (GetFileType((HANDLE)_get_osfhandle(fp->fd)) == FILE_TYPE_PIPE) {
+        errno = ESPIPE;
+        return -1;
+    }
+#endif
+
     return lseek(fp->fd, offset, whence);
 }
 
