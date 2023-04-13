@@ -2902,21 +2902,55 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
  *** Iterator ***
  ****************/
 
+static inline int grow_itr_bins(hts_itr_t *itr, int num)
+{
+    if (itr->bins.m - itr->bins.n < num) {
+        size_t new_n = (size_t) itr->bins.n + num;
+        size_t new_m = (size_t) itr->bins.m + (itr->bins.m >> 1);
+        if (new_m < new_n)
+            new_m = new_n;
+        if (new_m > INT_MAX || new_m > SIZE_MAX / sizeof(int)) {
+            errno = ENOMEM;
+            return -1;
+        }
+        int *new_a = realloc(itr->bins.a, sizeof(int) * new_m);
+        if (!new_a)
+            return -1;
+        itr->bins.m = (int) new_m;
+        itr->bins.a = new_a;
+    }
+    return 0;
+}
+
 // Note: even with 32-bit hts_pos_t, end needs to be 64-bit here due to 1LL<<s.
 static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
     if (beg >= end) return 0;
+    if (beg < 0 ) {
+        // Deal with historic difference of opinion about which bin the
+        // range [-1, 0) should end up in.  HTSlib since 2016 says the
+        // smallest position 0 bin; before that it would crash when trying
+        // to make the index.  htsjdk and the SAM specification say
+        // they should go into the bin before this instead, which is the
+        // largest one on the previous level - and all other ranges
+        // starting -1 will go into bin 0 (the SAM spec. lists other
+        // possibilities, but they can't actually occur).  To ensure
+        // compatibility, we need to add this extra bin to the search list
+        // as a special case.
+        beg = 0;
+        if (end == 0) end = 1;
+        if (grow_itr_bins(itr, 1) < 0)
+            return -1;
+        itr->bins.a[itr->bins.n++] = hts_bin_first(n_lvls) - 1;
+    }
     if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
         hts_pos_t b, e;
         int n, i;
         b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
-        if (itr->bins.n + n > itr->bins.m) {
-            itr->bins.m = itr->bins.n + n;
-            kroundup32(itr->bins.m);
-            itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
-        }
+        if (grow_itr_bins(itr, n) < 0)
+            return -1;
         for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
     }
     return itr->bins.n;
@@ -3088,7 +3122,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
         } else if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
             iter->finished = 1;
         } else {
-            if (beg < 0) beg = 0;
+            if (beg < -1) beg = -1;
+            if (end >= 1LL << (idx->min_shift + 3 * idx->n_lvls))
+                end = (1LL << (idx->min_shift + 3 * idx->n_lvls)) - 1;
             if (end < beg) {
               free(iter);
               return NULL;
@@ -3105,7 +3141,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
 
             if ( !kh_size(bidx) ) { iter->finished = 1; return iter; }
 
-            rel_off = beg>>idx->min_shift;
+            rel_off = (beg>=0 ? beg : 0) >> idx->min_shift;
             // compute min_off
             bin = hts_bin_first(idx->n_lvls) + rel_off;
             do {
@@ -3118,6 +3154,15 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             } while (bin);
             if (bin == 0) k = kh_get(bin, bidx, bin);
             min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+
+            if (beg < 0 && min_off > 0) {
+                // Regions [-1, 0) may be in hts_bin_first(idx->n_lvls) - 1
+                // which could give a lower min_off
+                k = kh_get(bin, bidx, hts_bin_first(idx->n_lvls) - 1);
+                if (k != kh_end(bidx) && kh_val(bidx, k).loff < min_off)
+                    min_off = kh_val(bidx, k).loff;
+            }
+
             // min_off can be calculated more accurately if the
             // linear index is available
             if (idx->lidx[tid].offset
@@ -3140,8 +3185,6 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                         min_off = kh_val(bidx, k).loff;
                 }
             } else if (unmapped) { //CSI index
-                if (k != kh_end(bidx))
-                    min_off = kh_val(bidx, k).loff;
             }
 
             // compute max_off: a virtual offset from a bin to the right of end
@@ -3166,7 +3209,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // retrieve bins
-            reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
+            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls) < 0) {
+                hts_itr_destroy(iter);
+                return NULL;
+            }
 
             for (i = n_off = 0; i < iter->bins.n; ++i)
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
@@ -3629,6 +3675,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     const char *colon = NULL, *comma = NULL;
     int quoted = 0;
+    hts_pos_t first_base = flags & HTS_PARSE_REF_START_MINUS_1 ? -1 : 0;
 
     if (flags & HTS_PARSE_LIST)
         flags &= ~HTS_PARSE_THOUSANDS_SEP;
@@ -3674,7 +3721,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     // No colon is simplest case; just check and return.
     if (colon == NULL) {
-        *beg = 0; *end = HTS_POS_MAX;
+        *beg = first_base; *end = HTS_POS_MAX;
         kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -2;
@@ -3689,7 +3736,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     // Has a colon, but check whole name first.
     if (!quoted) {
-        *beg = 0; *end = HTS_POS_MAX;
+        *beg = first_base; *end = HTS_POS_MAX;
         kputsn(s, s_len, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -2;
@@ -3736,39 +3783,46 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
 
     // Finally parse the post-colon coordinates
     char *hyphen;
-    *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
-    if (*beg < 0) {
-        if (*beg != -1 && *hyphen == '-' && colon[1] != '\0') {
-            // User specified zero, but we're 1-based.
-            hts_log_error("Coordinates must be > 0");
-            return NULL;
-        }
-        if (isdigit_c(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
-            // interpret chr:-100 as chr:1-100
-            *end = *beg==-1 ? HTS_POS_MAX : -(*beg+1);
-            *beg = 0;
-            return s_end;
-        } else if (*beg < -1) {
-            hts_log_error("Unexpected string \"%s\" after region", hyphen);
-            return NULL;
+    const char *from_pos = colon + 1;
+    int have_start_pos = 0;
+    while (isspace_c(*from_pos)) from_pos++;
+    if (*from_pos == '-') {
+        // interpret chr:-100 as chr:1-100
+        *beg = first_base;
+        hyphen = (char *) from_pos;
+    } else {
+        *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
+        if (hyphen != colon+1) {
+            have_start_pos = 1;
+        } else {
+            *beg = first_base;
         }
     }
 
     if (*hyphen == '\0' || ((flags & HTS_PARSE_LIST) && *hyphen == ',')) {
         *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : HTS_POS_MAX;
-    } else if (*hyphen == '-') {
-        *end = hts_parse_decimal(hyphen+1, &hyphen, flags);
-        if (*hyphen != '\0' && *hyphen != ',') {
-            hts_log_error("Unexpected string \"%s\" after region", hyphen);
-            return NULL;
-        }
-    } else {
+        return s_end;
+    } else if (*hyphen != '-') {
         hts_log_error("Unexpected string \"%s\" after region", hyphen);
         return NULL;
     }
 
-    if (*end == 0)
-        *end = HTS_POS_MAX; // interpret chr:100- as chr:100-<end>
+    char *last;
+    *end = hts_parse_decimal(hyphen+1, &last, flags);
+    if (!have_start_pos &&
+        (*last == '-' || *end < 0 || (flags & HTS_PARSE_ONE_COORD))) {
+        // Attempt to use a negative position, e.g. chr:-100-101
+        // or chr:--100
+        hts_log_error("Coordinates must be > 0");
+        return NULL;
+    } else if (last == hyphen + 1) {
+        if (*last != '\0' && !((flags & HTS_PARSE_LIST) && *last == ',')) {
+            hts_log_error("Unexpected string \"%s\" after region", last);
+            return NULL;
+        } else {
+            *end = HTS_POS_MAX; // interpret chr:100- as chr:100-<end>
+        }
+    }
 
     if (*beg >= *end) return NULL;
 
@@ -3820,15 +3874,25 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
+    extern int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, hts_pos_t *beg, hts_pos_t *end);
     int tid;
     hts_pos_t beg, end;
+    int flags = HTS_PARSE_THOUSANDS_SEP;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") == 0)
         return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 
-    if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
+    if (readrec == bcf_readrec) {
+        flags |= HTS_PARSE_REF_START_MINUS_1;
+    } else if (readrec == tbx_readrec) {
+        tbx_t *tbx = (tbx_t *) hdr;
+        if ((tbx->conf.preset&0xffff) == TBX_VCF)
+            flags |= HTS_PARSE_REF_START_MINUS_1;
+    }
+
+    if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, flags))
         return NULL;
 
     return itr_query(idx, tid, beg, end, readrec);

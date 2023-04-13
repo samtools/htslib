@@ -1,4 +1,4 @@
-#    Copyright (C) 2017 Genome Research Ltd.
+#    Copyright (C) 2017,2023 Genome Research Ltd.
 #
 #    Author: Robert Davies <rmd@sanger.ac.uk>
 #
@@ -66,3 +66,34 @@ P gff_file.X.2934832.2935190.out $tabix gff_file.tbi.tmp.gff.gz X:2934832-293519
 
 # tabix with --separate-regions
 P bed_file.separate.out $tabix --separate-regions bed_file.tbi.tmp.bed.gz X:1100-1400 Y:100000-100550 Z:100000-100005
+
+# VCF with data at position 0 (indicates telomere)
+# telomere1.vcf.gz - vcf with csi index made by htslib
+# telomere2.vcf.gz - vcf with tbi index made by htslib
+# telomere_htsjdk.vcf.gz - vcf with tbi index made by htsjdk
+# telomere1.bcf - bcf with csi index made by htslib
+
+P telomere_all.expected.vcf $tabix telomere1.vcf.gz 1
+P telomere_all.expected.vcf $tabix telomere2.vcf.gz 1
+P telomere_all.expected.vcf $tabix telomere_htsjdk.vcf.gz 1
+P telomere_all.expected.vcf $tabix telomere1.bcf 1:0-
+P telomere_all.expected.vcf $tabix telomere1.vcf.gz 1:0-
+P telomere_all.expected.vcf $tabix telomere2.vcf.gz 1:0-
+P telomere_all.expected.vcf $tabix telomere_htsjdk.vcf.gz 1:0-
+P telomere_all.expected.vcf $tabix telomere1.bcf 1:0-
+P telomere_all.expected.vcf $tabix telomere1.vcf.gz 1:-1
+P telomere_all.expected.vcf $tabix telomere2.vcf.gz 1:-1
+P telomere_all.expected.vcf $tabix telomere_htsjdk.vcf.gz 1:-1
+P telomere_all.expected.vcf $tabix telomere1.bcf 1:-1
+P telomere_pos0.expected.vcf $tabix telomere1.vcf.gz 1:0-0
+P telomere_pos0.expected.vcf $tabix telomere2.vcf.gz 1:0-0
+P telomere_pos0.expected.vcf $tabix telomere_htsjdk.vcf.gz 1:0-0
+P telomere_pos0.expected.vcf $tabix telomere1.bcf 1:0-0
+P telomere_pos1.expected.vcf $tabix telomere1.vcf.gz 1:1-1
+P telomere_pos1.expected.vcf $tabix telomere2.vcf.gz 1:1-1
+P telomere_pos1.expected.vcf $tabix telomere_htsjdk.vcf.gz 1:1-1
+P telomere_pos1.expected.vcf $tabix telomere1.bcf 1:1-1
+P telomere_pos1.expected.vcf $tabix telomere1.vcf.gz 1:1-
+P telomere_pos1.expected.vcf $tabix telomere2.vcf.gz 1:1-
+P telomere_pos1.expected.vcf $tabix telomere_htsjdk.vcf.gz 1:1-
+P telomere_pos1.expected.vcf $tabix telomere1.bcf 1:1-

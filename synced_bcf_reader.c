@@ -371,7 +371,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             if ( !files->regions )
                 files->regions = _regions_init_string(names[i]);
             else
-                _regions_add(files->regions, names[i], -1, -1);
+                _regions_add(files->regions, names[i], CSI_COOR_EMPTY, CSI_COOR_EMPTY);
         }
         free(names);
         _regions_sort_and_merge(files->regions);
@@ -555,7 +555,7 @@ static int _readers_next_region(bcf_srs_t *files)
     int prev_iseq = files->regions->iseq;
     hts_pos_t prev_end = files->regions->end;
     if ( bcf_sr_regions_next(files->regions)<0 ) return -1;
-    files->regions->prev_end = prev_iseq==files->regions->iseq ? prev_end : -1;
+    files->regions->prev_end = prev_iseq==files->regions->iseq ? prev_end : CSI_COOR_EMPTY;
 
     for (i=0; i<files->nreaders; i++)
         _reader_seek(&files->readers[i],files->regions->seq_names[files->regions->iseq],files->regions->start,files->regions->end);
@@ -616,7 +616,7 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             {
                 reader->buffer[reader->mbuffer-i] = bcf_init1();
                 reader->buffer[reader->mbuffer-i]->max_unpack = files->max_unpack;
-                reader->buffer[reader->mbuffer-i]->pos = -1;    // for rare cases when VCF starts from 1
+                reader->buffer[reader->mbuffer-i]->pos = CSI_COOR_EMPTY;    // for rare cases when VCF starts from 1 or 0
             }
         }
         if ( files->streaming )
@@ -656,7 +656,6 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             if ( ret < 0 ) break; // no more lines or an error
             bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
         }
-
         // Prevent creation of duplicates from records overlapping multiple regions
         // and recognize true variant overlaps vs record overlaps (e.g. TA>T vs A>-)
         if ( files->regions )
@@ -676,7 +675,6 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
                 hts_log_error("This should never happen, just to keep clang compiler happy: %d",BCF_SR_AUX(files)->targets_overlap);
                 exit(1);
             }
-
             if ( beg <= files->regions->prev_end || end < files->regions->start || beg > files->regions->end ) continue;
         }
 
@@ -954,9 +952,9 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
 // inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and merge_regions().
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end)
 {
-    if ( start==-1 && end==-1 )
+    if ( start==CSI_COOR_EMPTY && end==CSI_COOR_EMPTY )
     {
-        start = 0; end = MAX_CSI_COOR-1;
+        start = -1; end = MAX_CSI_COOR-1;
     }
     else
     {
@@ -1029,8 +1027,9 @@ void _regions_sort_and_merge(bcf_sr_regions_t *reg)
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
     bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-    reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    reg->start = reg->end = CSI_COOR_EMPTY;
+    reg->prev_start = reg->prev_end = CSI_COOR_EMPTY;
+    reg->prev_seq = -1;
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
@@ -1043,11 +1042,20 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         if ( *ep==':' )
         {
             sp = ep+1;
-            from = hts_parse_decimal(sp,(char**)&ep,0);
-            if ( sp==ep )
+            while (isspace((uint8_t) *sp)) sp++;
+            if (*sp == '-')
             {
-                hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                ep = sp;
+                from = -1;
+            }
+            else
+            {
+                from = hts_parse_decimal(sp,(char**)&ep,0);
+                if ( sp==ep )
+                {
+                    hts_log_error("Could not parse the region(s): %s", str);
+                    free(reg); free(tmp.s); return NULL;
+                }
             }
             if ( !*ep || *ep==',' )
             {
@@ -1075,7 +1083,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         }
         else
         {
-            if ( tmp.l ) _regions_add(reg, tmp.s, -1, -1);
+            if ( tmp.l ) _regions_add(reg, tmp.s, CSI_COOR_EMPTY, CSI_COOR_EMPTY);
             if ( !*ep ) break;
             sp = ++ep;
         }
@@ -1157,8 +1165,9 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
     }
 
     reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-    reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    reg->start = reg->end = CSI_COOR_EMPTY;
+    reg->prev_start = reg->prev_end = CSI_COOR_EMPTY;
+    reg->prev_seq = -1;
 
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
@@ -1253,7 +1262,8 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *reg)
 
 int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
 {
-    reg->iseq = reg->start = reg->end = -1;
+    reg->iseq = -1;
+    reg->start = reg->end = CSI_COOR_EMPTY;
     if ( khash_str2int_get(reg->seq_hash, seq, &reg->iseq) < 0 ) return -1;  // sequence seq not in regions
 
     // using in-memory regions
@@ -1284,7 +1294,7 @@ static int advance_creg(region_t *reg)
 int bcf_sr_regions_next(bcf_sr_regions_t *reg)
 {
     if ( reg->iseq<0 ) return -1;
-    reg->start = reg->end = -1;
+    reg->start = reg->end = CSI_COOR_EMPTY;
     reg->nals = 0;
 
     // using in-memory regions
@@ -1442,7 +1452,7 @@ static int _bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_p
             bcf_sr_regions_flush(reg);
 
         bcf_sr_regions_seek(reg, seq);
-        reg->start = reg->end = -1;
+        reg->start = reg->end = CSI_COOR_EMPTY;
     }
     if ( reg->prev_seq==iseq && reg->iseq!=iseq ) return -2;    // no more regions on this chromosome
     reg->prev_seq = reg->iseq;

@@ -107,12 +107,12 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                 if ( s==line+b ) return -1; // expected int
                 if (!(conf->preset&TBX_UCSC)) --intv->beg;
                 else ++intv->end;
-                if (intv->beg < 0) {
+                if (intv->beg < -1) {
                     hts_log_warning("Coordinate <= 0 detected. "
                                     "Did you forget to use the -0 option?");
                     intv->beg = 0;
                 }
-                if (intv->end < 1) intv->end = 1;
+                if (intv->end < intv->beg ) intv->end = intv->beg;
             } else {
                 if ((conf->preset&0xffff) == TBX_GENERIC) {
                     if (id == conf->ec)
@@ -171,7 +171,7 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
             ++id;
         }
     }
-    if (intv->ss == 0 || intv->se == 0 || intv->beg < 0 || intv->end < 0) return -1;
+    if (intv->ss == 0 || intv->se == 0 || intv->beg < -1 || intv->end < -1) return -1;
     return 0;
 }
 
@@ -181,7 +181,7 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
         int c = *intv->se;
         *intv->se = '\0'; intv->tid = get_tid(tbx, intv->ss, is_add); *intv->se = c;
         if (intv->tid < 0) return -2;  // get_tid out of memory
-        return (intv->beg >= 0 && intv->end >= 0)? 0 : -1;
+        return (intv->beg >= -1 && intv->end >= -1)? 0 : -1;
     } else {
         char *type = NULL;
         switch (tbx->conf.preset&0xffff)
