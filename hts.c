@@ -4616,14 +4616,46 @@ static char *idx_filename(const char *fn, const char *ext, int download) {
     const char *local_fn = NULL;
     kstring_t buffer = KS_INITIALIZE;
 
-    // First try : append `ext` to `fn`
-    if (!(fnidx = haddextension(&buffer, fn, 0, ext))) {
+    // =====================
+    // check if the filename is an htsget url, if true, extract the actual file url
+    // from it
+    char actualFileUrl[1024] = "";
+    if (hisremote(fn)) {
+        hFILE *hfp = NULL;
+        hfp = hopen(fn, "r");
+        char buffer[1024];
+        if (hread(hfp, buffer, 1024) < 40) {
+            fprintf(stderr, "[E::%s] failed to read htsget url (%s), the obtained buffer = %s\n",
+                    __func__, fn, buffer);
+            return NULL;
+        }
+        char *begin = strstr(buffer, "\"url\":\"");
+
+        if (begin == NULL) {
+            if (hclose(hfp) < 0) {
+                return NULL;
+            }
+        } else {
+            char *end = strstr(buffer, "\",\"headers");
+            int length = end - begin;
+            strncpy(actualFileUrl, begin + 7, length - 7);
+        }
+    }
+    char newFileName[1024] = "";
+    if (strcmp(actualFileUrl, "") == 0) {
+        strcpy(newFileName, fn);
+    } else {
+        strcpy(newFileName, actualFileUrl);
+    }
+
+    // First try : append `ext` to `newFileName`
+    if (!(fnidx = haddextension(&buffer, newFileName, 0, ext))) {
         free(buffer.s);
         return NULL;
     }
     if ((ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, download)) == -1) {
-        // Second try : replace suffix of `fn` with `ext`
-        if (!(fnidx = haddextension(&buffer, fn, 1, ext))) {
+        // Second try : replace suffix of `newFileName` with `ext`
+        if (!(fnidx = haddextension(&buffer, newFileName, 1, ext))) {
             free(buffer.s);
             return NULL;
         }
