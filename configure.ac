@@ -70,6 +70,19 @@ dnl Flags to treat warnings as errors.  These need to be applied to CFLAGS
 dnl later as they can interfere with some of the tests (notably AC_SEARCH_LIBS)
 HTS_PROG_CC_WERROR(hts_late_cflags)
 
+# HTSlib uses X/Open-only facilities (M_SQRT2 etc, drand48() etc), and
+# various POSIX functions that are provided by various _POSIX_C_SOURCE values
+# or by _XOPEN_SOURCE >= 500. It also uses usleep(), which is removed when
+# _XOPEN_SOURCE >= 700. Additionally, some definitions may require
+# _XOPEN_SOURCE >= 600 on some platforms (snprintf on MinGW,
+# PTHREAD_MUTEX_RECURSIVE on some Linux distributions). Hence we set it to 600.
+
+# Define _XOPEN_SOURCE unless the user has already done so via $CPPFLAGS etc.
+AC_CHECK_DECL([_XOPEN_SOURCE], [],
+  [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
+  [])
+
+
 dnl Check for various compiler flags to enable SIMD features
 dnl Options for rANS32x16 sse4.1 version - ssse3
 hts_cflags_sse4=""
@@ -263,7 +276,9 @@ case $basic_host in
     # This also sets __USE_MINGW_ANSI_STDIO which in turn makes PRId64,
     # %lld and %z printf formats work.  It also enforces the snprintf to
     # be C99 compliant so it returns the correct values (in kstring.c).
-    CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE=600"
+
+    # Now set by default, so no need to do it here.
+    # CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE=600"
     ;;
   *)
     host_result="plain .so"
@@ -583,7 +598,8 @@ AC_SEARCH_LIBS(regcomp, regex, [libregex=needed], [])
 
 dnl Look for PTHREAD_MUTEX_RECURSIVE.
 dnl This is normally in pthread.h except on some broken glibc implementations.
-AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Needed for PTHREAD_MUTEX_RECURSIVE])], [[#include <pthread.h>]])
+dnl Now set by default
+dnl AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Needed for PTHREAD_MUTEX_RECURSIVE])], [[#include <pthread.h>]])
 
 if test "$s3" = enabled ; then
    AC_DEFINE([ENABLE_S3], 1, [Define if HTSlib should enable S3 support.])
