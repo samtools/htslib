@@ -129,6 +129,9 @@ various features and specify further optional external requirements:
     any enabled pluggable facilities (such as libcurl file access) are built
     directly within HTSlib.
 
+    Programs that are statically linked to a libhts.a with plugins enabled
+    need to be linked using -rdynamic or a similar linker option.
+
     The <https://github.com/samtools/htslib-plugins> repository contains
     several additional plugins, including the iRODS (<http://irods.org/>)
     file access plugin previously distributed with HTSlib.
