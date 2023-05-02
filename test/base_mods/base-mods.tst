@@ -45,6 +45,6 @@ P MM-pileup2.out $pileup_mod < MM-pileup2.sam
 
 # Validation testing.  We just care about exit status here, but the
 # test data is a copy of MM-pileup.sam so that suffices too.
-P MM-pileup.out $pileup_mod < MM-MZp.sam
-F MM-pileup.out $pileup_mod < MM-MZf1.sam
-F MM-pileup.out $pileup_mod < MM-MZf2.sam
+P MM-pileup.out $pileup_mod < MM-MNp.sam
+F MM-pileup.out $pileup_mod < MM-MNf1.sam
+F MM-pileup.out $pileup_mod < MM-MNf2.sam
