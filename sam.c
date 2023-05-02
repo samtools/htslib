@@ -6225,12 +6225,12 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
         return -1;
     }
 
-    uint8_t *mi = bam_aux_get(b, "MZ");
+    uint8_t *mi = bam_aux_get(b, "MN");
     if (mi && bam_aux2i(mi) != b->core.l_qseq) {
         // bam_aux2i with set errno = EINVAL and return 0 if the tag
         // isn't integer, but 0 will be a seq-length mismatch anyway so
         // triggers an error here too.
-        hts_log_error("%s: MM/MZ data length is incompatible with"
+        hts_log_error("%s: MM/MN data length is incompatible with"
                       " SEQ length", bam_get_qname(b));
         return -1;
     }
