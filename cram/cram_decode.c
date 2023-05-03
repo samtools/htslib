@@ -2059,6 +2059,13 @@ static int cram_decode_aux(cram_fd *fd,
                     *has_NM = 1;
             }
         }
+
+        // We could go to 2^32 fine, but we shouldn't be hitting this anyway,
+        // and it's protecting against memory hogs too.
+        if (BLOCK_SIZE(s->aux_blk) > (1u<<31)) {
+            hts_log_error("CRAM->BAM aux block size overflow");
+            goto block_err;
+        }
     }
 
     return r;
