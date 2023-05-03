@@ -500,8 +500,8 @@ typedef struct cram_record {
 
     // Auxiliary data
     int32_t ntags;        // TC
-    int32_t aux;          // idx to s->aux_blk
-    int32_t aux_size;     // total size of packed ntags in aux_blk
+    uint32_t aux;         // idx to s->aux_blk
+    uint32_t aux_size;    // total size of packed ntags in aux_blk
 #ifndef TN_external
     int32_t TN_idx;       // TN; idx to s->TN;
 #else
@@ -509,15 +509,15 @@ typedef struct cram_record {
 #endif
     int     TL;
 
-    int32_t seq;          // idx to s->seqs_blk
-    int32_t qual;         // idx to s->qual_blk
-    int32_t cigar;        // idx to s->cigar
+    uint32_t seq;         // idx to s->seqs_blk
+    uint32_t qual;        // idx to s->qual_blk
+    uint32_t cigar;       // idx to s->cigar
     int32_t ncigar;
     int64_t aend;         // alignment end
     int32_t mqual;        // MQ
 
-    int32_t feature;      // idx to s->feature
-    int32_t nfeature;     // number of features
+    uint32_t feature;     // idx to s->feature
+    uint32_t nfeature;    // number of features
     int32_t mate_flags;   // MF
 } cram_record;
 
@@ -623,8 +623,8 @@ struct cram_slice {
     uint32_t   ncigar;
 
     cram_feature *features;
-    int           nfeatures;
-    int           afeatures; // allocated size of features
+    uint32_t      nfeatures;
+    uint32_t      afeatures; // allocated size of features
 
 #ifndef TN_external
     // TN field (Tag Name)
