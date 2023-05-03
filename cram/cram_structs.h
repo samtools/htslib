@@ -473,6 +473,7 @@ struct cram_container {
     uint32_t crc32;       // CRC32
 
     uint64_t s_num_bases; // number of bases in this slice
+    uint64_t s_aux_bytes; // number of bytes of aux in BAM
 
     uint32_t n_mapped;    // Number of mapped reads
     int ref_free;         // whether 'ref' is owned by us and must be freed.
