@@ -3910,7 +3910,8 @@ int cram_codec_to_id(cram_codec *c, int *id2) {
     switch (c->codec) {
     case E_CONST_INT:
     case E_CONST_BYTE:
-       bnum1 = -2; // no blocks used
+        bnum1 = -2; // no blocks used
+        break;
 
     case E_HUFFMAN:
         bnum1 = c->u.huffman.ncodes == 1 ? -2 : -1;
