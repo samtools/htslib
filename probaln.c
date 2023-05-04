@@ -245,10 +245,24 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
     { // f[l_query+1]
         double sum;
         double M = 1./s[l_query];
+        // Note this goes up to <= l_ref, meaning we are accessing 1 beyond
+        // the end of the sequence.  However we allocated above with
+        // (l_query+1)*i_dim (plus appropriate l_ref vs l_query in band width)
+        // so this should be sufficient.
+        //
+        // This fixes Issue #1605 where band width equal to sequence length
+        // gives incorrect alignments, due to the last value not being filled
+        // out correctly.
+        //
+        // I am unsure why the limit was previously set at u >= i_dim - 3, but
+        // can only conjecture it was due to forgetting the l_query+1 alloc.
+        // I am also unsure why "u < 3" is used instead of "u < 0", however
+        // changing that does change behaviour for common usage (unlike
+        // "idim - 3" to "idim").
         for (k = 1, sum = 0.; k <= l_ref; ++k) {
             int u;
             set_u(u, bw, l_query, k);
-            if (u < 3 || u >= i_dim - 3) continue;
+            if (u < 3 || u >= i_dim) continue;
             sum += M*f[l_query*i_dim + u+0] * sM + M*f[l_query*i_dim + u+1] * sI;
         }
         s[l_query+1] = sum; // the last scaling factor
@@ -272,7 +286,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
         int u;
         double *bi = &b[l_query*i_dim];
         set_u(u, bw, l_query, k);
-        if (u < 3 || u >= i_dim - 3) continue;
+        if (u < 3 || u >= i_dim) continue;
         bi[u+0] = sM / s[l_query] / s[l_query+1]; bi[u+1] = sI / s[l_query] / s[l_query+1];
     }
     // b[l_query-1..1]
@@ -350,7 +364,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
             int u;
             double e = (ref[k - 1] > 3 || query[0] > 3)? 1. : ref[k - 1] == query[0]? 1. - qual[0] : qual[0] * EM;
             set_u(u, bw, 1, k);
-            if (u < 3 || u >= i_dim - 3) continue;
+            if (u < 3 || u >= i_dim) continue;
             sum += e * b[1*i_dim + u+0] * bM + EI * b[1*i_dim + u+1] * bI;
         }
         set_u(k, bw, 0, 0);
