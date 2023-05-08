@@ -485,7 +485,7 @@ int sam_hdr_add_lines(sam_hdr_t *h, const char *lines, size_t len);
 /// Adds a single line to an existing header.
 /*!
  * Specify type and one or more key,value pairs, ending with the NULL key.
- * Eg. sam_hdr_add_line(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ * Eg. sam_hdr_add_line(h, "SQ", "SN", "foo", "LN", "100", NULL).
  *
  * @param type  Type of the added line. Eg. "SQ"
  * @return      0 on success, -1 on failure
