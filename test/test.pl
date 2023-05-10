@@ -1099,6 +1099,9 @@ sub test_realn {
 
     # Revert quality values (using data in ZQ tags)
     test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn02.fa -i $$opts{path}/realn02_exp-a.sam -o -", out => "realn02_exp.sam");
+
+    # Make sure multiple matches are treated the same way as a single match of the same length.
+    test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn03.fa -e -i $$opts{path}/realn03.sam -o -", out => "realn03_exp.sam");
 }
 
 sub test_bcf_set_variant_type

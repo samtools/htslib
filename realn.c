@@ -273,10 +273,10 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
 
-                // concatinate alignment matches (including sequence (mis)matches)
+                // concatenate alignment matches (including sequence (mis)matches)
                 // otherwise 50M50M gives a different result to 100M
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
-                    if (((k + 1) < c->n_cigar)) {
+                    if ((k + 1) < c->n_cigar) {
                         int next_op = bam_cigar_op(cigar[k + 1]);
 
                         if (next_op == BAM_CMATCH || next_op == BAM_CEQUAL || next_op == BAM_CDIFF) {
