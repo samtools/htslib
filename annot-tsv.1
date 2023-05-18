@@ -1,0 +1,189 @@
+'\" t
+.\"     Title: annot-tsv
+.\"    Author: [see the "AUTHORS" section]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 05/18/2023
+.\"    Manual: \ \&
+.\"    Source: \ \&
+.\"  Language: English
+.\"
+.TH "ANNOT\-TSV" "1" "05/18/2023" "\ \&" "\ \&"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+annot-tsv \- transfer annotations from one TSV (tab\-separated values) file into another
+.SH "SYNOPSIS"
+.sp
+\fBannot\-tsv\fR [\fIOPTIONS\fR]
+.SH "DESCRIPTION"
+.sp
+The program finds overlaps in two sets of genomic regions (for example two CNV call sets) and annotates regions of the target file (\fI\-t, \-\-target\-file\fR) with information from overlapping regions of the source file (\fI\-s, \-\-source\-file\fR)\&.
+.sp
+It can transfer one or multiple columns (\fI\-f, \-\-transfer\fR) and the transfer can be conditioned on requiring matching values in one or more columns (\fI\-m, \-\-match\fR)\&. In addition to column transfer (\fI\-f\fR) and special annotations (\fI\-a, \-\-annotate\fR), the program can operate in a simple grep\-like mode and print matching lines (when neither \fI\-f\fR nor \fI\-a\fR are given) or drop matching lines (\fI\-x, \-\-drop\-overlaps\fR)\&.
+.sp
+All indexes and coordinates are 1\-based and inclusive\&.
+.SH "OPTIONS"
+.SS "Common Options"
+.PP
+\fB\-c, \-\-core\fR \fISRC:TGT\fR
+.RS 4
+List of names of the core columns (chromosome, start and end coordinate) in the source and the target file (for example "chr,beg,end:CHROM,START,END")\&. If both files use the same format, the TGT names can be omitted (for example "chr,beg,end")\&. If SRC or TGT file has no header, 1\-based indexes can be given instead (for example "chr,beg,end:1,2,3")\&. Note that regions are not required, the program can work with a list of positions (for example "chr,beg,end:CHROM,POS,POS")\&.
+.RE
+.PP
+\fB\-f, \-\-transfer\fR \fISRC:TGT\fR
+.RS 4
+Comma\-separated list of columns to transfer\&. If the SRC column does not exist, interpret it as the default value to fill in when a match is found or a dot ("\&.") when a match is not found\&. If the TGT column does not exist, a new column is created\&. If the TGT column already exists, its values will be overwritten when overlap is found and left as is otherwise\&.
+.RE
+.PP
+\fB\-m, \-\-match\fR \fISRC:TGT\fR
+.RS 4
+The columns required to be identical
+.RE
+.PP
+\fB\-o, \-\-output\fR \fIFILE\fR
+.RS 4
+Output file name, by default the result is printed on standard output
+.RE
+.PP
+\fB\-s, \-\-source\-file\fR \fIFILE\fR
+.RS 4
+Source file with annotations to transfer
+.RE
+.PP
+\fB\-t, \-\-target\-file\fR \fIFILE\fR
+.RS 4
+Target file to be extend with annotations from
+\fB\-s, \-\-source\-file\fR
+.RE
+.SS "Other options"
+.PP
+\fB\-\-allow\-dups\fR
+.RS 4
+Add the same annotations multiple times if multiple overlaps are found
+.RE
+.PP
+\fB\-\-max\-annots\fR \fIINT\fR
+.RS 4
+Add at most INT annotations per column to save time when many overlaps are found with a single region
+.RE
+.PP
+\fB\-\-version\fR
+.RS 4
+Print version string and exit
+.RE
+.PP
+\fB\-a, \-\-annotate\fR \fILIST\fR
+.RS 4
+Add one or more special annotation
+.PP
+\fIcnt\fR
+.RS 4
+number of overlapping regions
+.RE
+.PP
+\fIfrac\fR
+.RS 4
+fraction of the target region with an overlap
+.RE
+.PP
+\fInbp\fR
+.RS 4
+number of source base pairs in the overlap
+.RE
+.RE
+.PP
+\fB\-H, \-\-ignore\-headers\fR
+.RS 4
+Ignore the headers completely and use numeric indexes even when a header exists
+.RE
+.PP
+\fB\-O, \-\-overlap\fR \fIFLOAT\fR
+.RS 4
+Minimum required overlap (non\-reciprocal, unless also
+\fB\-r, \-\-reciprocal\fR
+is given)
+.RE
+.PP
+\fB\-r, \-\-reciprocal\fR
+.RS 4
+Require reciprocal overlap with
+\fB\-O, \-\-overlap\fR
+.RE
+.PP
+\fB\-x, \-\-drop\-overlaps\fR
+.RS 4
+Drop overlapping regions (cannot be combined with
+\fB\-f, \-\-transfer\fR)
+.RE
+.SH "EXAMPLE"
+.sp
+Both SRC and TGT input files must be tab\-delimited files with or without a header, their columns can be named differently, can appear in arbitrary order\&. For example consider the source file
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+#chr   beg   end   sample   type   qual
+chr1   100   110   Ted      DEL    39
+chr1   333   335   Lasso    DUP    59
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+and the target file
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+300   400   chr1   Lasso
+100   200   chr1   Ted
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+The following examples demonstrate the usage
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+# Transfer type and quality\&. The header is present in SRC but not in TGT, therefore use
+# column indexes for the latter\&.
+annot\-tsv \-s src\&.txt\&.gz \-t tgt\&.txt\&.gz \-c chr,beg,end:3,1,2 \-m sample:4 \-f type,qual \-o output\&.txt
+
+# One of the SRC or TGT file can be streamed from stdin
+cat src\&.txt | annot\-tsv \-t tgt\&.txt \-c chr,beg,end:3,2,1 \-m sample:4 \-f type,qual \-o output\&.txt
+cat tgt\&.txt | annot\-tsv \-s src\&.txt \-c chr,beg,end:3,2,1 \-m sample:4 \-f type,qual \-o output\&.txt
+
+# Print matching regions as above but without modifying the records
+cat src\&.txt | annot\-tsv \-t tgt\&.txt \-c chr,beg,end:3,2,1 \-m sample:4 > matching\&.txt
+.fi
+.if n \{\
+.RE
+.\}
+.SH "AUTHORS"
+.sp
+The program was written by Petr Danecek and was originally published on github as annot\-regs
+.SH "COPYING"
+.sp
+The MIT/Expat License or GPL License, see the LICENSE document for details\&. Copyright (c) Genome Research Ltd\&.

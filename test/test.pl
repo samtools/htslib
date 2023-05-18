@@ -34,35 +34,63 @@ use IO::Handle;
 my $opts = parse_params();
 srand($$opts{seed});
 
-test_bgzip($opts, 0);
-test_bgzip($opts, 4);
+run_test(\&test_bgzip,$opts, 0);
+run_test(\&test_bgzip,$opts, 4);
 
-ce_fa_to_md5_cache($opts);
-test_index($opts, 0);
-test_index($opts, 4);
+run_test(\&ce_fa_to_md5_cache,$opts);
+run_test(\&test_index,$opts, 0);
+run_test(\&test_index,$opts, 4);
 
-test_multi_ref($opts,0);
-test_multi_ref($opts,4);
+run_test(\&test_multi_ref,$opts,0);
+run_test(\&test_multi_ref,$opts,4);
 
-test_view($opts,0);
-test_view($opts,4);
+run_test(\&test_view,$opts,0);
+run_test(\&test_view,$opts,4);
 
-test_MD($opts);
+run_test(\&test_MD,$opts);
 
-test_vcf_api($opts,out=>'test-vcf-api.out');
-test_bcf2vcf($opts);
-test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
-test_vcf_various($opts);
-test_bcf_sr_sort($opts);
-test_bcf_sr_no_index($opts);
-test_bcf_sr_range($opts);
-test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
-test_convert_padded_header($opts);
-test_rebgzip($opts);
-test_logging($opts);
-test_plugin_loading($opts);
-test_realn($opts);
-test_bcf_set_variant_type($opts);
+run_test(\&test_vcf_api,$opts,out=>'test-vcf-api.out');
+run_test(\&test_bcf2vcf,$opts);
+run_test(\&test_vcf_sweep,$opts,out=>'test-vcf-sweep.out');
+run_test(\&test_vcf_various,$opts);
+run_test(\&test_bcf_sr_sort,$opts);
+run_test(\&test_bcf_sr_no_index,$opts);
+run_test(\&test_bcf_sr_range, $opts);
+run_test(\&test_command,$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
+run_test(\&test_convert_padded_header,$opts);
+run_test(\&test_rebgzip,$opts);
+run_test(\&test_logging,$opts);
+run_test(\&test_plugin_loading,$opts);
+run_test(\&test_realn,$opts);
+run_test(\&test_bcf_set_variant_type,$opts);
+
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.1.txt',args=>'-f smpl:overlap --allow-dups');
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap');
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap -c chr,beg,end');
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.3.txt',args=>'-f smpl,value:overlap,value');
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.4.txt',args=>'-f smpl:overlap -O 0.5');
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.5.txt',args=>'-f smpl:overlap -rO 0.5');
+run_test(\&test_annot_tsv,$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.6.txt',args=>'-f smpl:overlap --allow-dups --max-annots 2');
+run_test(\&test_annot_tsv,$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups');
+run_test(\&test_annot_tsv,$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.2.txt',args=>'-c 1,2,3:1,2,3 -f 4:5');
+run_test(\&test_annot_tsv,$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.3.txt',args=>'-c 1,2,3:1,2,3 -f 4,value:5,value');
+run_test(\&test_annot_tsv,$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.4.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5');
+run_test(\&test_annot_tsv,$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.5.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5 -a nbp,frac');
+run_test(\&test_annot_tsv,$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.6.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups --max-annots 2');
+run_test(\&test_annot_tsv,$opts,src=>'src.3.txt',dst=>'dst.3.txt',out=>'out.3.1.txt',args=>'-f smpl:overlap -a nbp,frac');
+run_test(\&test_annot_tsv,$opts,src=>'src.4.txt',dst=>'dst.4.txt',out=>'out.4.1.txt',args=>'-c 2,3,4:2,3,4 -m 1:1 -f 1:1 -a nbp,frac');
+run_test(\&test_annot_tsv,$opts,src=>'src.5.txt',dst=>'dst.5.txt',out=>'out.5.1.txt',args=>'-c 2,3,4:2,3,4 -a nbp,frac');
+run_test(\&test_annot_tsv,$opts,src=>'src.6.txt',dst=>'dst.6.txt',out=>'out.6.1.txt',args=>'-c 1,2,2:1,2,2 -a nbp');
+run_test(\&test_annot_tsv,$opts,src=>'src.7.txt',dst=>'dst.7.txt',out=>'out.7.1.txt',args=>'-c 1,2,2:1,2,2 -f overlap -H');
+run_test(\&test_annot_tsv,$opts,src=>'src.8.txt',dst=>'dst.8.txt',out=>'out.8.1.txt',args=>'-c chr,beg,end:chr,start,end -m sample -f is_tp');
+run_test(\&test_annot_tsv,$opts,src=>'src.9.txt',dst=>'dst.9.txt',out=>'out.9.1.txt',args=>'-c 1,2,3:chr,beg,end -a nbp,frac,cnt');
+run_test(\&test_annot_tsv,$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.1.txt',args=>'-f smpl');
+run_test(\&test_annot_tsv,$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.2.txt',args=>'');
+run_test(\&test_annot_tsv,$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.3.txt',args=>'-x');
+run_test(\&test_annot_tsv,$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.4.txt',args=>'-m smpl -f smpl');
+run_test(\&test_annot_tsv,$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.5.txt',args=>'-m smpl ');
+run_test(\&test_annot_tsv,$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
+
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -82,10 +110,11 @@ sub error
         "About: samtools/htslib consistency test script\n",
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
+        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
+        "   -F, --function LIST             Run only the listed tests (e.g. 'annot_tsv')\n",
         "   -r, --redo-outputs              Recreate expected output files.\n",
         "   -s, --random-seed <int>         Initialise rand() with a different seed.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
-        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
     exit 1;
@@ -117,6 +146,7 @@ sub parse_params
             'r|redo-outputs' => \$$opts{redo_outputs},
             's|random-seed=i' => \$$opts{seed},
             'f|fail-fast' => \$$opts{fail_fast},
+            'F|function:s' => \$$opts{function},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -131,6 +161,32 @@ sub parse_params
     }
 
     return $opts;
+}
+sub run_test
+{
+    my ($func,$opts,@args) = @_;
+    if ( $$opts{function} )
+    {
+        if ( !exists($$opts{run_function}) )
+        {
+            $$opts{run_function} = { map {$_=>1} split(/,/,$$opts{function}) };
+            use B qw(svref_2object);
+        }
+        my $name = svref_2object($func)->GV->NAME;
+        my %args = @args;
+        my $run  = 0;
+        if ( exists($$opts{run_function}{$name}) ) { $run = 1; }
+        if ( !$run )
+        {
+            for my $func (keys %{$$opts{run_function}})
+            {
+                if ( exists($args{cmd}) && $args{cmd}=~/$func/ ) { $run = 1; last; }
+                if ( $name=~/$func/ ) { $run = 1; last; }
+            }
+        }
+        if ( !$run ) { return; }
+    }
+    &$func($opts,@args);
 }
 sub _cmd
 {
@@ -1272,3 +1328,16 @@ sub test_bcf_set_variant_type
         failed($opts,$test);
     } else { passed($opts,$test); }
 }
+
+sub test_annot_tsv
+{
+    my ($opts,%args) = @_;
+    my $exe = "$$opts{bin}/annot-tsv";
+    my $dat = "$$opts{path}/annot-tsv";
+    my $args = exists($args{args}) ? $args{args} : '';
+    $args{out} = "annot-tsv/$args{out}";
+    test_cmd($opts,%args,cmd=>"$exe $args -s $dat/$args{src} -t $dat/$args{dst}");
+    test_cmd($opts,%args,cmd=>"cat $dat/$args{dst} | $exe $args -s $dat/$args{src}");
+    test_cmd($opts,%args,cmd=>"cat $dat/$args{src} | $exe $args -t $dat/$args{dst}");
+}
+

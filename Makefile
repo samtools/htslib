@@ -70,7 +70,8 @@ plugindir =
 BUILT_PROGRAMS = \
 	bgzip \
 	htsfile \
-	tabix
+	tabix \
+    annot-tsv
 
 BUILT_TEST_PROGRAMS = \
 	test/hts_endian \
@@ -518,9 +519,13 @@ htsfile: htsfile.o libhts.a
 tabix: tabix.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS) -lpthread
 
+annot-tsv: annot-tsv.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ annot-tsv.o libhts.a $(LIBS) -lpthread
+
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hfile_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
+annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h)
 
 # Runes to check that the htscodecs submodule is present
 ifdef HTSCODECS_SOURCES
