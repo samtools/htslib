@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2021 Genome Research Ltd.
+    Copyright (C) 2012-2023 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -76,6 +76,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
 static void _regions_sort_and_merge(bcf_sr_regions_t *reg);
 static int _bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end, int missed_reg_handler);
+static void bcf_sr_seek_start(bcf_srs_t *readers);
 
 char *bcf_sr_strerror(int errnum)
 {
@@ -187,8 +188,10 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 {
     if ( readers->nreaders || readers->regions )
     {
-        hts_log_error("Must call bcf_sr_set_regions() before bcf_sr_add_reader()");
-        return -1;
+        if ( readers->regions ) bcf_sr_regions_destroy(readers->regions);
+        readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
+        bcf_sr_seek_start(readers);
+        return 0;
     }
 
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
@@ -676,7 +679,6 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
                 hts_log_error("This should never happen, just to keep clang compiler happy: %d",BCF_SR_AUX(files)->targets_overlap);
                 exit(1);
             }
-
             if ( beg <= files->regions->prev_end || end < files->regions->start || beg > files->regions->end ) continue;
         }
 
@@ -843,7 +845,11 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
     for (i=0; i<reg->nseqs; i++)
         reg->regs[i].creg = -1;
     reg->iseq = 0;
+    reg->start = -1;
+    reg->end   = -1;
     reg->prev_seq = -1;
+    reg->prev_start = -1;
+    reg->prev_end   = -1;
 }
 
 
