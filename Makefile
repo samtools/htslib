@@ -732,17 +732,17 @@ htscodecs/tests/tokenise_name3: htscodecs/tests/tokenise_name3_test.o $(HTSCODEC
 htscodecs/tests/varint: htscodecs/tests/varint_test.o $(HTSCODECS_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
 
-htscodecs/tests/arith_dynamic_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/arith_dynamic_test.o: CPPFLAGS += -Ihtscodecs
 htscodecs/tests/arith_dynamic_test.o: htscodecs/tests/arith_dynamic_test.c $(htscodecs_arith_dynamic_h)
-htscodecs/tests/fqzcomp_qual_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/fqzcomp_qual_test.o: CPPFLAGS += -Ihtscodecs
 htscodecs/tests/fqzcomp_qual_test.o: htscodecs/tests/fqzcomp_qual_test.c $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h)
-htscodecs/tests/rANS_static4x16pr_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/rANS_static4x16pr_test.o: CPPFLAGS += -Ihtscodecs
 htscodecs/tests/rANS_static4x16pr_test.o: htscodecs/tests/rANS_static4x16pr_test.c $(htscodecs_rANS_static4x16_h)
-htscodecs/tests/rANS_static_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/rANS_static_test.o: CPPFLAGS += -Ihtscodecs
 htscodecs/tests/rANS_static_test.o: htscodecs/tests/rANS_static_test.c $(htscodecs_rANS_static_h)
-htscodecs/tests/tokenise_name3_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/tokenise_name3_test.o: CPPFLAGS += -Ihtscodecs
 htscodecs/tests/tokenise_name3_test.o: htscodecs/tests/tokenise_name3_test.c $(htscodecs_tokenise_name3_h)
-htscodecs/tests/varint_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/varint_test.o: CPPFLAGS += -Ihtscodecs
 htscodecs/tests/varint_test.o: htscodecs/tests/varint_test.c $(htscodecs_varint_h)
 
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
