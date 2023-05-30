@@ -173,11 +173,11 @@ sub run_test
             use B qw(svref_2object);
         }
         my $name = svref_2object($func)->GV->NAME;
-        my %args = @args;
         my $run  = 0;
         if ( exists($$opts{run_function}{$name}) ) { $run = 1; }
-        if ( !$run )
+        if ( !$run && !(scalar @args % 2) )     # check that a hash was passed
         {
+            my %args = @args;
             for my $func (keys %{$$opts{run_function}})
             {
                 if ( exists($args{cmd}) && $args{cmd}=~/$func/ ) { $run = 1; last; }
@@ -274,6 +274,15 @@ sub test_cmd
         }
         else
         {
+            if ( exists($args{exp}) && !-e "$$opts{path}/$args{out}" )
+            {
+                open(my $fh,'>',"$$opts{path}/$args{out}") or error("$$opts{path}/$args{out}");
+                print $fh $exp;
+                close($fh);
+            }
+            my @diff = `diff $$opts{path}/$args{out} $$opts{path}/$args{out}.new`;
+            for (my $i=0; $i<@diff; $i++) { $diff[$i] = "\t\t\t".$diff[$i]; }
+            chomp($diff[-1]);
             failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
         }
         return;
