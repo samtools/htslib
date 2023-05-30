@@ -135,6 +135,8 @@ static inline int cmp_regs(reg_t *a, reg_t *b)
     if ( a->beg > b->beg ) return 1;
     if ( a->end < b->end ) return 1;    // longer intervals come first
     if ( a->end > b->end ) return -1;
+    if ( a < b ) return -1; // this is are just for qsort reproducibility across platforms
+    if ( a > b ) return 1;
     return 0;
 }
 static int cmp_reg_ptrs(const void *a, const void *b)
