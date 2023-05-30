@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018-2020 Genome Research Ltd.
+Copyright (c) 2018-2020, 2023 Genome Research Ltd.
 Authors: James Bonfield <jkb@sanger.ac.uk>, Valeriu Ohan <vo2@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -687,7 +687,7 @@ static void sam_hrecs_free_tags(sam_hrecs_t *hrecs, sam_hrec_tag_t *tag) {
     pool_free(hrecs->tag_pool, tag);
 }
 
-static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_hrec_type_t *type_found) {
+static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_hrec_type_t *type_found, int remove_hash) {
     if (!hrecs || !type_name || !type_found)
         return -1;
 
@@ -715,7 +715,7 @@ static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_
         }
     }
 
-    if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
+    if (remove_hash && (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2)))
         sam_hrecs_remove_hash_entry(hrecs, itype, type_found);
 
     sam_hrecs_free_tags(hrecs, type_found->tag);
@@ -1429,7 +1429,7 @@ int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, 
     if (!type_found)
         return 0;
 
-    int ret = sam_hrecs_remove_line(hrecs, type, type_found);
+    int ret = sam_hrecs_remove_line(hrecs, type, type_found, 1);
     if (ret == 0) {
         if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
             return -1;
@@ -1469,7 +1469,7 @@ int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
     if (!type_found)
         return -1;
 
-    int ret = sam_hrecs_remove_line(hrecs, type, type_found);
+    int ret = sam_hrecs_remove_line(hrecs, type, type_found, 1);
     if (ret == 0) {
         if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
             return -1;
@@ -1609,6 +1609,37 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
     return ret;
 }
 
+static int rebuild_hash(sam_hrecs_t *hrecs, const char *type) {
+    sam_hrec_type_t *head, *step;
+    khiter_t k;
+
+    if (strncmp(type, "SQ", 2) == 0) {
+        hrecs->nref = 0;
+        kh_clear(m_s2i, hrecs->ref_hash);
+    } else if (strncmp(type, "RG", 2) == 0) {
+        hrecs->nrg = 0;
+        kh_clear(m_s2i, hrecs->rg_hash);
+    }
+
+    k = kh_get(sam_hrecs_t, hrecs->h, TYPEKEY(type));
+
+    if (k != kh_end(hrecs->h)) { // something to rebuild
+        head = kh_val(hrecs->h, k);
+        step = head;
+
+        do {
+            if (sam_hrecs_update_hashes(hrecs, TYPEKEY(type), step) == -1) {
+                hts_log_error("Unable to rebuild hashes");
+                return -1;
+            }
+
+            step = step->next;
+        } while (step != head);
+    }
+
+    return 0;
+}
+
 int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     sam_hrecs_t *hrecs;
     if (!bh || !type)
@@ -1643,11 +1674,21 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
     while (step != type_found) {
         sam_hrec_type_t *to_remove = step;
         step = step->next;
-        ret &= sam_hrecs_remove_line(hrecs, type, to_remove);
+        ret &= sam_hrecs_remove_line(hrecs, type, to_remove, 0);
     }
 
     if (remove_all)
-        ret &= sam_hrecs_remove_line(hrecs, type, type_found);
+        ret &= sam_hrecs_remove_line(hrecs, type, type_found, 0);
+
+    /* if RG or SQ, delete then rebuild the hashes (as it is faster
+       to rebuild than delete one by one).
+    */
+
+    if ((strncmp(type, "SQ", 2) == 0) || (strncmp(type, "RG", 2) == 0)) {
+        if (rebuild_hash(hrecs, type)) {
+            return -1;
+        }
+    }
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
@@ -1691,7 +1732,7 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
            if (k == kh_end(rh)) { // value is not in the hash table, so remove
                sam_hrec_type_t *to_remove = step;
                step = step->next;
-               ret |= sam_hrecs_remove_line(hrecs, type, to_remove);
+               ret |= sam_hrecs_remove_line(hrecs, type, to_remove, 0);
            } else {
                step = step->next;
            }
@@ -1707,8 +1748,18 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
        if (k == kh_end(rh)) { // value is not in the hash table, so remove
            sam_hrec_type_t *to_remove = head;
            head = head->next;
-           ret |= sam_hrecs_remove_line(hrecs, type, to_remove);
+           ret |= sam_hrecs_remove_line(hrecs, type, to_remove, 0);
        }
+    }
+
+    /* if RG or SQ, delete then rebuild the hashes (as it is faster
+       to rebuild than delete one by one).
+    */
+
+    if ((strncmp(type, "SQ", 2) == 0) || (strncmp(type, "RG", 2) == 0)) {
+        if (rebuild_hash(hrecs, type)) {
+            return -1;
+        }
     }
 
     if (!ret && hrecs->dirty)
