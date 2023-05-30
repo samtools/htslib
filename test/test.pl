@@ -212,6 +212,37 @@ sub _cmd
     }
     return ($? >> 8, join('',@out));
 }
+sub _cmd3
+{
+    my ($cmd) = @_;
+
+    my $tmp = "$$opts{tmp}/tmp";
+    my $pid = fork();
+    if ( !$pid )
+    {
+        exec('bash', '-o','pipefail','-c', "($cmd) 2>$tmp.e >$tmp.o");
+    }
+    waitpid($pid,0);
+
+    my $status  = $? >> 8;
+    my $signal  = $? & 127;
+
+    my (@out,@err);
+    if ( open(my $fh,'<',"$tmp.o") )
+    {
+        @out = <$fh>;
+        close($fh) or error("Failed to close $tmp.o");
+    }
+    if ( open(my $fh,'<',"$tmp.e") )
+    {
+        @err = <$fh>;
+        close($fh) or error("Failed to close $tmp.e");
+    }
+    unlink("$tmp.o");
+    unlink("$tmp.e");
+
+    return ($status,join('',@out),join('',@err));
+}
 sub cmd
 {
     my ($cmd) = @_;
@@ -233,8 +264,9 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd("$args{cmd}");
-    if ( $ret ) { failed($opts,$test); return; }
+    my ($ret,$out,$err) = _cmd3("$args{cmd}");
+    if ( length($err) ) { $err =~ s/\n/\n\t\t/gs; $err = "\n\n\t\t$err\n"; }
+    if ( $ret ) { failed($opts,$test,"Non-zero status $ret$err"); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
         rename("$$opts{path}/$args{out}","$$opts{path}/$args{out}.old");
@@ -283,7 +315,7 @@ sub test_cmd
             my @diff = `diff $$opts{path}/$args{out} $$opts{path}/$args{out}.new`;
             for (my $i=0; $i<@diff; $i++) { $diff[$i] = "\t\t\t".$diff[$i]; }
             chomp($diff[-1]);
-            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
+            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new$err\n".join('',@diff));
         }
         return;
     }
