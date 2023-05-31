@@ -680,6 +680,8 @@ void process_line(args_t *args, char *line, size_t size)
             else
                 str = args->src.hdr.cols->off[ -args->src.transfer_idx[i] - 1 ];    // non-existent field in src, use a default value
 
+            if ( !str || !*str ) str = ".";     // provide a nill dot value when the field is empty
+
             if ( !args->allow_dups )
             {
                 if ( khash_str2int_has_key(args->tmp_hash[i],str) ) continue;
