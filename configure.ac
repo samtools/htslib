@@ -136,8 +136,7 @@ dnl Propagate HTSlib's unaligned access preference to htscodecs
 /* Prevent unaligned access in htscodecs SSE4 rANS codec */
 #if defined(HTS_ALLOW_UNALIGNED) && HTS_ALLOW_UNALIGNED == 0
 #undef UBSAN
-#endif
-  ])
+#endif])
   AC_DEFINE([UBSAN],1,[])
 ])
 AC_SUBST([hts_cflags_sse4])
