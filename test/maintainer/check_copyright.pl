@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # check_copyright.pl : Basic source file checks for copyright boilerplate
 #
 #     Author : Rob Davies <rmd@sanger.ac.uk>
