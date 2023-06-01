@@ -103,10 +103,18 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                 intv->ss = line + b; intv->se = line + i;
             } else if (id == conf->bc) {
                 // here ->beg is 0-based.
-                intv->beg = intv->end = strtoll(line + b, &s, 0);
+                intv->beg = strtoll(line + b, &s, 0);
+
+                if (conf->bc <= conf->ec) // don't overwrite an already set end point
+                    intv->end = intv->beg;
+
                 if ( s==line+b ) return -1; // expected int
-                if (!(conf->preset&TBX_UCSC)) --intv->beg;
-                else ++intv->end;
+
+                if (!(conf->preset&TBX_UCSC))
+                    --intv->beg;
+                else if (conf->bc <= conf->ec)
+                    ++intv->end;
+
                 if (intv->beg < 0) {
                     hts_log_warning("Coordinate <= 0 detected. "
                                     "Did you forget to use the -0 option?");
