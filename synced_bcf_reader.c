@@ -1032,6 +1032,9 @@ void _regions_sort_and_merge(bcf_sr_regions_t *reg)
 }
 
 // File name or a list of genomic locations. If file name, NULL is returned.
+// Recognises regions in the form chr, chr:pos, chr:beg-end, chr:beg-, {weird-chr-name}:pos.
+// Cannot use hts_parse_region() as that requires the header and if header is not present,
+// wouldn't learn the chromosome name.
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
     bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
@@ -1043,9 +1046,23 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
     hts_pos_t from, to;
     while ( 1 )
     {
-        while ( *ep && *ep!=',' && *ep!=':' ) ep++;
         tmp.l = 0;
-        kputsn(sp,ep-sp,&tmp);
+        if ( *ep=='{' )
+        {
+            while ( *ep && *ep!='}' ) ep++;
+            if ( !*ep )
+            {
+                hts_log_error("Could not parse the region, mismatching braces in: \"%s\"", str);
+                goto exit_nicely;
+            }
+            ep++;
+            kputsn(sp+1,ep-sp-2,&tmp);
+        }
+        else
+        {
+            while ( *ep && *ep!=',' && *ep!=':' ) ep++;
+            kputsn(sp,ep-sp,&tmp);
+        }
         if ( *ep==':' )
         {
             sp = ep+1;
@@ -1053,7 +1070,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( sp==ep )
             {
                 hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                goto exit_nicely;
             }
             if ( !*ep || *ep==',' )
             {
@@ -1064,7 +1081,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( *ep!='-' )
             {
                 hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                goto exit_nicely;
             }
             ep++;
             sp = ep;
@@ -1072,7 +1089,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( *ep && *ep!=',' )
             {
                 hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                goto exit_nicely;
             }
             if ( sp==ep ) to = MAX_CSI_COOR-1;
             _regions_add(reg, tmp.s, from, to);
@@ -1088,6 +1105,11 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
     }
     free(tmp.s);
     return reg;
+
+exit_nicely:
+    bcf_sr_regions_destroy(reg);
+    free(tmp.s);
+    return NULL;
 }
 
 // ichr,ifrom,ito are 0-based;
