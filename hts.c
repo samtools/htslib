@@ -871,9 +871,9 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
         *mode_c = format_to_mode[fmt->format];
     }
 
-    // Uncompressed bam/bcf is not supported, remove 'u' flag on write
+    // Uncompressed bam/bcf is not supported, change 'u' to '0' on write
     if (uncomp && *mode_c == 'b' && (strchr(smode, 'w') || strchr(smode, 'a'))) {
-        memcpy(uncomp, uncomp + 1, cp2 - uncomp - 1);
+        *uncomp = '0';
     }
 
     // If we really asked for a compressed text format then mode_c above will
