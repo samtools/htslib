@@ -778,7 +778,7 @@ static const char *usage_text(void)
         "                                       nbp  .. number of source base pairs in the overlap\n"
         "   -H, --ignore-headers            Use numeric indexes, ignore the headers completely\n"
         "   -O, --overlap FLOAT             Minimum required overlap (non-reciprocal, unless -r is given)\n"
-        "   -r, --reciprocal                Require reciprocal overlap\n"
+        "   -r, --reciprocal                Apply the -O requirement to both overlapping intervals\n"
         "   -x, --drop-overlaps             Drop overlapping regions (precludes -f)\n"
         "\n"
         "Examples:\n"
@@ -843,6 +843,7 @@ int main(int argc, char **argv)
             case 'O':
                 args->overlap = strtod(optarg, &tmp);
                 if ( tmp==optarg || *tmp ) error("Could not parse --overlap %s\n", optarg);
+                if ( args->overlap<0 || args->overlap>1 ) error("Expected value from the interval [0,1]: --overlap %s\n", optarg);
                 break;
             case 's': args->src.fname = optarg; break;
             case 'f': args->transfer_str = optarg; break;
