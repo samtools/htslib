@@ -101,10 +101,12 @@ OPTIONS
     Ignore the headers completely and use numeric indexes even when a header exists
 
 *-O, --overlap* 'FLOAT'::
-    Minimum required overlap (non-reciprocal, unless also *-r, --reciprocal* is given)
+    Minimum overlap as a fraction of region length in at least one of the overlapping regions.
+    If also *-r, --reciprocal* is given, require at least 'FLOAT' overlap with respect to both
+    regions
 
 *-r, --reciprocal*::
-    Require reciprocal overlap with *-O, --overlap*
+    Require the *-O, --overlap* with respect to both overlapping regions
 
 *-x, --drop-overlaps*::
     Drop overlapping regions (cannot be combined with *-f, --transfer*)
@@ -117,27 +119,39 @@ Both SRC and TGT input files must be tab-delimited files with or without a heade
 differently, can appear in arbitrary order. For example consider the source file
 ----
 #chr   beg   end   sample   type   qual
-chr1   100   110   Ted      DEL    39
-chr1   333   335   Lasso    DUP    59
+chr1   100   200   smpl1    DEL    10
+chr1   300   400   smpl2    DUP    30
 ----
 and the target file
 ----
-300   400   chr1   Lasso
-100   200   chr1   Ted
+150   200   chr1   smpl1
+150   200   chr1   smpl2
+350   400   chr1   smpl1
+350   400   chr1   smpl2
 ----
 
-The following examples demonstrate the usage
+In the first example we transfer type and quality but only for regions with matching sample. Notice that the
+header is present in SRC but not in TGT, therefore we use column indexes for the latter
 ----
-# Transfer type and quality. The header is present in SRC but not in TGT, therefore use
-# column indexes for the latter.
-annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end:3,1,2 -m sample:4 -f type,qual -o output.txt
+annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end:3,1,2 -m sample:4 -f type,qual
+150   200   chr1   smpl1   DEL   10
+150   200   chr1   smpl2   .     .
+350   400   chr1   smpl1   .     .
+350   400   chr1   smpl2   DUP   30
+----
 
-# One of the SRC or TGT file can be streamed from stdin
+One of the SRC or TGT file can be streamed from stdin
+----
 cat src.txt | annot-tsv -t tgt.txt -c chr,beg,end:3,2,1 -m sample:4 -f type,qual -o output.txt
 cat tgt.txt | annot-tsv -s src.txt -c chr,beg,end:3,2,1 -m sample:4 -f type,qual -o output.txt
+----
 
-# Print matching regions as above but without modifying the records
-cat src.txt | annot-tsv -t tgt.txt -c chr,beg,end:3,2,1 -m sample:4 > matching.txt
+The program can be used in a grep-like mode to print only matching regions of the target file without
+modifying the records
+----
+annot-tsv -s src.txt -t tgt.txt -c chr,beg,end:3,2,1 -m sample:4
+150   200   chr1   smpl1
+350   400   chr1   smpl2
 ----
 
 
