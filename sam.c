@@ -6215,6 +6215,10 @@ static int seqi_rc[] = { 0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15 };
  *
  */
 int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
+
+    //reset position, else upcoming calls may fail on seq pos - length comparison
+    state->seq_pos = 0;
+
     // Read MM and ML tags
     uint8_t *mm = bam_aux_get(b, "MM");
     if (!mm) mm = bam_aux_get(b, "Mm");
@@ -6243,8 +6247,6 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
     }
     uint8_t *ml_end = ml ? ml+6 + le_to_u32(ml+2) : NULL;
     if (ml) ml += 6;
-
-    state->seq_pos = 0;
 
     // Aggregate freqs of ACGTN if reversed, to get final-delta (later)
     int freq[16];

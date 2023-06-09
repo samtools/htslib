@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2022 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2023 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1414,7 +1414,7 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
 /** @param fp    Pointer to the destination file
  *  @param h     Pointer to the header structure previously read
  *  @param b     Pointer to the record to be written
- *  @return >= 0 on successfully writing the record, -1 on error
+ *  @return >= 0 on successfully writing the record, -ve on error
  */
     HTSLIB_EXPORT
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
@@ -1519,6 +1519,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         r |= kputc_(type, ks) < 0;
         r |= kputc_(':', ks) < 0;
         while (s < end && *s) r |= kputc_(*s++, ks) < 0;
+        r |= kputsn("", 0, ks) < 0;     //ensures NUL termination
         if (s >= end)
             goto bad_aux;
         ++s;
@@ -2286,6 +2287,7 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
  * @param state    The base modification state pointer.
  * @param mods     A supplied array for returning base modifications
  * @param n_mods   The size of the mods array
+ * @param pos      Pointer holding position of modification in sequence
  * @return The number of modifications found on success,
  *         0 if no more modifications are present,
  *         -1 on failure.
