@@ -835,7 +835,7 @@ char *hts_format_description(const htsFormat *format)
 
 htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
-    char smode[101], *cp, *cp2, *mode_c;
+    char smode[101], *cp, *cp2, *mode_c, *uncomp = NULL;
     htsFile *fp = NULL;
     hFILE *hfile = NULL;
     char fmt_code = '\0';
@@ -853,8 +853,13 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
             fmt_code = 'b';
         else if (*cp == 'c')
             fmt_code = 'c';
-        else
+        else {
             *cp2++ = *cp;
+            // Cache the uncompress flag 'u' pos if present
+            if (!uncomp && (*cp == 'u')) {
+                uncomp = cp2 - 1;
+            }
+        }
     }
     mode_c = cp2;
     *cp2++ = fmt_code;
@@ -864,6 +869,11 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fmt && fmt->format > unknown_format
         && fmt->format < sizeof(format_to_mode)) {
         *mode_c = format_to_mode[fmt->format];
+    }
+
+    // Uncompressed bam/bcf is not supported, change 'u' to '0' on write
+    if (uncomp && *mode_c == 'b' && (strchr(smode, 'w') || strchr(smode, 'a'))) {
+        *uncomp = '0';
     }
 
     // If we really asked for a compressed text format then mode_c above will
