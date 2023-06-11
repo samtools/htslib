@@ -43,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 
 #if defined(HAVE_EXTERNAL_LIBHTSCODECS)
-#include <htscodecs/rANS_static4x16.h.h>
+#include <htscodecs/rANS_static4x16.h>
 #else
 #include "../htscodecs/htscodecs/rANS_static4x16.h"
 #endif
