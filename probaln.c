@@ -140,6 +140,13 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
     bM = (1 - c->d) / l_ref; // (bM+bI)*l_ref==1
     bI = c->d / l_ref;
 
+    // f[] and b[] are 2-d arrays of three scores, with rows along the
+    // query and columns across the band.  The first query base and
+    // first band position appear at index 1 allowing edge conditions
+    // to be stored in index 0.  Hence the loops below appear to use
+    // 1-based indexing instead of 0-based as you'd normally expect in C,
+    // and the sequences are accessed using query[i - 1] and ref[k - 1].
+
     /*** forward ***/
     // f[0]
     set_u(k, bw, 0, 0);
@@ -245,20 +252,19 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
     { // f[l_query+1]
         double sum;
         double M = 1./s[l_query];
-        // Note this goes up to <= l_ref, meaning we are accessing 1 beyond
-        // the end of the sequence.  However we allocated above with
-        // (l_query+1)*i_dim (plus appropriate l_ref vs l_query in band width)
-        // so this should be sufficient.
-        //
-        // This fixes Issue #1605 where band width equal to sequence length
-        // gives incorrect alignments, due to the last value not being filled
-        // out correctly.
-        //
-        // I am unsure why the limit was previously set at u >= i_dim - 3, but
-        // can only conjecture it was due to forgetting the l_query+1 alloc.
-        // I am also unsure why "u < 3" is used instead of "u < 0", however
-        // changing that does change behaviour for common usage (unlike
-        // "idim - 3" to "idim").
+        // Note that this goes from 1 to l_ref inclusive, but as the
+        // alignment is banded not all of the values will have been
+        // calculated (the rest are taken as 0), so the summation
+        // actually goes over the values set in the last iteration of
+        // the previous loop (when i = l_query).  For some reason lost to
+        // time this is done by looking for valid values of 'u' instead of
+        // working out 'beg' and 'end'.
+
+        // From HTSlib 1.8 to 1.17, the endpoint was incorrectly set
+        // to i_dim - 3.  When l_query <= bandwidth, this caused the last
+        // column to be missed, and if l_ref == l_query then a match at the end
+        // could incorrectly be reported as an insertion.  See #1605.
+
         for (k = 1, sum = 0.; k <= l_ref; ++k) {
             int u;
             set_u(u, bw, l_query, k);
