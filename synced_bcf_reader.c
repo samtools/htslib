@@ -1096,11 +1096,16 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( !*ep ) break;
             sp = ep;
         }
-        else
+        else if ( !*ep || *ep==',' )
         {
             if ( tmp.l ) _regions_add(reg, tmp.s, -1, -1);
             if ( !*ep ) break;
             sp = ++ep;
+        }
+        else
+        {
+            hts_log_error("Could not parse the region(s): %s", str);
+            goto exit_nicely;
         }
     }
     free(tmp.s);
