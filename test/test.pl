@@ -54,6 +54,8 @@ test_bcf2vcf($opts);
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
 test_bcf_sr_sort($opts);
+test_bcf_sr_no_index($opts);
+test_bcf_sr_range($opts);
 test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 test_convert_padded_header($opts);
 test_rebgzip($opts);
@@ -1030,6 +1032,113 @@ sub test_bcf_sr_sort
         my ($ret,$out) = _cmd($cmd);
         if ( $ret ) { failed($opts,$test); }
         else { passed($opts,$test); }
+    }
+}
+
+sub test_bcf_sr_no_index {
+    my ($opts) = @_;
+
+    my $test = "test_bcf_sr_no_index";
+
+    my $vcfdir = "$$opts{path}/bcf-sr";
+
+    # Positive test
+    test_cmd($opts, out => "bcf-sr/merge.noidx.abc.expected.out",
+             cmd => "$$opts{path}/test-bcf-sr --no-index -p all --args $vcfdir/merge.noidx.a.vcf $vcfdir/merge.noidx.b.vcf $vcfdir/merge.noidx.c.vcf 2> $$opts{tmp}/no_index_1.err");
+
+    # Check bad input detection
+
+    my @bad_file_tests = (["out-of-order header",
+                           ["merge.noidx.a.vcf", "merge.noidx.hdr_order.vcf"]],
+                          ["out-of-order records",
+                           ["merge.noidx.a.vcf", "merge.noidx.rec_order.vcf"]],
+                          ["out-of-order records",
+                           ["merge.noidx.rec_order.vcf", "merge.noidx.a.vcf"]]);
+    my $count = 2;
+    foreach my $test_params (@bad_file_tests) {
+        my ($badness, $inputs) = @$test_params;
+        my @ins = map { "$vcfdir/$_" } @$inputs;
+
+        my $cmd = "$$opts{path}/test-bcf-sr --no-index -p all --args @ins > $$opts{tmp}/no_index_$count.out 2> $$opts{tmp}/no_index_$count.err";
+        print "$test:\n\t$cmd (expected fail)\n";
+        my ($ret) = _cmd($cmd);
+        if ($ret == 0) {
+            failed($opts, $test, "Failed to detect $badness: $cmd\n");
+        } else {
+            passed($opts, $test);
+        }
+        $count++;
+    }
+}
+
+sub test_bcf_sr_range {
+    my ($opts) = @_;
+
+    my $test = "test_bcf_sr_range";
+
+    my $vcfdir = "$$opts{path}/bcf-sr";
+
+    my @tests = (['r', '1', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['r', '1:1-2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['r', '1:1,1:2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['r', '1:1-1', 'weird-chr-names.vcf', 'weird-chr-names.2.out'],
+                 ['r', '{1:1}', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['r', '{1:1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['r', '{1:1}:1,{1:1}:2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['r', '{1:1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.4.out'],
+                 ['r', '{1:1-1}', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['r', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['r', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['r', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
+                 ['r', '{1:1-1}-2', 'weird-chr-names.vcf', undef], # Expected failure
+                 ['t', '1', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['t', '1:1-2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['t', '1:1,1:2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['t', '1:1-1', 'weird-chr-names.vcf', 'weird-chr-names.2.out'],
+                 ['t', '{1:1}', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['t', '{1:1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['t', '{1:1}:1,{1:1}:2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['t', '{1:1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.4.out'],
+                 ['t', '{1:1-1}', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['t', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['t', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['t', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
+                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef] # Expected failure
+        );
+
+    my $count = 0;
+    my %converted;
+    foreach my $tst (@tests) {
+        my ($option, $range, $in, $exp_out) = @$tst;
+        $count++;
+        if (!$converted{$in}) {
+            my $cmd = "$$opts{path}/test_view -b -p $$opts{tmp}/$in.bcf -x $$opts{tmp}/$in.bcf.csi $vcfdir/$in";
+            print "$test:\n\t$cmd\n";
+            my ($ret) = _cmd($cmd);
+            if ($ret) {
+                failed($opts, $test);
+                $converted{$in} = 'fail';
+                next;
+            } else {
+                passed($opts, $test);
+                $converted{$in} = "$$opts{tmp}/$in.bcf";
+            }
+        }
+        next if ($converted{$in} eq 'fail');
+        my $cmd = "$$opts{path}/test-bcf-sr -O vcf -o $$opts{tmp}/range_test_$count.out.vcf -$option '$range' --args $converted{$in}";
+        if ($exp_out) {
+            test_compare($opts, $cmd, "$vcfdir/$exp_out",
+                         "$$opts{tmp}/range_test_$count.out.vcf",
+                         fix_newlines => 1);
+        } else {
+            print "$test:\n\t$cmd (expected fail)\n";
+            my ($ret) = _cmd($cmd);
+            if ($ret) {
+                passed($opts, $test);
+            } else {
+                failed($opts, $test);
+            }
+        }
     }
 }
 
