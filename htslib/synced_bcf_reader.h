@@ -308,8 +308,8 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *
  *  API notes:
  *  - bcf_sr_set_targets MUST be called before the first call to bcf_sr_add_reader()
- *  - bcf_sr_set_regions AFTER readers where initialized will reposition the readers
- *    and discard all previous regions.
+ *  - calling bcf_sr_set_regions AFTER readers have been initialized will
+ *    reposition the readers and discard all previous regions.
  */
 HTSLIB_EXPORT
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
