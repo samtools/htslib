@@ -99,6 +99,7 @@ struct hts_base_mod_state {
     int implicit[MAX_BASE_MOD]; // treat unlisted positions as non-modified?
     int seq_pos;                // current position along sequence
     int nmods;                  // used array size (0 to MAX_BASE_MOD-1).
+    uint32_t flags;             // Bit-field: see HTS_MOD_REPORT_UNCHECKED
 };
 
 hts_base_mod_state *hts_base_mod_state_alloc(void) {
@@ -135,11 +136,17 @@ static int seqi_rc[] = { 0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15 };
  * freed and allocated for each new bam record. (Although obviously
  * it requires a new call to this function.)
  *
+ * Flags are copied into the state and used to control reporting functions.
+ * Currently the only flag is HTS_MOD_REPORT_UNCHECKED, to control whether
+ * explicit "C+m?" mods report quality HTS_MOD_UNCHECKED for the bases
+ * outside the explicitly reported region.
  */
-int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
+int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
+                       uint32_t flags) {
     // Reset position, else upcoming calls may fail on
     // seq pos - length comparison
     state->seq_pos = 0;
+    state->flags = flags;
 
     // Read MM and ML tags
     uint8_t *mm = bam_aux_get(b, "MM");
@@ -339,6 +346,10 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
     return 0;
 }
 
+int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
+    return bam_parse_basemod2(b, state, 0);
+}
+
 /*
  * Fills out mods[] with the base modifications found.
  * Returns the number found (0 if none), which may be more than
@@ -365,20 +376,32 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
         base = seqi_rc[base];
 
     for (i = 0; i < state->nmods; i++) {
+        int unchecked = 0;
         if (state->canonical[i] != base && state->canonical[i] != 15/*N*/)
             continue;
 
-        if (state->MMcount[i]-- > 0)
-            continue;
+        if (state->MMcount[i]-- > 0) {
+            if (!state->implicit[i] &&
+                (state->flags & HTS_MOD_REPORT_UNCHECKED))
+                unchecked = 1;
+            else
+                continue;
+        }
 
         char *MMptr = state->MM[i];
         if (n < n_mods) {
             mods[n].modified_base = state->type[i];
             mods[n].canonical_base = seq_nt16_str[state->canonical[i]];
             mods[n].strand = state->strand[i];
-            mods[n].qual = state->ML[i] ? *state->ML[i] : -1;
+            mods[n].qual = unchecked
+                ? HTS_MOD_UNCHECKED
+                : (state->ML[i] ? *state->ML[i] : HTS_MOD_UNKNOWN);
         }
         n++;
+
+        if (unchecked)
+            continue;
+
         if (state->ML[i])
             state->ML[i] += (b->core.flag & BAM_FREVERSE)
                 ? -state->MLstride[i]

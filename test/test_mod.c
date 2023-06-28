@@ -88,11 +88,18 @@ static char *code(int id) {
 int main(int argc, char **argv) {
     char out[1024] = {0};
     int extended = 0;
+    uint32_t flags = 0;
 
     if (argc > 1 && strcmp(argv[1], "-x") == 0) {
         extended = 1;
         argv++;
         argc--;
+    }
+
+    if (argc > 2 && strcmp(argv[1], "-f") == 0) {
+        flags = atoi(argv[2]);
+        argv+=2;
+        argc-=2;
     }
 
     if (argc < 2)
@@ -110,7 +117,7 @@ int main(int argc, char **argv) {
 
     int r;
     while ((r = sam_read1(in, h, b)) >= 0) {
-        if (bam_parse_basemod(b, m) < 0) {
+        if (bam_parse_basemod2(b, m, flags) < 0) {
             fprintf(stderr, "Failed to parse MM/ML aux tags\n");
             goto err;
         }
@@ -124,6 +131,14 @@ int main(int argc, char **argv) {
             lp += snprintf(lp, ep - lp, "%d\t%c\t",
                            i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
             for (j = 0; j < n && j < 5; j++) {
+                char qstr[10];
+                if (mods[j].qual == HTS_MOD_UNCHECKED)
+                    qstr[0] = '#', qstr[1] = 0;
+                else if (mods[j].qual == HTS_MOD_UNKNOWN)
+                    qstr[0] = '.', qstr[1] = 0;
+                else
+                    snprintf(qstr, 10, "%d", mods[j].qual);
+
                 if (extended) {
                     int m_strand, m_implicit;
                     char m_canonical;
@@ -134,18 +149,18 @@ int main(int argc, char **argv) {
                         m_canonical != mods[j].canonical_base ||
                         m_strand    != mods[j].strand)
                         goto err;
-                    lp += snprintf(lp, ep - lp, "%c%c%s%c%d ",
+                    lp += snprintf(lp, ep - lp, "%c%c%s%c%s ",
                                    mods[j].canonical_base,
                                    "+-"[mods[j].strand],
                                    code(mods[j].modified_base),
                                    "?."[m_implicit],
-                                   mods[j].qual);
+                                   qstr);
                 } else {
-                    lp += snprintf(lp, ep - lp, "%c%c%s%d ",
+                    lp += snprintf(lp, ep - lp, "%c%c%s%s ",
                                    mods[j].canonical_base,
                                    "+-"[mods[j].strand],
                                    code(mods[j].modified_base),
-                                   mods[j].qual);
+                                   qstr);
                 }
             }
             *lp++ = '\n';
