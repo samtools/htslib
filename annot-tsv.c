@@ -77,7 +77,7 @@ typedef struct
 dat_t;
 
 // This is for the special -a annotations, keeps a list of
-// soure regions that hit the destination region. The start
+// source regions that hit the destination region. The start
 // coordinates are converted to beg<<1 and end coordinates
 // to (end<<1)+1.
 #define NBP_SET_BEG(x) ((x)<<1)
@@ -87,8 +87,8 @@ dat_t;
 #define NBP_IS_END(x)  (((x)&1)==1)
 typedef struct
 {
-    int n,m;            // n is a multiple of two: breakpoints are stored in regs, not regions
-    hts_pos_t *regs;     // change to uint64_t for very large genomes
+    size_t n,m;          // n is a multiple of two: breakpoints are stored in regs, not regions
+    hts_pos_t *regs;
     hts_pos_t beg,end;   // the current destination interval
 }
 nbp_t;
@@ -103,7 +103,7 @@ typedef struct
     char *temp_dir, *out_fname;
     BGZF *out_fp;
     int allow_dups, reciprocal, ignore_headers, max_annots, mode;
-    float overlap;
+    double overlap;
     regidx_t *idx;
     regitr_t *itr;
     kstring_t tmp_kstr;
@@ -123,7 +123,9 @@ void error(const char *format, ...)
 
 static nbp_t *nbp_init(void)
 {
-    return calloc(1,sizeof(nbp_t));
+    nbp_t *nbp = calloc(1,sizeof(nbp_t));
+    if ( !nbp ) error("Out of memory, failed to allocatae %zu bytes\n",sizeof(nbp_t));
+    return nbp;
 }
 static void nbp_destroy(nbp_t *nbp)
 {
@@ -138,12 +140,12 @@ static inline void nbp_reset(nbp_t *nbp, hts_pos_t beg, hts_pos_t end)
 }
 static inline void nbp_add(nbp_t *nbp, hts_pos_t beg, hts_pos_t end)
 {
-    if ( end >= REGIDX_MAX>>1 ) error("Error: the coordinate is too big (%u). Possible todo: switch to uint64_t\n",end);
     nbp->n += 2;
     if ( nbp->n >= nbp->m )
     {
         nbp->m += 2;
         nbp->regs = realloc(nbp->regs, nbp->m*sizeof(*nbp->regs));
+        if ( !nbp->regs ) error("Out of memory, failed to allocate %zu bytes\n",nbp->m*sizeof(*nbp->regs));
     }
     nbp->regs[nbp->n - 2] = NBP_SET_BEG(beg);
     nbp->regs[nbp->n - 1] = NBP_SET_END(end);
@@ -156,11 +158,11 @@ static int compare_hts_pos(const void *aptr, const void *bptr)
     if (a > b) return 1;
     return 0;
 }
-static int nbp_length(nbp_t *nbp)
+static hts_pos_t nbp_length(nbp_t *nbp)
 {
     qsort(nbp->regs, nbp->n, sizeof(*nbp->regs), compare_hts_pos);
-    int i, nopen = 0, length = 0;
-    hts_pos_t beg = 0;
+    int i, nopen = 0;
+    hts_pos_t beg = 0, length = 0;
     for (i=0; i<nbp->n; i++)
     {
         if ( NBP_IS_BEG(nbp->regs[i]) )
@@ -178,9 +180,11 @@ static int nbp_length(nbp_t *nbp)
 cols_t *cols_split(const char *line, cols_t *cols, char delim)
 {
     if ( !cols ) cols = (cols_t*) calloc(1,sizeof(cols_t));
+    if ( !cols ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(cols_t));
     if ( cols->rmme ) free(cols->rmme);
     cols->n = 0;
     cols->rmme = strdup(line);
+    if ( !cols->rmme ) error("Out of memory\n");
     char *ss = cols->rmme;
     while (1)
     {
@@ -193,6 +197,7 @@ cols_t *cols_split(const char *line, cols_t *cols, char delim)
         {
             cols->m += 10;
             cols->off = realloc(cols->off, sizeof(*cols->off)*cols->m);
+            if ( !cols->off ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(*cols->off)*cols->m);
         }
         cols->off[ cols->n - 1 ] = ss;
         if ( !tmp ) break;
@@ -211,8 +216,10 @@ void cols_append(cols_t *cols, char *str)
         size_t tot_len = 2 + str_len + lst_len + (cols->off[ cols->n - 1 ] - cols->rmme);
 
         cols_t *tmp_cols = (cols_t*)calloc(1,sizeof(cols_t));
+        if ( !tmp_cols ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(cols_t));
         tmp_cols->rmme = calloc(tot_len,1);
         tmp_cols->off  = calloc(cols->n+1,sizeof(*tmp_cols->off));
+        if ( !tmp_cols->rmme || !tmp_cols->off ) error("Out of memory\n");
 
         char *ptr = tmp_cols->rmme;
         int i;
@@ -240,6 +247,7 @@ void cols_append(cols_t *cols, char *str)
     {
         cols->m++;
         cols->off = realloc(cols->off,sizeof(*cols->off)*cols->m);
+        if ( !cols->off ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(*cols->off)*cols->m);
     }
     cols->off[cols->n-1] = str;
 }
@@ -399,13 +407,16 @@ void destroy_header(dat_t *dat)
 static int read_next_line(dat_t *dat)
 {
     if ( dat->line.l ) return dat->line.l;
-    if ( hts_getline(dat->fp, KS_SEP_LINE, &dat->line) > 0 ) return dat->line.l;
+    int ret = hts_getline(dat->fp, KS_SEP_LINE, &dat->line);
+    if ( ret > 0 ) return dat->line.l;
+    if ( ret < -1 ) error("Error encountered while reading %s\n",dat->fname);
     return 0;
 }
 
 void sanity_check_columns(char *fname, hdr_t *hdr, cols_t *cols, int **col2idx, int force)
 {
     *col2idx = (int*)malloc(sizeof(int)*cols->n);
+    if ( !*col2idx ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(int)*cols->n);
     int i, idx;
     for (i=0; i<cols->n; i++)
     {
@@ -474,13 +485,18 @@ void init_data(args_t *args)
         }
         args->tmp_cols = (cols_t*)calloc(args->src.transfer->n,sizeof(cols_t));
         args->tmp_hash = (khash_t(str2int)**)calloc(args->src.transfer->n,sizeof(khash_t(str2int)*));
+        if ( !args->tmp_cols || !args->tmp_hash ) error("Out of memory\n");
         for (i=0; i<args->src.transfer->n; i++)
             args->tmp_hash[i] = khash_str2int_init();
         cols_destroy(tmp);
     }
     else
+    {
         args->src.transfer = calloc(1,sizeof(*args->src.transfer));
+        if ( !args->src.transfer ) error("Out of memory\n");
+    }
     args->src.nannots_added = calloc(args->src.transfer->n,sizeof(*args->src.nannots_added));
+    if ( !args->src.nannots_added ) error("Out of memory\n");
 
     // -a, annotation columns
     if ( args->annots_str )
@@ -490,6 +506,7 @@ void init_data(args_t *args)
         args->dst.annots = cols_split(tmp->n==2 ? tmp->off[1] : tmp->off[0],NULL,',');
         if ( args->src.annots->n!=args->dst.annots->n ) error("Different number of src and dst columns in %s\n",args->annots_str);
         args->dst.annots_idx = (int*) malloc(sizeof(int)*args->dst.annots->n);
+        if ( !args->dst.annots_idx ) error("Out of memory\n");
         for (i=0; i<args->src.annots->n; i++)
         {
             if ( !strcasecmp(args->src.annots->off[i],"nbp") )
@@ -581,7 +598,8 @@ static void write_annots(args_t *args)
     if ( !args->dst.annots ) return;
 
     args->tmp_kstr.l = 0;
-    int i, len = nbp_length(args->nbp);
+    int i;
+    hts_pos_t len = nbp_length(args->nbp);
     for (i=0; i<args->dst.annots->n; i++)
     {
         if ( args->dst.annots_idx[i]==ANN_NBP )
@@ -642,9 +660,9 @@ void process_line(args_t *args, char *line, size_t size)
     {
         if ( args->overlap )
         {
-            float len1 = end - beg + 1;
-            float len2 = args->itr->end - args->itr->beg + 1;
-            float isec = (args->itr->end < end ? args->itr->end : end) - (args->itr->beg > beg ? args->itr->beg : beg) + 1;
+            double len1 = end - beg + 1;
+            double len2 = args->itr->end - args->itr->beg + 1;
+            double isec = (args->itr->end < end ? args->itr->end : end) - (args->itr->beg > beg ? args->itr->beg : beg) + 1;
             if ( args->reciprocal )
             {
                 if ( isec/len1 < args->overlap || isec/len2 < args->overlap ) continue;

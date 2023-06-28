@@ -1,14 +1,9 @@
-// annot-tsv.txt -- asciidoc template for the bcftools man page and html.
+// annot-tsv.txt -- asciidoctor template for the bcftools man page and html.
 //
-// Please do not modify annot-tsv.1 or annot-tsv.html directly,
-// edit this file and convert using the following commands:
+// Please do not modify annot-tsv.1 directly,
+// edit this file and convert using the following command:
 //
-//      make docs
-//
-// or
-//
-//      a2x --doctype manpage --format manpage annot-tsv.txt
-//      a2x --doctype manpage --format xhtml annot-tsv.txt
+//      asciidoctor -b manpage annot-tsv.txt
 //
 // Contributions are welcome, simply edit this file and send
 // a pull request or email the modified file directly.
@@ -162,6 +157,6 @@ The program was written by Petr Danecek and was originally published on github a
 
 COPYING
 -------
-The MIT/Expat License or GPL License, see the LICENSE document for details.
+The MIT/Expat License, see the LICENSE document for details.
 Copyright (c) Genome Research Ltd.
 
