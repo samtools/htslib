@@ -2224,6 +2224,12 @@ typedef struct hts_base_mod {
     int qual;
 } hts_base_mod;
 
+#define HTS_MOD_UNKNOWN   -1  // In MM but no ML
+#define HTS_MOD_UNCHECKED -2  // Not in MM and in explicit mode
+
+// Flags for hts_parse_basemod2
+#define HTS_MOD_REPORT_UNCHECKED 1
+
 /// Allocates an hts_base_mode_state.
 /**
  * @return An hts_base_mode_state pointer on success,
@@ -2260,6 +2266,22 @@ void hts_base_mod_state_free(hts_base_mod_state *state);
 HTSLIB_EXPORT
 int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state);
 
+/// Parses the Mm and Ml tags out of a bam record.
+/**
+ * @param b        BAM alignment record
+ * @param state    The base modification state pointer.
+ * @param flags    A bit-field controlling base modification processing
+ *
+ * @return 0 on success,
+ *         -1 on failure.
+ *
+ * This fills out the contents of the modification state, resetting the
+ * iterator location to the first sequence base.
+ */
+HTSLIB_EXPORT
+int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
+                       uint32_t flags);
+
 /// Returns modification status for the next base position in the query seq.
 /**
  * @param b        BAM alignment record
@@ -2280,6 +2302,10 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state);
 HTSLIB_EXPORT
 int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                          hts_base_mod *mods, int n_mods);
+
+HTSLIB_EXPORT
+int bam_mods_at_next_pos2(const bam1_t *b, hts_base_mod_state *state,
+                          hts_base_mod *mods, int n_mods);
 
 /// Finds the next location containing base modifications and returns them
 /**
