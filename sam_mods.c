@@ -214,6 +214,7 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
             me = cp;
 
             // Optional explicit vs implicit marker
+            implicit = 1;
             if (*cp == '.') {
                 // default is implicit = 1;
                 cp++;
