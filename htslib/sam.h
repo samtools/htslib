@@ -2349,6 +2349,26 @@ HTSLIB_EXPORT
 int bam_mods_query_type(hts_base_mod_state *state, int code,
                         int *strand, int *implicit, char *canonical);
 
+/// Returns data about the i^th modification type for the alignment record.
+/**
+ * @param b          BAM alignment record
+ * @param state      The base modification state pointer.
+ * @param i          Modification index, from 0 to ntype-1
+ * @param strand     Boolean for top (0) or bottom (1) strand
+ * @param implicit   Boolean for whether unlisted positions should be
+ *                   implicitly assumed to be unmodified, or require an
+ *                   explicit score and should be considered as unknown.
+ *                   Returned.
+ * @param canonical  Canonical base type associated with this modification
+ *                   Returned.
+ *
+ * @return 0 on success or -1 if not found.  The strand, implicit and canonical
+ * fields are filled out if passed in as non-NULL pointers.
+ */
+HTSLIB_EXPORT
+int bam_mods_queryi(hts_base_mod_state *state, int i,
+                    int *strand, int *implicit, char *canonical);
+
 /// Returns the list of base modification codes provided for this
 /// alignment record as an array of character codes (+ve) or ChEBI numbers
 /// (negative).

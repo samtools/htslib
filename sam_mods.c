@@ -542,3 +542,22 @@ int bam_mods_query_type(hts_base_mod_state *state, int code,
 
     return 0;
 }
+
+/*
+ * Returns data about the ith modification type for the alignment record.
+ *
+ * Return 0 on success or -1 if not found.  The strand, implicit and canonical
+ * fields are filled out if passed in as non-NULL pointers.
+ */
+int bam_mods_queryi(hts_base_mod_state *state, int i,
+                    int *strand, int *implicit, char *canonical) {
+    if (i < 0 || i >= state->nmods)
+        return -1;
+
+    // Return data
+    if (strand)    *strand    = state->strand[i];
+    if (implicit)  *implicit  = state->implicit[i];
+    if (canonical) *canonical = "?AC?G???T??????N"[state->canonical[i]];
+
+    return 0;
+}
