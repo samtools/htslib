@@ -38,6 +38,92 @@ DEALINGS IN THE SOFTWARE.  */
 // modifications in the state structure, and then functions such as
 // bam_next_basemod can iterate over this cached state.
 
+/* Overview of API.
+
+We start by allocating an hts_base_mod_state and parsing the MM, ML and MN
+tags into it.  This has optional flags controlling how we report base
+modifications in "explicit" coordinates.  See below
+
+    hts_base_mod_state *m = hts_base_mod_state_alloc();
+    bam_parse_basemod2(b, m, HTS_MOD_REPORT_UNCHECKED);
+    // Or: bam_parse_basemod(b, m), which is equiv to flags==0
+    //... do something ...
+    hts_base_mod_state_free(m);
+
+In the default implicit MM coordinate system, any location not
+reported is implicitly assumed to contain no modification.  We only
+report the places we think are likely modified.
+
+Some tools however only look for base modifications in particular
+contexts, eg CpG islands.  Here we need to distinguish between
+not-looked-for and looked-for-but-didn't-find.  These calls have an
+explicit coordinate system, where we only know information about the
+coordinates explicitly listed and everything else is considered to be
+unverified.
+
+By default we don't get reports on the other coordinates in an
+explicit MM tag, but the HTS_MOD_REPORT_UNCHECKED flag will report
+them (with quality HTS_MOD_UNCHECKED) meaning we can do consensus
+modification analysis with accurate counting when dealing with a
+mixture of explicit and implicit records.
+
+
+We have different ways of processing the base modifications.  We can
+iterate either mod-by-mod or position-by-position, or we can simply
+query a specific coordinate as may be done when processing a pileup.
+
+To check for base modifications as a specific location within a
+sequence we can use bam_mods_at_qpos.  This provides complete random
+access within the MM string.  However currently this is inefficiently
+implemented so should only be used for occasional analysis or as a way
+to start iterating at a specific location.  It modifies the state
+position, so after the first use we can then switch to
+bam_mods_at_next_pos to iterate position by position from then on.
+
+    hts_base_mod mods[10];
+    int n = bam_mods_at_qpos(b, pos, m, mods, 10);
+
+For base by base, we have bam_mods_at_next_pos.  This strictly starts
+at the first base and reports entries one at a time.  It's more
+efficient than a loop repeatedly calling ...at-pos.
+
+    hts_base_mod mods[10];
+    int n = bam_mods_at_next_pos(b, m, mods, 10);
+    for (int i = 0; i < n; i++) {
+        // report mod i of n
+    }
+
+Iterating over modifications instead of coordinates is simpler and
+more efficient as it skips reporting of unmodified bases.  This is
+done with bam_next_basemod.  Note this does not yet honour the
+HTS_MOD_REPORT_UNCHECKED flag.
+
+    hts_base_mod mods[10];
+    while ((n=bam_next_basemod(b, m, mods, 10, &pos)) > 0) {
+        for (j = 0; j < n; j++) {
+            // Report 'n'th mod at sequence position 'pos'
+        }
+    }
+
+There are also functions that query meta-data about the MM line rather
+than per-site information.
+
+bam_mods_recorded returns an array of ints holding the +ve code ('m')
+or -ve CHEBI numeric values.
+
+    int ntypes, *types = bam_mods_recorded(m, &ntype);
+
+We can then query a specific modification type to get further
+information on the strand it is operating on, whether it has implicit
+or explicit coordinates, and what it's corresponding canonical base it
+is (The "C" in "C+m").  bam_mods_query_type does this by code name,
+while bam_mods_queryi does this by numeric i^{th} type (from 0 to ntype-1).
+
+    bam_mods_query_type(m, 'c', &strand, &implicit, &canonical);
+    bam_mods_queryi(m, 2, &strand, &implicit, &canonical);
+
+*/
+
 /*
  * Base modification are stored in MM/Mm tags as <mod_list> defined as
  *
