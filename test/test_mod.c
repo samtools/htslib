@@ -166,8 +166,13 @@ int main(int argc, char **argv) {
         int all_mods_n = 0;
         all_mods = bam_mods_recorded(m, &all_mods_n);
         printf("Present:");
-        for (i = 0; i < all_mods_n; i++)
+        for (i = 0; i < all_mods_n; i++) {
+            int m_strand, m_implicit;
+            char m_canonical;
+            bam_mods_queryi(m, i, &m_strand, &m_implicit, &m_canonical);
             printf(all_mods[i] > 0 ? " %c" : " #%d", all_mods[i]);
+            putchar("?."[m_implicit]);
+        }
         putchar('\n');
 
         int pos;
