@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
 
         if (argc > 1) puts("---");
 
-        bam_parse_basemod(b, m);
+        bam_parse_basemod2(b, m, flags);
 
         // List possible mod choices.
         int *all_mods;
@@ -196,11 +196,19 @@ int main(int argc, char **argv) {
             lp += snprintf(lp, ep - lp, "%d\t%c\t", pos,
                            seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
             for (j = 0; j < n && j < 5; j++) {
-                lp += snprintf(lp, ep - lp, "%c%c%s%d ",
+                char qstr[10];
+                if (mods[j].qual == HTS_MOD_UNCHECKED)
+                    qstr[0] = '#', qstr[1] = 0;
+                else if (mods[j].qual == HTS_MOD_UNKNOWN)
+                    qstr[0] = '.', qstr[1] = 0;
+                else
+                    snprintf(qstr, 10, "%d", mods[j].qual);
+
+                lp += snprintf(lp, ep - lp, "%c%c%s%s ",
                                mods[j].canonical_base,
                                "+-"[mods[j].strand],
                                code(mods[j].modified_base),
-                               mods[j].qual);
+                               qstr);
             }
             *lp++ = '\n';
             *lp++ = 0;

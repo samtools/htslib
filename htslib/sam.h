@@ -2303,10 +2303,6 @@ HTSLIB_EXPORT
 int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                          hts_base_mod *mods, int n_mods);
 
-HTSLIB_EXPORT
-int bam_mods_at_next_pos2(const bam1_t *b, hts_base_mod_state *state,
-                          hts_base_mod *mods, int n_mods);
-
 /// Finds the next location containing base modifications and returns them
 /**
  * @param b        BAM alignment record

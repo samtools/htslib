@@ -95,8 +95,7 @@ efficient than a loop repeatedly calling ...at-pos.
 
 Iterating over modifications instead of coordinates is simpler and
 more efficient as it skips reporting of unmodified bases.  This is
-done with bam_next_basemod.  Note this does not yet honour the
-HTS_MOD_REPORT_UNCHECKED flag.
+done with bam_next_basemod.
 
     hts_base_mod mods[10];
     while ((n=bam_next_basemod(b, m, mods, 10, &pos)) > 0) {
@@ -534,7 +533,13 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
 }
 
 /*
- * Looks for the next location with a base modification.
+ * Return data at the next modified location.
+ *
+ * bam_mods_at_next_pos does quite a bit of work, so we don't want to
+ * repeatedly call it for every location until we find a mod.  Instead
+ * we check how many base types we can consume before the next mod,
+ * and scan through the sequence looking for them.  Once we're at that
+ * site, we defer back to bam_mods_at_next_pos for the return values.
  */
 int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
                      hts_base_mod *mods, int n_mods, int *pos) {
@@ -545,16 +550,21 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
     // per base type;
     int next[16], freq[16] = {0}, i;
     memset(next, 0x7f, 16*sizeof(*next));
+    const int unchecked = state->flags & HTS_MOD_REPORT_UNCHECKED;
     if (b->core.flag & BAM_FREVERSE) {
         for (i = 0; i < state->nmods; i++) {
-            if (next[seqi_rc[state->canonical[i]]] > state->MMcount[i])
+            if (unchecked && !state->implicit[i])
+                next[seqi_rc[state->canonical[i]]] = 1;
+            else if (next[seqi_rc[state->canonical[i]]] > state->MMcount[i])
                 next[seqi_rc[state->canonical[i]]] = state->MMcount[i];
         }
     } else {
         for (i = 0; i < state->nmods; i++) {
-            if (next[state->canonical[i]] > state->MMcount[i])
+            if (unchecked && !state->implicit[i])
+                next[state->canonical[i]] = 0;
+            else if (next[state->canonical[i]] > state->MMcount[i])
                 next[state->canonical[i]] = state->MMcount[i];
-        }
+       }
     }
 
     // Now step through the sequence counting off base types.
