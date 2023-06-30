@@ -39,6 +39,11 @@ P MM-multi.out       $test_mod    MM-multi.sam
 P MM-explicit.out    $test_mod    MM-explicit.sam
 P MM-explicit-x.out  $test_mod -x MM-explicit.sam
 
+# Report bases outside the explicitly called ranges, so we could exclude
+# these in any depth based consensus analysis and only gather statistics 
+# for sites known to be have been scanned.
+P MM-explicit-f.out  $test_mod -f 1 MM-explicit.sam
+
 # Pileup testing
 P MM-pileup.out $pileup_mod < MM-pileup.sam
 P MM-pileup2.out $pileup_mod < MM-pileup2.sam
