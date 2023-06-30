@@ -974,23 +974,27 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             return 0;
         }
     }
+
+    // New record, needs to be added
+    int n = hdr->nhrec + 1;
+    bcf_hrec_t **new_hrec = realloc(hdr->hrec, n*sizeof(bcf_hrec_t*));
+    if (!new_hrec) {
+        free(str.s);
+        return -1;
+    }
+    hdr->hrec = new_hrec;
+
     if ( str.s )
     {
         khint_t k = kh_put(hdict, aux->gen, str.s, &res);
         if ( res<0 )
         {
-            bcf_hrec_destroy(hrec);
             free(str.s);
             return -1;
         }
         kh_val(aux->gen,k) = hrec;
     }
 
-    // New record, needs to be added
-    int n = hdr->nhrec + 1;
-    bcf_hrec_t **new_hrec = realloc(hdr->hrec, n*sizeof(bcf_hrec_t*));
-    if (!new_hrec) return -1;
-    hdr->hrec = new_hrec;
     hdr->hrec[hdr->nhrec] = hrec;
     hdr->dirty = 1;
     hdr->nhrec = n;
