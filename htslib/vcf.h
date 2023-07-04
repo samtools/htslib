@@ -1522,26 +1522,37 @@ static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 
 static inline int bcf_enc_size(kstring_t *s, int size, int type)
 {
-    uint32_t e = 0;
-    uint8_t x[4];
-    if (size >= 15) {
-        e |= kputc(15<<4|type, s) < 0;
-        if (size >= 128) {
-            if (size >= 32768) {
-                i32_to_le(size, x);
-                e |= kputc(1<<4|BCF_BT_INT32, s) < 0;
-                e |= kputsn((char*)&x, 4, s) < 0;
-            } else {
-                i16_to_le(size, x);
-                e |= kputc(1<<4|BCF_BT_INT16, s) < 0;
-                e |= kputsn((char*)&x, 2, s) < 0;
-            }
+    // Most common case is first
+    if (size < 15) {
+        if (ks_resize(s, s->l + 1) < 0)
+            return -1;
+        uint8_t *p = (uint8_t *)s->s + s->l;
+        *p++ = (size<<4) | type;
+        s->l++;
+        return 0;
+    }
+
+    if (ks_resize(s, s->l + 6) < 0)
+        return -1;
+    uint8_t *p = (uint8_t *)s->s + s->l;
+    *p++ = 15<<4|type;
+
+    if (size < 128) {
+        *p++ = 1<<4|BCF_BT_INT8;
+        *p++ = size;
+        s->l += 3;
+    } else {
+        if (size < 32768) {
+            *p++ = 1<<4|BCF_BT_INT16;
+            i16_to_le(size, p);
+            s->l += 4;
         } else {
-            e |= kputc(1<<4|BCF_BT_INT8, s) < 0;
-            e |= kputc(size, s) < 0;
+            *p++ = 1<<4|BCF_BT_INT32;
+            i32_to_le(size, p);
+            s->l += 6;
         }
-    } else e |= kputc(size<<4|type, s) < 0;
-    return e == 0 ? 0 : -1;
+    }
+    return 0;
 }
 
 static inline int bcf_enc_inttype(long x)
@@ -1553,27 +1564,35 @@ static inline int bcf_enc_inttype(long x)
 
 static inline int bcf_enc_int1(kstring_t *s, int32_t x)
 {
-    uint32_t e = 0;
-    uint8_t z[4];
+    if (ks_resize(s, s->l + 5) < 0)
+        return -1;
+    uint8_t *p = (uint8_t *)s->s + s->l;
+
     if (x == bcf_int32_vector_end) {
-        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
-        e |= kputc(bcf_int8_vector_end, s) < 0;
+        // An inline implementation of bcf_enc_size with size==1 and
+        // memory allocation already accounted for.
+        *p = (1<<4) | BCF_BT_INT8;
+        p[1] = bcf_int8_vector_end;
+        s->l+=2;
     } else if (x == bcf_int32_missing) {
-        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
-        e |= kputc(bcf_int8_missing, s) < 0;
+        *p = (1<<4) | BCF_BT_INT8;
+        p[1] = bcf_int8_missing;
+        s->l+=2;
     } else if (x <= BCF_MAX_BT_INT8 && x >= BCF_MIN_BT_INT8) {
-        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
-        e |= kputc(x, s) < 0;
+        *p = (1<<4) | BCF_BT_INT8;
+        p[1] = x;
+        s->l+=2;
     } else if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) {
-        i16_to_le(x, z);
-        e |= bcf_enc_size(s, 1, BCF_BT_INT16);
-        e |= kputsn((char*)&z, 2, s) < 0;
+        *p = (1<<4) | BCF_BT_INT16;
+        i16_to_le(x, p+1);
+        s->l+=3;
     } else {
-        i32_to_le(x, z);
-        e |= bcf_enc_size(s, 1, BCF_BT_INT32);
-        e |= kputsn((char*)&z, 4, s) < 0;
+        *p = (1<<4) | BCF_BT_INT32;
+        i32_to_le(x, p+1);
+        s->l+=5;
     }
-    return e == 0 ? 0 : -1;
+
+    return 0;
 }
 
 /// Return the value of a single typed integer.

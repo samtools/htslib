@@ -204,8 +204,17 @@ char *kstrtok(const char *str, const char *sep_in, ks_tokaux_t *aux)
 		for (p = start; *p; ++p)
 			if (aux->tab[*p>>6]>>(*p&0x3f)&1) break;
 	} else {
-		for (p = start; *p; ++p)
-			if (*p == aux->sep) break;
+		// Using strchr is fast for next token, but slower for
+		// last token due to extra pass from strlen.  Overall
+		// on a VCF parse this func was 146% faster with // strchr.
+		// Equiv to:
+		// for (p = start; *p; ++p) if (*p == aux->sep) break;
+
+		// NB: We could use strchrnul() here from glibc if detected,
+		// which is ~40% faster again, but it's not so portable.
+		// i.e.   p = (uint8_t *)strchrnul((char *)start, aux->sep);
+		uint8_t *p2 = (uint8_t *)strchr((char *)start, aux->sep);
+		p = p2 ? p2 : start + strlen((char *)start);
 	}
 	aux->p = (const char *) p; // end of token
 	if (*p == 0) aux->finished = 1; // no more tokens

@@ -2280,7 +2280,13 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
             if (fp->block_length == 0) { state = -1; break; }
         }
         unsigned char *buf = fp->uncompressed_block;
-        for (l = fp->block_offset; l < fp->block_length && buf[l] != delim; ++l);
+
+        // Equivalent to a naive byte by byte search from
+        // buf + block_offset to buf + block_length.
+        void *e = memchr(&buf[fp->block_offset], delim,
+                         fp->block_length - fp->block_offset);
+        l = e ? (unsigned char *)e - buf : fp->block_length;
+
         if (l < fp->block_length) state = 1;
         l -= fp->block_offset;
         if (ks_expand(str, l + 2) < 0) { state = -3; break; }
