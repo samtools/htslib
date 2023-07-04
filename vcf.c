@@ -2633,22 +2633,11 @@ static inline int align_mem(kstring_t *s)
     return e == 0 ? 0 : -1;
 }
 
-// p,q is the start and the end of the FORMAT field
 #define MAX_N_FMT 255   /* Limited by size of bcf1_t n_fmt field */
-static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q)
-{
-    if ( !bcf_hdr_nsamples(h) ) return 0;
 
-    static int extreme_val_warned = 0;
-    char *r, *t;
-    int j, l, m, g, overflow = 0;
-    khint_t k;
-    ks_tokaux_t aux1;
-    vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
-    kstring_t *mem = (kstring_t*)&h->mem;
-    fmt_aux_t fmt[MAX_N_FMT];
-    mem->l = 0;
-
+// detect FORMAT "."
+static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                   char *p, char *q) {
     char *end = s->s + s->l;
     if ( q>=end )
     {
@@ -2661,10 +2650,19 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     if ( p[0]=='.' && p[1]==0 ) // FORMAT field is empty "."
     {
         v->n_sample = bcf_hdr_nsamples(h);
-        return 0;
+        return 1;
     }
 
-    // get format information from the dictionary
+    return 0;
+}
+
+// get format information from the dictionary
+static int vcf_parse_format_dict2(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                  char *p, char *q, fmt_aux_t *fmt) {
+    const vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
+    char *t;
+    int j;
+    ks_tokaux_t aux1;
     for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
         if (j >= MAX_N_FMT) {
             v->errcode |= BCF_ERR_LIMITS;
@@ -2674,7 +2672,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         }
 
         *(char*)aux1.p = 0;
-        k = kh_get(vdict, d, t);
+        khint_t k = kh_get(vdict, d, t);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_FMT] == 15) {
             if ( t[0]=='.' && t[1]==0 )
             {
@@ -2706,10 +2704,17 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         fmt[j].y = h->id[0][fmt[j].key].val->info[BCF_HL_FMT];
         v->n_fmt++;
     }
-    // compute max
+    return 0;
+}
+
+// compute max
+static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                 char *p, char *q, fmt_aux_t *fmt) {
     int n_sample_ori = -1;
-    r = q + 1;  // r: position in the format string
-    l = 0, m = g = 1, v->n_sample = 0;  // m: max vector size, l: max field len, g: max number of alleles
+    char *r = q + 1;  // r: position in the format string
+    int l = 0, m = 1, g = 1, j;
+    v->n_sample = 0;  // m: max vector size, l: max field len, g: max number of alleles
+    char *end = s->s + s->l;
     while ( r<end )
     {
         // can we skip some samples?
@@ -2767,7 +2772,15 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         r++;
     }
 
-    // allocate memory for arrays
+    return 0;
+}
+
+// allocate memory for arrays
+static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                   char *p, char *q, fmt_aux_t *fmt) {
+    kstring_t *mem = (kstring_t*)&h->mem;
+
+    int j;
     for (j = 0; j < v->n_fmt; ++j) {
         fmt_aux_t *f = &fmt[j];
         if ( !f->max_m ) f->max_m = 1;  // omitted trailing format field
@@ -2804,11 +2817,25 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         }
         mem->l += v->n_sample * f->size;
     }
-    for (j = 0; j < v->n_fmt; ++j)
-        fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
-    // fill the sample fields; at beginning of the loop, t points to the first char of a format
-    n_sample_ori = -1;
-    t = q + 1; m = 0;   // m: sample id
+
+    {
+        int j;
+        for (j = 0; j < v->n_fmt; ++j)
+            fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
+    }
+
+    return 0;
+}
+
+// fill the sample fields; at beginning of the loop
+static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                  char *p, char *q, fmt_aux_t *fmt) {
+    static int extreme_val_warned = 0; 
+    int n_sample_ori = -1;
+    // t points to the first char of a format
+    char *t = q + 1;
+    int m = 0;   // m: sample id
+    char *end = s->s + s->l;
     while ( t<end )
     {
         // can we skip some samples?
@@ -2824,7 +2851,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         }
         if ( m == bcf_hdr_nsamples(h) ) break;
 
-        j = 0; // j-th format field, m-th sample
+        int j = 0; // j-th format field, m-th sample
         while ( t < end )
         {
             fmt_aux_t *z = &fmt[j++];
@@ -2835,12 +2862,13 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 return -1;
             }
             if ((z->y>>4&0xf) == BCF_HT_STR) {
+                int l;
                 if (z->is_gt) { // genotypes
                     int32_t is_phased = 0;
                     uint32_t *x = (uint32_t*)(z->buf + z->size * (size_t)m);
                     uint32_t unreadable = 0;
                     uint32_t max = 0;
-                    overflow = 0;
+                    int overflow = 0;
                     for (l = 0;; ++t) {
                         if (*t == '.') {
                             ++t, x[l++] = is_phased;
@@ -2867,16 +2895,17 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
                 } else {
                     char *x = (char*)z->buf + z->size * (size_t)m;
-                    for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
+                    for (l = 0; *t != ':' && *t; ++t) x[l++] = *t;
                     for (; l < z->size; ++l) x[l] = 0;
                 }
             } else if ((z->y>>4&0xf) == BCF_HT_INT) {
                 int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
+                int l;
                 for (l = 0;; ++t) {
                     if (*t == '.') {
                         x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
                     } else {
-                        overflow = 0;
+                        int overflow = 0;
                         char *te;
                         long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
                         if ( te==t || overflow || tmp_val<BCF_MIN_BT_INT32 || tmp_val>BCF_MAX_BT_INT32 )
@@ -2897,11 +2926,12 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
             } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
                 float *x = (float*)(z->buf + z->size * (size_t)m);
+                int l;
                 for (l = 0;; ++t) {
                     if (*t == '.' && !isdigit_c(t[1])) {
                         bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
                     } else {
-                        overflow = 0;
+                        int overflow = 0;
                         char *te;
                         float tmp_val = hts_str2dbl(t, &te, &overflow);
                         if ( (te==t || overflow) && !extreme_val_warned )
@@ -2940,6 +2970,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
         for (; j < v->n_fmt; ++j) { // fill end-of-vector values
             fmt_aux_t *z = &fmt[j];
+            int l;
             if ((z->y>>4&0xf) == BCF_HT_STR) {
                 if (z->is_gt) {
                     int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
@@ -2964,7 +2995,12 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         m++; t++;
     }
 
-    // write individual genotype information
+    return 0;
+}
+
+// write individual genotype information
+static int vcf_parse_format_gt6(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                char *p, char *q, fmt_aux_t *fmt) {
     kstring_t *str = &v->indiv;
     int i;
     if (v->n_sample > 0) {
@@ -2988,6 +3024,11 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         }
     }
 
+    return 0;
+}
+
+// validity checking
+static int vcf_parse_format_check7(const bcf_hdr_t *h, bcf1_t *v) {
     if ( v->n_sample!=bcf_hdr_nsamples(h) )
     {
         hts_log_error("Number of columns at %s:%"PRIhts_pos" does not match the number of samples (%d vs %d)",
@@ -3004,6 +3045,47 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         v->n_fmt = 0;
         return -1;
     }
+
+    return 0;
+}
+
+// p,q is the start and the end of the FORMAT field
+static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q)
+{
+    if ( !bcf_hdr_nsamples(h) ) return 0;
+    kstring_t *mem = (kstring_t*)&h->mem;
+    mem->l = 0;
+
+    fmt_aux_t fmt[MAX_N_FMT];
+
+    // detect FORMAT "."
+    int ret; // +ve = ok, -ve = err
+    if ((ret = vcf_parse_format_empty1(s, h, v, p, q)))
+        return ret ? 0 : -1;
+
+    // get format information from the dictionary
+    if (vcf_parse_format_dict2(s, h, v, p, q, fmt) < 0)
+        return -1;
+
+    // compute max
+    if (vcf_parse_format_max3(s, h, v, p, q, fmt) < 0)
+        return -1;
+
+    // allocate memory for arrays
+    if (vcf_parse_format_alloc4(s, h, v, p, q, fmt) < 0)
+        return -1;
+
+    // fill the sample fields; at beginning of the loop
+    if (vcf_parse_format_fill5(s, h, v, p, q, fmt) < 0)
+        return -1;
+
+    // write individual genotype information
+    if (vcf_parse_format_gt6(s, h, v, p, q, fmt) < 0)
+        return -1;
+
+    // validity checking
+    if (vcf_parse_format_check7(h, v) < 0)
+        return -1;
 
     return 0;
 }
