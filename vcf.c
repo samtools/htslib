@@ -904,6 +904,47 @@ static void bcf_hdr_unregister_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     }
 }
 
+static void bcf_hdr_remove_from_hdict(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
+{
+    kstring_t str = KS_INITIALIZE;
+    bcf_hdr_aux_t *aux = get_hdr_aux(hdr);
+    khint_t k;
+    int id;
+
+    switch (hrec->type) {
+    case BCF_HL_GEN:
+        if (ksprintf(&str, "##%s=%s", hrec->key,hrec->value) < 0)
+            str.l = 0;
+        break;
+    case BCF_HL_STR:
+        id = bcf_hrec_find_key(hrec, "ID");
+        if (id < 0)
+            return;
+        if (!hrec->vals[id] ||
+            ksprintf(&str, "##%s=<ID=%s>", hrec->key, hrec->vals[id]) < 0)
+            str.l = 0;
+        break;
+    default:
+        return;
+    }
+    if (str.l) {
+        k = kh_get(hdict, aux->gen, str.s);
+    } else {
+        // Couldn't get a string for some reason, so try the hard way...
+        for (k = kh_begin(aux->gen); k < kh_end(aux->gen); k++) {
+            if (kh_exist(aux->gen, k) && kh_val(aux->gen, k) == hrec)
+                break;
+        }
+    }
+    if (k != kh_end(aux->gen) && kh_val(aux->gen, k) == hrec) {
+        kh_val(aux->gen, k) = NULL;
+        free((char *) kh_key(aux->gen, k));
+        kh_key(aux->gen, k) = NULL;
+        kh_del(hdict, aux->gen, k);
+    }
+    free(str.s);
+}
+
 int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
 {
     // currently only for bcf_hdr_set_version
@@ -1204,6 +1245,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
             if ( hdr->hrec[i]->type!=type ) { i++; continue; }
             hrec = hdr->hrec[i];
             bcf_hdr_unregister_hrec(hdr, hrec);
+            bcf_hdr_remove_from_hdict(hdr, hrec);
             hdr->dirty = 1;
             hdr->nhrec--;
             if ( i < hdr->nhrec )
@@ -1245,6 +1287,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
             }
             if ( i==hdr->nhrec ) return;
             hrec = hdr->hrec[i];
+            bcf_hdr_remove_from_hdict(hdr, hrec);
         }
 
         hdr->nhrec--;

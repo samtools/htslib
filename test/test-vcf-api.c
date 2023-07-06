@@ -125,6 +125,7 @@ void write_bcf(char *fname)
     check0(bcf_hdr_append(hdr, "##INFO=<ID=UI,Number=1,Type=Integer,Description=\"Unused INFO\">"));
     check0(bcf_hdr_append(hdr, "##FILTER=<ID=Flt,Description=\"Unused FILTER\">"));
     check0(bcf_hdr_append(hdr, "##unused=<XX=AA,Description=\"Unused generic\">"));
+    check0(bcf_hdr_append(hdr, "##unused=<ID=BB,Description=\"Unused generic with ID\">"));
     check0(bcf_hdr_append(hdr, "##unused=unformatted text 1"));
     check0(bcf_hdr_append(hdr, "##unused=unformatted text 2"));
     check0(bcf_hdr_append(hdr, "##contig=<ID=Unused,length=1>"));
@@ -297,12 +298,42 @@ void bcf_to_vcf(char *fname)
     if (!out) error("Couldn't open \"%s\" : %s\n", gz_fname, strerror(errno));
 
     bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
-    bcf_hdr_remove(hdr_out,BCF_HL_STR,"unused");
+    if (!bcf_hdr_get_hrec(hdr_out, BCF_HL_STR,"ID","BB","unused"))
+        error("Missing header ##unused=<ID=BB, ...>");
+    bcf_hdr_remove(hdr_out,BCF_HL_STR,"BB");
+    if (bcf_hdr_get_hrec(hdr_out, BCF_HL_STR,"ID","BB","unused"))
+        error("Got pointer to deleted header ##unused=<ID=BB, ...>");
+
+    if (!bcf_hdr_get_hrec(hdr_out,BCF_HL_GEN,"unused","unformatted text 1",NULL))
+        error("Missing header ##unused=unformatted text 1");
     bcf_hdr_remove(hdr_out,BCF_HL_GEN,"unused");
+    if (bcf_hdr_get_hrec(hdr_out,BCF_HL_GEN,"unused","unformatted text 1",NULL))
+        error("Got pointer to deleted header ##unused=unformatted text 1");
+
+    if (!bcf_hdr_get_hrec(hdr_out,BCF_HL_FLT,"ID","Flt",NULL))
+        error("Missing header ##FILTER=<ID=Flt, ...>");
     bcf_hdr_remove(hdr_out,BCF_HL_FLT,"Flt");
+    if (bcf_hdr_get_hrec(hdr_out,BCF_HL_FLT,"ID","Flt",NULL))
+        error("Got pointer to deleted header ##FILTER=<ID=Flt, ...>");
+
+    if (!bcf_hdr_get_hrec(hdr_out,BCF_HL_INFO,"ID","UI",NULL))
+        error("Missing header ##INFO=<ID=UI, ...>");
     bcf_hdr_remove(hdr_out,BCF_HL_INFO,"UI");
+    if (bcf_hdr_get_hrec(hdr_out,BCF_HL_INFO,"ID","UI",NULL))
+        error("Got pointer to deleted header ##INFO=<ID=UI, ...>");
+
+    if (!bcf_hdr_get_hrec(hdr_out,BCF_HL_FMT,"ID","UF",NULL))
+        error("Missing header ##INFO=<ID=UF, ...>");
     bcf_hdr_remove(hdr_out,BCF_HL_FMT,"UF");
+    if (bcf_hdr_get_hrec(hdr_out,BCF_HL_FMT,"ID","UF",NULL))
+        error("Got pointer to deleted header ##INFO=<ID=UF, ...>");
+
+    if (!bcf_hdr_get_hrec(hdr_out,BCF_HL_CTG,"ID","Unused",NULL))
+        error("Missing header ##contig=<ID=Unused,length=1>");
     bcf_hdr_remove(hdr_out,BCF_HL_CTG,"Unused");
+    if (bcf_hdr_get_hrec(hdr_out,BCF_HL_FMT,"ID","Unused",NULL))
+        error("Got pointer to header ##contig=<ID=Unused,length=1>");
+
     if ( bcf_hdr_write(out, hdr_out)!=0 ) error("Failed to write to %s\n", fname);
     int r;
     while ((r = bcf_read1(fp, hdr, rec)) >= 0)
