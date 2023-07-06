@@ -511,7 +511,13 @@ cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
 
     slice = fd->index[refid+1].nslice - 1;
 
-    return &from->e[slice];
+    // e is the last entry in the nested containment list, but it may
+    // contain further slices within it.
+    cram_index *e = &from->e[slice];
+    while (e->e_next)
+        e = e->e_next;
+
+    return e;
 }
 
 /*
