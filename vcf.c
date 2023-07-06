@@ -886,6 +886,24 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return 1;
 }
 
+static void bcf_hdr_unregister_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
+{
+    if (hrec->type == BCF_HL_FLT ||
+        hrec->type == BCF_HL_INFO ||
+        hrec->type == BCF_HL_FMT ||
+        hrec->type == BCF_HL_CTG) {
+        int id = bcf_hrec_find_key(hrec, "ID");
+        if (id < 0 || !hrec->vals[id])
+            return;
+        vdict_t *dict = (hrec->type == BCF_HL_CTG
+                         ? (vdict_t*)hdr->dict[BCF_DT_CTG]
+                         : (vdict_t*)hdr->dict[BCF_DT_ID]);
+        khint_t k = kh_get(vdict, dict, hrec->vals[id]);
+        if (k != kh_end(dict))
+            kh_val(dict, k).hrec[hrec->type==BCF_HL_CTG ? 0 : hrec->type] = NULL;
+    }
+}
+
 int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
 {
     // currently only for bcf_hdr_set_version
@@ -980,6 +998,7 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     bcf_hrec_t **new_hrec = realloc(hdr->hrec, n*sizeof(bcf_hrec_t*));
     if (!new_hrec) {
         free(str.s);
+        bcf_hdr_unregister_hrec(hdr, hrec);
         return -1;
     }
     hdr->hrec = new_hrec;
@@ -1184,18 +1203,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
         {
             if ( hdr->hrec[i]->type!=type ) { i++; continue; }
             hrec = hdr->hrec[i];
-
-            if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
-            {
-                int j = bcf_hrec_find_key(hdr->hrec[i], "ID");
-                if ( j>=0 )
-                {
-                    vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
-                    khint_t k = kh_get(vdict, d, hdr->hrec[i]->vals[j]);
-                    kh_val(d, k).hrec[type==BCF_HL_CTG?0:type] = NULL;
-                }
-            }
-
+            bcf_hdr_unregister_hrec(hdr, hrec);
             hdr->dirty = 1;
             hdr->nhrec--;
             if ( i < hdr->nhrec )
