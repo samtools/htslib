@@ -324,10 +324,24 @@ decompress_peek_gz(hFILE *fp, unsigned char *dest, size_t destsize)
     zs.avail_out = destsize;
     if (inflateInit2(&zs, 31) != Z_OK) return -1;
 
-    while (zs.total_out < destsize)
-        if (inflate(&zs, Z_SYNC_FLUSH) != Z_OK) break;
+    int ret;
+    unsigned char *last_in = buffer;
+    while (zs.total_out < destsize) {
+        ret = inflate(&zs, Z_SYNC_FLUSH);
+        if (ret == Z_STREAM_END && zs.avail_in && zs.total_out < destsize) {
+            if (last_in == zs.next_in)
+                break; // paranoia to avoid potential looping
+            else
+                last_in = zs.next_in;
+            inflateReset(&zs);
+            continue;
+        }
+        if (ret != Z_OK)
+            break;
+    }
 
-    destsize = zs.total_out;
+    // zs.total_out can sometimes be wrong as inflateReset resets it
+    destsize = zs.next_out - dest;
     inflateEnd(&zs);
 
     return destsize;
