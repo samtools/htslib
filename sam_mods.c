@@ -231,6 +231,7 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
     // Reset position, else upcoming calls may fail on
     // seq pos - length comparison
     state->seq_pos = 0;
+    state->nmods = 0;
     state->flags = flags;
 
     // Read MM and ML tags

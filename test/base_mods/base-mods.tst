@@ -44,6 +44,9 @@ P MM-explicit-x.out  $test_mod -x MM-explicit.sam
 # for sites known to be have been scanned.
 P MM-explicit-f.out  $test_mod -f 1 MM-explicit.sam
 
+# Ensure state gets reset correctly between reads
+P MM-not-all-modded.out	$test_mod MM-not-all-modded.sam
+
 # Pileup testing
 P MM-pileup.out $pileup_mod < MM-pileup.sam
 P MM-pileup2.out $pileup_mod < MM-pileup2.sam
