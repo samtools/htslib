@@ -115,6 +115,7 @@ typedef struct
 {
     vdict_t dict;   // bcf_hdr_t.dict[0] vdict_t dictionary which keeps bcf_idinfo_t for BCF_HL_FLT,BCF_HL_INFO,BCF_HL_FMT
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
+    size_t *key_len;// length of h->id[BCF_DT_ID] strings
 }
 bcf_hdr_aux_t;
 
@@ -242,6 +243,14 @@ int bcf_hdr_sync(bcf_hdr_t *h)
             h->id[i][kh_val(d,k).id].val = &kh_val(d,k);
         }
     }
+
+    // Invalidate key length cache
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux && aux->key_len) {
+        free(aux->key_len);
+        aux->key_len = NULL;
+    }
+
     h->dirty = 0;
     return 0;
 }
@@ -1409,6 +1418,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     bcf_hdr_aux_t *aux = (bcf_hdr_aux_t*)calloc(1,sizeof(bcf_hdr_aux_t));
     if ( !aux ) goto fail;
     if ( (aux->gen = kh_init(hdict))==NULL ) { free(aux); goto fail; }
+    aux->key_len = NULL;
     aux->dict = *((vdict_t*)h->dict[0]);
     free(h->dict[0]);
     h->dict[0] = aux;
@@ -1444,6 +1454,7 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
             for (k=kh_begin(aux->gen); k<kh_end(aux->gen); k++)
                 if ( kh_exist(aux->gen,k) ) free((char*)kh_key(aux->gen,k));
             kh_destroy(hdict, aux->gen);
+            free(aux->key_len); // may exist for dict[0] only
         }
         kh_destroy(vdict, d);
         free(h->id[i]);
@@ -2642,20 +2653,80 @@ int bcf_enc_vchar(kstring_t *s, int l, const char *a)
     return 0; // FIXME: check for errs in this function
 }
 
+// Special case of n==1 as it also occurs quite often in FORMAT data.
+// This version is also small enough to get inlined.
+static inline int bcf_fmt_array1(kstring_t *s, int type, void *data) {
+    uint32_t e = 0;
+    uint8_t *p = (uint8_t *)data;
+    int32_t v;
+
+    // helps gcc more than clang here. In billions of cycles:
+    //          bcf_fmt_array1  bcf_fmt_array
+    // gcc7:    23.2            24.3
+    // gcc13:   21.6            23.0
+    // clang13: 27.1            27.8
+    switch (type) {
+    case BCF_BT_CHAR:
+        e |= kputc_(*p == bcf_str_missing ? '.' : *p, s) < 0;
+        break;
+
+    case BCF_BT_INT8:
+        if (*(int8_t *)p != bcf_int8_vector_end) {
+            e |= ((*(int8_t *)p == bcf_int8_missing)
+                  ? kputc_('.', s)
+                  : kputw(*(int8_t *)p, s)) < 0;
+        }
+        break;
+    case BCF_BT_INT16:
+        v = le_to_i16(p);
+        if (v != bcf_int16_vector_end) {
+            e |= (v == bcf_int16_missing
+                  ? kputc_('.', s)
+                  : kputw(v, s)) < 0;
+        }
+        break;
+
+    case BCF_BT_INT32:
+        v = le_to_i32(p);
+        if (v != bcf_int32_vector_end) {
+            e |= (v == bcf_int32_missing
+                  ? kputc_('.', s)
+                  : kputw(v, s)) < 0;
+        }
+        break;
+
+    case BCF_BT_FLOAT:
+        v = le_to_u32(p);
+        if (v != bcf_float_vector_end) {
+            e |= (v == bcf_float_missing
+                  ? kputc_('.', s)
+                  : kputd(le_to_float(p), s)) < 0;
+        }
+        break;
+
+    default:
+        hts_log_error("Unexpected type %d", type);
+        return -1;
+    }
+
+    return e == 0 ? 0 : -1;
+}
+
 int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
     int j = 0;
     uint32_t e = 0;
     if (n == 0) {
-        return kputc('.', s) >= 0 ? 0 : -1;
+        return kputc_('.', s) >= 0 ? 0 : -1;
     }
+
     if (type == BCF_BT_CHAR)
     {
         char *p = (char*)data;
         for (j = 0; j < n && *p; ++j, ++p)
         {
-            if ( *p==bcf_str_missing ) e |= kputc('.', s) < 0;
-            else e |= kputc(*p, s) < 0;
+            if ( *p==bcf_str_missing ) e |= kputc_('.', s) < 0;
+            else e |= kputc_(*p, s) < 0;
         }
     }
     else
@@ -2666,9 +2737,8 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
             { \
                 type_t v = convert(p); \
                 if ( is_vector_end ) break; \
-                if ( j ) kputc(',', s); \
-                if ( is_missing ) kputc('.', s); \
-                else e |= kprint < 0; \
+                if ( j ) e |= kputc_(',', s) < 0; \
+                e |= (is_missing ? kputc('.', s) : kprint) < 0; \
             } \
         }
         switch (type) {
@@ -3720,20 +3790,41 @@ static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_
 static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
 {
     uint8_t *ptr_start = ptr;
+    int64_t len = 0;
     info->key = bcf_dec_typed_int1(ptr, &ptr);
-    info->len = bcf_dec_size(ptr, &ptr, &info->type);
+    len = info->len = bcf_dec_size(ptr, &ptr, &info->type);
     info->vptr = ptr;
     info->vptr_off  = ptr - ptr_start;
     info->vptr_free = 0;
     info->v1.i = 0;
     if (info->len == 1) {
-        if (info->type == BCF_BT_INT8 || info->type == BCF_BT_CHAR) info->v1.i = *(int8_t*)ptr;
-        else if (info->type == BCF_BT_INT32) info->v1.i = le_to_i32(ptr);
-        else if (info->type == BCF_BT_FLOAT) info->v1.f = le_to_float(ptr);
-        else if (info->type == BCF_BT_INT16) info->v1.i = le_to_i16(ptr);
-        else if (info->type == BCF_BT_INT64) info->v1.i = le_to_i64(ptr);
+        switch(info->type) {
+        case BCF_BT_INT8:
+        case BCF_BT_CHAR:
+            info->v1.i = *(int8_t*)ptr;
+            break;
+        case BCF_BT_INT16:
+            info->v1.i = le_to_i16(ptr);
+            len <<= 1;
+            break;
+        case BCF_BT_INT32:
+            info->v1.i = le_to_i32(ptr);
+            len <<= 2;
+            break;
+        case BCF_BT_FLOAT:
+            info->v1.f = le_to_float(ptr);
+            len <<= 2;
+            break;
+        case BCF_BT_INT64:
+            info->v1.i = le_to_i64(ptr);
+            len <<= 3;
+            break;
+        }
+    } else {
+        len <<= bcf_type_shift[info->type];
     }
-    ptr += info->len << bcf_type_shift[info->type];
+    ptr += len;
+
     info->vptr_len = ptr - info->vptr;
     return ptr;
 }
@@ -3819,24 +3910,42 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
         errno = EINVAL;
         return -1;
     }
+
     bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
+
+    // Cache of key lengths so we don't keep repeatedly using them.
+    // This assumes we're not modifying the header between successive calls
+    // to vcf_format, but that would lead to many other forms of breakage
+    // so it feels like a valid assumption to make.
+    //
+    // We cannot just do this in bcf_hdr_sync as some code (eg bcftools
+    // annotate) manipulates the headers directly without calling sync to
+    // refresh the data structures.  So we must do just-in-time length
+    // calculation during writes instead.
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (!aux->key_len) {
+        if (!(aux->key_len = calloc(h->n[BCF_DT_ID]+1, sizeof(*aux->key_len))))
+            return -1;
+    }
+    size_t *key_len = aux->key_len;
+
     kputs(chrom, s); // CHROM
-    kputc('\t', s); kputll(v->pos + 1, s); // POS
-    kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
-    kputc('\t', s); // REF
+    kputc_('\t', s); kputll(v->pos + 1, s); // POS
+    kputc_('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
+    kputc_('\t', s); // REF
     if (v->n_allele > 0) kputs(v->d.allele[0], s);
-    else kputc('.', s);
-    kputc('\t', s); // ALT
+    else kputc_('.', s);
+    kputc_('\t', s); // ALT
     if (v->n_allele > 1) {
         for (i = 1; i < v->n_allele; ++i) {
-            if (i > 1) kputc(',', s);
+            if (i > 1) kputc_(',', s);
             kputs(v->d.allele[i], s);
         }
-    } else kputc('.', s);
-    kputc('\t', s); // QUAL
-    if ( bcf_float_is_missing(v->qual) ) kputc('.', s); // QUAL
+    } else kputc_('.', s);
+    kputc_('\t', s); // QUAL
+    if ( bcf_float_is_missing(v->qual) ) kputc_('.', s); // QUAL
     else kputd(v->qual, s);
-    kputc('\t', s); // FILTER
+    kputc_('\t', s); // FILTER
     if (v->d.n_flt) {
         for (i = 0; i < v->d.n_flt; ++i) {
             int32_t idx = v->d.flt[i];
@@ -3847,20 +3956,25 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                 errno = EINVAL;
                 return -1;
             }
-            if (i) kputc(';', s);
-            kputs(h->id[BCF_DT_ID][idx].key, s);
+            if (i) kputc_(';', s);
+            if (!key_len[idx])
+                key_len[idx] = strlen(h->id[BCF_DT_ID][idx].key);
+            kputsn(h->id[BCF_DT_ID][idx].key, key_len[idx], s);
         }
-    } else kputc('.', s);
-    kputc('\t', s); // INFO
+    } else kputc_('.', s);
+    kputc_('\t', s); // INFO
     if (v->n_info) {
         int first = 1;
+        bcf_info_t *info = v->d.info;
         for (i = 0; i < v->n_info; ++i) {
-            bcf_info_t *z = &v->d.info[i];
+            bcf_info_t *z = &info[i];
             if ( !z->vptr ) continue;
-            if ( !first ) kputc(';', s);
-            first = 0;
-            if (z->key < 0 || z->key >= max_dt_id
-                || h->id[BCF_DT_ID][z->key].key == NULL) {
+
+            bcf_idpair_t *id = z->key >= 0 && z->key < max_dt_id
+                ? &h->id[BCF_DT_ID][z->key]
+                : NULL;
+
+            if (!id || !id->key) {
                 hts_log_error("Invalid BCF, the INFO tag id=%d is %s at %s:%"PRIhts_pos,
                               z->key,
                               z->key < 0 ? "negative"
@@ -3869,29 +3983,58 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                 errno = EINVAL;
                 return -1;
             }
-            kputs(h->id[BCF_DT_ID][z->key].key, s);
+
+            if (!key_len[z->key])
+                key_len[z->key] = strlen(id->key);
+            size_t id_len = key_len[z->key];
+            if (ks_resize(s, s->l + 2 + id_len) < 0)
+                return -1;
+            char *sptr = s->s + s->l;
+            if ( !first ) {
+                *sptr++ = ';';
+                s->l++;
+            }
+            first = 0;
+            memcpy(sptr, id->key, id_len);
+            s->l += id_len;
+
             if (z->len <= 0) continue;
-            kputc('=', s);
-            if (z->len == 1)
-            {
-                switch (z->type)
-                {
-                    case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
-                    case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
-                    case BCF_BT_INT32: if ( z->v1.i==bcf_int32_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
-                    case BCF_BT_INT64: if ( z->v1.i==bcf_int64_missing ) kputc('.', s); else kputll(z->v1.i, s); break;
-                    case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else kputd(z->v1.f, s); break;
-                    case BCF_BT_CHAR:  kputc(z->v1.i, s); break;
-                    default:
-                        hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, z->type, bcf_seqname_safe(h, v), v->pos+1);
-                        errno = EINVAL;
-                        return -1;
+
+            kputc_('=', s);
+            if (z->len == 1) {
+                if (z->type == BCF_BT_FLOAT) {
+                    if ( bcf_float_is_missing(z->v1.f) )
+                        kputc_('.', s);
+                    else
+                        kputd(z->v1.f, s);
+                } else if (z->type == BCF_BT_CHAR) {
+                    kputc_(z->v1.i, s);
+                } else if (z->type < BCF_BT_INT64) {
+                    int64_t missing[] = {
+                        0, // BCF_BT_NULL
+                        bcf_int8_missing,
+                        bcf_int16_missing,
+                        bcf_int32_missing,
+                    };
+                    if (z->v1.i == missing[z->type])
+                        kputc_('.', s);
+                    else
+                        kputw(z->v1.i, s);
+                } else if (z->type == BCF_BT_INT64) {
+                    if (z->v1.i == bcf_int64_missing)
+                        kputc_('.', s);
+                    else
+                        kputll(z->v1.i, s);
+                } else {
+                    hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, z->type, bcf_seqname_safe(h, v), v->pos+1);
+                    errno = EINVAL;
+                    return -1;
                 }
             }
             else bcf_fmt_array(s, z->len, z->type, z->vptr);
         }
-        if ( first ) kputc('.', s);
-    } else kputc('.', s);
+        if ( first ) kputc_('.', s);
+    } else kputc_('.', s);
     // FORMAT and individual information
     if (v->n_sample)
     {
@@ -3903,32 +4046,42 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             int first = 1;
             for (i = 0; i < (int)v->n_fmt; ++i) {
                 if ( !fmt[i].p ) continue;
-                kputc(!first ? ':' : '\t', s); first = 0;
-                if (fmt[i].id < 0 || fmt[i].id >= max_dt_id
-                    || h->id[BCF_DT_ID][fmt[i].id].key == NULL) //!bcf_hdr_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) )
-                {
+                kputc_(!first ? ':' : '\t', s); first = 0;
+
+                bcf_idpair_t *id = fmt[i].id >= 0 && fmt[i].id < max_dt_id
+                    ? &h->id[BCF_DT_ID][fmt[i].id]
+                    : NULL;
+
+                if (!id || !id->key) {
                     hts_log_error("Invalid BCF, the FORMAT tag id=%d at %s:%"PRIhts_pos" not present in the header", fmt[i].id, bcf_seqname_safe(h, v), v->pos+1);
                     errno = EINVAL;
                     return -1;
                 }
-                kputs(h->id[BCF_DT_ID][fmt[i].id].key, s);
-                if (strcmp(h->id[BCF_DT_ID][fmt[i].id].key, "GT") == 0) gt_i = i;
+
+                if (!key_len[fmt[i].id])
+                    key_len[fmt[i].id] = strlen(id->key);
+                size_t id_len = key_len[fmt[i].id];
+                kputsn(id->key, id_len, s);
+                if (id_len == 2 && strcmp(id->key, "GT") == 0)
+                    gt_i = i;
             }
             if ( first ) kputs("\t.", s);
             for (j = 0; j < v->n_sample; ++j) {
-                kputc('\t', s);
+                kputc_('\t', s);
                 first = 1;
                 for (i = 0; i < (int)v->n_fmt; ++i) {
                     bcf_fmt_t *f = &fmt[i];
                     if ( !f->p ) continue;
-                    if (!first) kputc(':', s);
+                    if (!first) kputc_(':', s);
                     first = 0;
                     if (gt_i == i)
                         bcf_format_gt(f,j,s);
+                    else if (f->n == 1)
+                        bcf_fmt_array1(s, f->type, f->p + j * (size_t)f->size);
                     else
                         bcf_fmt_array(s, f->n, f->type, f->p + j * (size_t)f->size);
                 }
-                if ( first ) kputc('.', s);
+                if ( first ) kputc_('.', s);
             }
         }
         else
