@@ -70,6 +70,9 @@ struct faidx_t;
 /// Opaque structure representing FASTA index
 typedef struct faidx_t faidx_t;
 
+/// Opaque structure; sole item needed from htslib/thread_pool.h
+struct hts_tpool;
+
 /// File format to be dealing with.
 enum fai_format_options {
     FAI_NONE,
@@ -356,6 +359,15 @@ int fai_adjust_region(const faidx_t *fai, int tid,
  */
 HTSLIB_EXPORT
 void fai_set_cache_size(faidx_t *fai, int cache_size);
+
+/// Adds a thread pool to the underlying BGZF layer.
+/** @param fai         FAI file handler
+ *  @param pool        The thread pool (see hts_create_threads)
+ *  @param qsize       The size of the job queue.  If 0 this is twice the
+ *                     number of threads in the pool.
+ */
+HTSLIB_EXPORT
+int fai_thread_pool(faidx_t *fai, struct hts_tpool *pool, int qsize);
 
 /// Determines the path to the reference index file
 /** @param  fa    String with the path to the reference file
