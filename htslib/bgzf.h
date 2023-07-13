@@ -322,6 +322,8 @@ typedef struct BGZF BGZF;
      *
      * @param fp          BGZF file handler
      * @param pool        The thread pool (see hts_create_threads)
+     * @param qsize       The size of the job queue.  If 0 this is twice the
+     *                    number of threads in the pool.
      */
     HTSLIB_EXPORT
     int bgzf_thread_pool(BGZF *fp, struct hts_tpool *pool, int qsize);
