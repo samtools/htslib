@@ -31,6 +31,5 @@ test_mod="../test_mod"
 pileup_mod="../pileup_mod"
 
 test_driver $@
-rm _err.tmp _out.tmp
 
 exit $?

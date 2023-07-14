@@ -23,6 +23,7 @@
 # First field:
 #   INIT = initialisation, not counted in testing
 #   P = expected to pass
+#   N = expected to return non-zero
 #   F = expected to fail
 
 # Second field:
@@ -54,5 +55,5 @@ P MM-pileup2.out $pileup_mod < MM-pileup2.sam
 # Validation testing.  We just care about exit status here, but the
 # test data is a copy of MM-pileup.sam so that suffices too.
 P MM-pileup.out $pileup_mod < MM-MNp.sam
-F MM-pileup.out $pileup_mod < MM-MNf1.sam
-F MM-pileup.out $pileup_mod < MM-MNf2.sam
+N MM-pileup.out $pileup_mod < MM-MNf1.sam
+N MM-pileup.out $pileup_mod < MM-MNf2.sam
