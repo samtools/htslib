@@ -1,97 +1,97 @@
-0	A	
-1	G	
-2	C	
-3	T	
-4	C	
-5	T	
-6	C	C+m128 
-7	C	
-8	A	
-9	G	
-10	A	
-11	G	
-12	T	
-13	C	
-14	G	
-15	N	N+n215 
-16	A	
-17	C	C+m153 
-18	G	N+n240 
-19	C	C+h159 
-20	C	C+m179 
-21	A	
-22	T	
-23	Y	
-24	C	
-25	G	
-26	C	
-27	G	
-28	C	
-29	G	
-30	C	
-31	C	C+m204 
-32	A	
-33	C	
-34	C	C+m230 C+h6 
-35	A	
+0	A
+1	G
+2	C
+3	T
+4	C
+5	T
+6	C	C+m128
+7	C
+8	A
+9	G
+10	A
+11	G
+12	T
+13	C
+14	G
+15	N	N+n215
+16	A
+17	C	C+m153
+18	G	N+n240
+19	C	C+h159
+20	C	C+m179
+21	A
+22	T
+23	Y
+24	C
+25	G
+26	C
+27	G
+28	C
+29	G
+30	C
+31	C	C+m204
+32	A
+33	C
+34	C	C+m230 C+h6
+35	A
 ---
 Present: m. h. n.
-6	C	C+m128 
-15	N	N+n215 
-17	C	C+m153 
-18	G	N+n240 
-19	C	C+h159 
-20	C	C+m179 
-31	C	C+m204 
-34	C	C+m230 C+h6 
+6	C	C+m128
+15	N	N+n215
+17	C	C+m153
+18	G	N+n240
+19	C	C+h159
+20	C	C+m179
+31	C	C+m204
+34	C	C+m230 C+h6
 
 ===
 
-0	A	
-1	G	
-2	C	
-3	T	
-4	C	
-5	T	
-6	C	C+m77 C+h159 
-7	C	
-8	A	
-9	G	
-10	A	
-11	G	
-12	T	
-13	C	
-14	G	
-15	N	N+n240 
-16	A	
-17	C	C+m103 C+h133 
-18	G	
-19	C	C+m128 C+h108 
-20	C	C+m154 C+h82 
-21	A	
-22	T	
-23	Y	
-24	C	
-25	G	
-26	C	
-27	G	
-28	C	
-29	G	
-30	C	
-31	C	C+m179 C+h57 
-32	A	
-33	C	
-34	C	C+m204 C+h31 
-35	A	
+0	A
+1	G
+2	C
+3	T
+4	C
+5	T
+6	C	C+m77 C+h159
+7	C
+8	A
+9	G
+10	A
+11	G
+12	T
+13	C
+14	G
+15	N	N+n240
+16	A
+17	C	C+m103 C+h133
+18	G
+19	C	C+m128 C+h108
+20	C	C+m154 C+h82
+21	A
+22	T
+23	Y
+24	C
+25	G
+26	C
+27	G
+28	C
+29	G
+30	C
+31	C	C+m179 C+h57
+32	A
+33	C
+34	C	C+m204 C+h31
+35	A
 ---
 Present: m. h. n.
-6	C	C+m77 C+h159 
-15	N	N+n240 
-17	C	C+m103 C+h133 
-19	C	C+m128 C+h108 
-20	C	C+m154 C+h82 
-31	C	C+m179 C+h57 
-34	C	C+m204 C+h31 
+6	C	C+m77 C+h159
+15	N	N+n240
+17	C	C+m103 C+h133
+19	C	C+m128 C+h108
+20	C	C+m154 C+h82
+31	C	C+m179 C+h57
+34	C	C+m204 C+h31
 
 ===
 

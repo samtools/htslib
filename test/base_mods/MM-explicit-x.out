@@ -1,103 +1,103 @@
-0	A	
-1	T	
-2	C	
-3	A	
-4	T	
-5	C	
-6	A	
-7	T	
-8	T	
-9	C	C+m.200 C+h.10 
-10	C	C+m.50 C+h.170 
-11	T	
-12	A	
-13	C	
-14	C	C+m.160 C+h.20 
-15	G	
-16	C	
-17	T	
-18	A	
-19	T	
-20	A	
-21	G	
-22	C	
-23	C	
-24	T	
+0	A
+1	T
+2	C
+3	A
+4	T
+5	C
+6	A
+7	T
+8	T
+9	C	C+m.200 C+h.10
+10	C	C+m.50 C+h.170
+11	T
+12	A
+13	C
+14	C	C+m.160 C+h.20
+15	G
+16	C
+17	T
+18	A
+19	T
+20	A
+21	G
+22	C
+23	C
+24	T
 ---
 Present: m. h.
-9	C	C+m200 C+h10 
-10	C	C+m50 C+h170 
-14	C	C+m160 C+h20 
+9	C	C+m200 C+h10
+10	C	C+m50 C+h170
+14	C	C+m160 C+h20
 
 ===
 
-0	A	
-1	T	
-2	C	
-3	A	
-4	T	
-5	C	
-6	A	
-7	T	
-8	T	
-9	C	C+m?200 C+h?10 
-10	C	C+m?50 C+h?170 
-11	T	
-12	A	
-13	C	C+m?10 C+h?5 
-14	C	C+m?160 C+h?20 
-15	G	
-16	C	C+m?10 C+h?5 
-17	T	
-18	A	
-19	T	
-20	A	
-21	G	
-22	C	
-23	C	
-24	T	
+0	A
+1	T
+2	C
+3	A
+4	T
+5	C
+6	A
+7	T
+8	T
+9	C	C+m?200 C+h?10
+10	C	C+m?50 C+h?170
+11	T
+12	A
+13	C	C+m?10 C+h?5
+14	C	C+m?160 C+h?20
+15	G
+16	C	C+m?10 C+h?5
+17	T
+18	A
+19	T
+20	A
+21	G
+22	C
+23	C
+24	T
 ---
 Present: m? h?
-9	C	C+m200 C+h10 
-10	C	C+m50 C+h170 
-13	C	C+m10 C+h5 
-14	C	C+m160 C+h20 
-16	C	C+m10 C+h5 
+9	C	C+m200 C+h10
+10	C	C+m50 C+h170
+13	C	C+m10 C+h5
+14	C	C+m160 C+h20
+16	C	C+m10 C+h5
 
 ===
 
-0	A	
-1	T	
-2	C	
-3	A	
-4	T	
-5	C	
-6	A	
-7	T	
-8	T	
-9	C	C+m.200 C+h?10 
-10	C	C+h?170 
-11	T	
-12	A	
-13	C	C+h?5 
-14	C	C+m.160 C+h?20 
-15	G	
-16	C	C+h?5 
-17	T	
-18	A	
-19	T	
-20	A	
-21	G	
-22	C	
-23	C	
-24	T	
+0	A
+1	T
+2	C
+3	A
+4	T
+5	C
+6	A
+7	T
+8	T
+9	C	C+m.200 C+h?10
+10	C	C+h?170
+11	T
+12	A
+13	C	C+h?5
+14	C	C+m.160 C+h?20
+15	G
+16	C	C+h?5
+17	T
+18	A
+19	T
+20	A
+21	G
+22	C
+23	C
+24	T
 ---
 Present: m. h?
-9	C	C+m200 C+h10 
-10	C	C+h170 
-13	C	C+h5 
-14	C	C+m160 C+h20 
-16	C	C+h5 
+9	C	C+m200 C+h10
+10	C	C+h170
+13	C	C+h5
+14	C	C+m160 C+h20
+16	C	C+h5
 
 ===
 
