@@ -86,7 +86,6 @@ static char *code(int id) {
 }
 
 int main(int argc, char **argv) {
-    char out[1024] = {0};
     int extended = 0;
     uint32_t flags = 0;
 
@@ -126,10 +125,9 @@ int main(int argc, char **argv) {
         int i, j, n;
         hts_base_mod mods[5];
         for (i = 0; i < b->core.l_qseq; i++) {
-            char line[8192], *lp = line, *ep = line + sizeof(line);
+            char sp = '\t';
             n = bam_mods_at_next_pos(b, m, mods, 5);
-            lp += snprintf(lp, ep - lp, "%d\t%c\t",
-                           i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
+            printf("%d\t%c", i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
             for (j = 0; j < n && j < 5; j++) {
                 char qstr[10];
                 if (mods[j].qual == HTS_MOD_UNCHECKED)
@@ -149,30 +147,25 @@ int main(int argc, char **argv) {
                         m_canonical != mods[j].canonical_base ||
                         m_strand    != mods[j].strand)
                         goto err;
-                    lp += snprintf(lp, ep - lp, "%c%c%s%c%s ",
-                                   mods[j].canonical_base,
-                                   "+-"[mods[j].strand],
-                                   code(mods[j].modified_base),
-                                   "?."[m_implicit],
-                                   qstr);
+                    printf("%c%c%c%s%c%s",
+                           sp, mods[j].canonical_base,
+                           "+-"[mods[j].strand],
+                           code(mods[j].modified_base),
+                           "?."[m_implicit],
+                           qstr);
                 } else {
-                    lp += snprintf(lp, ep - lp, "%c%c%s%s ",
-                                   mods[j].canonical_base,
-                                   "+-"[mods[j].strand],
-                                   code(mods[j].modified_base),
-                                   qstr);
+                    printf("%c%c%c%s%s",
+                           sp, mods[j].canonical_base,
+                           "+-"[mods[j].strand],
+                           code(mods[j].modified_base),
+                           qstr);
                 }
+                sp = ' ';
             }
-            *lp++ = '\n';
-            *lp++ = 0;
-
-            if (argc > 1)
-                printf("%s", line);
-            else
-                strcat(out, line);
+            putchar('\n');
         }
 
-        if (argc > 1) puts("---");
+        puts("---");
 
         bam_parse_basemod2(b, m, flags);
 
@@ -192,9 +185,9 @@ int main(int argc, char **argv) {
 
         int pos;
         while ((n=bam_next_basemod(b, m, mods, 5, &pos)) > 0) {
-            char line[8192]={0}, *lp = line, *ep = line + sizeof(line);
-            lp += snprintf(lp, ep - lp, "%d\t%c\t", pos,
-                           seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
+            char sp = '\t';
+            printf("%d\t%c", pos,
+                   seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
             for (j = 0; j < n && j < 5; j++) {
                 char qstr[10];
                 if (mods[j].qual == HTS_MOD_UNCHECKED)
@@ -204,24 +197,20 @@ int main(int argc, char **argv) {
                 else
                     snprintf(qstr, 10, "%d", mods[j].qual);
 
-                lp += snprintf(lp, ep - lp, "%c%c%s%s ",
-                               mods[j].canonical_base,
-                               "+-"[mods[j].strand],
-                               code(mods[j].modified_base),
-                               qstr);
+                printf("%c%c%c%s%s",
+                       sp, mods[j].canonical_base,
+                       "+-"[mods[j].strand],
+                       code(mods[j].modified_base),
+                       qstr);
+                sp = ' ';
             }
-            *lp++ = '\n';
-            *lp++ = 0;
-
-            if (argc > 1)
-                printf("%s", line);
-            else
-                strcat(out, line);
+            putchar('\n');
         }
+
         if (n < 0)
             goto err;
 
-        if (argc > 1) puts("\n===\n");
+        puts("\n===\n");
     }
     fflush(stdout);
     if (sam_close(in) != 0 || r < -1)
