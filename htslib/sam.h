@@ -1713,11 +1713,11 @@ static inline int bam_aux_get_str(const bam1_t *b,
 HTSLIB_EXPORT
 int64_t bam_aux2i(const uint8_t *s);
 
-/// Get an integer aux value
+/// Get a float aux value
 /** @param s Pointer to the tag data, as returned by bam_aux_get()
-    @return The value, or 0 if the tag was not an integer type
+    @return The value, or 0 if the tag was not a float type
     If the tag is not an numeric type, errno is set to EINVAL.  The value of
-    integer flags will be returned cast to a double.
+    the float will be returned cast to a double.
 */
 HTSLIB_EXPORT
 double bam_aux2f(const uint8_t *s);
