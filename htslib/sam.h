@@ -1133,6 +1133,12 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *
                        can be NULL
  @param  b       [in/out]  address of the destination bam1_t struct
  @return         number of processed CIGAR operators; -1 on error
+
+ @discussion The BAM record may be partial and empty of existing cigar, seq
+ and quality, as is the case during SAM parsing, or it may be an existing
+ BAM record in which case this function replaces the existing CIGAR field
+ and shuffles data accordingly.  A CIGAR of "*" will remove the CIGAR,
+ returning zero.
  */
 HTSLIB_EXPORT
 ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
