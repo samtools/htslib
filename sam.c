@@ -2750,7 +2750,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         int n_cigar = bam_parse_cigar(p, &p, b);
         if (n_cigar < 1 || *p++ != '\t') goto err_ret;
         cigar = (uint32_t *)(b->data + old_l_data);
-        c->n_cigar = n_cigar;
 
         // can't use bam_endpos() directly as some fields not yet set up
         cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
@@ -2926,20 +2925,36 @@ ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
     }
     if (end) *end = (char *)in;
 
-    if (*in == '*') {
-        if (end) (*end)++;
+    n_cigar = (*in == '*') ? 0 : read_ncigar(in);
+    if (!n_cigar && b->core.n_cigar == 0) {
+        if (end) *end = (char *)in+1;
         return 0;
     }
-    n_cigar = read_ncigar(in);
-    if (!n_cigar) return 0;
-    if (possibly_expand_bam_data(b, n_cigar * sizeof(uint32_t)) < 0) {
+
+    ssize_t cig_diff = n_cigar - b->core.n_cigar;
+    if (cig_diff > 0 &&
+        possibly_expand_bam_data(b, cig_diff * sizeof(uint32_t)) < 0) {
         hts_log_error("Memory allocation error");
         return -1;
     }
 
-    if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return -1;
-    b->l_data += (n_cigar * sizeof(uint32_t));
-    if (end) *end = (char *)in+diff;
+    uint32_t *cig = bam_get_cigar(b);
+    if ((uint8_t *)cig != b->data + b->l_data) {
+        // Modifying an BAM existing BAM record
+        uint8_t  *seq = bam_get_seq(b);
+        memmove(cig + n_cigar, seq, (b->data + b->l_data) - seq);
+    }
+
+    if (n_cigar) {
+        if (!(diff = parse_cigar(in, cig, n_cigar)))
+            return -1;
+    } else {
+        diff = 1; // handle "*"
+    }
+
+    b->l_data += cig_diff * sizeof(uint32_t);
+    b->core.n_cigar = n_cigar;
+    if (end) *end = (char *)in + diff;
 
     return n_cigar;
 }
