@@ -325,7 +325,7 @@ decompress_peek_gz(hFILE *fp, unsigned char *dest, size_t destsize)
     if (inflateInit2(&zs, 31) != Z_OK) return -1;
 
     int ret;
-    unsigned char *last_in = buffer;
+    const unsigned char *last_in = buffer;
     while (zs.avail_out > 0) {
         ret = inflate(&zs, Z_SYNC_FLUSH);
         if (ret == Z_STREAM_END) {
