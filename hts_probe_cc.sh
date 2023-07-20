@@ -2,7 +2,7 @@
 
 # Check compiler options for non-configure builds and create Makefile fragment
 #
-#    Copyright (C) 2022 Genome Research Ltd.
+#    Copyright (C) 2022-2023 Genome Research Ltd.
 #
 #    Author: Rob Davies <rmd@sanger.ac.uk>
 #

@@ -2,7 +2,7 @@
 
     gcc -g -Wall -O0 -I. -I../htslib/ -L../htslib regidx.c -o test-regidx test-regidx.c -lhts
 
-    Copyright (C) 2014,2016,2018, 2020 Genome Research Ltd.
+    Copyright (C) 2014,2016,2018, 2020, 2023 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 

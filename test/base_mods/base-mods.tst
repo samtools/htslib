@@ -1,4 +1,4 @@
-#    Copyright (C) 2020 Genome Research Ltd.
+#    Copyright (C) 2020, 2023 Genome Research Ltd.
 #
 #    Author: James Bonfield <jkb@sanger.ac.uk>
 #

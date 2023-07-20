@@ -1,6 +1,6 @@
 /*  test/test-vcf-api.c -- VCF test harness.
 
-    Copyright (C) 2013, 2014, 2017-2021 Genome Research Ltd.
+    Copyright (C) 2013, 2014, 2017-2021, 2023 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 

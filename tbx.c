@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>

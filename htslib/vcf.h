@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2023 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 

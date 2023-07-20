@@ -1,6 +1,6 @@
 /*  test/test_mod.c -- testing of base modification functions
 
-    Copyright (C) 2020-2021 Genome Research Ltd.
+    Copyright (C) 2020-2021, 2023 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
