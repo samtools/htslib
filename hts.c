@@ -794,6 +794,7 @@ char *hts_format_description(const htsFormat *format)
     case zstd_compression:   kputs(" Zstandard-compressed", &str); break;
     case custom: kputs(" compressed", &str); break;
     case gzip:   kputs(" gzip-compressed", &str); break;
+
     case bgzf:
         switch (format->format) {
         case bam:
@@ -808,6 +809,22 @@ char *hts_format_description(const htsFormat *format)
             break;
         }
         break;
+
+    case no_compression:
+        switch (format->format) {
+        case bam:
+        case bcf:
+        case cram:
+        case csi:
+        case tbi:
+            // These are normally compressed, so emphasise that this one isn't
+            kputs(" uncompressed", &str);
+            break;
+        default:
+            break;
+        }
+        break;
+
     default: break;
     }
 
