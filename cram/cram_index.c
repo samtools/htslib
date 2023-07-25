@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013-2020 Genome Research Ltd.
+Copyright (c) 2013-2020, 2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -72,7 +72,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 static void dump_index_(cram_index *e, int level) {
     int i, n;
     n = printf("%*s%d / %d .. %d, ", level*4, "", e->refid, e->start, e->end);
-    printf("%*soffset %"PRId64"\n", MAX(0,50-n), "", e->offset);
+    printf("%*soffset %"PRId64" %p %p\n", MAX(0,50-n), "", e->offset, e, e->e_next);
     for (i = 0; i < e->nslice; i++) {
         dump_index_(&e->e[i], level+1);
     }
@@ -85,6 +85,37 @@ static void dump_index(cram_fd *fd) {
     }
 }
 #endif
+
+// Thread a linked list through the nested containment list.
+// This makes navigating it and finding the "next" index entry
+// trivial.
+static cram_index *link_index_(cram_index *e, cram_index *e_last) {
+    int i;
+    if (e_last)
+        e_last->e_next = e;
+
+    // We don't want to link in the top-level cram_index with
+    // offset=0 and start/end = INT_MIN/INT_MAX.
+    if (e->offset)
+        e_last = e;
+
+    for (i = 0; i < e->nslice; i++)
+        e_last = link_index_(&e->e[i], e_last);
+
+    return e_last;
+}
+
+static void link_index(cram_fd *fd) {
+    int i;
+    cram_index *e_last = NULL;
+
+    for (i = 0; i < fd->index_sz; i++) {
+        e_last = link_index_(&fd->index[i], e_last);
+    }
+
+    if (e_last)
+        e_last->e_next = NULL;
+}
 
 static int kget_int32(kstring_t *k, size_t *pos, int32_t *val_p) {
     int sign = 1;
@@ -275,7 +306,8 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
             idx_stack[(idx_stack_ptr = 0)] = idx;
         }
 
-        while (!(e.start >= idx->start && e.end <= idx->end) || idx->end == 0) {
+        while (!(e.start >= idx->start && e.end <= idx->end) ||
+               (idx->start == 0 && idx->refid == -1)) {
             idx = idx_stack[--idx_stack_ptr];
         }
 
@@ -313,7 +345,10 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     free(kstr.s);
     free(tfn_idx);
 
-    // dump_index(fd);
+    // Convert NCList to linear linked list
+    link_index(fd);
+
+    //dump_index(fd);
 
     return 0;
 
@@ -356,7 +391,7 @@ void cram_index_free(cram_fd *fd) {
  * entries, but we require at least one per reference.)
  *
  * If the index finds multiple slices overlapping this position we
- * return the first one only. Subsequent calls should specifying
+ * return the first one only. Subsequent calls should specify
  * "from" as the last slice we checked to find the next one. Otherwise
  * set "from" to be NULL to find the first one.
  *
@@ -370,6 +405,17 @@ cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
                              cram_index *from) {
     int i, j, k;
     cram_index *e;
+
+    if (from) {
+        // Continue from a previous search.
+        // We switch to just scanning the linked list, as the nested
+        // lists are typically short.
+        e = from->e_next;
+        if (e && e->refid == refid && e->start <= pos)
+            return e;
+        else
+            return NULL;
+    }
 
     switch(refid) {
     case HTS_IDX_NONE:
@@ -400,8 +446,7 @@ cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
             return NULL;
     }
 
-    if (!from)
-        from = &fd->index[refid+1];
+    from = &fd->index[refid+1];
 
     // Ref with nothing aligned against it.
     if (!from->e)
@@ -466,55 +511,42 @@ cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
 
     slice = fd->index[refid+1].nslice - 1;
 
-    return &from->e[slice];
+    // e is the last entry in the nested containment list, but it may
+    // contain further slices within it.
+    cram_index *e = &from->e[slice];
+    while (e->e_next)
+        e = e->e_next;
+
+    return e;
 }
 
+/*
+ * Find the last container overlapping pos 'end', and the file offset of
+ * its end (equivalent to the start offset of the container following it).
+ */
 cram_index *cram_index_query_last(cram_fd *fd, int refid, hts_pos_t end) {
-    cram_index *first = cram_index_query(fd, refid, end, NULL);
-    cram_index *last =  cram_index_last(fd, refid, NULL);
-    if (!first || !last)
-        return NULL;
-
-    while (first < last && (first+1)->start <= end)
-        first++;
-
-    while (first->e) {
-        int count = 0;
-        int nslices = first->nslice;
-        first = first->e;
-        while (++count < nslices && (first+1)->start <= end)
-            first++;
-    }
-
-    // Compute the start location of next container.
-    //
-    // This is useful for stitching containers together in the multi-region
-    // iterator.  Sadly we can't compute this from the single index line.
-    //
-    // Note we can have neighbouring index entries at the same location
-    // for when we have multi-reference mode and/or multiple slices per
-    // container.
-    cram_index *next = first;
+    cram_index *e = NULL, *prev_e;
     do {
-        if (next >= last) {
-            // Next non-empty reference
-            while (++refid+1 < fd->index_sz)
-                if (fd->index[refid+1].nslice)
-                    break;
-            if (refid+1 >= fd->index_sz) {
-                next = NULL;
-            } else {
-                next = fd->index[refid+1].e;
-                last = fd->index[refid+1].e + fd->index[refid+1].nslice;
-            }
-        } else {
-            next++;
-        }
-    } while (next && next->offset == first->offset);
+        prev_e = e;
+        e = cram_index_query(fd, refid, end, prev_e);
+    } while (e);
 
-    first->next = next ? next->offset : 0;
+    if (!prev_e)
+        return NULL;
+    e = prev_e;
 
-    return first;
+    // Note: offset of e and e->e_next may be the same if we're using a
+    // multi-ref container where a single container generates multiple
+    // index entries.
+    //
+    // We need to keep iterating until offset differs in order to find
+    // the genuine file offset for the end of container.
+    do {
+        prev_e = e;
+        e = e->e_next;
+    } while (e && e->offset == prev_e->offset);
+
+    return prev_e;
 }
 
 /*
@@ -630,9 +662,10 @@ static int cram_index_build_multiref(cram_fd *fd,
         }
 
         if (ref != -2) {
-            sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
-                    ref, ref_start, ref_end - ref_start + 1,
-                    (int64_t)cpos, landmark, sz);
+            snprintf(buf, sizeof(buf),
+                     "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+                     ref, ref_start, ref_end - ref_start + 1,
+                     (int64_t)cpos, landmark, sz);
             if (bgzf_write(fp, buf, strlen(buf)) < 0)
                 return -4;
         }
@@ -643,9 +676,10 @@ static int cram_index_build_multiref(cram_fd *fd,
     }
 
     if (ref != -2) {
-        sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
-                ref, ref_start, ref_end - ref_start + 1,
-                (int64_t)cpos, landmark, sz);
+        snprintf(buf, sizeof(buf),
+                 "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+                 ref, ref_start, ref_end - ref_start + 1,
+                 (int64_t)cpos, landmark, sz);
         if (bgzf_write(fp, buf, strlen(buf)) < 0)
             return -4;
     }
@@ -675,9 +709,10 @@ int cram_index_slice(cram_fd *fd,
     if (s->hdr->ref_seq_id == -2) {
         ret = cram_index_build_multiref(fd, c, s, fp, cpos, spos, sz);
     } else {
-        sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
-                s->hdr->ref_seq_id, s->hdr->ref_seq_start,
-                s->hdr->ref_seq_span, (int64_t)cpos, (int)spos, (int)sz);
+        snprintf(buf, sizeof(buf),
+                 "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+                 s->hdr->ref_seq_id, s->hdr->ref_seq_start,
+                 s->hdr->ref_seq_span, (int64_t)cpos, (int)spos, (int)sz);
         ret = (bgzf_write(fp, buf, strlen(buf)) >= 0)? 0 : -4;
     }
 

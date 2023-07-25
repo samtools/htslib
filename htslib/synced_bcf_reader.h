@@ -1,7 +1,7 @@
 /// @file htslib/synced_bcf_reader.h
 /// Stream through multiple VCF files.
 /*
-    Copyright (C) 2012-2017, 2019-2021 Genome Research Ltd.
+    Copyright (C) 2012-2017, 2019-2023 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -306,8 +306,10 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *  Targets (but not regions) can be prefixed with "^" to request logical complement,
  *  for example "^X,Y,MT" indicates that sequences X, Y and MT should be skipped.
  *
- *  API note: bcf_sr_set_regions/bcf_sr_set_targets MUST be called before the
- *  first call to bcf_sr_add_reader().
+ *  API notes:
+ *  - bcf_sr_set_targets MUST be called before the first call to bcf_sr_add_reader()
+ *  - calling bcf_sr_set_regions AFTER readers have been initialized will
+ *    reposition the readers and discard all previous regions.
  */
 HTSLIB_EXPORT
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
@@ -336,6 +338,8 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
  *              supply 'from' in place of 'to'. When 'to' is negative, first
  *              abs(to) will be attempted and if that fails, 'from' will be used
  *              instead.
+ *              If chromosome name contains the characters ':' or '-', it should
+ *              be put in curly brackets, for example as "{weird-chr-name:1-2}:1000-2000"
  *
  *  The bcf_sr_regions_t struct returned by a successful call should be freed
  *  via bcf_sr_regions_destroy() when it is no longer needed.

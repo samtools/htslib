@@ -975,6 +975,11 @@ void fai_set_cache_size(faidx_t *fai, int cache_size) {
     bgzf_set_cache_size(fai->bgzf, cache_size);
 }
 
+// Adds a thread pool to the underlying BGZF layer.
+int fai_thread_pool(faidx_t *fai, struct hts_tpool *pool, int qsize) {
+    return bgzf_thread_pool(fai->bgzf, pool, qsize);
+}
+
 char *fai_path(const char *fa) {
     char *fai = NULL;
     if (!fa) {

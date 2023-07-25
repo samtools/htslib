@@ -24,7 +24,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 # Master version, for use in tarballs or non-git source copies
-VERSION=1.17
+VERSION=1.18
 
 # If we have a git clone, then check against the current tag
 srcdir=${0%/version.sh}
@@ -48,7 +48,7 @@ then
     v1=`expr "$VERSION" : '\([0-9]*\)'`
     v2=`expr "$VERSION" : '[0-9]*.\([0-9]*\)'`
     v3=`expr "$VERSION" : '[0-9]*.[0-9]*.\([0-9]*\)'`
-    if [ -z "`expr "$VERSION" : '^\([0-9.]*\)$'`" ]
+    if [ -z "`expr "$VERSION" : '\([0-9.]*\)$'`" ]
     then
         VERSION="$v1.$v2.255"
     else

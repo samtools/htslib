@@ -3,7 +3,7 @@
 /*
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013, 2014, 2017, 2018-2019, 2022 Genome Research Ltd
+   Copyright (C) 2009, 2013, 2014, 2017, 2018-2019, 2022-2023 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -322,6 +322,8 @@ typedef struct BGZF BGZF;
      *
      * @param fp          BGZF file handler
      * @param pool        The thread pool (see hts_create_threads)
+     * @param qsize       The size of the job queue.  If 0 this is twice the
+     *                    number of threads in the pool.
      */
     HTSLIB_EXPORT
     int bgzf_thread_pool(BGZF *fp, struct hts_tpool *pool, int qsize);

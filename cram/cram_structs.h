@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2016, 2018-2020 Genome Research Ltd.
+Copyright (c) 2012-2016, 2018-2020, 2023 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -473,6 +473,7 @@ struct cram_container {
     uint32_t crc32;       // CRC32
 
     uint64_t s_num_bases; // number of bases in this slice
+    uint64_t s_aux_bytes; // number of bytes of aux in BAM
 
     uint32_t n_mapped;    // Number of mapped reads
     int ref_free;         // whether 'ref' is owned by us and must be freed.
@@ -500,8 +501,8 @@ typedef struct cram_record {
 
     // Auxiliary data
     int32_t ntags;        // TC
-    int32_t aux;          // idx to s->aux_blk
-    int32_t aux_size;     // total size of packed ntags in aux_blk
+    uint32_t aux;         // idx to s->aux_blk
+    uint32_t aux_size;    // total size of packed ntags in aux_blk
 #ifndef TN_external
     int32_t TN_idx;       // TN; idx to s->TN;
 #else
@@ -509,15 +510,15 @@ typedef struct cram_record {
 #endif
     int     TL;
 
-    int32_t seq;          // idx to s->seqs_blk
-    int32_t qual;         // idx to s->qual_blk
-    int32_t cigar;        // idx to s->cigar
+    uint32_t seq;         // idx to s->seqs_blk
+    uint32_t qual;        // idx to s->qual_blk
+    uint32_t cigar;       // idx to s->cigar
     int32_t ncigar;
     int64_t aend;         // alignment end
     int32_t mqual;        // MQ
 
-    int32_t feature;      // idx to s->feature
-    int32_t nfeature;     // number of features
+    uint32_t feature;     // idx to s->feature
+    uint32_t nfeature;    // number of features
     int32_t mate_flags;   // MF
 } cram_record;
 
@@ -623,8 +624,8 @@ struct cram_slice {
     uint32_t   ncigar;
 
     cram_feature *features;
-    int           nfeatures;
-    int           afeatures; // allocated size of features
+    uint32_t      nfeatures;
+    uint32_t      afeatures; // allocated size of features
 
 #ifndef TN_external
     // TN field (Tag Name)
@@ -725,7 +726,10 @@ typedef struct cram_index {
     int     slice;  // 1.0 landmark index, 1.1 landmark value
     int     len;    //                     1.1 - size of slice in bytes
     int64_t offset; // 1.0                 1.1
-    int64_t next;   // derived: offset of next container.
+
+    // Linked list of cram_index entries. Used to convert recursive
+    // NCList back to a linear list.
+    struct cram_index *e_next;
 } cram_index;
 
 typedef struct {

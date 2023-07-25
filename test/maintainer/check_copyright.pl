@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # check_copyright.pl : Basic source file checks for copyright boilerplate
 #
 #     Author : Rob Davies <rmd@sanger.ac.uk>
@@ -49,6 +49,7 @@ sub check {
     # Exclusions:
     my %exclude = map { ("$root/$_", 1) } (
 'config.h',         # Auto-generated
+'config_vars.h',    # Auto-generated
 'version.h',        # Auto-generated
 'cram/rANS_byte.h', # "Public domain"
 'os/lzma_stub.h',   # "Public domain"

@@ -598,9 +598,19 @@ int bam_set1(bam1_t *bam,
     }
     cp += n_cigar * 4;
 
-    for (i = 0; i + 1 < l_seq; i += 2) {
-        *cp++ = (seq_nt16_table[(unsigned char)seq[i]] << 4) | seq_nt16_table[(unsigned char)seq[i + 1]];
+#define NN 16
+    const uint8_t *useq = (uint8_t *)seq;
+    for (i = 0; i + NN < l_seq; i += NN) {
+        int j;
+        const uint8_t *u2 = useq+i;
+        for (j = 0; j < NN/2; j++)
+            cp[j] = (seq_nt16_table[u2[j*2]]<<4) | seq_nt16_table[u2[j*2+1]];
+        cp += NN/2;
     }
+    for (; i + 1 < l_seq; i += 2) {
+        *cp++ = (seq_nt16_table[useq[i]] << 4) | seq_nt16_table[useq[i + 1]];
+    }
+
     for (; i < l_seq; i++) {
         *cp++ = seq_nt16_table[(unsigned char)seq[i]] << 4;
     }
@@ -1067,7 +1077,7 @@ int sam_idx_save(htsFile *fp) {
             errno = -ret;
             return -1;
         }
-        if (bgzf_flush(fp->fp.bgzf) < 0)
+        if (!fp->is_bgzf || bgzf_flush(fp->fp.bgzf) < 0)
             return -1;
         hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
 
@@ -4257,8 +4267,6 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 
     str->l = 0;
 
-    if (len == 0) return 0;
-
     // Name
     if (kputc(x->nprefix, str) == EOF || kputs(bam_get_qname(b), str) == EOF)
         return -1;
@@ -5219,7 +5227,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
     uint32_t *cigar = bam_get_cigar(b);
     int k;
     // determine the current CIGAR operation
-    //fprintf(stderr, "%s\tpos=%d\tend=%d\t(%d,%d,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
+    //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
         p->qpos = 0;
         if (c->n_cigar == 1) { // just one operation, save a loop
@@ -5384,20 +5392,22 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
                     for (j = 0; j < nm; j++) {
                         char qual[20];
                         if (mod[j].qual >= 0)
-                            sprintf(qual, "%d", mod[j].qual);
+                            snprintf(qual, sizeof(qual), "%d", mod[j].qual);
                         else
                             *qual=0;
                         if (mod[j].modified_base < 0)
                             // ChEBI
-                            indel += sprintf(&ins->s[indel], "%c(%d)%s",
-                                             "+-"[mod[j].strand],
-                                             -mod[j].modified_base,
-                                             qual);
+                            indel += snprintf(&ins->s[indel], ins->m - indel,
+                                              "%c(%d)%s",
+                                              "+-"[mod[j].strand],
+                                              -mod[j].modified_base,
+                                              qual);
                         else
-                            indel += sprintf(&ins->s[indel], "%c%c%s",
-                                             "+-"[mod[j].strand],
-                                             mod[j].modified_base,
-                                             qual);
+                            indel += snprintf(&ins->s[indel], ins->m - indel,
+                                              "%c%c%s",
+                                              "+-"[mod[j].strand],
+                                              mod[j].modified_base,
+                                              qual);
                     }
                     ins->s[indel++] = ']';
                     ins->l += indel - o_indel; // grow by amount we used
@@ -6095,501 +6105,3 @@ void bam_mplp_destructor(bam_mplp_t iter,
 }
 
 #endif // ~!defined(BAM_NO_PILEUP)
-
-// ---------------------------
-// Base Modification retrieval
-//
-// These operate by recording state in an opaque type, allocated and freed
-// via the functions below.
-//
-// Initially we call bam_parse_basemod to process the tags and record the
-// modifications in the state structure, and then functions such as
-// bam_next_basemod can iterate over this cached state.
-
-/*
- * Base modification are stored in MM/Mm tags as <mod_list> defined as
- *
- * <mod_list>        ::= <mod_chain><mod_list> | ""
- * <mod_chain>       ::= <canonical_base><strand><mod-list><delta-list>
- *
- * <canonical_base>  ::= "A" | "C" | "G" | "T" | "N".
- *
- * <strand>          ::= "+" | "-".
- *
- * <mod-list>        ::= <simple-mod-list> | <ChEBI-code>
- * <simple-mod-list> ::= <simple-mod><simple-mod-list> | <simple-mod>
- * <ChEBI-code>      ::= <integer>
- * <simple-mod>      ::= <letter>
- *
- * <delta-list>      ::= "," <integer> <delta-list> | ";"
- *
- * We do not allocate additional memory other than the fixed size
- * state, thus we track up to 256 pointers to different locations
- * within the MM and ML tags.  Each pointer is for a distinct
- * modification code (simple or ChEBI), meaning some may point to the
- * same delta-list when multiple codes are combined together
- * (e.g. "C+mh,1,5,18,3;").  This is the MM[] array.
- *
- * Each numeric in the delta-list is tracked in MMcount[], counted
- * down until it hits zero in which case the next delta is fetched.
- *
- * ML array similarly holds the locations in the quality (ML) tag per
- * type, but these are interleaved so C+mhfc,10,15 will have 4 types
- * all pointing to the same delta position, but in ML we store
- * Q(m0)Q(h0)Q(f0)Q(c0) followed by Q(m1)Q(h1)Q(f1)Q(c1).  This ML
- * also has MLstride indicating how many positions along ML to jump
- * each time we consume a base. (4 in our above example, but usually 1
- * for the simple case).
- *
- * One complexity of the base modification system is that mods are
- * always stored in the original DNA orientation.  This is so that
- * tools that may reverse-complement a sequence (eg "samtools fastq -T
- * MM,ML") can pass through these modification tags irrespective of
- * whether they have any knowledge of their internal workings.
- *
- * Because we don't wish to allocate extra memory, we cannot simply
- * reverse the MM and ML tags.  Sadly this means we have to manage the
- * reverse complementing ourselves on-the-fly.
- * For reversed reads we start at the right end of MM and no longer
- * stop at the semicolon.  Instead we use MMend[] array to mark the
- * termination point.
- */
-#define MAX_BASE_MOD 256
-struct hts_base_mod_state {
-    int type[MAX_BASE_MOD];     // char or minus-CHEBI
-    int canonical[MAX_BASE_MOD];// canonical base, as seqi (1,2,4,8,15)
-    char strand[MAX_BASE_MOD];  // strand of modification; + or -
-    int MMcount[MAX_BASE_MOD];  // no. canonical bases left until next mod
-    char *MM[MAX_BASE_MOD];     // next pos delta (string)
-    char *MMend[MAX_BASE_MOD];  // end of pos-delta string
-    uint8_t *ML[MAX_BASE_MOD];  // next qual
-    int MLstride[MAX_BASE_MOD]; // bytes between quals for this type
-    int implicit[MAX_BASE_MOD]; // treat unlisted positions as non-modified?
-    int seq_pos;                // current position along sequence
-    int nmods;                  // used array size (0 to MAX_BASE_MOD-1).
-};
-
-hts_base_mod_state *hts_base_mod_state_alloc(void) {
-    return calloc(1, sizeof(hts_base_mod_state));
-}
-
-void hts_base_mod_state_free(hts_base_mod_state *state) {
-    free(state);
-}
-
-/*
- * Count frequency of A, C, G, T and N canonical bases in the sequence
- */
-static void seq_freq(const bam1_t *b, int freq[16]) {
-    int i;
-
-    memset(freq, 0, 16*sizeof(*freq));
-    uint8_t *seq = bam_get_seq(b);
-    for (i = 0; i < b->core.l_qseq; i++)
-        freq[bam_seqi(seq, i)]++;
-    freq[15] = b->core.l_qseq; // all bases count as N for base mods
-}
-
-//0123456789ABCDEF
-//=ACMGRSVTWYHKDBN  aka seq_nt16_str[]
-//=TGKCYSBAWRDMHVN  comp1ement of seq_nt16_str
-//084C2A6E195D3B7F
-static int seqi_rc[] = { 0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15 };
-
-/*
- * Parse the MM and ML tags to populate the base mod state.
- * This structure will have been previously allocated via
- * hts_base_mod_state_alloc, but it does not need to be repeatedly
- * freed and allocated for each new bam record. (Although obviously
- * it requires a new call to this function.)
- *
- */
-int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
-    // Read MM and ML tags
-    uint8_t *mm = bam_aux_get(b, "MM");
-    if (!mm) mm = bam_aux_get(b, "Mm");
-    if (!mm)
-        return 0;
-    if (mm[0] != 'Z') {
-        hts_log_error("MM tag is not of type Z");
-        return -1;
-    }
-
-    uint8_t *ml = bam_aux_get(b, "ML");
-    if (!ml) ml = bam_aux_get(b, "Ml");
-    if (ml && (ml[0] != 'B' || ml[1] != 'C')) {
-        hts_log_error("ML tag is not of type B,C");
-        return -1;
-    }
-    uint8_t *ml_end = ml ? ml+6 + le_to_u32(ml+2) : NULL;
-    if (ml) ml += 6;
-
-    state->seq_pos = 0;
-
-    // Aggregate freqs of ACGTN if reversed, to get final-delta (later)
-    int freq[16];
-    if (b->core.flag & BAM_FREVERSE)
-        seq_freq(b, freq);
-
-    char *cp = (char *)mm+1;
-    int mod_num = 0;
-    int implicit = 1;
-    while (*cp) {
-        for (; *cp; cp++) {
-            // cp should be [ACGTNU][+-]([a-zA-Z]+|[0-9]+)[.?]?(,\d+)*;
-            unsigned char btype = *cp++;
-
-            if (btype != 'A' && btype != 'C' &&
-                btype != 'G' && btype != 'T' &&
-                btype != 'U' && btype != 'N')
-                return -1;
-            if (btype == 'U') btype = 'T';
-
-            btype = seq_nt16_table[btype];
-
-            // Strand
-            if (*cp != '+' && *cp != '-')
-                return -1; // malformed
-            char strand = *cp++;
-
-            // List of modification types
-            char *ms = cp, *me; // mod code start and end
-            char *cp_end = NULL;
-            int chebi = 0;
-            if (isdigit_c(*cp)) {
-                chebi = strtol(cp, &cp_end, 10);
-                cp = cp_end;
-                ms = cp-1;
-            } else {
-                while (*cp && isalpha_c(*cp))
-                    cp++;
-                if (*cp == '\0')
-                    return -1;
-            }
-
-            me = cp;
-
-            // Optional explicit vs implicit marker
-            if (*cp == '.') {
-                // default is implicit = 1;
-                cp++;
-            } else if (*cp == '?') {
-                implicit = 0;
-                cp++;
-            } else if (*cp != ',' && *cp != ';') {
-                // parse error
-                return -1;
-            }
-
-            long delta;
-            int n = 0; // nth symbol in a multi-mod string
-            int stride = me-ms;
-            int ndelta = 0;
-
-            if (b->core.flag & BAM_FREVERSE) {
-                // We process the sequence in left to right order,
-                // but delta is successive count of bases to skip
-                // counting right to left.  This also means the number
-                // of bases to skip at left edge is unrecorded (as it's
-                // the remainder).
-                //
-                // To output mods in left to right, we step through the
-                // MM list in reverse and need to identify the left-end
-                // "remainder" delta.
-                int total_seq = 0;
-                for (;;) {
-                    cp += (*cp == ',');
-                    if (*cp == 0 || *cp == ';')
-                        break;
-
-                    delta = strtol(cp, &cp_end, 10);
-                    if (cp_end == cp) {
-                        hts_log_error("Hit end of MM tag. Missing semicolon?");
-                        return -1;
-                    }
-
-                    cp = cp_end;
-                    total_seq += delta+1;
-                    ndelta++;
-                }
-                delta = freq[seqi_rc[btype]] - total_seq; // remainder
-            } else {
-                delta = *cp == ','
-                    ? strtol(cp+1, &cp_end, 10)
-                    : 0;
-                if (!cp_end) {
-                    // empty list
-                    delta = INT_MAX;
-                    cp_end = cp+1;
-                }
-            }
-            // Now delta is first in list or computed remainder,
-            // and cp_end is either start or end of the MM list.
-            while (ms < me) {
-                state->type     [mod_num] = chebi ? -chebi : *ms;
-                state->strand   [mod_num] = (strand == '-');
-                state->canonical[mod_num] = btype;
-                state->MLstride [mod_num] = stride;
-                state->implicit [mod_num] = implicit;
-
-                if (delta < 0) {
-                    hts_log_error("MM tag refers to bases beyond sequence "
-                                  "length");
-                    return -1;
-                }
-                state->MMcount  [mod_num] = delta;
-                if (b->core.flag & BAM_FREVERSE) {
-                    state->MM   [mod_num] = cp+1;
-                    state->MMend[mod_num] = cp_end;
-                    state->ML   [mod_num] = ml ? ml+n +(ndelta-1)*stride: NULL;
-                } else {
-                    state->MM   [mod_num] = cp_end;
-                    state->MMend[mod_num] = NULL;
-                    state->ML   [mod_num] = ml ? ml+n : NULL;
-                }
-
-                if (++mod_num >= MAX_BASE_MOD) {
-                    hts_log_error("Too many base modification types");
-                    return -1;
-                }
-                ms++; n++;
-            }
-
-            // Skip modification deltas
-            if (ml) {
-                if (b->core.flag & BAM_FREVERSE) {
-                    ml += ndelta*stride;
-                } else {
-                    while (*cp && *cp != ';') {
-                        if (*cp == ',')
-                            ml+=stride;
-                        cp++;
-                    }
-                }
-                if (ml > ml_end) {
-                    hts_log_error("Insufficient number of entries in ML tag");
-                    return -1;
-                }
-            } else {
-                // cp_end already known if FREVERSE
-                if (cp_end && (b->core.flag & BAM_FREVERSE))
-                    cp = cp_end;
-                else
-                    while (*cp && *cp != ';')
-                        cp++;
-            }
-            if (!*cp) {
-                hts_log_error("Hit end of MM tag. Missing semicolon?");
-                return -1;
-            }
-        }
-    }
-
-    state->nmods = mod_num;
-
-    return 0;
-}
-
-/*
- * Fills out mods[] with the base modifications found.
- * Returns the number found (0 if none), which may be more than
- * the size of n_mods if more were found than reported.
- * Returns <= -1 on error.
- *
- * This always marches left to right along sequence, irrespective of
- * reverse flag or modification strand.
- */
-int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
-                         hts_base_mod *mods, int n_mods) {
-    if (b->core.flag & BAM_FREVERSE) {
-        if (state->seq_pos < 0)
-            return -1;
-    } else {
-        if (state->seq_pos >= b->core.l_qseq)
-            return -1;
-    }
-
-    int i, j, n = 0;
-    unsigned char base = bam_seqi(bam_get_seq(b), state->seq_pos);
-    state->seq_pos++;
-    if (b->core.flag & BAM_FREVERSE)
-        base = seqi_rc[base];
-
-    for (i = 0; i < state->nmods; i++) {
-        if (state->canonical[i] != base && state->canonical[i] != 15/*N*/)
-            continue;
-
-        if (state->MMcount[i]-- > 0)
-            continue;
-
-        char *MMptr = state->MM[i];
-        if (n < n_mods) {
-            mods[n].modified_base = state->type[i];
-            mods[n].canonical_base = seq_nt16_str[state->canonical[i]];
-            mods[n].strand = state->strand[i];
-            mods[n].qual = state->ML[i] ? *state->ML[i] : -1;
-        }
-        n++;
-        if (state->ML[i])
-            state->ML[i] += (b->core.flag & BAM_FREVERSE)
-                ? -state->MLstride[i]
-                : +state->MLstride[i];
-
-        if (b->core.flag & BAM_FREVERSE) {
-            // process MM list backwards
-            char *cp;
-            for (cp = state->MMend[i]-1; cp != state->MM[i]; cp--)
-                if (*cp == ',')
-                    break;
-            state->MMend[i] = cp;
-            if (cp != state->MM[i])
-                state->MMcount[i] = strtol(cp+1, NULL, 10);
-            else
-                state->MMcount[i] = INT_MAX;
-        } else {
-            if (*state->MM[i] == ',')
-                state->MMcount[i] = strtol(state->MM[i]+1, &state->MM[i], 10);
-            else
-                state->MMcount[i] = INT_MAX;
-        }
-
-        // Multiple mods at the same coords.
-        for (j=i+1; j < state->nmods && state->MM[j] == MMptr; j++) {
-            if (n < n_mods) {
-                mods[n].modified_base = state->type[j];
-                mods[n].canonical_base = seq_nt16_str[state->canonical[j]];
-                mods[n].strand = state->strand[j];
-                mods[n].qual = state->ML[j] ? *state->ML[j] : -1;
-            }
-            n++;
-            state->MMcount[j] = state->MMcount[i];
-            state->MM[j]      = state->MM[i];
-            if (state->ML[j])
-                state->ML[j] += (b->core.flag & BAM_FREVERSE)
-                    ? -state->MLstride[j]
-                    : +state->MLstride[j];
-        }
-        i = j-1;
-    }
-
-    return n;
-}
-
-/*
- * Looks for the next location with a base modification.
- */
-int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
-                     hts_base_mod *mods, int n_mods, int *pos) {
-    if (state->seq_pos >= b->core.l_qseq)
-        return 0;
-
-    // Look through state->MMcount arrays to see when the next lowest is
-    // per base type;
-    int next[16], freq[16] = {0}, i;
-    memset(next, 0x7f, 16*sizeof(*next));
-    if (b->core.flag & BAM_FREVERSE) {
-        for (i = 0; i < state->nmods; i++) {
-            if (next[seqi_rc[state->canonical[i]]] > state->MMcount[i])
-                next[seqi_rc[state->canonical[i]]] = state->MMcount[i];
-        }
-    } else {
-        for (i = 0; i < state->nmods; i++) {
-            if (next[state->canonical[i]] > state->MMcount[i])
-                next[state->canonical[i]] = state->MMcount[i];
-        }
-    }
-
-    // Now step through the sequence counting off base types.
-    for (i = state->seq_pos; i < b->core.l_qseq; i++) {
-        unsigned char bc = bam_seqi(bam_get_seq(b), i);
-        if (next[bc] <= freq[bc] || next[15] <= freq[15])
-            break;
-        freq[bc]++;
-        if (bc != 15) // N
-            freq[15]++;
-    }
-    *pos = state->seq_pos = i;
-
-    if (i >= b->core.l_qseq) {
-        // Check for more MM elements than bases present.
-        for (i = 0; i < state->nmods; i++) {
-            if (!(b->core.flag & BAM_FREVERSE) &&
-                state->MMcount[i] < 0x7f000000) {
-                hts_log_warning("MM tag refers to bases beyond sequence length");
-                return -1;
-            }
-        }
-        return 0;
-    }
-
-    if (b->core.flag & BAM_FREVERSE) {
-        for (i = 0; i < state->nmods; i++)
-            state->MMcount[i] -= freq[seqi_rc[state->canonical[i]]];
-    } else {
-        for (i = 0; i < state->nmods; i++)
-            state->MMcount[i] -= freq[state->canonical[i]];
-    }
-
-    int r = bam_mods_at_next_pos(b, state, mods, n_mods);
-    return r > 0 ? r : 0;
-}
-
-/*
- * As per bam_mods_at_next_pos, but at a specific qpos >= the previous qpos.
- * This can only march forwards along the read, but can do so by more than
- * one base-pair.
- *
- * This makes it useful for calling from pileup iterators where qpos may
- * start part way through a read for the first occurrence of that record.
- */
-int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
-                    hts_base_mod *mods, int n_mods) {
-    // FIXME: for now this is inefficient in implementation.
-    int r = 0;
-    while (state->seq_pos <= qpos)
-        if ((r = bam_mods_at_next_pos(b, state, mods, n_mods)) < 0)
-            break;
-
-    return r;
-}
-
-/*
- * Returns the list of base modification codes provided for this
- * alignment record as an array of character codes (+ve) or ChEBI numbers
- * (negative).
- *
- * Returns the array, with *ntype filled out with the size.
- *         The array returned should not be freed.
- *         It is a valid pointer until the state is freed using
- *         hts_base_mod_free().
- */
-int *bam_mods_recorded(hts_base_mod_state *state, int *ntype) {
-    *ntype = state->nmods;
-    return state->type;
-}
-
-/*
- * Returns data about a specific modification type for the alignment record.
- * Code is either positive (eg 'm') or negative for ChEBI numbers.
- *
- * Return 0 on success or -1 if not found.  The strand, implicit and canonical
- * fields are filled out if passed in as non-NULL pointers.
- */
-int bam_mods_query_type(hts_base_mod_state *state, int code,
-                        int *strand, int *implicit, char *canonical) {
-    // Find code entry
-    int i;
-    for (i = 0; i < state->nmods; i++) {
-        if (state->type[i] == code)
-            break;
-    }
-    if (i == state->nmods)
-        return -1;
-
-    // Return data
-    if (strand)    *strand    = state->strand[i];
-    if (implicit)  *implicit  = state->implicit[i];
-    if (canonical) *canonical = "?AC?G???T??????N"[state->canonical[i]];
-
-    return 0;
-}

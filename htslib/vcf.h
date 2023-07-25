@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2023 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -690,6 +690,22 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      */
     HTSLIB_EXPORT
     int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
+
+    /// Add a header record into a header
+    /**
+     *  @param hdr  Destination header
+     *  @param hrec Header record
+     *  @return 0 on success, -1 on failure
+     *
+     *  If this function returns success, ownership of @p hrec will have
+     *  been transferred to the header structure.  It may also have been
+     *  freed if it was a duplicate of a record already in the header.
+     *  Therefore the @p hrec pointer should not be used after a successful
+     *  return from this function.
+     *
+     *  If this function returns failure, ownership will not have been taken
+     *  and the caller is responsible for cleaning up @p hrec.
+     */
 
     HTSLIB_EXPORT
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);

@@ -1330,13 +1330,20 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
     }
 
     if (mode == 'r') {
+#if LIBCURL_VERSION_NUM >= 0x073700 // 7.55.0
+        curl_off_t offset;
+
+        if (curl_easy_getinfo(fp->easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T,
+                              &offset) == CURLE_OK && offset > 0)
+            fp->file_size = (off_t) offset;
+#else
         double dval;
 
         if (curl_easy_getinfo(fp->easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD,
                               &dval) == CURLE_OK && dval >= 0.0)
             fp->file_size = (off_t) (dval + 0.1);
+#endif
     }
-
     fp->base.backend = &libcurl_backend;
     return &fp->base;
 

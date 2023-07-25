@@ -1,0 +1,111 @@
+0	A
+1	T
+2	C
+3	A
+4	T
+5	C
+6	A
+7	T
+8	T
+9	C	C+m200 C+h10
+10	C	C+m50 C+h170
+11	T
+12	A
+13	C
+14	C	C+m160 C+h20
+15	G
+16	C
+17	T
+18	A
+19	T
+20	A
+21	G
+22	C
+23	C
+24	T
+---
+Present: m. h.
+9	C	C+m200 C+h10
+10	C	C+m50 C+h170
+14	C	C+m160 C+h20
+
+===
+
+0	A
+1	T
+2	C	C+m# C+h#
+3	A
+4	T
+5	C	C+m# C+h#
+6	A
+7	T
+8	T
+9	C	C+m200 C+h10
+10	C	C+m50 C+h170
+11	T
+12	A
+13	C	C+m10 C+h5
+14	C	C+m160 C+h20
+15	G
+16	C	C+m10 C+h5
+17	T
+18	A
+19	T
+20	A
+21	G
+22	C	C+m# C+h#
+23	C	C+m# C+h#
+24	T
+---
+Present: m? h?
+2	C	C+m# C+h#
+5	C	C+m# C+h#
+9	C	C+m200 C+h10
+10	C	C+m50 C+h170
+13	C	C+m10 C+h5
+14	C	C+m160 C+h20
+16	C	C+m10 C+h5
+22	C	C+m# C+h#
+23	C	C+m# C+h#
+
+===
+
+0	A
+1	T
+2	C	C+h#
+3	A
+4	T
+5	C	C+h#
+6	A
+7	T
+8	T
+9	C	C+m200 C+h10
+10	C	C+h170
+11	T
+12	A
+13	C	C+h5
+14	C	C+m160 C+h20
+15	G
+16	C	C+h5
+17	T
+18	A
+19	T
+20	A
+21	G
+22	C	C+h#
+23	C	C+h#
+24	T
+---
+Present: m. h?
+2	C	C+h#
+5	C	C+h#
+9	C	C+m200 C+h10
+10	C	C+h170
+13	C	C+h5
+14	C	C+m160 C+h20
+16	C	C+h5
+22	C	C+h#
+23	C	C+h#
+
+===
+

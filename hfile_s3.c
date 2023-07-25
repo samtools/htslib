@@ -1,6 +1,6 @@
 /*  hfile_s3.c -- Amazon S3 backend for low-level file streams.
 
-    Copyright (C) 2015-2017, 2019-2022 Genome Research Ltd.
+    Copyright (C) 2015-2017, 2019-2023 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -451,12 +451,12 @@ static int auth_header_callback(void *ctx, char ***hdrs) {
 
 /* like a escape path but for query strings '=' and '&' are untouched */
 static char *escape_query(const char *qs) {
-    size_t i, j = 0, length;
+    size_t i, j = 0, length, alloced;
     char *escaped;
 
     length = strlen(qs);
-
-    if ((escaped = malloc(length * 3 + 1)) == NULL) {
+    alloced = length * 3 + 1;
+    if ((escaped = malloc(alloced)) == NULL) {
         return NULL;
     }
 
@@ -467,29 +467,25 @@ static char *escape_query(const char *qs) {
              c == '_' || c == '-' || c == '~' || c == '.' || c == '/' || c == '=' || c == '&') {
             escaped[j++] = c;
         } else {
-            sprintf(escaped + j, "%%%02X", c);
+            snprintf(escaped + j, alloced - j, "%%%02X", c);
             j += 3;
         }
     }
 
-    if (i != length) {
-        // in the case of a '?' copy the rest of the qs across unchanged
-        strcpy(escaped + j, qs + i);
-    } else {
-        escaped[j] = '\0';
-    }
+    escaped[j] = '\0';
 
     return escaped;
 }
 
 
 static char *escape_path(const char *path) {
-    size_t i, j = 0, length;
+    size_t i, j = 0, length, alloced;
     char *escaped;
 
     length = strlen(path);
+    alloced = length * 3 + 1;
 
-    if ((escaped = malloc(length * 3 + 1)) == NULL) {
+    if ((escaped = malloc(alloced)) == NULL) {
         return NULL;
     }
 
@@ -502,7 +498,7 @@ static char *escape_path(const char *path) {
              c == '_' || c == '-' || c == '~' || c == '.' || c == '/') {
             escaped[j++] = c;
         } else {
-            sprintf(escaped + j, "%%%02X", c);
+            snprintf(escaped + j, alloced - j, "%%%02X", c);
             j += 3;
         }
     }
@@ -842,14 +838,14 @@ AWS S3 sig version 4 writing code
 
 ****************************************************************/
 
-static void hash_string(char *in, size_t length, char *out) {
+static void hash_string(char *in, size_t length, char *out, size_t out_len) {
     unsigned char hashed[SHA256_DIGEST_BUFSIZE];
     int i, j;
 
     s3_sha256((const unsigned char *)in, length, hashed);
 
     for (i = 0, j = 0; i < SHA256_DIGEST_BUFSIZE; i++, j+= 2) {
-        sprintf(out + j, "%02x", hashed[i]);
+        snprintf(out + j, out_len - j, "%02x", hashed[i]);
     }
 }
 
@@ -866,7 +862,7 @@ static void ksfree(kstring_t *s) {
 }
 
 
-static int make_signature(s3_auth_data *ad, kstring_t *string_to_sign, char *signature_string) {
+static int make_signature(s3_auth_data *ad, kstring_t *string_to_sign, char *signature_string, size_t sig_string_len) {
     unsigned char date_key[SHA256_DIGEST_BUFSIZE];
     unsigned char date_region_key[SHA256_DIGEST_BUFSIZE];
     unsigned char date_region_service_key[SHA256_DIGEST_BUFSIZE];
@@ -893,7 +889,7 @@ static int make_signature(s3_auth_data *ad, kstring_t *string_to_sign, char *sig
     s3_sign_sha256(signing_key, len, (const unsigned char *)string_to_sign->s, string_to_sign->l, signature, &len);
 
     for (i = 0, j = 0; i < len; i++, j+= 2) {
-        sprintf(signature_string + j, "%02x", signature[i]);
+        snprintf(signature_string + j, sig_string_len - j, "%02x", signature[i]);
     }
 
     ksfree(&secret_access_key);
@@ -945,7 +941,7 @@ static int make_authorisation(s3_auth_data *ad, char *http_request, char *conten
         goto cleanup;
     }
 
-    hash_string(canonical_request.s, canonical_request.l, cr_hash);
+    hash_string(canonical_request.s, canonical_request.l, cr_hash, sizeof(cr_hash));
 
     ksprintf(&scope, "%s/%s/s3/aws4_request", ad->date_short, ad->region.s);
 
@@ -959,7 +955,7 @@ static int make_authorisation(s3_auth_data *ad, char *http_request, char *conten
         goto cleanup;
     }
 
-    if (make_signature(ad, &string_to_sign, signature_string)) {
+    if (make_signature(ad, &string_to_sign, signature_string, sizeof(signature_string))) {
         goto cleanup;
     }
 
@@ -1094,10 +1090,10 @@ static int write_authorisation_callback(void *auth, char *request, kstring_t *co
     }
 
     if (content) {
-        hash_string(content->s, content->l, content_hash);
+        hash_string(content->s, content->l, content_hash, sizeof(content_hash));
     } else {
         // empty hash
-        hash_string("", 0, content_hash);
+        hash_string("", 0, content_hash, sizeof(content_hash));
     }
 
     ad->canonical_query_string.l = 0;
@@ -1166,7 +1162,7 @@ static int v4_auth_header_callback(void *ctx, char ***hdrs) {
         return copy_auth_headers(ad, hdrs);
     }
 
-    hash_string("", 0, content_hash); // empty hash
+    hash_string("", 0, content_hash, sizeof(content_hash)); // empty hash
 
     ad->canonical_query_string.l = 0;
 

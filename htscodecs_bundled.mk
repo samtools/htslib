@@ -28,10 +28,10 @@ HTSCODECS_SOURCES = $(HTSPREFIX)htscodecs/htscodecs/arith_dynamic.c \
         $(HTSPREFIX)htscodecs/htscodecs/htscodecs.c \
         $(HTSPREFIX)htscodecs/htscodecs/pack.c \
         $(HTSPREFIX)htscodecs/htscodecs/rANS_static4x16pr.c \
-	$(if $(HTS_CFLAGS_AVX2),$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_avx2.c) \
-	$(if $(HTS_CFLAGS_AVX512),$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_avx512.c) \
-	$(if $(HTS_CFLAGS_SSE4),$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_sse4.c) \
-	$(if $(HTS_HAVE_NEON),$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_neon.c) \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_avx2.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_avx512.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_sse4.c \
+	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr_neon.c \
 	$(HTSPREFIX)htscodecs/htscodecs/rANS_static32x16pr.c \
         $(HTSPREFIX)htscodecs/htscodecs/rANS_static.c \
         $(HTSPREFIX)htscodecs/htscodecs/rle.c \

@@ -3852,7 +3852,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
     if (!c->slice || c->curr_rec == c->max_rec ||
         (bam_ref(b) != c->curr_ref && c->curr_ref >= -1) ||
-        (c->s_num_bases >= fd->bases_per_slice)) {
+        (c->s_num_bases + c->s_aux_bytes >= fd->bases_per_slice)) {
         int slice_rec, curr_rec, multi_seq = fd->multi_seq == 1;
         int curr_ref = c->slice ? c->curr_ref : bam_ref(b);
 
@@ -3885,7 +3885,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
         if (CRAM_MAJOR_VERS(fd->version) == 1 ||
             c->curr_rec == c->max_rec || fd->multi_seq != 1 || !c->slice ||
-            c->s_num_bases >= fd->bases_per_slice) {
+            c->s_num_bases + c->s_aux_bytes >= fd->bases_per_slice) {
             if (NULL == (c = cram_next_container(fd, b))) {
                 if (fd->ctr) {
                     // prevent cram_close attempting to flush
@@ -3997,6 +3997,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
     c->curr_rec++;
     c->curr_c_rec++;
     c->s_num_bases += bam_seq_len(b);
+    c->s_aux_bytes += bam_get_l_aux(b);
     c->n_mapped += (bam_flag(b) & BAM_FUNMAP) ? 0 : 1;
     fd->record_counter++;
 

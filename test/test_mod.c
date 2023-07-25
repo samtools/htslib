@@ -1,6 +1,6 @@
 /*  test/test_mod.c -- testing of base modification functions
 
-    Copyright (C) 2020-2021 Genome Research Ltd.
+    Copyright (C) 2020-2021, 2023 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -79,20 +79,26 @@ static char *code(int id) {
         code[0] = id;
         code[1] = 0;
     } else {
-        sprintf(code, "(%d)", -id);
+        snprintf(code, sizeof(code), "(%d)", -id);
     }
 
     return code;
 }
 
 int main(int argc, char **argv) {
-    char out[1024] = {0};
     int extended = 0;
+    uint32_t flags = 0;
 
     if (argc > 1 && strcmp(argv[1], "-x") == 0) {
         extended = 1;
         argv++;
         argc--;
+    }
+
+    if (argc > 2 && strcmp(argv[1], "-f") == 0) {
+        flags = atoi(argv[2]);
+        argv+=2;
+        argc-=2;
     }
 
     if (argc < 2)
@@ -110,7 +116,7 @@ int main(int argc, char **argv) {
 
     int r;
     while ((r = sam_read1(in, h, b)) >= 0) {
-        if (bam_parse_basemod(b, m) < 0) {
+        if (bam_parse_basemod2(b, m, flags) < 0) {
             fprintf(stderr, "Failed to parse MM/ML aux tags\n");
             goto err;
         }
@@ -119,11 +125,18 @@ int main(int argc, char **argv) {
         int i, j, n;
         hts_base_mod mods[5];
         for (i = 0; i < b->core.l_qseq; i++) {
-            char line[8192], *lp = line;
+            char sp = '\t';
             n = bam_mods_at_next_pos(b, m, mods, 5);
-            lp += sprintf(lp, "%d\t%c\t",
-                          i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
+            printf("%d\t%c", i, seq_nt16_str[bam_seqi(bam_get_seq(b), i)]);
             for (j = 0; j < n && j < 5; j++) {
+                char qstr[10];
+                if (mods[j].qual == HTS_MOD_UNCHECKED)
+                    qstr[0] = '#', qstr[1] = 0;
+                else if (mods[j].qual == HTS_MOD_UNKNOWN)
+                    qstr[0] = '.', qstr[1] = 0;
+                else
+                    snprintf(qstr, 10, "%d", mods[j].qual);
+
                 if (extended) {
                     int m_strand, m_implicit;
                     char m_canonical;
@@ -134,66 +147,70 @@ int main(int argc, char **argv) {
                         m_canonical != mods[j].canonical_base ||
                         m_strand    != mods[j].strand)
                         goto err;
-                    lp += sprintf(lp, "%c%c%s%c%d ",
-                                  mods[j].canonical_base,
-                                  "+-"[mods[j].strand],
-                                  code(mods[j].modified_base),
-                                  "?."[m_implicit],
-                                  mods[j].qual);
+                    printf("%c%c%c%s%c%s",
+                           sp, mods[j].canonical_base,
+                           "+-"[mods[j].strand],
+                           code(mods[j].modified_base),
+                           "?."[m_implicit],
+                           qstr);
                 } else {
-                    lp += sprintf(lp, "%c%c%s%d ",
-                                  mods[j].canonical_base,
-                                  "+-"[mods[j].strand],
-                                  code(mods[j].modified_base),
-                                  mods[j].qual);
+                    printf("%c%c%c%s%s",
+                           sp, mods[j].canonical_base,
+                           "+-"[mods[j].strand],
+                           code(mods[j].modified_base),
+                           qstr);
                 }
+                sp = ' ';
             }
-            *lp++ = '\n';
-            *lp++ = 0;
-
-            if (argc > 1)
-                printf("%s", line);
-            else
-                strcat(out, line);
+            putchar('\n');
         }
 
-        if (argc > 1) puts("---");
+        puts("---");
 
-        bam_parse_basemod(b, m);
+        bam_parse_basemod2(b, m, flags);
 
         // List possible mod choices.
         int *all_mods;
         int all_mods_n = 0;
         all_mods = bam_mods_recorded(m, &all_mods_n);
         printf("Present:");
-        for (i = 0; i < all_mods_n; i++)
+        for (i = 0; i < all_mods_n; i++) {
+            int m_strand, m_implicit;
+            char m_canonical;
+            bam_mods_queryi(m, i, &m_strand, &m_implicit, &m_canonical);
             printf(all_mods[i] > 0 ? " %c" : " #%d", all_mods[i]);
+            putchar("?."[m_implicit]);
+        }
         putchar('\n');
 
         int pos;
         while ((n=bam_next_basemod(b, m, mods, 5, &pos)) > 0) {
-            char line[8192]={0}, *lp = line;
-            lp += sprintf(lp, "%d\t%c\t", pos,
-                          seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
+            char sp = '\t';
+            printf("%d\t%c", pos,
+                   seq_nt16_str[bam_seqi(bam_get_seq(b), pos)]);
             for (j = 0; j < n && j < 5; j++) {
-                lp += sprintf(lp, "%c%c%s%d ",
-                              mods[j].canonical_base,
-                              "+-"[mods[j].strand],
-                              code(mods[j].modified_base),
-                              mods[j].qual);
-            }
-            *lp++ = '\n';
-            *lp++ = 0;
+                char qstr[10];
+                if (mods[j].qual == HTS_MOD_UNCHECKED)
+                    qstr[0] = '#', qstr[1] = 0;
+                else if (mods[j].qual == HTS_MOD_UNKNOWN)
+                    qstr[0] = '.', qstr[1] = 0;
+                else
+                    snprintf(qstr, 10, "%d", mods[j].qual);
 
-            if (argc > 1)
-                printf("%s", line);
-            else
-                strcat(out, line);
+                printf("%c%c%c%s%s",
+                       sp, mods[j].canonical_base,
+                       "+-"[mods[j].strand],
+                       code(mods[j].modified_base),
+                       qstr);
+                sp = ' ';
+            }
+            putchar('\n');
         }
+
         if (n < 0)
             goto err;
 
-        if (argc > 1) puts("\n===\n");
+        puts("\n===\n");
     }
     fflush(stdout);
     if (sam_close(in) != 0 || r < -1)

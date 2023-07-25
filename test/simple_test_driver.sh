@@ -51,6 +51,7 @@ run_test() {
         else
             # Expected non-zero exit code and got it
             r="P"
+            rm -f _out.tmp _err.tmp
         fi
     elif [ "$p" = "N" ]
     then
@@ -69,11 +70,12 @@ run_test() {
             # Output differed
             r="F"
             y="output"
+            rm -f _out.tmp2
         fi
     else
         # Expected zero exit code and got it.
         r="P"
-        rm -f _out.tmp _out.tmp2 _err.tmp
+        rm -f _out.tmp _err.tmp
     fi
 
     if [ "$r" = "F" ]
@@ -107,6 +109,7 @@ run_test() {
                 ;;
             *)
                 echo "XFAIL: $@"
+                rm -f _out.tmp _err.tmp
                 nefail=`expr $nefail + 1`
                 ;;
         esac

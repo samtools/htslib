@@ -453,7 +453,7 @@ const char *
 hts_strprint(char *buf, size_t buflen, char quote, const char *s, size_t len)
 {
     const char *slim = (len < SIZE_MAX)? &s[len] : NULL;
-    char *t = buf;
+    char *t = buf, *bufend = buf + buflen;
 
     size_t qlen = quote? 1 : 0;
     if (quote) *t++ = quote;
@@ -482,7 +482,7 @@ hts_strprint(char *buf, size_t buflen, char quote, const char *s, size_t len)
         }
 
         if (clen == 4) {
-            sprintf(t, "\\x%02X", (unsigned char) c);
+            snprintf(t, bufend - t, "\\x%02X", (unsigned char) c);
             t += clen;
         }
         else {

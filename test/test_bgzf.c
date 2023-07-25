@@ -1,6 +1,6 @@
 /* test/test_bgzf.c -- bgzf unit tests
 
-   Copyright (C) 2017, 2019 Genome Research Ltd
+   Copyright (C) 2017, 2019, 2022-2023 Genome Research Ltd
 
    Author: Robert Davies <rmd@sanger.ac.uk>
 

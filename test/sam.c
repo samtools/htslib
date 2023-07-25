@@ -1504,7 +1504,7 @@ static void faidx1(const char *filename)
 
     fin = fopen(filename, "rb");
     if (fin == NULL) fail("can't open %s", filename);
-    sprintf(tmpfilename, "%s.tmp", filename);
+    snprintf(tmpfilename, sizeof(tmpfilename), "%s.tmp", filename);
     fout = fopen(tmpfilename, "wb");
     if (fout == NULL) fail("can't create temporary %s", tmpfilename);
     while (fgets(line, sizeof line, fin)) {

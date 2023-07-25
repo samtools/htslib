@@ -324,10 +324,24 @@ decompress_peek_gz(hFILE *fp, unsigned char *dest, size_t destsize)
     zs.avail_out = destsize;
     if (inflateInit2(&zs, 31) != Z_OK) return -1;
 
-    while (zs.total_out < destsize)
-        if (inflate(&zs, Z_SYNC_FLUSH) != Z_OK) break;
+    int ret;
+    const unsigned char *last_in = buffer;
+    while (zs.avail_out > 0) {
+        ret = inflate(&zs, Z_SYNC_FLUSH);
+        if (ret == Z_STREAM_END) {
+            if (last_in == zs.next_in)
+                break; // Paranoia to avoid potential looping. Shouldn't happen
+            else
+                last_in = zs.next_in;
+            inflateReset(&zs);
+        } else if (ret != Z_OK) {
+            // eg Z_BUF_ERROR due to avail_in/out becoming zero
+            break;
+        }
+    }
 
-    destsize = zs.total_out;
+    // NB: zs.total_out is changed by inflateReset, so use pointer diff instead
+    destsize = zs.next_out - dest;
     inflateEnd(&zs);
 
     return destsize;
@@ -835,7 +849,7 @@ char *hts_format_description(const htsFormat *format)
 
 htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
-    char smode[101], *cp, *cp2, *mode_c;
+    char smode[101], *cp, *cp2, *mode_c, *uncomp = NULL;
     htsFile *fp = NULL;
     hFILE *hfile = NULL;
     char fmt_code = '\0';
@@ -853,8 +867,13 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
             fmt_code = 'b';
         else if (*cp == 'c')
             fmt_code = 'c';
-        else
+        else {
             *cp2++ = *cp;
+            // Cache the uncompress flag 'u' pos if present
+            if (!uncomp && (*cp == 'u')) {
+                uncomp = cp2 - 1;
+            }
+        }
     }
     mode_c = cp2;
     *cp2++ = fmt_code;
@@ -864,6 +883,11 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fmt && fmt->format > unknown_format
         && fmt->format < sizeof(format_to_mode)) {
         *mode_c = format_to_mode[fmt->format];
+    }
+
+    // Uncompressed bam/bcf is not supported, change 'u' to '0' on write
+    if (uncomp && *mode_c == 'b' && (strchr(smode, 'w') || strchr(smode, 'a'))) {
+        *uncomp = '0';
     }
 
     // If we really asked for a compressed text format then mode_c above will
@@ -1349,6 +1373,7 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
     hFILE *hfile1 = *hfile_ptr;
     hFILE *hfile2 = NULL;
     char fn_buf[512], *fn2 = fn_buf;
+    char mode2[102]; // Size set by sizeof(simple_mode) in hts_hopen()
     const char *prefix = "crypt4gh:";
     size_t fn2_len = strlen(prefix) + strlen(fn) + 1;
     int ret = -1;
@@ -1362,7 +1387,8 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
 
     // Reopen fn using the crypt4gh plug-in (if available)
     snprintf(fn2, fn2_len, "%s%s", prefix, fn);
-    hfile2 = hopen(fn2, mode, "parent", hfile1, NULL);
+    snprintf(mode2, sizeof(mode2), "%s%s", mode, strchr(mode, ':') ? "" : ":");
+    hfile2 = hopen(fn2, mode2, "parent", hfile1, NULL);
     if (hfile2) {
         // Replace original hfile with the new one.  The original is now
         // enclosed within hfile2
@@ -2901,73 +2927,201 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
  ****************/
 
 // Note: even with 32-bit hts_pos_t, end needs to be 64-bit here due to 1LL<<s.
-static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
+static inline int reg2bins_narrow(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
-    if (beg >= end) return 0;
-    if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
         hts_pos_t b, e;
-        int n, i;
-        b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
-        if (itr->bins.n + n > itr->bins.m) {
-            itr->bins.m = itr->bins.n + n;
-            kroundup32(itr->bins.m);
-            itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
+        int i;
+        b = t + (beg>>s); e = t + (end>>s);
+        for (i = b; i <= e; ++i) {
+            if (kh_get(bin, bidx, i) != kh_end(bidx)) {
+                assert(itr->bins.n < itr->bins.m);
+                itr->bins.a[itr->bins.n++] = i;
+            }
         }
-        for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
     }
     return itr->bins.n;
+}
+
+static inline int reg2bins_wide(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
+{
+    khint_t i;
+    hts_pos_t max_shift = 3 * n_lvls + min_shift;
+    --end;
+    if (beg < 0) beg = 0;
+    for (i = kh_begin(bidx); i != kh_end(bidx); i++) {
+        if (!kh_exist(bidx, i)) continue;
+        hts_pos_t bin = (hts_pos_t) kh_key(bidx, i);
+        int level = hts_bin_level(bin);
+        if (level > n_lvls) continue; // Dodgy index?
+        hts_pos_t first = hts_bin_first(level);
+        hts_pos_t beg_at_level = first + (beg >> (max_shift - 3 * level));
+        hts_pos_t end_at_level = first + (end >> (max_shift - 3 * level));
+        if (beg_at_level <= bin && bin <= end_at_level) {
+            assert(itr->bins.n < itr->bins.m);
+            itr->bins.a[itr->bins.n++] = bin;
+        }
+    }
+    return itr->bins.n;
+}
+
+static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
+{
+    int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
+    size_t reg_bin_count = 0, hash_bin_count = kh_n_buckets(bidx), max_bins;
+    hts_pos_t end1;
+    if (end >= 1LL<<s) end = 1LL<<s;
+    if (beg >= end) return 0;
+    end1 = end - 1;
+
+    // Count bins to see if it's faster to iterate through the hash table
+    // or the set of bins covering the region
+    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+        reg_bin_count += (end1 >> s) - (beg >> s) + 1;
+    }
+    max_bins = reg_bin_count < kh_size(bidx) ? reg_bin_count : kh_size(bidx);
+    if (itr->bins.m - itr->bins.n < max_bins) {
+        // Worst-case memory usage.  May be wasteful on very sparse
+        // data, but the bin list usually won't be too big anyway.
+        size_t new_m = max_bins + itr->bins.n;
+        if (new_m > INT_MAX || new_m > SIZE_MAX / sizeof(int)) {
+            errno = ENOMEM;
+            return -1;
+        }
+        int *new_a = realloc(itr->bins.a, new_m * sizeof(*new_a));
+        if (!new_a) return -1;
+        itr->bins.a = new_a;
+        itr->bins.m = new_m;
+    }
+    if (reg_bin_count < hash_bin_count) {
+        return reg2bins_narrow(beg, end, itr, min_shift, n_lvls, bidx);
+    } else {
+        return reg2bins_wide(beg, end, itr, min_shift, n_lvls, bidx);
+    }
+}
+
+static inline int add_to_interval(hts_itr_t *iter, bins_t *bin,
+                                  int tid, uint32_t interval,
+                                  uint64_t min_off, uint64_t max_off)
+{
+    hts_pair64_max_t *off;
+    int j;
+
+    if (!bin->n)
+        return 0;
+    off = realloc(iter->off, (iter->n_off + bin->n) * sizeof(*off));
+    if (!off)
+        return -2;
+
+    iter->off = off;
+    for (j = 0; j < bin->n; ++j) {
+        if (bin->list[j].v > min_off && bin->list[j].u < max_off) {
+            iter->off[iter->n_off].u = min_off > bin->list[j].u
+                ? min_off : bin->list[j].u;
+            iter->off[iter->n_off].v = max_off < bin->list[j].v
+                ? max_off : bin->list[j].v;
+            // hts_pair64_max_t::max is now used to link
+            // file offsets to region list entries.
+            // The iterator can use this to decide if it
+            // can skip some file regions.
+            iter->off[iter->n_off].max = ((uint64_t) tid << 32) | interval;
+            iter->n_off++;
+        }
+    }
+    return 0;
+}
+
+static inline int reg2intervals_narrow(hts_itr_t *iter, const bidx_t *bidx,
+                                       int tid, int64_t beg, int64_t end,
+                                       uint32_t interval,
+                                       uint64_t min_off, uint64_t max_off,
+                                       int min_shift, int n_lvls)
+{
+    int l, t, s = min_shift + n_lvls * 3;
+    hts_pos_t b, e, i;
+
+    for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+        b = t + (beg>>s); e = t + (end>>s);
+        for (i = b; i <= e; ++i) {
+            khint_t k = kh_get(bin, bidx, i);
+            if (k != kh_end(bidx)) {
+                bins_t *bin = &kh_value(bidx, k);
+                int res = add_to_interval(iter, bin, tid, interval, min_off, max_off);
+                if (res < 0)
+                    return res;
+            }
+        }
+    }
+    return 0;
+}
+
+static inline int reg2intervals_wide(hts_itr_t *iter, const bidx_t *bidx,
+                                       int tid, int64_t beg, int64_t end,
+                                       uint32_t interval,
+                                       uint64_t min_off, uint64_t max_off,
+                                       int min_shift, int n_lvls)
+{
+    khint_t i;
+    hts_pos_t max_shift = 3 * n_lvls + min_shift;
+    --end;
+    if (beg < 0) beg = 0;
+    for (i = kh_begin(bidx); i != kh_end(bidx); i++) {
+        if (!kh_exist(bidx, i)) continue;
+        hts_pos_t bin = (hts_pos_t) kh_key(bidx, i);
+        int level = hts_bin_level(bin);
+        if (level > n_lvls) continue; // Dodgy index?
+        hts_pos_t first = hts_bin_first(level);
+        hts_pos_t beg_at_level = first + (beg >> (max_shift - 3 * level));
+        hts_pos_t end_at_level = first + (end >> (max_shift - 3 * level));
+        if (beg_at_level <= bin && bin <= end_at_level) {
+            bins_t *bin = &kh_value(bidx, i);
+            int res = add_to_interval(iter, bin, tid, interval, min_off, max_off);
+            if (res < 0)
+                return res;
+        }
+    }
+    return 0;
 }
 
 static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
     int l, t, s;
     int i, j;
-    hts_pos_t b, e;
-    hts_pair64_max_t *off;
+    hts_pos_t end1;
     bidx_t *bidx;
-    khint_t k;
-    int start_n_off = iter->n_off;
+    int start_n_off;
+    size_t reg_bin_count = 0, hash_bin_count;
+    int res;
 
     if (!iter || !idx || (bidx = idx->bidx[tid]) == NULL || beg >= end)
         return -1;
+
+    hash_bin_count = kh_n_buckets(bidx);
 
     s = min_shift + (n_lvls<<1) + n_lvls;
     if (end >= 1LL<<s)
         end = 1LL<<s;
 
-    for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
-        b = t + (beg>>s); e = t + (end>>s);
-
-        for (i = b; i <= e; ++i) {
-            if ((k = kh_get(bin, bidx, i)) != kh_end(bidx)) {
-                bins_t *p = &kh_value(bidx, k);
-
-                if (p->n) {
-                    off = realloc(iter->off, (iter->n_off + p->n) * sizeof(*off));
-                    if (!off)
-                        return -2;
-
-                    iter->off = off;
-                    for (j = 0; j < p->n; ++j) {
-                        if (p->list[j].v > min_off && p->list[j].u < max_off) {
-                            iter->off[iter->n_off].u = min_off > p->list[j].u
-                                ? min_off : p->list[j].u;
-                            iter->off[iter->n_off].v = max_off < p->list[j].v
-                                ? max_off : p->list[j].v;
-                            // hts_pair64_max_t::max is now used to link
-                            // file offsets to region list entries.
-                            // The iterator can use this to decide if it
-                            // can skip some file regions.
-                            iter->off[iter->n_off].max = ((uint64_t) tid << 32) | interval;
-                            iter->n_off++;
-                        }
-                    }
-                }
-            }
-        }
+    end1 = end - 1;
+    // Count bins to see if it's faster to iterate through the hash table
+    // or the set of bins covering the region
+    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+        reg_bin_count += (end1 >> s) - (beg >> s) + 1;
     }
+
+    start_n_off = iter->n_off;
+
+    // Populate iter->off with the intervals for this region
+    if (reg_bin_count < hash_bin_count) {
+        res = reg2intervals_narrow(iter, bidx, tid, beg, end, interval,
+                                   min_off, max_off, min_shift, n_lvls);
+    } else {
+        res = reg2intervals_wide(iter, bidx, tid, beg, end, interval,
+                                 min_off, max_off, min_shift, n_lvls);
+    }
+    if (res < 0)
+        return res;
 
     if (iter->n_off - start_n_off > 1) {
         ks_introsort(_off_max, iter->n_off - start_n_off, iter->off + start_n_off);
@@ -3143,21 +3297,31 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // compute max_off: a virtual offset from a bin to the right of end
-            bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
-            if (bin >= idx->n_bins) bin = 0;
-            while (1) {
-                // search for an extant bin by moving right, but moving up to the
-                // parent whenever we get to a first child (which also covers falling
-                // off the RHS, which wraps around and immediately goes up to bin 0)
-                while (bin % 8 == 1) bin = hts_bin_parent(bin);
-                if (bin == 0) { max_off = (uint64_t)-1; break; }
-                k = kh_get(bin, bidx, bin);
-                if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) { max_off = kh_val(bidx, k).list[0].u; break; }
-                bin++;
+            // First check if end lies within the range of the index (it won't
+            // if it's HTS_POS_MAX)
+            if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+                bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+                if (bin >= idx->n_bins) bin = 0;
+                while (1) {
+                    // search for an extant bin by moving right, but moving up to the
+                    // parent whenever we get to a first child (which also covers falling
+                    // off the RHS, which wraps around and immediately goes up to bin 0)
+                    while (bin % 8 == 1) bin = hts_bin_parent(bin);
+                    if (bin == 0) { max_off = UINT64_MAX; break; }
+                    k = kh_get(bin, bidx, bin);
+                    if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) { max_off = kh_val(bidx, k).list[0].u; break; }
+                    bin++;
+                }
+            } else {
+                // Searching to end of reference
+                max_off = UINT64_MAX;
             }
 
             // retrieve bins
-            reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
+            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, bidx) < 0) {
+                hts_itr_destroy(iter);
+                return NULL;
+            }
 
             for (i = n_off = 0; i < iter->bins.n; ++i)
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
@@ -3312,20 +3476,27 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 }
 
                 // compute max_off: a virtual offset from a bin to the right of end
-                bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
-                if (bin >= idx->n_bins) bin = 0;
-                while (1) {
-                    // search for an extant bin by moving right, but moving up to the
-                    // parent whenever we get to a first child (which also covers falling
-                    // off the RHS, which wraps around and immediately goes up to bin 0)
-                    while (bin % 8 == 1) bin = hts_bin_parent(bin);
-                    if (bin == 0) { max_off = (uint64_t)-1; break; }
-                    k = kh_get(bin, bidx, bin);
-                    if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
-                        max_off = kh_val(bidx, k).list[0].u;
-                        break;
+                // First check if end lies within the range of the index (it
+                // won't if it's HTS_POS_MAX)
+                if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+                    bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+                    if (bin >= idx->n_bins) bin = 0;
+                    while (1) {
+                        // search for an extant bin by moving right, but moving up to the
+                        // parent whenever we get to a first child (which also covers falling
+                        // off the RHS, which wraps around and immediately goes up to bin 0)
+                        while (bin % 8 == 1) bin = hts_bin_parent(bin);
+                        if (bin == 0) { max_off = UINT64_MAX; break; }
+                        k = kh_get(bin, bidx, bin);
+                        if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
+                            max_off = kh_val(bidx, k).list[0].u;
+                            break;
+                        }
+                        bin++;
                     }
-                    bin++;
+                } else {
+                    // Searching to end of reference
+                    max_off = UINT64_MAX;
                 }
 
                 //convert coordinates to file offsets
@@ -3408,14 +3579,12 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     }
 
                     if (e) {
-                        off[n_off++].v = e->next
-                            ? e->next
+                        off[n_off++].v = e->e_next
+                            ? e->e_next->offset
                             : e->offset + e->slice + e->len;
                     } else {
                         hts_log_warning("Could not set offset end for region %d:%"PRIhts_pos"-%"PRIhts_pos". Skipping", tid, beg, end);
                     }
-                } else {
-                    hts_log_warning("No index entry for region %d:%"PRIhts_pos"-%"PRIhts_pos"", tid, beg, end);
                 }
             }
         } else {
