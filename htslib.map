@@ -630,3 +630,9 @@ HTSLIB_1.17 {
     fai_line_length;
     faidx_seq_len64;
 } HTSLIB_1.16;
+
+HTSLIB_1.18 {
+    bam_mods_queryi;
+    bam_parse_basemod2;
+    fai_thread_pool;
+} HTSLIB_1.17;
