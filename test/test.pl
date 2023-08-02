@@ -377,6 +377,8 @@ sub test_bgzip {
     my $index = "${compressed}.gzi";
     my $test = sprintf('%s %2s threads', 'bgzip round-trip',
                        $threads ? $threads : 'no');
+    my $uncompressed1 = "$$opts{tmp}/ce.fa.$threads";
+    my $uncompressed1_copy = "$$opts{tmp}/ce.fa.$threads.copy";
 
     # Round-trip test
     print "$test: ";
@@ -470,6 +472,50 @@ sub test_bgzip {
     if ($ret) {
         failed($opts, $test,
                $out ? $out : "'$expected_part' '$uncompressed_part2' differ");
+        return;
+    }
+    passed($opts,$test);
+
+    # multi file test, expects compressed files from previous tests
+    # bgzip should return failure if both inputs not present
+    $test = sprintf('%s %2s threads', 'bgzip multifile',
+                    $threads ? $threads : 'no');
+    print "$test: ";
+
+    #decompress and remove
+    $c = "$$opts{bin}/bgzip $at -d '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    #check both files present and matches or not
+    $c = "cmp '$data' '$uncompressed1'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test,
+               $out ? $out : "'$data' '$uncompressed1' differ");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed1_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test,
+               $out ? $out : "'$data' '$uncompressed1_copy' differ");
+        return;
+    }
+    #compress and remove
+    $c = "$$opts{bin}/bgzip $at '$uncompressed1' '$uncompressed1_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    #decompress again to ensure successful compression
+    $c = "$$opts{bin}/bgzip $at -d '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
         return;
     }
     passed($opts,$test);
