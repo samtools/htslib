@@ -37,6 +37,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <errno.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "fuzz_settings.h"
+#endif
+
 #include "htslib/vcf.h"
 #include "htslib/bgzf.h"
 #include "htslib/tbx.h"
@@ -703,6 +707,11 @@ static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_i
     }
 
     new_n = idinfo->id >= hdr->n[dict_type] ? idinfo->id+1 : hdr->n[dict_type];
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // hts_resize() can attempt to allocate up to 2 * requested items
+    if (new_n > FUZZ_ALLOC_LIMIT/(2 * sizeof(bcf_idpair_t)))
+        return -1;
+#endif
     if (hts_resize(bcf_idpair_t, new_n, &hdr->m[dict_type],
                    &hdr->id[dict_type], HTS_RESIZE_CLEAR)) {
         return -1;
@@ -1489,6 +1498,9 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if (bgzf_read(fp, buf, 4) != 4) goto fail;
     hlen = buf[0] | (buf[1] << 8) | (buf[2] << 16) | ((size_t) buf[3] << 24);
     if (hlen >= SIZE_MAX) { errno = ENOMEM; goto fail; }
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (hlen > FUZZ_ALLOC_LIMIT) { errno = ENOMEM; goto fail; }
+#endif
     htxt = (char*)malloc(hlen + 1);
     if (!htxt) goto fail;
     if (bgzf_read(fp, htxt, hlen) != hlen) goto fail;
@@ -1615,8 +1627,12 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     shared_len = le_to_u32(x);
     if (shared_len < 24) return -2;
     shared_len -= 24; // to exclude six 32-bit integers
-    if (ks_resize(&v->shared, shared_len ? shared_len : 1) != 0) return -2;
     indiv_len = le_to_u32(x + 4);
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // ks_resize() normally allocates 1.5 * requested size to allow for growth
+    if ((uint64_t) shared_len + indiv_len > FUZZ_ALLOC_LIMIT / 3 * 2) return -2;
+#endif
+    if (ks_resize(&v->shared, shared_len ? shared_len : 1) != 0) return -2;
     if (ks_resize(&v->indiv, indiv_len ? indiv_len : 1) != 0) return -2;
     v->rid  = le_to_i32(x + 8);
     v->pos  = le_to_u32(x + 12);

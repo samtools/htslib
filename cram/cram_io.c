@@ -69,6 +69,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define crc32(a,b,c) libdeflate_crc32((a),(b),(c))
 #endif
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "../fuzz_settings.h"
+#endif
+
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
@@ -3857,7 +3861,13 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
 
     *c = c2;
-
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (c->num_landmarks > FUZZ_ALLOC_LIMIT/sizeof(int32_t)) {
+        fd->err = errno = ENOMEM;
+        cram_free_container(c);
+        return NULL;
+    }
+#endif
     if (c->num_landmarks && !(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
         fd->err = errno;
         cram_free_container(c);
@@ -4688,6 +4698,11 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
         /* Length */
         if (-1 == int32_decode(fd, &header_len))
             return NULL;
+
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+        if (header_len > FUZZ_ALLOC_LIMIT)
+            return NULL;
+#endif
 
         /* Alloc and read */
         if (header_len < 0 || NULL == (header = malloc((size_t) header_len+1)))
