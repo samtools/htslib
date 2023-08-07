@@ -37,6 +37,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <unistd.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "fuzz_settings.h"
+#endif
+
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
 #undef HTS_DEPRECATED
@@ -251,6 +255,9 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
 
     bufsize = h->l_text + 1;
     if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (bufsize > FUZZ_ALLOC_LIMIT) goto nomem;
+#endif
     h->text = (char*)malloc(bufsize);
     if (!h->text) goto nomem;
     h->text[h->l_text] = 0; // make sure it is NULL terminated
@@ -264,6 +271,10 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
     if (h->n_targets < 0) goto invalid;
 
     // read reference sequence names and lengths
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (h->n_targets > (FUZZ_ALLOC_LIMIT - bufsize)/(sizeof(char*)+sizeof(uint32_t)))
+        goto nomem;
+#endif
     if (h->n_targets > 0) {
         h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
         if (!h->target_name) goto nomem;
@@ -425,6 +436,12 @@ int sam_realloc_bam_data(bam1_t *b, size_t desired)
         errno = ENOMEM; // Not strictly true but we can't store the size
         return -1;
     }
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (new_m_data > FUZZ_ALLOC_LIMIT) {
+        errno = ENOMEM;
+        return -1;
+    }
+#endif
     if ((bam_get_mempolicy(b) & BAM_USER_OWNS_DATA) == 0) {
         new_data = realloc(b->data, new_m_data);
     } else {

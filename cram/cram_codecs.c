@@ -44,6 +44,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <stddef.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "../fuzz_settings.h"
+#endif
+
 #include "../htslib/hts_endian.h"
 
 #if defined(HAVE_EXTERNAL_LIBHTSCODECS)
@@ -2795,7 +2799,12 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         errno = ENOMEM;
         return NULL;
     }
-
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (ncodes > FUZZ_ALLOC_LIMIT / sizeof(*codes)) {
+        errno = ENOMEM;
+        return NULL;
+    }
+#endif
     h = calloc(1, sizeof(*h));
     if (!h)
         return NULL;
