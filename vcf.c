@@ -2722,11 +2722,22 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 
     if (type == BCF_BT_CHAR)
     {
-        char *p = (char*)data;
-        for (j = 0; j < n && *p; ++j, ++p)
-        {
-            if ( *p==bcf_str_missing ) e |= kputc_('.', s) < 0;
-            else e |= kputc_(*p, s) < 0;
+        char *p = (char *)data;
+
+        // Can bcf_str_missing only occur at the start of a CHAR array?
+        // We use these as strings only I believe, and INT8 for numerics.
+        // Checking further however, I'm not sure bcf_str_missing can occur
+        // even there.  I think it's likely an unimplemented feature, whose
+        // only existance in the specification is a single line mention in
+        // an example (for the "ID" field).
+        if (n >= 8 && *p != bcf_str_missing) {
+            char *p_end = memchr(p, 0, n);
+            e |= kputsn(p, p_end ? p_end-p : n, s) < 0;
+        } else {
+            for (j = 0; j < n && *p; ++j, ++p) {
+                if ( *p==bcf_str_missing ) e |= kputc_('.', s) < 0;
+                else e |= kputc_(*p, s) < 0;
+            }
         }
     }
     else
@@ -2738,7 +2749,7 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
                 type_t v = convert(p); \
                 if ( is_vector_end ) break; \
                 if ( j ) e |= kputc_(',', s) < 0; \
-                e |= (is_missing ? kputc('.', s) : kprint) < 0; \
+                e |= (is_missing ? kputc_('.', s) : kprint) < 0; \
             } \
         }
         switch (type) {
@@ -3846,7 +3857,7 @@ int bcf_unpack(bcf1_t *b, int which)
         ptr_ori = ptr;
         ptr = bcf_fmt_sized_array(&tmp, ptr);
         b->unpack_size[0] = ptr - ptr_ori;
-        kputc('\0', &tmp);
+        kputc_('\0', &tmp);
         d->id = tmp.s; d->m_id = tmp.m;
 
         // REF and ALT are in a single block (d->als) and d->alleles are pointers into this block
@@ -3857,7 +3868,7 @@ int bcf_unpack(bcf1_t *b, int which)
             // Use offset within tmp.s as realloc may change pointer
             d->allele[i] = (char *)(intptr_t)tmp.l;
             ptr = bcf_fmt_sized_array(&tmp, ptr);
-            kputc('\0', &tmp);
+            kputc_('\0', &tmp);
         }
         b->unpack_size[1] = ptr - ptr_ori;
         d->als = tmp.s; d->m_als = tmp.m;
@@ -3911,7 +3922,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
         return -1;
     }
 
-    bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
+    bcf_unpack((bcf1_t*)v, BCF_UN_ALL & ~(BCF_UN_INFO|BCF_UN_FMT));
 
     // Cache of key lengths so we don't keep repeatedly using them.
     // This assumes we're not modifying the header between successive calls
@@ -3962,13 +3973,35 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             kputsn(h->id[BCF_DT_ID][idx].key, key_len[idx], s);
         }
     } else kputc_('.', s);
+
     kputc_('\t', s); // INFO
     if (v->n_info) {
+        uint8_t *ptr = (uint8_t *)v->shared.s + v->unpack_size[0] + v->unpack_size[1] + v->unpack_size[2];
         int first = 1;
         bcf_info_t *info = v->d.info;
+
+        // Note if we duplicate this code into custom packed and unpacked
+        // implementations then we gain a bit more speed, particularly with
+        // clang 13 (up to 5%).  Not sure why this is, but code duplication
+        // isn't pleasant and it's still faster adding packed support than
+        // not so it's a win, just not as good as it should be.
+        const int info_packed = !(v->unpacked & BCF_UN_INFO) && v->shared.l;
         for (i = 0; i < v->n_info; ++i) {
-            bcf_info_t *z = &info[i];
-            if ( !z->vptr ) continue;
+            bcf_info_t in, *z;
+            if (info_packed) {
+                // Use a local bcf_info_t when data is packed
+                z = &in;
+                z->key  = bcf_dec_typed_int1(ptr, &ptr);
+                z->len  = bcf_dec_size(ptr, &ptr, &z->type);
+                z->vptr = ptr;
+                ptr += z->len << bcf_type_shift[z->type];
+            } else {
+                // Else previously unpacked INFO struct
+                z = &info[i];
+
+                // Also potentially since deleted
+                if ( !z->vptr ) continue;
+            }
 
             bcf_idpair_t *id = z->key >= 0 && z->key < max_dt_id
                 ? &h->id[BCF_DT_ID][z->key]
@@ -3984,10 +4017,11 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                 return -1;
             }
 
+            // KEY
             if (!key_len[z->key])
                 key_len[z->key] = strlen(id->key);
             size_t id_len = key_len[z->key];
-            if (ks_resize(s, s->l + 2 + id_len) < 0)
+            if (ks_resize(s, s->l + 3 + id_len) < 0)
                 return -1;
             char *sptr = s->s + s->l;
             if ( !first ) {
@@ -3998,10 +4032,16 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             memcpy(sptr, id->key, id_len);
             s->l += id_len;
 
+            // VALUE
             if (z->len <= 0) continue;
+            sptr[id_len] = '=';
+            s->l++;
 
-            kputc_('=', s);
-            if (z->len == 1) {
+            if (z->len != 1 || info_packed) {
+                bcf_fmt_array(s, z->len, z->type, z->vptr);
+            } else {
+                // Single length vectors are unpacked into their
+                // own info.v1 union and handled separately.
                 if (z->type == BCF_BT_FLOAT) {
                     if ( bcf_float_is_missing(z->v1.f) )
                         kputc_('.', s);
@@ -4031,62 +4071,101 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     return -1;
                 }
             }
-            else bcf_fmt_array(s, z->len, z->type, z->vptr);
         }
         if ( first ) kputc_('.', s);
     } else kputc_('.', s);
+
     // FORMAT and individual information
-    if (v->n_sample)
-    {
+    if (v->n_sample) {
         int i,j;
-        if ( v->n_fmt)
-        {
+        if ( v->n_fmt) {
+            uint8_t *ptr = (uint8_t *)v->indiv.s;
             int gt_i = -1;
             bcf_fmt_t *fmt = v->d.fmt;
             int first = 1;
+            int fmt_packed = !(v->unpacked & BCF_UN_FMT);
+
+            if (fmt_packed) {
+                // Local fmt as we have an array of num FORMAT keys,
+                // each of which points to N.Sample values.
+
+                // No real gain to be had in handling unpacked data here,
+                // but it doesn't cost us much in complexity either and
+                // it gives us flexibility.
+                fmt = malloc(v->n_fmt * sizeof(*fmt));
+                if (!fmt)
+                    return -1;
+            }
+
+            // KEYS
             for (i = 0; i < (int)v->n_fmt; ++i) {
-                if ( !fmt[i].p ) continue;
+                bcf_fmt_t *z;
+                z = &fmt[i];
+                if (fmt_packed) {
+                    z->id   = bcf_dec_typed_int1(ptr, &ptr);
+                    z->n    = bcf_dec_size(ptr, &ptr, &z->type);
+                    z->p    = ptr;
+                    z->size = z->n << bcf_type_shift[z->type];
+                    ptr += v->n_sample * z->size;
+                }
+                if ( !z->p ) continue;
                 kputc_(!first ? ':' : '\t', s); first = 0;
 
-                bcf_idpair_t *id = fmt[i].id >= 0 && fmt[i].id < max_dt_id
-                    ? &h->id[BCF_DT_ID][fmt[i].id]
+                bcf_idpair_t *id = z->id >= 0 && z->id < max_dt_id
+                    ? &h->id[BCF_DT_ID][z->id]
                     : NULL;
 
                 if (!id || !id->key) {
-                    hts_log_error("Invalid BCF, the FORMAT tag id=%d at %s:%"PRIhts_pos" not present in the header", fmt[i].id, bcf_seqname_safe(h, v), v->pos+1);
+                    hts_log_error("Invalid BCF, the FORMAT tag id=%d at %s:%"PRIhts_pos" not present in the header", z->id, bcf_seqname_safe(h, v), v->pos+1);
                     errno = EINVAL;
                     return -1;
                 }
 
-                if (!key_len[fmt[i].id])
-                    key_len[fmt[i].id] = strlen(id->key);
-                size_t id_len = key_len[fmt[i].id];
+                if (!key_len[z->id])
+                    key_len[z->id] = strlen(id->key);
+                size_t id_len = key_len[z->id];
                 kputsn(id->key, id_len, s);
-                if (id_len == 2 && strcmp(id->key, "GT") == 0)
+                if (id_len == 2 && id->key[0] == 'G' && id->key[1] == 'T')
                     gt_i = i;
             }
-            if ( first ) kputs("\t.", s);
+            if ( first ) kputsn("\t.", 2, s);
+
+            // VALUES per sample
             for (j = 0; j < v->n_sample; ++j) {
                 kputc_('\t', s);
                 first = 1;
-                for (i = 0; i < (int)v->n_fmt; ++i) {
-                    bcf_fmt_t *f = &fmt[i];
+                bcf_fmt_t *f = fmt;
+                for (i = 0; i < (int)v->n_fmt; i++, f++) {
                     if ( !f->p ) continue;
                     if (!first) kputc_(':', s);
                     first = 0;
-                    if (gt_i == i)
+                    if (gt_i == i) {
                         bcf_format_gt(f,j,s);
+                        break;
+                    }
                     else if (f->n == 1)
+                        bcf_fmt_array1(s, f->type, f->p + j * (size_t)f->size);
+                    else
+                        bcf_fmt_array(s, f->n, f->type, f->p + j * (size_t)f->size);
+                }
+
+                // Simpler loop post GT and at least 1 iteration
+                for (i++, f++; i < (int)v->n_fmt; i++, f++) {
+                    if ( !f->p ) continue;
+                    kputc_(':', s);
+                    if (f->n == 1)
                         bcf_fmt_array1(s, f->type, f->p + j * (size_t)f->size);
                     else
                         bcf_fmt_array(s, f->n, f->type, f->p + j * (size_t)f->size);
                 }
                 if ( first ) kputc_('.', s);
             }
+            if (fmt_packed)
+                free(fmt);
         }
         else
             for (j=0; j<=v->n_sample; j++)
-                kputs("\t.", s);
+                kputsn("\t.", 2, s);
     }
     kputc('\n', s);
     return 0;
