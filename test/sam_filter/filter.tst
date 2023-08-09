@@ -56,3 +56,4 @@ P func4.out   $tv -i 'filter=avg(qual) >= 20 && avg(qual) <= 30' ../ce#1000.sam 
 P func5.out   $tv -i 'filter=sclen>=20' ../realn02.sam | grep -E -v '^@'
 P func6.out   $tv -i 'filter=rlen<50'   ../realn02.sam | grep -E -v '^@'
 P func7.out   $tv -i 'filter=qlen>100'   ../realn02.sam | grep -E -v '^@'
+P func8.out   $tv -i 'filter=hclen>=4'   ../c1#clip.sam | grep -E -v '^@'
