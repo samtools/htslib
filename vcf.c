@@ -3336,50 +3336,26 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     v->n_info = 0;
     if (*(q-1) == ';') *(q-1) = 0;
-
-    // Parsing consists of processing key=value; or key; so we only need
-    // to track the next = and ; symbols, plus end of string.
-    // We could process 1 char at a time, but this is inefficient compared
-    // to strchr which can process word by word.  Hence even doing two strchrs
-    // is quicker than byte by byte processing.
-    char *next_equals = strchr(p, '=');
-    char *next_semicolon = strchr(p, ';');
-    r = p;
-    while (*r) {
-        // Look for key=value or just key.
-        char *val, *end, *from;
-        key = r;
-        if (next_equals && (!next_semicolon || next_equals < next_semicolon)) {
-            // key=value;
-            *next_equals = 0;
-            from = val = next_equals+1;
-            // Prefetching d->keys[hash] helps here provided we avoid
-            // computing hash twice (needs API change), but not universally.
-            // It may be significant for other applications though so it's
-            // something to consider for the future.
-        } else {
-            // key;
-            val = NULL;
-            from = key;
+    for (r = key = p;; ++r) {
+        int c;
+        char *val, *end;
+        while (*r > '=' || (*r != ';' && *r != '=' && *r != 0)) r++;
+        if (v->n_info == UINT16_MAX) {
+            hts_log_error("Too many INFO entries at %s:%"PRIhts_pos,
+                          bcf_seqname_safe(h,v), v->pos+1);
+            v->errcode |= BCF_ERR_LIMITS;
+            goto fail;
         }
+        val = end = NULL;
+        c = *r; *r = 0;
+        if (c == '=') {
+            val = r + 1;
 
-        // Update location of next ; and if used =
-        if (next_semicolon) {
-            end = next_semicolon;
-            r = end+1;
-            next_semicolon = strchr(end+1, ';');
-            if (val)
-                next_equals = strchr(end, '=');
-        } else {
-            // find nul location, starting from key or val.
-            r = end = from + strlen(from);
-        }
-
-        *end = 0;
-
-        // We've now got key and val (maybe NULL), so process it
+            for (end = val; *end != ';' && *end != 0; ++end);
+            c = *end; *end = 0;
+        } else end = r;
+        if ( !*key ) { if (c==0) break; r = end; key = r + 1; continue; }  // faulty VCF, ";;" in the INFO
         k = kh_get(vdict, d, key);
-        // 15 is default (unknown) type. See bcf_idinfo_def at top
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
         {
             hts_log_warning("INFO '%s' is not defined in the header, assuming Type=String", key);
@@ -3481,8 +3457,8 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                 } else {
                     bcf_enc_vint(str, n_val, a_val, -1);
                 }
-                if (n_val==1 && (val1!=bcf_int32_missing || is_int64) &&
-                    memcmp(key, "END", 4) == 0)
+                if (n_val==1 && (val1!=bcf_int32_missing || is_int64)
+                    && memcmp(key, "END", 4) == 0)
                 {
                     if ( val1 <= v->pos )
                     {
@@ -3508,6 +3484,9 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                 bcf_enc_vfloat(str, n_val, val_f);
             }
         }
+        if (c == 0) break;
+        r = end;
+        key = r + 1;
     }
 
     free(a_val);
