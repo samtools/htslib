@@ -1568,6 +1568,11 @@ int cram_uncompress_block(cram_block *b) {
     char *uncomp;
     size_t uncomp_size = 0;
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+    b->crc32_checked = 1;
+#endif
+
     if (b->crc32_checked == 0) {
         uint32_t crc = crc32(b->crc_part, b->data ? b->data : (uc *)"", b->alloc);
         b->crc32_checked = 1;
@@ -3874,6 +3879,11 @@ cram_container *cram_read_container(cram_fd *fd) {
         } else {
             rd+=4;
         }
+
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+        // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+        crc = c->crc32;
+#endif
 
         if (crc != c->crc32) {
             hts_log_error("Container header CRC32 failure");
