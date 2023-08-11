@@ -733,6 +733,10 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
     }
 
     uint32_t crc = libdeflate_crc32(0, (unsigned char *)dst, *dlen);
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+    crc = expected_crc;
+#endif
     if (crc != expected_crc) {
         hts_log_error("CRC32 checksum mismatch");
         return -2;
@@ -775,6 +779,10 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
     *dlen = *dlen - zs.avail_out;
 
     uint32_t crc = crc32(crc32(0L, NULL, 0L), (unsigned char *)dst, *dlen);
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+    crc = expected_crc;
+#endif
     if (crc != expected_crc) {
         hts_log_error("CRC32 checksum mismatch");
         return -2;
