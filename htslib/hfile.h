@@ -80,6 +80,10 @@ Note that the file must be opened in binary mode, or else
 there will be problems on platforms that make a difference
 between text and binary mode.
 
+By default, the returned hFILE "takes ownership" of the file descriptor
+and _fd_ will be closed by hclose(). When _mode_ contains `S` (shared fd),
+hclose() will destroy the hFILE but not close the underlying _fd_.
+
 For socket descriptors (on Windows), _mode_ should contain `s`.
 */
 HTSLIB_EXPORT

@@ -524,7 +524,7 @@ void hclose_abruptly(hFILE *fp)
 typedef struct {
     hFILE base;
     int fd;
-    unsigned is_socket:1;
+    unsigned is_socket:1, is_shared:1;
 } hFILE_fd;
 
 static ssize_t fd_read(hFILE *fpv, void *buffer, size_t nbytes)
@@ -599,6 +599,10 @@ static int fd_close(hFILE *fpv)
 {
     hFILE_fd *fp = (hFILE_fd *) fpv;
     int ret;
+
+    // If we don't own the fd, return successfully without actually closing it
+    if (fp->is_shared) return 0;
+
     do {
 #ifdef HAVE_CLOSESOCKET
         ret = fp->is_socket? closesocket(fp->fd) : close(fp->fd);
@@ -636,6 +640,7 @@ static hFILE *hopen_fd(const char *filename, const char *mode)
 
     fp->fd = fd;
     fp->is_socket = 0;
+    fp->is_shared = 0;
     fp->base.backend = &fd_backend;
     return &fp->base;
 
@@ -702,6 +707,7 @@ hFILE *hdopen(int fd, const char *mode)
 
     fp->fd = fd;
     fp->is_socket = (strchr(mode, 's') != NULL);
+    fp->is_shared = (strchr(mode, 'S') != NULL);
     fp->base.backend = &fd_backend;
     return &fp->base;
 }
@@ -723,10 +729,12 @@ static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
 static hFILE *hopen_fd_stdinout(const char *mode)
 {
     int fd = (strchr(mode, 'r') != NULL)? STDIN_FILENO : STDOUT_FILENO;
+    char mode_shared[101];
+    snprintf(mode_shared, sizeof mode_shared, "S%s", mode);
 #if defined HAVE_SETMODE && defined O_BINARY
     if (setmode(fd, O_BINARY) < 0) return NULL;
 #endif
-    return hdopen(fd, mode);
+    return hdopen(fd, mode_shared);
 }
 
 HTSLIB_EXPORT
