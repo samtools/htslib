@@ -153,10 +153,6 @@ LIBHTS_SOVERSION = 3
 MACH_O_COMPATIBILITY_VERSION = 3.1.18
 MACH_O_CURRENT_VERSION = 3.1.18
 
-# $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
-# even if this is a dirty or untagged Git working tree.
-NUMERIC_VERSION := $(shell $(srcdir)/version.sh numeric)
-
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
 
@@ -168,7 +164,6 @@ print-version:
 
 show-version:
 	@echo PACKAGE_VERSION = $(PACKAGE_VERSION)
-	@echo NUMERIC_VERSION = $(NUMERIC_VERSION)
 
 config_vars.h: override escape=$(subst ',\x27,$(subst ",\",$(subst \,\\,$(1))))
 config_vars.h: override hts_cc_escaped=$(call escape,$(CC))
