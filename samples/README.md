@@ -61,7 +61,7 @@ indexed.
 
 [Read_fast][Read_fast]
 
-  This application showcases the fasta/fastq data read.
+  This application showcases fasta/fastq data read without using index.
 
 [Read_header][Read_header]
 
@@ -130,7 +130,7 @@ indexed.
 [Write_fast][Write_fast]
 
   This application showcases the fasta/fastq data write. It appends a dummy
-  data to given file.
+  data to given file and creates an index file for it.
 
 [Index_write][Index_write]
 
@@ -147,6 +147,17 @@ indexed.
   This application showcases the usage of mulitple region specification in
   alignment read.
 
+[Read_fast_index][Read_fast_index]
+
+  This application showcases the fasta/fastq data read using index. It takes a
+  region (reference name[:start-end]) and gets data from that region.
+
+[Read_tbx][Read_tbx]
+
+  This application showcases the tabix index usage with sam files. It takes a
+  shift value and region (refname[:start-end]) and gets data from that region.
+  The shift will be used to create index file if not present already.
+    
 [Pileup][Pileup]:
 
   This application showcases the pileup api, where all alignments covering a
@@ -191,6 +202,14 @@ indexed.
   and other as bam. A pool of 4 threads is created and shared for both read
   and write.
 
+[Qtask_thread][Qtask_thread]
+
+  This application shocases the use of mulitple queues, scheduling of different
+  tasks and getting results in orderered and unordered fashion. It saves the
+  read1 and read2 as separate files in given directory, one as sam and other
+  as bam. The samfile/read1 can have unordered data and bamfile/read2 will have
+  ordered data.
+
 ### More Information
 
 More detailed documentation is available in the [DEMO.md][DEMO] with worked
@@ -217,6 +236,8 @@ examples per demonstration tool.
 [Index_write]: index_write.c
 [Read_reg]: index_reg_read.c
 [Read_multireg]: index_multireg_read.c
+[Read_fast_index]: read_fast_index.c
+[Read_tbx]: read_with_tabix.c
 [Pileup]: pileup.c
 [Mpileup]: mpileup.c
 [Modstate]: modstate.c
@@ -224,4 +245,5 @@ examples per demonstration tool.
 [Flags_field]: flags_htsopt_field.c
 [Split_thread1]: split_thread1.c
 [Split_thread2]: split_thread2.c
+[Qtask_thread]: qtask_thread.c
 [DEMO]: DEMO.md

@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE
 #include <getopt.h>
 #include <unistd.h>
 #include <htslib/sam.h>
+#include <htslib/faidx.h>
 
 /// print_usage - show flags_demo usage
 /** @param fp pointer to the file / terminal to which demo_usage to be dumped
@@ -37,7 +38,7 @@ returns nothing
 static void print_usage(FILE *fp)
 {
     fprintf(fp, "Usage: write_fast <file>\n\
-Appends a fasta/fastq file.\n");
+Appends a fasta/fastq file and indexes it.\n");
     return;
 }
 
@@ -71,10 +72,16 @@ int main(int argc, char *argv[])
         goto end;
     }
     //open output file
-    if (!(outfile = sam_open(outname, mode))) {
+    if (!(outfile = sam_open(outname, mode))) {         //expects the name to have correct extension!
         printf("Could not open %s\n", outname);
         goto end;
     }
+    /* if the file name extension is not appropriate to the content, inconsistent data will be present in output.
+    if required, htsFormat and sam_open_format can be explicitly used to ensure appropriateness of content.
+    htsFormat fmt = {sequence_data, fastq_format / fasta_format};
+    sam_open_format(outname, mode, fmt);
+    */
+
     //dummy data
     if (bam_set1(bamdata, sizeof("test"), "test", BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, 10, "AACTGACTGA", "1234567890", 0) < 0) {
         printf("Failed to set data\n");
@@ -84,7 +91,12 @@ int main(int argc, char *argv[])
         printf("Failed to write data\n");
         goto end;
     }
-
+    //close and index it
+    sam_close(outfile); outfile = NULL;
+    if (fai_build3(outname, NULL, NULL) == -1) {
+        printf("Indexing failed with %d\n", errno);
+        goto end;
+    }
     ret = EXIT_SUCCESS;
 end:
     //clean up
