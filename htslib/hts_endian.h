@@ -100,7 +100,7 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 
 #if HTS_ALLOW_UNALIGNED != 0
-#    if defined (__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))
+#    if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)) || defined(__clang__)
 // This prevents problems with gcc's vectoriser generating the wrong
 // instructions for unaligned data.
 typedef uint16_t uint16_u __attribute__ ((__aligned__ (1)));
