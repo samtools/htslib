@@ -2566,6 +2566,7 @@ int bgzf_useek(BGZF *fp, off_t uoffset, int where)
         else break;
     }
     int i = ilo-1;
+    off_t offset = 0;
     if (bgzf_seek_common(fp, fp->idx->offs[i].caddr, 0) < 0)
         return -1;
 
@@ -2573,9 +2574,14 @@ int bgzf_useek(BGZF *fp, off_t uoffset, int where)
         fp->errcode |= BGZF_ERR_IO;
         return -1;
     }
-    if ( uoffset - fp->idx->offs[i].uaddr > 0 )
+    offset = uoffset - fp->idx->offs[i].uaddr;
+    if ( offset > 0 )
     {
-        fp->block_offset = uoffset - fp->idx->offs[i].uaddr;
+        if (offset > fp->block_length) {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;                                      //offset outside the available data
+        }
+        fp->block_offset = offset;
         assert( fp->block_offset <= fp->block_length );     // todo: skipped, unindexed, blocks
     }
     fp->uncompressed_address = uoffset;
