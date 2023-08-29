@@ -37,7 +37,7 @@ srand($$opts{seed});
 run_test('test_bgzip',$opts, 0);
 run_test('test_bgzip',$opts, 4);
 
-run_test('ce_fa_to_md5_cache',$opts);
+run_test('ce_fa_to_md5_cache',$opts,needed_by=>'test_index');
 run_test('test_index',$opts, 0);
 run_test('test_index',$opts, 4);
 
@@ -49,7 +49,7 @@ run_test('test_view',$opts,4);
 
 run_test('test_MD',$opts);
 
-run_test('test_vcf_api',$opts,out=>'test-vcf-api.out');
+run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep');
 run_test('test_bcf2vcf',$opts);
 run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
 run_test('test_vcf_various',$opts);
@@ -181,10 +181,10 @@ sub run_test
             }
             for my $func (keys %{$$opts{run_function}})
             {
-                if ( exists($args{cmd}) && $args{cmd}=~/$func/ ) {
+                if ((exists($args{cmd}) && $args{cmd}=~/$func/) ||
+                    (exists($args{needed_by}) && $args{needed_by}=~/$func/)) {
                     $run = 1;
-                }
-                if ( $name=~/$func/ ) {
+                } elsif ( $name=~/$func/ ) {
                     $$opts{run_function}{$name} = 1;
                     $run = 1;
                 }
