@@ -200,13 +200,14 @@ sub _cmd
 {
     my ($cmd) = @_;
     my $kid_io;
-    my @out;
+    my $out;
     my $pid = open($kid_io, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
     if ($pid)
     {
         # parent
-        @out = <$kid_io>;
+        local $/; # Read entire input
+        $out = <$kid_io>;
         close($kid_io);
     }
     else
@@ -218,38 +219,35 @@ sub _cmd
         # child
         exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
-    return ($? >> 8, join('',@out));
+    return ($? >> 8, $out);
 }
 sub _cmd3
 {
     my ($cmd) = @_;
 
+    $cmd = "$ENV{TEST_PRECMD} $cmd" if exists $ENV{TEST_PRECMD};
+
     my $tmp = "$$opts{tmp}/tmp";
-    my $pid = fork();
-    if ( !$pid )
-    {
-        exec('bash', '-o','pipefail','-c', "($cmd) 2>$tmp.e >$tmp.o");
-    }
-    waitpid($pid,0);
+    system('bash', '-o','pipefail','-c', "($cmd) 2>$tmp.e >$tmp.o");
 
     my $status  = $? >> 8;
-    my $signal  = $? & 127;
 
-    my (@out,@err);
+    my ($out,$err);
+    local $/; # Read entire input
     if ( open(my $fh,'<',"$tmp.o") )
     {
-        @out = <$fh>;
+        $out = <$fh>;
         close($fh) or error("Failed to close $tmp.o");
     }
     if ( open(my $fh,'<',"$tmp.e") )
     {
-        @err = <$fh>;
+        $err = <$fh>;
         close($fh) or error("Failed to close $tmp.e");
     }
     unlink("$tmp.o");
     unlink("$tmp.e");
 
-    return ($status,join('',@out),join('',@err));
+    return ($status,$out,$err);
 }
 sub cmd
 {
@@ -273,8 +271,8 @@ sub test_cmd
     print "\t$args{cmd}\n";
 
     my ($ret,$out,$err) = _cmd3("$args{cmd}");
-    if ( length($err) ) { $err =~ s/\n/\n\t\t/gs; $err = "\n\n\t\t$err\n"; }
-    if ( $ret ) { failed($opts,$test,"Non-zero status $ret$err"); return; }
+    if ( $err ) { $err =~ s/^/\t\t/mg; $err .= '\n'; }
+    if ( $ret ) { failed($opts,$test,"Non-zero status $ret\n$err"); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
         rename("$$opts{path}/$args{out}","$$opts{path}/$args{out}.old");
@@ -293,8 +291,8 @@ sub test_cmd
     my $exp = '';
     if ( open(my $fh,'<',"$$opts{path}/$args{out}") )
     {
-        my @exp = <$fh>;
-        $exp = join('',@exp);
+        local $/; # Read entire file
+        $exp = <$fh>;
         $exp =~ s/\015?\012/\n/g;
         close($fh);
     }
@@ -314,16 +312,10 @@ sub test_cmd
         }
         else
         {
-            if ( exists($args{exp}) && !-e "$$opts{path}/$args{out}" )
-            {
-                open(my $fh,'>',"$$opts{path}/$args{out}") or error("$$opts{path}/$args{out}");
-                print $fh $exp;
-                close($fh);
-            }
-            my @diff = `diff $$opts{path}/$args{out} $$opts{path}/$args{out}.new`;
-            for (my $i=0; $i<@diff; $i++) { $diff[$i] = "\t\t\t".$diff[$i]; }
-            chomp($diff[-1]);
-            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new$err\n".join('',@diff));
+            my $diff = `diff $$opts{path}/$args{out} $$opts{path}/$args{out}.new`;
+            $diff =~ s/^/\t\t/mg;
+            chomp($diff);
+            failed($opts,$test,"${err}The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new\n$diff\n");
         }
         return;
     }
