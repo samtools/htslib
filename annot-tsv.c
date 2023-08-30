@@ -38,6 +38,7 @@
 #include <string.h>
 #include <strings.h>
 #include "htslib/hts.h"
+#include "htslib/hts_defs.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/kstring.h"
 #include "htslib/kseq.h"
@@ -112,12 +113,15 @@ typedef struct
 }
 args_t;
 
-void error(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error(const char *format, ...)
 {
     va_list ap;
+    fflush(stdout);
     va_start(ap, format);
     vfprintf(stderr, format, ap);
     va_end(ap);
+    fflush(stderr);
     exit(EXIT_FAILURE);
 }
 
@@ -281,16 +285,16 @@ int parse_tab_with_payload(const char *line, char **chr_beg, char **chr_end, hts
     cols_t *cols = cols_split(line, NULL, '\t');
     *((cols_t**)payload) = cols;
 
-    if ( cols->n <= dat->core_idx[0] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[0]+1,cols->n,line);
+    if ( cols->n < dat->core_idx[0] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[0]+1,cols->n,line);
     *chr_beg = cols->off[ dat->core_idx[0] ];
     *chr_end = *chr_beg + strlen(*chr_beg) - 1;
 
-    if ( cols->n <= dat->core_idx[1] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[1]+1,cols->n,line);
+    if ( cols->n < dat->core_idx[1] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[1]+1,cols->n,line);
     char *tmp, *ptr = cols->off[ dat->core_idx[1] ];
     *beg = strtod(ptr, &tmp);
-    if ( tmp==ptr ) error("Expected numeric value, found \"%s\": %s\n",ptr,cols->n,line);
+    if ( tmp==ptr ) error("Expected numeric value, found \"%s\": %s\n",ptr,line);
 
-    if ( cols->n <= dat->core_idx[2] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[2]+1,cols->n,line);
+    if ( cols->n < dat->core_idx[2] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[2]+1,cols->n,line);
     ptr = cols->off[ dat->core_idx[2] ];
     *end = strtod(ptr, &tmp);
     if ( tmp==ptr ) error("Expected numeric value, found \"%s\": %s\n",ptr,line);
@@ -395,7 +399,7 @@ void write_header(args_t *args, dat_t *dat)
         }
     }
     kputc('\n',&str);
-    if ( bgzf_write(args->out_fp, str.s, str.l) != str.l ) error("Failed to write %d bytes\n", str.l);
+    if ( bgzf_write(args->out_fp, str.s, str.l) != str.l ) error("Failed to write %zd bytes\n", str.l);
     free(str.s);
 }
 void destroy_header(dat_t *dat)
@@ -591,7 +595,7 @@ static inline void write_string(args_t *args, char *str, size_t len)
 {
     if ( len==0 ) len = strlen(str);
     if ( len==0 ) str = ".", len = 1;
-    if ( bgzf_write(args->out_fp, str, len) != len ) error("Failed to write %d bytes\n", len);
+    if ( bgzf_write(args->out_fp, str, len) != len ) error("Failed to write %zd bytes\n", len);
 }
 static void write_annots(args_t *args)
 {
