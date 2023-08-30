@@ -63,34 +63,7 @@ run_test('test_logging',$opts);
 run_test('test_plugin_loading',$opts);
 run_test('test_realn',$opts);
 run_test('test_bcf_set_variant_type',$opts);
-
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.1.txt',args=>'-f smpl:overlap --allow-dups');
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap');
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap -c chr,beg,end');
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.3.txt',args=>'-f smpl,value:overlap,value');
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.4.txt',args=>'-f smpl:overlap -O 0.5');
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.5.txt',args=>'-f smpl:overlap -rO 0.5');
-run_test('test_annot_tsv',$opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.6.txt',args=>'-f smpl:overlap --allow-dups --max-annots 2');
-run_test('test_annot_tsv',$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups');
-run_test('test_annot_tsv',$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.2.txt',args=>'-c 1,2,3:1,2,3 -f 4:5');
-run_test('test_annot_tsv',$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.3.txt',args=>'-c 1,2,3:1,2,3 -f 4,value:5,value');
-run_test('test_annot_tsv',$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.4.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5');
-run_test('test_annot_tsv',$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.5.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5 -a nbp,frac');
-run_test('test_annot_tsv',$opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.6.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups --max-annots 2');
-run_test('test_annot_tsv',$opts,src=>'src.3.txt',dst=>'dst.3.txt',out=>'out.3.1.txt',args=>'-f smpl:overlap -a nbp,frac');
-run_test('test_annot_tsv',$opts,src=>'src.4.txt',dst=>'dst.4.txt',out=>'out.4.1.txt',args=>'-c 2,3,4:2,3,4 -m 1:1 -f 1:1 -a nbp,frac');
-run_test('test_annot_tsv',$opts,src=>'src.5.txt',dst=>'dst.5.txt',out=>'out.5.1.txt',args=>'-c 2,3,4:2,3,4 -a nbp,frac');
-run_test('test_annot_tsv',$opts,src=>'src.6.txt',dst=>'dst.6.txt',out=>'out.6.1.txt',args=>'-c 1,2,2:1,2,2 -a nbp');
-run_test('test_annot_tsv',$opts,src=>'src.7.txt',dst=>'dst.7.txt',out=>'out.7.1.txt',args=>'-c 1,2,2:1,2,2 -f overlap -H');
-run_test('test_annot_tsv',$opts,src=>'src.8.txt',dst=>'dst.8.txt',out=>'out.8.1.txt',args=>'-c chr,beg,end:chr,start,end -m sample -f is_tp');
-run_test('test_annot_tsv',$opts,src=>'src.9.txt',dst=>'dst.9.txt',out=>'out.9.1.txt',args=>'-c 1,2,3:chr,beg,end -a nbp,frac,cnt');
-run_test('test_annot_tsv',$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.1.txt',args=>'-f smpl');
-run_test('test_annot_tsv',$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.2.txt',args=>'');
-run_test('test_annot_tsv',$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.3.txt',args=>'-x');
-run_test('test_annot_tsv',$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.4.txt',args=>'-m smpl -f smpl');
-run_test('test_annot_tsv',$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.5.txt',args=>'-m smpl ');
-run_test('test_annot_tsv',$opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
-
+run_test('test_annot_tsv',$opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -1370,7 +1343,7 @@ sub test_bcf_set_variant_type
     } else { passed($opts,$test); }
 }
 
-sub test_annot_tsv
+sub run_annot_tsv
 {
     my ($opts,%args) = @_;
     my $exe = "$$opts{bin}/annot-tsv";
@@ -1382,3 +1355,33 @@ sub test_annot_tsv
     test_cmd($opts,%args,cmd=>"cat $dat/$args{src} | $exe $args -t $dat/$args{dst}");
 }
 
+sub test_annot_tsv
+{
+    my ($opts) = @_;
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.1.txt',args=>'-f smpl:overlap --allow-dups');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap -c chr,beg,end');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.3.txt',args=>'-f smpl,value:overlap,value');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.4.txt',args=>'-f smpl:overlap -O 0.5');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.5.txt',args=>'-f smpl:overlap -rO 0.5');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.6.txt',args=>'-f smpl:overlap --allow-dups --max-annots 2');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.2.txt',args=>'-c 1,2,3:1,2,3 -f 4:5');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.3.txt',args=>'-c 1,2,3:1,2,3 -f 4,value:5,value');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.4.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.5.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.6.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups --max-annots 2');
+    run_annot_tsv($opts,src=>'src.3.txt',dst=>'dst.3.txt',out=>'out.3.1.txt',args=>'-f smpl:overlap -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.4.txt',dst=>'dst.4.txt',out=>'out.4.1.txt',args=>'-c 2,3,4:2,3,4 -m 1:1 -f 1:1 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.5.txt',dst=>'dst.5.txt',out=>'out.5.1.txt',args=>'-c 2,3,4:2,3,4 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.6.txt',dst=>'dst.6.txt',out=>'out.6.1.txt',args=>'-c 1,2,2:1,2,2 -a nbp');
+    run_annot_tsv($opts,src=>'src.7.txt',dst=>'dst.7.txt',out=>'out.7.1.txt',args=>'-c 1,2,2:1,2,2 -f overlap -H');
+    run_annot_tsv($opts,src=>'src.8.txt',dst=>'dst.8.txt',out=>'out.8.1.txt',args=>'-c chr,beg,end:chr,start,end -m sample -f is_tp');
+    run_annot_tsv($opts,src=>'src.9.txt',dst=>'dst.9.txt',out=>'out.9.1.txt',args=>'-c 1,2,3:chr,beg,end -a nbp,frac,cnt');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.1.txt',args=>'-f smpl');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.2.txt',args=>'');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.3.txt',args=>'-x');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.4.txt',args=>'-m smpl -f smpl');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.5.txt',args=>'-m smpl ');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
+}
