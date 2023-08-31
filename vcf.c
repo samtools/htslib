@@ -2724,20 +2724,13 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
     {
         char *p = (char *)data;
 
-        // Can bcf_str_missing only occur at the start of a CHAR array?
-        // We use these as strings only I believe, and INT8 for numerics.
-        // Checking further however, I'm not sure bcf_str_missing can occur
-        // even there.  I think it's likely an unimplemented feature, whose
-        // only existance in the specification is a single line mention in
-        // an example (for the "ID" field).
-        if (n >= 8 && *p != bcf_str_missing) {
+        // Note bcf_str_missing is already accounted for in n==0 above.
+        if (n >= 8) {
             char *p_end = memchr(p, 0, n);
             e |= kputsn(p, p_end ? p_end-p : n, s) < 0;
         } else {
-            for (j = 0; j < n && *p; ++j, ++p) {
-                if ( *p==bcf_str_missing ) e |= kputc_('.', s) < 0;
-                else e |= kputc_(*p, s) < 0;
-            }
+            for (j = 0; j < n && *p; ++j, ++p)
+               e |= kputc(*p, s) < 0;
         }
     }
     else
@@ -2749,7 +2742,7 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
                 type_t v = convert(p); \
                 if ( is_vector_end ) break; \
                 if ( j ) e |= kputc_(',', s) < 0; \
-                e |= (is_missing ? kputc_('.', s) : kprint) < 0; \
+                e |= (is_missing ? kputc('.', s) : kprint) < 0; \
             } \
         }
         switch (type) {

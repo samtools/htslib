@@ -1456,7 +1456,14 @@ which works for both BCF and VCF.
 #define bcf_int16_missing    (-32767-1)      /* INT16_MIN */
 #define bcf_int32_missing    (-2147483647-1) /* INT32_MIN */
 #define bcf_int64_missing    (-9223372036854775807LL - 1LL)  /* INT64_MIN */
-#define bcf_str_missing      0x07
+
+// All of the above are values, which may occur multiple times in lists of
+// integers or lists of floating point.  Strings in VCF don't have
+// lists - a list of strings is just another (comma-separated) string.
+//
+// Hence bcf_str_missing is the whole string being missing rather than
+// an element of a list.  Ie a string of length zero: (0<<4)|BCF_BT_CHAR.
+#define bcf_str_missing      BCF_BT_CHAR
 
 // Limits on BCF values stored in given types.  Max values are the same
 // as for the underlying type.  Min values are slightly different as
