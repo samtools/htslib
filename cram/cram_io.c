@@ -1852,8 +1852,9 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
         // see enum cram_block. We map RANS_* methods to order bit-fields
         static int methmap[] = { 1, 64,9, 128,129, 192,193 };
 
+        int m = method == RANS_PR0 ? 0 : methmap[method - RANS_PR1];
         cp = rans_compress_4x16((unsigned char *)in, in_size, &out_size_i,
-                                method == RANS_PR0 ? 0 : methmap[method - RANS_PR1]);
+                                m | RANS_ORDER_SIMD_AUTO);
         *out_size = out_size_i;
         return (char *)cp;
     }
