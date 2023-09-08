@@ -121,6 +121,7 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
     fp->at_eof = 0;
     fp->mobile = 1;
     fp->readonly = (strchr(mode, 'r') && ! strchr(mode, '+'));
+    fp->preserve = 0;
     fp->has_errno = 0;
     return fp;
 
@@ -143,6 +144,7 @@ hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
     fp->at_eof = 1;
     fp->mobile = 0;
     fp->readonly = (strchr(mode, 'r') && ! strchr(mode, '+'));
+    fp->preserve = 0;
     fp->has_errno = 0;
     return fp;
 }
@@ -482,8 +484,10 @@ int hclose(hFILE *fp)
     int err = fp->has_errno;
 
     if (writebuffer_is_nonempty(fp) && hflush(fp) < 0) err = fp->has_errno;
-    if (fp->backend->close(fp) < 0) err = errno;
-    hfile_destroy(fp);
+    if (!fp->preserve) {
+        if (fp->backend->close(fp) < 0) err = errno;
+        hfile_destroy(fp);
+    }
 
     if (err) {
         errno = err;
@@ -495,6 +499,8 @@ int hclose(hFILE *fp)
 void hclose_abruptly(hFILE *fp)
 {
     int save = errno;
+    if (fp->preserve)
+        return;
     if (fp->backend->close(fp) < 0) { /* Ignore subsequent errors */ }
     hfile_destroy(fp);
     errno = save;
