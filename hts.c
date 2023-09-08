@@ -1421,6 +1421,7 @@ static int hts_crypt4gh_redirect(const char *fn, const char *mode,
 htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
 {
     hFILE *hfile_orig = hfile;
+    hFILE *hfile_cleanup = hfile;
     htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
     char simple_mode[101], *cp, *opts;
     simple_mode[100] = '\0';
@@ -1448,6 +1449,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         // Deal with formats that re-direct an underlying file via a plug-in.
         // Loops as we may have crypt4gh served via htsget, or
         // crypt4gh-in-crypt4gh.
+
         while (fp->format.format == htsget ||
                fp->format.format == hts_crypt4gh_format) {
             // Ensure we don't get stuck in an endless redirect loop
@@ -1460,11 +1462,30 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
                 hFILE *hfile2 = hopen_htsget_redirect(hfile, simple_mode);
                 if (hfile2 == NULL) goto error;
 
+                if (hfile != hfile_cleanup) {
+                    // Close the result of an earlier redirection
+                    hclose_abruptly(hfile);
+                }
+
                 hfile = hfile2;
             }
             else if (fp->format.format == hts_crypt4gh_format) {
+                int should_preserve = (hfile == hfile_orig);
+                int update_cleanup = (hfile == hfile_cleanup);
                 if (hts_crypt4gh_redirect(fn, simple_mode, &hfile, fp) < 0)
                     goto error;
+                if (should_preserve) {
+                    // The original hFILE is now contained in a crypt4gh
+                    // wrapper.  Should we need to close the wrapper due
+                    // to a later error, we need to prevent the wrapped
+                    // handle from being closed as the caller will see
+                    // this function return NULL and try to clean up itself.
+                    hfile_orig->preserve = 1;
+                }
+                if (update_cleanup) {
+                    // Update handle to close at the end if redirected by htsget
+                    hfile_cleanup = hfile;
+                }
             }
 
             // Re-detect format against the result of the redirection
@@ -1546,9 +1567,13 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     if (opts)
         hts_process_opts(fp, opts);
 
-    // If redirecting, close the original hFILE now (pedantically we would
-    // instead close it in hts_close(), but this a simplifying optimisation)
-    if (hfile != hfile_orig) hclose_abruptly(hfile_orig);
+    // Allow original file to close if it was preserved earlier by crypt4gh
+    hfile_orig->preserve = 0;
+
+    // If redirecting via htsget, close the original hFILE now (pedantically
+    // we would instead close it in hts_close(), but this a simplifying
+    // optimisation)
+    if (hfile != hfile_cleanup) hclose_abruptly(hfile_cleanup);
 
     return fp;
 
@@ -1557,6 +1582,7 @@ error:
 
     // If redirecting, close the failed redirection hFILE that we have opened
     if (hfile != hfile_orig) hclose_abruptly(hfile);
+    hfile_orig->preserve = 0; // Allow caller to close the original hfile
 
     if (fp) {
         free(fp->fn);
