@@ -482,10 +482,10 @@ cram_codec *cram_external_decode_init(cram_block_compression_hdr *hdr,
             else if (option == E_BYTE || option == E_BYTE_ARRAY)
                 c->decode = cram_external_decode_char;
             else
-                return NULL;
+                goto malformed;
             break;
         default:
-            return NULL;
+            goto malformed;
         }
     } else {
         // CRAM 3 and earlier encodes integers as EXTERNAL.  We need
