@@ -904,8 +904,6 @@ static int bam_write_idx1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b) {
         return -1;
     if (!bfp->mt)
         hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
-    else
-        bgzf_idx_amend_last(bfp, fp->idx, bgzf_tell(bfp));
 
     int ret = bam_write1(bfp, b);
     if (ret < 0)
