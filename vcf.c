@@ -2225,7 +2225,8 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
 
     if (hfp->idx) {
-        if (hts_idx_push(hfp->idx, v->rid, v->pos, v->pos + v->rlen, bgzf_tell(fp), 1) < 0)
+        if (bgzf_idx_push(fp, hfp->idx, v->rid, v->pos, v->pos + v->rlen,
+                          bgzf_tell(fp), 1) < 0)
             return -1;
     }
 
@@ -3959,19 +3960,19 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     if ( fp->format.compression!=no_compression ) {
         if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
             return -1;
-        if (fp->idx)
-            hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     } else {
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
     }
 
-    if (fp->idx) {
+    if (fp->idx && fp->format.compression == bgzf) {
         int tid;
         if ((tid = hts_idx_tbi_name(fp->idx, v->rid, bcf_seqname_safe(h, v))) < 0)
             return -1;
 
-        if (hts_idx_push(fp->idx, tid, v->pos, v->pos + v->rlen, bgzf_tell(fp->fp.bgzf), 1) < 0)
+        if (bgzf_idx_push(fp->fp.bgzf, fp->idx,
+                          tid, v->pos, v->pos + v->rlen,
+                          bgzf_tell(fp->fp.bgzf), 1) < 0)
             return -1;
     }
 
@@ -4159,6 +4160,11 @@ static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fn
 // This must be called after the header has been written but no other data.
 int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     int n_lvls, nids = 0;
+
+    if (fp->format.compression != bgzf) {
+        hts_log_error("Indexing is only supported on BGZF-compressed files");
+        return -3; // Matches no-compression return for bcf_index_build3()
+    }
 
     if (fp->format.format == vcf)
         return vcf_idx_init(fp, h, min_shift, fnidx);
