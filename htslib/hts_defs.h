@@ -58,6 +58,15 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_NORETURN
 #endif
 
+// Enable optimisation level 3, especially for gcc.  To be used
+// where we want to force vectorisation in hot loops and the default -O2
+// just doesn't cut it.
+#if HTS_COMPILER_HAS(optimize) || HTS_GCC_AT_LEAST(4,4)
+#define HTS_OPT3 __attribute__((optimize("O3")))
+#else
+#define HTS_OPT3
+#endif
+
 // GCC introduced warn_unused_result in 3.4 but added -Wno-unused-result later
 #if HTS_COMPILER_HAS(__warn_unused_result__) || HTS_GCC_AT_LEAST(4,5)
 #define HTS_RESULT_USED __attribute__ ((__warn_unused_result__))
