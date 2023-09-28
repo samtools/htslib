@@ -5349,6 +5349,11 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->ooc         = 0;
     fd->required_fields = INT_MAX;
 
+    pthread_mutex_init(&fd->metrics_lock, NULL);
+    pthread_mutex_init(&fd->ref_lock, NULL);
+    pthread_mutex_init(&fd->range_lock, NULL);
+    pthread_mutex_init(&fd->bam_list_lock, NULL);
+
     for (i = 0; i < DS_END; i++) {
         fd->m[i] = cram_new_metrics();
         if (!fd->m[i])
@@ -5546,14 +5551,15 @@ int cram_close(cram_fd *fd) {
         if (fd->mode == 'w')
             fd->ctr = NULL; // prevent double freeing
 
-        pthread_mutex_destroy(&fd->metrics_lock);
-        pthread_mutex_destroy(&fd->ref_lock);
-        pthread_mutex_destroy(&fd->bam_list_lock);
-
         //fprintf(stderr, "CRAM: destroy queue %p\n", fd->rqueue);
 
         hts_tpool_process_destroy(fd->rqueue);
     }
+
+    pthread_mutex_destroy(&fd->metrics_lock);
+    pthread_mutex_destroy(&fd->ref_lock);
+    pthread_mutex_destroy(&fd->range_lock);
+    pthread_mutex_destroy(&fd->bam_list_lock);
 
     if (fd->mode == 'w') {
         /* Write EOF block */
@@ -5832,10 +5838,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
                 return -1;
 
             fd->rqueue = hts_tpool_process_init(fd->pool, nthreads*2, 0);
-            pthread_mutex_init(&fd->metrics_lock, NULL);
-            pthread_mutex_init(&fd->ref_lock, NULL);
-            pthread_mutex_init(&fd->range_lock, NULL);
-            pthread_mutex_init(&fd->bam_list_lock, NULL);
             fd->shared_ref = 1;
             fd->own_pool = 1;
         }
@@ -5849,10 +5851,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
             fd->rqueue = hts_tpool_process_init(fd->pool,
                                                 p->qsize ? p->qsize : hts_tpool_size(fd->pool)*2,
                                                 0);
-            pthread_mutex_init(&fd->metrics_lock, NULL);
-            pthread_mutex_init(&fd->ref_lock, NULL);
-            pthread_mutex_init(&fd->range_lock, NULL);
-            pthread_mutex_init(&fd->bam_list_lock, NULL);
         }
         fd->shared_ref = 1; // Needed to avoid clobbering ref between threads
         fd->own_pool = 0;
