@@ -227,10 +227,8 @@ static inline int block_resize(cram_block *b, size_t len) {
     if (b->alloc > len)
         return 0;
 
-    size_t alloc = b->alloc;
-    while (alloc <= len)
-        alloc = alloc ? alloc + (alloc>>2) : 1024;
-
+    size_t alloc = b->alloc+800;
+    alloc = MAX(alloc + (alloc>>2), len);
     return block_resize_exact(b, alloc);
 }
 
