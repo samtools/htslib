@@ -566,10 +566,12 @@ htscodecs/htscodecs/version.h: force
 	fi
 endif
 
+# Maintainer extra targets built
+# - compile public headers as C++
 # Maintainer source code checks
 # - copyright boilerplate presence
 # - tab and trailing space detection
-maintainer-check:
+maintainer-check: test/usepublic.o
 	test/maintainer/check_copyright.pl .
 	test/maintainer/check_spaces.pl .
 
@@ -775,6 +777,11 @@ test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_synced_bcf_reader_h) $(
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
 test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c
+
+# Standalone target not added to $(BUILT_TEST_PROGRAMS) as some may not
+# have a compiler that compiles as C++ when given a .cpp source file.
+test/usepublic.o: test/usepublic.cpp config.h $(htslib_bgzf_h) $(htslib_cram_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(htslib_hts_log_h) $(htslib_hts_os_h) $(htslib_kbitset_h) $(htslib_kfunc_h) $(htslib_khash_h) $(htslib_khash_str2int_h) $(htslib_klist_h) $(HTSPREFIX)htslib/knetfile.h $(htslib_kroundup_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_sam_h) $(htslib_synced_bcf_reader_h) $(htslib_tbx_h) $(htslib_thread_pool_h) $(htslib_vcf_h) $(htslib_vcf_sweep_h) $(htslib_vcfutils_h)
+	$(CC) $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) -c -o $@ test/usepublic.cpp
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
