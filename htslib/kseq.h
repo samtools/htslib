@@ -110,10 +110,10 @@
 				} else break; \
 			} \
 			if (delimiter == KS_SEP_LINE) {  \
-				unsigned char *sep = memchr(ks->buf + ks->begin, '\n', ks->end - ks->begin); \
+				unsigned char *sep = (unsigned char *)memchr(ks->buf + ks->begin, '\n', ks->end - ks->begin); \
 				i = sep != NULL ? sep - ks->buf : ks->end; \
 			} else if (delimiter > KS_SEP_MAX) { \
-				unsigned char *sep = memchr(ks->buf + ks->begin, delimiter, ks->end - ks->begin); \
+				unsigned char *sep = (unsigned char *)memchr(ks->buf + ks->begin, delimiter, ks->end - ks->begin); \
 				i = sep != NULL ? sep - ks->buf : ks->end; \
 			} else if (delimiter == KS_SEP_SPACE) { \
 				for (i = ks->begin; i < ks->end; ++i) \
