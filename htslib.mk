@@ -176,6 +176,9 @@ $(HTSDIR)/htsfile: $(HTSSRCDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/lib
 $(HTSDIR)/tabix: $(HTSSRCDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
 	+cd $(HTSDIR) && $(MAKE) tabix
 
+$(HTSDIR)/annot-tsv: $(HTSSRCDIR)/annot-tsv.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
+	+cd $(HTSDIR) && $(MAKE) annot-tsv
+
 $(HTSDIR)/htslib_static.mk: $(HTSDIR)/htslib.pc.tmp
 	+cd $(HTSDIR) && $(MAKE) htslib_static.mk
 

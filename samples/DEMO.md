@@ -88,7 +88,7 @@ alignment. It adds count of ATCGN base as an array in auxiliary data, BA:I.
 Modified data is written on standard output.
 
 Write_fast - This application showcases the fasta/fastq data write. It appends
-a dummy data to given file.
+data to given file.
 
 Index_write - This application showcases the creation of index along with
 output creation. Based on file type and shift, it creates bai, csi or crai
@@ -102,8 +102,6 @@ specification in alignment read.
 
 Read_fast_index - This application showcases the fasta/fastq data read using
 index.
-
-Read_tbx - This application showcases the tabix index usage with sam files.
 
 Pileup - This application showcases the pileup api, where all alignments
 covering a reference position are accessed together. It displays the bases
@@ -348,6 +346,8 @@ or explicit format text. This mode buffer can be used with sam_open or can be
 used with sam_open_format with explicit format information in htsFormat
 structure.
 
+It is the FASTA format which is mainly in use to store the reference data.
+
     ...
     if (!(bamdata = bam_init1())) {
     ...
@@ -358,6 +358,7 @@ structure.
     if (!(in_samhdr = sam_hdr_read(infile))) {
     ...
     while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
+    ...
         printf("\nsequence: ");
         for (c = 0; c < bamdata->core.l_qseq; ++c) {
             printf("%c", seq_nt16_str[bam_seqi(bam_get_seq(bamdata), c)]);
@@ -376,7 +377,7 @@ Refer: read_fast.c
     ...
     if (!(outfile = sam_open(outname, mode))) {
     ...
-    if (bam_set1(bamdata, sizeof("test"), "test", BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, 10, "AACTGACTGA", "1234567890", 0)
+    if (bam_set1(bamdata, strlen(name), name, BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, strlen(data), data, qual, 0)
      < 0) {
     ...
     if (sam_write1(outfile, out_samhdr, bamdata) < 0) {
@@ -772,14 +773,14 @@ can be read easily. There are different type of indices, BAI, CSI, CRAI, TBI,
 FAI etc. and are usually used with iterators.
 
 Indexing of plain/textual files are not supported, compressed SAM&FASTA/Q, BAM,
-and CRAM files can be indexed. CRAM files are indexed as .crai and the other two
-can be indexed as .bai or .csi files. Each of these types have different
-internal representations of the index information. Bai uses a fixed
-configuration values where as csi has them dynamically updated based on the
-alignment data.
+and CRAM files can be indexed. CRAM files are indexed as .crai and the others
+as .bai, .csi, .fai etc. Each of these types have different internal
+representations of the index information. Bai uses a fixed configuration values
+where as csi has them dynamically updated based on the alignment data.
 
 Indexes can be created either with save of alignment data or explicitly by
-read of existing alignment file.
+read of existing alignment file for alignment data (SAM/BAM/CRAM). For reference
+data it has to be explicitly created (FASTA).
 
 To create index along with alignment write, the sam_idx_init api need to be
 invoked before the start of alignment data write. This api takes the output
@@ -815,23 +816,18 @@ The sam_index_build2 api takes the index file path as well and gives more
 control than the previous one.  The sam_index_build3 api provides an option to
 configure the number of threads in index creation.
 
-Index for a fasta/fastq file can be created using fai_build3 api after saving
-of the same. It takes the filename and creates index files, fai and gzi based
-on compression status of input file. When fai/gzi path are NULL, they are
-created along with fasta/q file.
+Index for a fasta file / reference data can be created using fai_build3 api
+after save of the same. It takes the filename and creates index files, fai and
+gzi based on compression status of input file. When fai/gzi path are NULL, they
+are created along with input file.
 
     ...
     if (fai_build3(outname, NULL, NULL) == -1) {
     ...
 Refer: write_fast.c
 
-A tabix index can be created for compressed sam/vcf and other data using
-tbx_index_build.
-
-    ...
-                if (tbx_index_build3(inname, NULL, shift, 1, &tbx_conf_sam) == -1) {
-    ...
-Refer: read_with_tabix.c
+A tabix index can be created for compressed vcf/sam/bed and other data using
+tbx_index_build. It is mainly used with vcf and non-sam type files.
 
 
 ### Read with iterators
@@ -986,7 +982,6 @@ Below excerpt shows fasta/q access with single and multiregions,
                 printf("Data: %"PRIhts_pos" %s\n", len, data);
                 free((void*)data);
                 data = NULL;
-
                 //get quality data for fastq
                 if (fmt == FAI_FASTQ) {
                     if (!(data = faidx_fetch_qual64(idx, faidx_iseq(idx, tid), beg, end, &len))) {
@@ -1406,6 +1401,10 @@ generic pool can be created and shared across multiple files. Another way to
 use thread pool is to schedule tasks explicitly to queues which gets executed
 using threads in pool.
 
+The samples are trivial ones to showcase the usage of api and the number of
+threads to use has to be identified based on complexity and parallelism of the
+job.
+
 To have a thread pool specific for a file, hts_set_opt api can be used with the
 file pointer, HTS_OPT_NTHREADS and the number of threads to use in the pool.
 Closure of file releases the thread pool as well. To have a thread pool which
@@ -1419,15 +1418,15 @@ Below excerpt shows file specific thread pool,
 
     ...
     //create file specific threads
-    if (hts_set_opt(infile, HTS_OPT_NTHREADS, 2) < 0 ||     //2 thread specific for reading
+    if (hts_set_opt(infile, HTS_OPT_NTHREADS, 1) < 0 ||     //1 thread specific for reading
     hts_set_opt(outfile1, HTS_OPT_NTHREADS, 1) < 0 ||       //1 thread specific for sam write
-    hts_set_opt(outfile2, HTS_OPT_NTHREADS, 1) < 0) {       //1 thread specific for bam write
+    hts_set_opt(outfile2, HTS_OPT_NTHREADS, 2) < 0) {       //2 thread specific for bam write
         printf("Failed to set thread options\n");
         goto end;
     }
 Refer: split_thread1.c
 
-Below excerpt shows thread pool shared across files,
+Below excerpt shows a thread pool shared across files, 
 
     ...
     //create a pool of 4 threads
@@ -1444,6 +1443,11 @@ Below excerpt shows thread pool shared across files,
     ...
 Refer: split_thread2.c
 
+Note that it is important to analyze the task in hand to decide the number of
+threads to be used. As an example, if the number of threads for reading is set
+to 2 and bam write to 1, keeping total number of threads the same, the
+performance may decrease as decoding is easier than encoding.
+
 Task to be performed on data can be scheduled to a queue and a thread pool can
 be associated to it. There can be multiple pools and queues(processes). There
 are 2 type of queues, one where the result is queued back and retrieved in
@@ -1455,26 +1459,30 @@ hts_tpool_process_init initializes the queue / process associates a queue with
 thread pool and reserves space for given number of tasks. It takes a parameter
 indicating whether it is for unordered processing or for ordered processing
 where it has to queue the result back. Usually 2 times the number of threads
-are reserved. hts_tpool_dispatch3 queues the data to the queue along with the
-processing function, pool and clean up routines. The cleanup routines will be
-executed when hts_tpool_process_reset api is invoked, to reset the queue to
-have a restart. hts_tpool_process_flush can ensure that all the piledup tasks
-are processed, in case the queueing and processing happen at different speed.
-hts_tpool_process_shutdown api stops the processing of queue.
+are reserved. hts_tpool_dispatch queues the data to the queue. If blocking /
+non-blocking control is required, hts_tpool_dispatch2 can be used instead. If
+hts_tpool_dispatch3 is used instead, it takes cleanup routines as well. The
+cleanup routines will be executed when hts_tpool_process_reset api is invoked,
+to reset the queue to have a restart. hts_tpool_process_flush can ensure that
+all the piledup tasks are processed, in case the queueing and processing happen
+at different speed. hts_tpool_process_shutdown api stops the processing of queue.
 
-Below excerpt shows the usage of 2 queues, one where the processed result may
-be unordered and writes as sam file. Other queue shows the processing and 
-queueing back, for ordered retrieval and saving as bam file,
+Below excerpt shows the usage of 2 queues with a trivial sample, one where the
+processed result may be unordered - based on execution order - and writes as sam
+file. Other queue shows the processing and queueing back, for ordered retrieval
+and save as bam file,
 
     ...
     //thread pool
     if (!(pool = hts_tpool_init(cnt))) {
     ...
     //queue to use with thread pool, no queuing of results for Q1 and results queued for Q2
-    if (!(queue1 = hts_tpool_process_init(pool, cnt * 2, 1)) || !(queue2 = hts_tpool_process_init(pool, cnt * 2, 0))) {
+    if (!(queue1 = hts_tpool_process_init(pool, cnt * 2, 1)) || 
+        !(queue2 = hts_tpool_process_init(pool, cnt * 2, 0))) {
     ...
     //open output files - w write as SAM, wb  write as BAM
-    outfile1 = sam_open(file1, "w"); outfile2 = sam_open(file2, "wb");
+    outfile1 = sam_open(file1, "w");
+    outfile2 = sam_open(file2, "wb");
     ...
     //start output writer thread for ordered processing
     twritedata.outfile = outfile2; twritedata.queue = queue2; twritedata.done = &stopcond; twritedata.lock = &stopcondsynch;
@@ -1487,12 +1495,12 @@ queueing back, for ordered retrieval and saving as bam file,
             //read1, scheduling for unordered output, using Q1; processing occurs in order of thread execution
             td_unordered *tdata = calloc(1, sizeof(td_unordered));
             tdata->bamdata = bamdata; tdata->outfile = outfile1; tdata->lock = &filesynch; tdata->samhdr = in_samhdr;
-            if (hts_tpool_dispatch3(pool, queue1, thread_unordered_proc, tdata, (void (*)(void *))&free, (void (*)(void*))&bam_destroy1, 0) == -1) {
+            if (hts_tpool_dispatch(pool, queue1, thread_unordered_proc, tdata) == -1) {
     ...
         else if (bamdata->core.flag & BAM_FREAD2) {
             //read2, scheduling for ordered output, using Q2; proces and result queueing occurs in order of thread execution and result retrieval
             //showcases the threaded execution and ordered result handling on read2
-            if (hts_tpool_dispatch3(pool, queue2, thread_ordered_proc, bamdata, NULL, (void (*)(void*))&bam_destroy1, 0) == -1) {
+            if (hts_tpool_dispatch(pool, queue2, thread_ordered_proc, bamdata) == -1) {
     ...
         //EOF read
         //clear the queues of any tasks; NOTE: will be blocked until queue is cleared
@@ -1588,9 +1596,9 @@ be destroyed as many times with sam_hdr_destroy api.
 ### Index
 
 Indices need the data to be sorted by position.  They can be of different
-types with extension .bai, .csi or .tbi for compressed SAM/BAM files and .crai
-for CRAM files.  The index name can be passed along with the alignment file
-itself by appending a specific character sequence. The apis can detect this
+types with extension .bai, .csi or .tbi for compressed SAM/BAM/VCF files and
+.crai for CRAM files.  The index name can be passed along with the alignment
+file itself by appending a specific character sequence. The apis can detect this
 sequence and extract the index path. ##idx## is the sequence which separates
 the file path and index path.
 

@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE
 
 #include <getopt.h>
 #include <unistd.h>
+#include <time.h>
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
 
@@ -37,8 +38,8 @@ returns nothing
 */
 static void print_usage(FILE *fp)
 {
-    fprintf(fp, "Usage: write_fast <file>\n\
-Appends a fasta/fastq file and indexes it.\n");
+    fprintf(fp, "Usage: write_fast <file> <sequence> [<qualities]\n\
+Appends a fasta/fastq file.\n");
     return;
 }
 
@@ -55,12 +56,22 @@ int main(int argc, char *argv[])
     sam_hdr_t *out_samhdr = NULL;           //header of file
     bam1_t *bamdata = NULL;                 //to hold the read data
     char mode[4] = "a";
+    const char *data = NULL, *qual = NULL;  //ref data and quality
+    char name[256] = {0};
 
-    if (argc != 2) {
+    if (argc > 4 || argc < 3) {
         print_usage(stdout);
         goto end;
     }
     outname = argv[1];
+    data = argv[2];
+    if (argc == 4) {    //fastq data
+        qual = argv[3];
+        if (strlen(data) != strlen(qual)) {     //check for proper length of data and quality values
+            printf("Incorrect reference and quality data\n");
+            goto end;
+        }
+    }
 
     //initialize
     if (!(bamdata = bam_init1())) {
@@ -82,8 +93,9 @@ int main(int argc, char *argv[])
     sam_open_format(outname, mode, fmt);
     */
 
-    //dummy data
-    if (bam_set1(bamdata, sizeof("test"), "test", BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, 10, "AACTGACTGA", "1234567890", 0) < 0) {
+    snprintf(name, sizeof(name), "Test_%ld", time(NULL));
+    //data
+    if (bam_set1(bamdata, strlen(name), name, BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, strlen(data), data, qual, 0) < 0) {
         printf("Failed to set data\n");
         goto end;
     }

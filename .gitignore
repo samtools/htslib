@@ -41,6 +41,7 @@ lib*.so.*
 header-exports.txt
 shlib-exports-*.txt
 
+/annot-tsv
 /bgzip
 /htsfile
 /tabix

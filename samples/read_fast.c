@@ -83,6 +83,8 @@ int main(int argc, char *argv[])
 
     //read data
     while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
+        printf("\nname: ");
+        printf("%s", bam_get_qname(bamdata));
         printf("\nsequence: ");
         for (c = 0; c < bamdata->core.l_qseq; ++c) {
             printf("%c", seq_nt16_str[bam_seqi(bam_get_seq(bamdata), c)]);
@@ -94,6 +96,7 @@ int main(int argc, char *argv[])
             }
         }
     }
+    printf("\n");
     if (c != -1) {
         //error
         printf("Failed to get data\n");

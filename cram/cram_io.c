@@ -69,6 +69,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define crc32(a,b,c) libdeflate_crc32((a),(b),(c))
 #endif
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "../fuzz_settings.h"
+#endif
+
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
@@ -1568,6 +1572,11 @@ int cram_uncompress_block(cram_block *b) {
     char *uncomp;
     size_t uncomp_size = 0;
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+    b->crc32_checked = 1;
+#endif
+
     if (b->crc32_checked == 0) {
         uint32_t crc = crc32(b->crc_part, b->data ? b->data : (uc *)"", b->alloc);
         b->crc32_checked = 1;
@@ -1843,8 +1852,9 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
         // see enum cram_block. We map RANS_* methods to order bit-fields
         static int methmap[] = { 1, 64,9, 128,129, 192,193 };
 
+        int m = method == RANS_PR0 ? 0 : methmap[method - RANS_PR1];
         cp = rans_compress_4x16((unsigned char *)in, in_size, &out_size_i,
-                                method == RANS_PR0 ? 0 : methmap[method - RANS_PR1]);
+                                m | RANS_ORDER_SIMD_AUTO);
         *out_size = out_size_i;
         return (char *)cp;
     }
@@ -3852,7 +3862,13 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
 
     *c = c2;
-
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (c->num_landmarks > FUZZ_ALLOC_LIMIT/sizeof(int32_t)) {
+        fd->err = errno = ENOMEM;
+        cram_free_container(c);
+        return NULL;
+    }
+#endif
     if (c->num_landmarks && !(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
         fd->err = errno;
         cram_free_container(c);
@@ -3874,6 +3890,11 @@ cram_container *cram_read_container(cram_fd *fd) {
         } else {
             rd+=4;
         }
+
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+        // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+        crc = c->crc32;
+#endif
 
         if (crc != c->crc32) {
             hts_log_error("Container header CRC32 failure");
@@ -4679,6 +4700,11 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
         if (-1 == int32_decode(fd, &header_len))
             return NULL;
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+        if (header_len > FUZZ_ALLOC_LIMIT)
+            return NULL;
+#endif
+
         /* Alloc and read */
         if (header_len < 0 || NULL == (header = malloc((size_t) header_len+1)))
             return NULL;
@@ -5323,6 +5349,11 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->ooc         = 0;
     fd->required_fields = INT_MAX;
 
+    pthread_mutex_init(&fd->metrics_lock, NULL);
+    pthread_mutex_init(&fd->ref_lock, NULL);
+    pthread_mutex_init(&fd->range_lock, NULL);
+    pthread_mutex_init(&fd->bam_list_lock, NULL);
+
     for (i = 0; i < DS_END; i++) {
         fd->m[i] = cram_new_metrics();
         if (!fd->m[i])
@@ -5520,14 +5551,15 @@ int cram_close(cram_fd *fd) {
         if (fd->mode == 'w')
             fd->ctr = NULL; // prevent double freeing
 
-        pthread_mutex_destroy(&fd->metrics_lock);
-        pthread_mutex_destroy(&fd->ref_lock);
-        pthread_mutex_destroy(&fd->bam_list_lock);
-
         //fprintf(stderr, "CRAM: destroy queue %p\n", fd->rqueue);
 
         hts_tpool_process_destroy(fd->rqueue);
     }
+
+    pthread_mutex_destroy(&fd->metrics_lock);
+    pthread_mutex_destroy(&fd->ref_lock);
+    pthread_mutex_destroy(&fd->range_lock);
+    pthread_mutex_destroy(&fd->bam_list_lock);
 
     if (fd->mode == 'w') {
         /* Write EOF block */
@@ -5806,10 +5838,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
                 return -1;
 
             fd->rqueue = hts_tpool_process_init(fd->pool, nthreads*2, 0);
-            pthread_mutex_init(&fd->metrics_lock, NULL);
-            pthread_mutex_init(&fd->ref_lock, NULL);
-            pthread_mutex_init(&fd->range_lock, NULL);
-            pthread_mutex_init(&fd->bam_list_lock, NULL);
             fd->shared_ref = 1;
             fd->own_pool = 1;
         }
@@ -5823,10 +5851,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
             fd->rqueue = hts_tpool_process_init(fd->pool,
                                                 p->qsize ? p->qsize : hts_tpool_size(fd->pool)*2,
                                                 0);
-            pthread_mutex_init(&fd->metrics_lock, NULL);
-            pthread_mutex_init(&fd->ref_lock, NULL);
-            pthread_mutex_init(&fd->range_lock, NULL);
-            pthread_mutex_init(&fd->bam_list_lock, NULL);
         }
         fd->shared_ref = 1; // Needed to avoid clobbering ref between threads
         fd->own_pool = 0;

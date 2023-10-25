@@ -37,6 +37,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <unistd.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "fuzz_settings.h"
+#endif
+
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
 #undef HTS_DEPRECATED
@@ -251,6 +255,9 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
 
     bufsize = h->l_text + 1;
     if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (bufsize > FUZZ_ALLOC_LIMIT) goto nomem;
+#endif
     h->text = (char*)malloc(bufsize);
     if (!h->text) goto nomem;
     h->text[h->l_text] = 0; // make sure it is NULL terminated
@@ -264,6 +271,10 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
     if (h->n_targets < 0) goto invalid;
 
     // read reference sequence names and lengths
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (h->n_targets > (FUZZ_ALLOC_LIMIT - bufsize)/(sizeof(char*)+sizeof(uint32_t)))
+        goto nomem;
+#endif
     if (h->n_targets > 0) {
         h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
         if (!h->target_name) goto nomem;
@@ -425,6 +436,12 @@ int sam_realloc_bam_data(bam1_t *b, size_t desired)
         errno = ENOMEM; // Not strictly true but we can't store the size
         return -1;
     }
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (new_m_data > FUZZ_ALLOC_LIMIT) {
+        errno = ENOMEM;
+        return -1;
+    }
+#endif
     if ((bam_get_mempolicy(b) & BAM_USER_OWNS_DATA) == 0) {
         new_data = realloc(b->data, new_m_data);
     } else {
@@ -887,8 +904,6 @@ static int bam_write_idx1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b) {
         return -1;
     if (!bfp->mt)
         hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
-    else
-        bgzf_idx_amend_last(bfp, fp->idx, bgzf_tell(bfp));
 
     int ret = bam_write1(bfp, b);
     if (ret < 0)
@@ -4202,6 +4217,15 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
     return pass_filter < 0 ? -2 : ret;
 }
 
+// With gcc, -O3 or -ftree-loop-vectorize is really key here as otherwise
+// this code isn't vectorised and runs far slower than is necessary (even
+// with the restrict keyword being used).
+static inline void HTS_OPT3
+add33(uint8_t *a, const uint8_t * b, int32_t len) {
+    uint32_t i;
+    for (i = 0; i < len; i++)
+        a[i] = b[i]+33;
+}
 
 static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
@@ -4252,10 +4276,8 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         if (s[0] == 0xff) {
             cp[i++] = '*';
         } else {
-            // local copy of c->l_qseq to aid unrolling
-            uint32_t lqseq = c->l_qseq;
-            for (i = 0; i < lqseq; ++i)
-                cp[i]=s[i]+33;
+            add33((uint8_t *)cp, s, c->l_qseq); // cp[i] = s[i]+33;
+            i = c->l_qseq;
         }
         cp[i] = 0;
         cp += i;

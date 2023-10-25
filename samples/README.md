@@ -129,8 +129,8 @@ indexed.
 
 [Write_fast][Write_fast]
 
-  This application showcases the fasta/fastq data write. It appends a dummy
-  data to given file and creates an index file for it.
+  This application showcases the fasta/fastq data write. It appends given data
+  file and creates an index file for it.
 
 [Index_write][Index_write]
 
@@ -152,12 +152,6 @@ indexed.
   This application showcases the fasta/fastq data read using index. It takes a
   region (reference name[:start-end]) and gets data from that region.
 
-[Read_tbx][Read_tbx]
-
-  This application showcases the tabix index usage with sam files. It takes a
-  shift value and region (refname[:start-end]) and gets data from that region.
-  The shift will be used to create index file if not present already.
-    
 [Pileup][Pileup]:
 
   This application showcases the pileup api, where all alignments covering a
@@ -192,8 +186,7 @@ indexed.
 
   This application showcases the use of threads in file handling. It saves
   the read1 and read2 as separate files in given directory, one as sam and
-  other as bam. 2 threads are used for read and 1 each dedicated for each
-  output file.
+  other as bam. 1 thread is used for read, 1 for sam write and 2 for bam write.
 
 [Split_thread2][Split_thread2]
 

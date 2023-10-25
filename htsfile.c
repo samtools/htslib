@@ -31,7 +31,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
-#include <unistd.h>
 
 #include "htslib/hfile.h"
 #include "htslib/hts.h"
@@ -62,13 +61,6 @@ void error(const char *format, ...)
     status = EXIT_FAILURE;
 }
 
-static htsFile *dup_stdout(const char *mode)
-{
-    int fd = dup(STDOUT_FILENO);
-    hFILE *hfp = (fd >= 0)? hdopen(fd, mode) : NULL;
-    return hfp? hts_hopen(hfp, "-", mode) : NULL;
-}
-
 static void view_sam(samFile *in, const char *filename)
 {
     bam1_t *b = NULL;
@@ -81,7 +73,7 @@ static void view_sam(samFile *in, const char *filename)
         goto clean;
     }
 
-    out = dup_stdout("w");
+    out = hts_open("-", "w");
     if (out == NULL) { error("reopening standard output failed"); goto clean; }
 
     if (show_headers) {
@@ -125,7 +117,7 @@ static void view_vcf(vcfFile *in, const char *filename)
         goto clean;
     }
 
-    out = dup_stdout("w");
+    out = hts_open("-", "w");
     if (out == NULL) { error("reopening standard output failed"); goto clean; }
 
     if (show_headers) {
@@ -324,6 +316,9 @@ int main(int argc, char **argv)
 
         if (fp && hclose(fp) < 0) error("closing \"%s\" failed", argv[i]);
     }
+
+    if (fclose(stdout) != 0 && errno != EBADF)
+        error("closing standard output failed");
 
     return status;
 }

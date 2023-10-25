@@ -34,35 +34,36 @@ use IO::Handle;
 my $opts = parse_params();
 srand($$opts{seed});
 
-test_bgzip($opts, 0);
-test_bgzip($opts, 4);
+run_test('test_bgzip',$opts, 0);
+run_test('test_bgzip',$opts, 4);
 
-ce_fa_to_md5_cache($opts);
-test_index($opts, 0);
-test_index($opts, 4);
+run_test('ce_fa_to_md5_cache',$opts,needed_by=>'test_index');
+run_test('test_index',$opts, 0);
+run_test('test_index',$opts, 4);
 
-test_multi_ref($opts,0);
-test_multi_ref($opts,4);
+run_test('test_multi_ref',$opts,0);
+run_test('test_multi_ref',$opts,4);
 
-test_view($opts,0);
-test_view($opts,4);
+run_test('test_view',$opts,0);
+run_test('test_view',$opts,4);
 
-test_MD($opts);
+run_test('test_MD',$opts);
 
-test_vcf_api($opts,out=>'test-vcf-api.out');
-test_bcf2vcf($opts);
-test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
-test_vcf_various($opts);
-test_bcf_sr_sort($opts);
-test_bcf_sr_no_index($opts);
-test_bcf_sr_range($opts);
-test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
-test_convert_padded_header($opts);
-test_rebgzip($opts);
-test_logging($opts);
-test_plugin_loading($opts);
-test_realn($opts);
-test_bcf_set_variant_type($opts);
+run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep');
+run_test('test_bcf2vcf',$opts);
+run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
+run_test('test_vcf_various',$opts);
+run_test('test_bcf_sr_sort',$opts);
+run_test('test_bcf_sr_no_index',$opts);
+run_test('test_bcf_sr_range', $opts);
+run_test('test_command',$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
+run_test('test_convert_padded_header',$opts);
+run_test('test_rebgzip',$opts);
+run_test('test_logging',$opts);
+run_test('test_plugin_loading',$opts);
+run_test('test_realn',$opts);
+run_test('test_bcf_set_variant_type',$opts);
+run_test('test_annot_tsv',$opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -82,10 +83,11 @@ sub error
         "About: samtools/htslib consistency test script\n",
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
+        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
+        "   -F, --function LIST             Run only the listed tests (e.g. 'annot_tsv')\n",
         "   -r, --redo-outputs              Recreate expected output files.\n",
         "   -s, --random-seed <int>         Initialise rand() with a different seed.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
-        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
     exit 1;
@@ -117,6 +119,7 @@ sub parse_params
             'r|redo-outputs' => \$$opts{redo_outputs},
             's|random-seed=i' => \$$opts{seed},
             'f|fail-fast' => \$$opts{fail_fast},
+            'F|function:s' => \$$opts{function},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -129,20 +132,55 @@ sub parse_params
         $$opts{path} = cygpath($$opts{path});
         $$opts{bin}  = cygpath($$opts{bin});
     }
+    if ($$opts{function}) {
+        $$opts{run_function} = { map {$_=>1} split(/,/,$$opts{function}) };
+    }
 
     return $opts;
+}
+sub run_test
+{
+    my ($name,$opts,@args) = @_;
+    if ( $$opts{run_function} )
+    {
+        my $run  = 0;
+        if ( exists($$opts{run_function}{$name}) ) { $run = 1; }
+        if ( !$run )
+        {
+            my %args;
+            if (!(scalar @args % 2)) # check that a hash was passed
+            {
+                %args = @args;
+            }
+            for my $func (keys %{$$opts{run_function}})
+            {
+                if ((exists($args{cmd}) && $args{cmd}=~/$func/) ||
+                    (exists($args{needed_by}) && $args{needed_by}=~/$func/)) {
+                    $run = 1;
+                } elsif ( $name=~/$func/ ) {
+                    $$opts{run_function}{$name} = 1;
+                    $run = 1;
+                }
+                last if ($run);
+            }
+        }
+        if ( !$run ) { return; }
+    }
+    my $sym = ${main::}{$name}; # Symbol table look-up, works with "use strict"
+    &$sym($opts,@args);
 }
 sub _cmd
 {
     my ($cmd) = @_;
     my $kid_io;
-    my @out;
+    my $out;
     my $pid = open($kid_io, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
     if ($pid)
     {
         # parent
-        @out = <$kid_io>;
+        local $/; # Read entire input
+        $out = <$kid_io>;
         close($kid_io);
     }
     else
@@ -154,7 +192,35 @@ sub _cmd
         # child
         exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
-    return ($? >> 8, join('',@out));
+    return ($? >> 8, $out);
+}
+sub _cmd3
+{
+    my ($cmd) = @_;
+
+    $cmd = "$ENV{TEST_PRECMD} $cmd" if exists $ENV{TEST_PRECMD};
+
+    my $tmp = "$$opts{tmp}/tmp";
+    system('bash', '-o','pipefail','-c', "($cmd) 2>$tmp.e >$tmp.o");
+
+    my $status  = $? >> 8;
+
+    my ($out,$err);
+    local $/; # Read entire input
+    if ( open(my $fh,'<',"$tmp.o") )
+    {
+        $out = <$fh>;
+        close($fh) or error("Failed to close $tmp.o");
+    }
+    if ( open(my $fh,'<',"$tmp.e") )
+    {
+        $err = <$fh>;
+        close($fh) or error("Failed to close $tmp.e");
+    }
+    unlink("$tmp.o");
+    unlink("$tmp.e");
+
+    return ($status,$out,$err);
 }
 sub cmd
 {
@@ -177,8 +243,9 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd("$args{cmd}");
-    if ( $ret ) { failed($opts,$test); return; }
+    my ($ret,$out,$err) = _cmd3("$args{cmd}");
+    if ( $err ) { $err =~ s/^/\t\t/mg; $err .= '\n'; }
+    if ( $ret ) { failed($opts,$test,"Non-zero status $ret\n$err"); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
         rename("$$opts{path}/$args{out}","$$opts{path}/$args{out}.old");
@@ -197,8 +264,8 @@ sub test_cmd
     my $exp = '';
     if ( open(my $fh,'<',"$$opts{path}/$args{out}") )
     {
-        my @exp = <$fh>;
-        $exp = join('',@exp);
+        local $/; # Read entire file
+        $exp = <$fh>;
         $exp =~ s/\015?\012/\n/g;
         close($fh);
     }
@@ -218,7 +285,10 @@ sub test_cmd
         }
         else
         {
-            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
+            my $diff = `diff $$opts{path}/$args{out} $$opts{path}/$args{out}.new`;
+            $diff =~ s/^/\t\t/mg;
+            chomp($diff);
+            failed($opts,$test,"${err}The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new\n$diff\n");
         }
         return;
     }
@@ -377,6 +447,8 @@ sub test_bgzip {
     my $index = "${compressed}.gzi";
     my $test = sprintf('%s %2s threads', 'bgzip round-trip',
                        $threads ? $threads : 'no');
+    my $uncompressed1 = "$$opts{tmp}/ce.fa.$threads";
+    my $uncompressed1_copy = "$$opts{tmp}/ce.fa.$threads.copy";
 
     # Round-trip test
     print "$test: ";
@@ -470,6 +542,50 @@ sub test_bgzip {
     if ($ret) {
         failed($opts, $test,
                $out ? $out : "'$expected_part' '$uncompressed_part2' differ");
+        return;
+    }
+    passed($opts,$test);
+
+    # multi file test, expects compressed files from previous tests
+    # bgzip should return failure if both inputs not present
+    $test = sprintf('%s %2s threads', 'bgzip multifile',
+                    $threads ? $threads : 'no');
+    print "$test: ";
+
+    #decompress and remove
+    $c = "$$opts{bin}/bgzip $at -d '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    #check both files present and matches or not
+    $c = "cmp '$data' '$uncompressed1'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test,
+               $out ? $out : "'$data' '$uncompressed1' differ");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed1_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test,
+               $out ? $out : "'$data' '$uncompressed1_copy' differ");
+        return;
+    }
+    #compress and remove
+    $c = "$$opts{bin}/bgzip $at '$uncompressed1' '$uncompressed1_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    #decompress again to ensure successful compression
+    $c = "$$opts{bin}/bgzip $at -d '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
         return;
     }
     passed($opts,$test);
@@ -1225,4 +1341,47 @@ sub test_bcf_set_variant_type
         print $out;
         failed($opts,$test);
     } else { passed($opts,$test); }
+}
+
+sub run_annot_tsv
+{
+    my ($opts,%args) = @_;
+    my $exe = "$$opts{bin}/annot-tsv";
+    my $dat = "$$opts{path}/annot-tsv";
+    my $args = exists($args{args}) ? $args{args} : '';
+    $args{out} = "annot-tsv/$args{out}";
+    test_cmd($opts,%args,cmd=>"$exe $args -s $dat/$args{src} -t $dat/$args{dst}");
+    test_cmd($opts,%args,cmd=>"cat $dat/$args{dst} | $exe $args -s $dat/$args{src}");
+    test_cmd($opts,%args,cmd=>"cat $dat/$args{src} | $exe $args -t $dat/$args{dst}");
+}
+
+sub test_annot_tsv
+{
+    my ($opts) = @_;
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.1.txt',args=>'-f smpl:overlap --allow-dups');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap -c chr,beg,end');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.3.txt',args=>'-f smpl,value:overlap,value');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.4.txt',args=>'-f smpl:overlap -O 0.5');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.5.txt',args=>'-f smpl:overlap -rO 0.5');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.6.txt',args=>'-f smpl:overlap --allow-dups --max-annots 2');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.2.txt',args=>'-c 1,2,3:1,2,3 -f 4:5');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.3.txt',args=>'-c 1,2,3:1,2,3 -f 4,value:5,value');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.4.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.5.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.6.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups --max-annots 2');
+    run_annot_tsv($opts,src=>'src.3.txt',dst=>'dst.3.txt',out=>'out.3.1.txt',args=>'-f smpl:overlap -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.4.txt',dst=>'dst.4.txt',out=>'out.4.1.txt',args=>'-c 2,3,4:2,3,4 -m 1:1 -f 1:1 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.5.txt',dst=>'dst.5.txt',out=>'out.5.1.txt',args=>'-c 2,3,4:2,3,4 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.6.txt',dst=>'dst.6.txt',out=>'out.6.1.txt',args=>'-c 1,2,2:1,2,2 -a nbp');
+    run_annot_tsv($opts,src=>'src.7.txt',dst=>'dst.7.txt',out=>'out.7.1.txt',args=>'-c 1,2,2:1,2,2 -f overlap -H');
+    run_annot_tsv($opts,src=>'src.8.txt',dst=>'dst.8.txt',out=>'out.8.1.txt',args=>'-c chr,beg,end:chr,start,end -m sample -f is_tp');
+    run_annot_tsv($opts,src=>'src.9.txt',dst=>'dst.9.txt',out=>'out.9.1.txt',args=>'-c 1,2,3:chr,beg,end -a nbp,frac,cnt');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.1.txt',args=>'-f smpl');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.2.txt',args=>'');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.3.txt',args=>'-x');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.4.txt',args=>'-m smpl -f smpl');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.5.txt',args=>'-m smpl ');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
 }

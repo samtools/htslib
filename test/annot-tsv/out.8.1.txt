@@ -1,0 +1,2 @@
+#[1]chr	[2]start	[3]end	[4]assembly	[5]mean_ratio	[6]inheritance	[7]sample	[8]is_tp
+2	111293958	113181927	hg19	.	.	sampleA	TP-ACGH-WES
