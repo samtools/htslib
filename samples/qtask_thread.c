@@ -111,6 +111,8 @@ void *thread_unordered_proc(void *args)
     }
     pthread_mutex_unlock(tdata->lock);
 
+    bam_destroy1(tdata->bamdata);
+    free(tdata);
     return NULL;
 }
 
@@ -180,7 +182,8 @@ int main(int argc, char *argv[])
 {
     const char *inname = NULL, *outdir = NULL;
     char *file1 = NULL, *file2 = NULL;
-    int c = 0, ret = EXIT_FAILURE, size = 0, cnt = 0;
+    int c = 0, ret = EXIT_FAILURE, cnt = 0;
+    size_t size = 0;
     samFile *infile = NULL, *outfile1 = NULL, *outfile2 = NULL;
     sam_hdr_t *in_samhdr = NULL;
     bam1_t *bamdata = NULL;
@@ -205,7 +208,7 @@ int main(int argc, char *argv[])
     }
 
     //allocate space for output
-    size = sizeof(char) * (strlen(outdir) + sizeof("/1.sam") + 1); //space for output file name and null termination
+    size = (strlen(outdir) + sizeof("/1.sam") + 1); //space for output file name and null termination
     file1 = malloc(size); file2 = malloc(size);
     if (!file1 || !file2) {
         printf("Failed to set output path\n");
@@ -226,7 +229,8 @@ int main(int argc, char *argv[])
         goto end;
     }
     //queue to use with thread pool, no queuing of results for Q1 and results queued for Q2
-    if (!(queue1 = hts_tpool_process_init(pool, cnt * 2, 1)) || !(queue2 = hts_tpool_process_init(pool, cnt * 2, 0))) {
+    if (!(queue1 = hts_tpool_process_init(pool, cnt * 2, 1)) ||
+        !(queue2 = hts_tpool_process_init(pool, cnt * 2, 0))) {
         printf("Failed to create queue\n");
         goto end;
     }
@@ -237,7 +241,8 @@ int main(int argc, char *argv[])
     }
 
     //open output files - w write as SAM, wb  write as BAM
-    outfile1 = sam_open(file1, "w"); outfile2 = sam_open(file2, "wb");
+    outfile1 = sam_open(file1, "w");
+    outfile2 = sam_open(file2, "wb");
     if (!outfile1 || !outfile2) {
         printf("Could not open output file\n");
         goto end;
@@ -248,14 +253,18 @@ int main(int argc, char *argv[])
         goto end;
     }
     //start output writer thread for ordered processing
-    twritedata.outfile = outfile2; twritedata.queue = queue2; twritedata.done = &stopcond; twritedata.lock = &stopcondsynch;
+    twritedata.outfile = outfile2;
+    twritedata.queue = queue2;
+    twritedata.done = &stopcond;
+    twritedata.lock = &stopcondsynch;
     twritedata.samhdr = in_samhdr;
     if (pthread_create(&thread, NULL, threadfn_orderedwrite, &twritedata)) {
         printf("Failed to create writer thread\n");
         goto end;
     }
     //write header
-    if ((sam_hdr_write(outfile1, in_samhdr) == -1) || (sam_hdr_write(outfile2, in_samhdr) == -1)) {
+    if ((sam_hdr_write(outfile1, in_samhdr) == -1) ||
+        (sam_hdr_write(outfile2, in_samhdr) == -1)) {
         printf("Failed to write header\n");
         goto end;
     }
@@ -263,9 +272,12 @@ int main(int argc, char *argv[])
     while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
         if (bamdata->core.flag & BAM_FREAD1) {
             //read1, scheduling for unordered output, using Q1; processing occurs in order of thread execution
-            td_unordered *tdata = calloc(1, sizeof(td_unordered));
-            tdata->bamdata = bamdata; tdata->outfile = outfile1; tdata->lock = &filesynch; tdata->samhdr = in_samhdr;
-            if (hts_tpool_dispatch3(pool, queue1, thread_unordered_proc, tdata, (void (*)(void *))&free, (void (*)(void*))&bam_destroy1, 0) == -1) {
+            td_unordered *tdata = malloc(sizeof(td_unordered));
+            tdata->bamdata = bamdata;
+            tdata->outfile = outfile1;
+            tdata->lock = &filesynch;
+            tdata->samhdr = in_samhdr;
+            if (hts_tpool_dispatch(pool, queue1, thread_unordered_proc, tdata) == -1) {
                 printf("Failed to schedule unordered processing\n");
                 goto end;
             }
@@ -273,7 +285,7 @@ int main(int argc, char *argv[])
         else if (bamdata->core.flag & BAM_FREAD2) {
             //read2, scheduling for ordered output, using Q2; proces and result queueing occurs in order of thread execution and result retrieval
             //showcases the threaded execution and ordered result handling on read2
-            if (hts_tpool_dispatch3(pool, queue2, thread_ordered_proc, bamdata, NULL, (void (*)(void*))&bam_destroy1, 0) == -1) {
+            if (hts_tpool_dispatch(pool, queue2, thread_ordered_proc, bamdata) == -1) {
                 printf("Failed to schedule ordered processing\n");
                 goto end;
             }
@@ -303,7 +315,7 @@ int main(int argc, char *argv[])
         pthread_cond_signal(twritedata.done);
         pthread_mutex_unlock(twritedata.lock);
         pthread_join(thread, NULL);
-        thread = NULL;
+        thread = 0;
     }
 end:
     //cleanup

@@ -94,9 +94,9 @@ int main(int argc, char *argv[])
     }
 
     //create file specific threads
-    if (hts_set_opt(infile, HTS_OPT_NTHREADS, 2) < 0 ||     //2 thread specific for reading
+    if (hts_set_opt(infile, HTS_OPT_NTHREADS, 1) < 0 ||     //1 thread specific for reading
     hts_set_opt(outfile1, HTS_OPT_NTHREADS, 1) < 0 ||       //1 thread specific for sam write
-    hts_set_opt(outfile2, HTS_OPT_NTHREADS, 1) < 0) {       //1 thread specific for bam write
+    hts_set_opt(outfile2, HTS_OPT_NTHREADS, 2) < 0) {       //2 thread specific for bam write
         printf("Failed to set thread options\n");
         goto end;
     }
