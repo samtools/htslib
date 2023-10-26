@@ -94,10 +94,13 @@ Index_write - This application showcases the creation of index along with
 output creation. Based on file type and shift, it creates bai, csi or crai
 files.
 
+Index_fast - This application showcases the index creation on fasta/fastq
+reference files.
+
 Read_reg - This application showcases the usage of region specification in
 alignment read.
 
-Read_multireg - This application showcases the usage of mulitple regionn
+Read_multireg - This application showcases the usage of multiple region
 specification in alignment read.
 
 Read_fast_index - This application showcases the fasta/fastq data read using
@@ -134,12 +137,15 @@ handling. It saves the read1 and read2 as separate files in given directory,
 one as sam and other as bam. A pool of 4 threads is created and shared for both
 read and write.
 
-Qtask_thread - This application shocases the use of mulitple queues, scheduling
-of different tasks and getting results in orderered and unordered fashion. It
-saves the read1 and read2 as separate files in given directory, one as sam and
-other as bam. The samfile/read1 can have unordered data and bamfile/read2 will
-have ordered data.
+Qtask_ordered - This application showcases the use of queues and threads for
+custom processing. In this, alignments in input file are updated with GC ratio
+on a custom aux tag. The processing may occur in any order and the result is
+retrieved in same order as it was queued and saved to disk.
 
+Qtask_unordered - This application showcases the use of queues and threads for
+custom processing. In this, alignments in input files are split to different
+files for requested regions. The processing may occur in any order and results
+may appear in the order completion of processing.
 
 ## Building the sample apps
 
@@ -182,7 +188,7 @@ sam_read1 api. samFile pointer, header and bam storage are to be passed as
 argument and it returns 0 on success, -1 on end of file and < -1 in case of
 errors.
 
-The bam storage has to be initialised using bam_init1 api before the call and
+The bam storage has to be initialized using bam_init1 api before the call and
 can be reused for successive reads. Once done, it needs to be destroyed using
 bam_destroy1.  The member field named core - bam1_core_t - in bam storage,
 bam1_t, has the sequence data in an easily accessible way. Using the fields
@@ -488,7 +494,7 @@ indexing the seq_nt16_str array.
         for (i = 0; i < bamdata->core.l_qseq ; ++i) {       //sequence length
             printf("%c", seq_nt16_str[bam_seqi(data, i)]);  //retrieves the base from (internal compressed) sequence data
         ...
-            printf("%c", bam_get_qual(bamdata)[i]+33);      //retrives the quality value
+            printf("%c", bam_get_qual(bamdata)[i]+33);      //retrieves the quality value
         ...
 Refer: read_bam.c
 
@@ -816,15 +822,16 @@ The sam_index_build2 api takes the index file path as well and gives more
 control than the previous one.  The sam_index_build3 api provides an option to
 configure the number of threads in index creation.
 
-Index for a fasta file / reference data can be created using fai_build3 api
-after save of the same. It takes the filename and creates index files, fai and
-gzi based on compression status of input file. When fai/gzi path are NULL, they
-are created along with input file.
+Index for reference data can be created using fai_build3 api. This creates
+index file with .fai extension. If the file is bgzip-ped, a .gzi file is
+created as well. It takes the path to input file and that of fai and gzi files.
+When fai/gzi path are NULL, they are created along with input file.
+These index files will be useful for reference data access.
 
     ...
-    if (fai_build3(outname, NULL, NULL) == -1) {
+    if (fai_build3(filename, NULL, NULL) == -1) {
     ...
-Refer: write_fast.c
+Refer: index_fast.c
 
 A tabix index can be created for compressed vcf/sam/bed and other data using
 tbx_index_build. It is mainly used with vcf and non-sam type files.
@@ -950,7 +957,7 @@ destroyed by the user itself.
 For fasta/fastq files, the index has to be loaded using fai_load3_format which
 takes the file, index file names and format. With single region specification
 fai_fetch64 can be used to get bases, and fai_fetchqual64 for quality in case
-of fastq data. With multiple region specification, with comma separattion,
+of fastq data. With multiple region specification, with comma separation,
 faidx_fetch_seq64 and faidx_fetch_qual64 does the job. Regions has to be parsed
 using fai_parse_region in case of multiregion specifications. fai_adjust_region
 is used to adjust the start-end points based on available data.
@@ -996,32 +1003,13 @@ Below excerpt shows fasta/q access with single and multiregions,
     ...
 Refer: read_fast_index.c
 
-Tabix index can be loaded using tbx_index_load. Data can be retrieved using
-iterators, tbx_itr_querys / tbx_itr_queryi. It need to be destroyed using
-tbx_destroy at the end.
-
-Below excerpt shows usage of tabix index,
-
-    ...
-        //load index
-        if (!(idx = tbx_index_load3(inname, NULL, HTS_IDX_SILENT_FAIL))) {
-    ...
-        //read using index and region
-        if (!(iter = tbx_itr_querys(idx, region))) {
-    ...
-        while ((c = tbx_itr_next(infile, idx, iter, &data)) >= 0) {
-    ...
-            tbx_destroy(idx);
-    ...
-Refer: read_with_tabix.c
-
 
 ### Pileup and MPileup
 
 Pileup shows the transposed view of the SAM alignment data, i.e. it shows the
-the reference positions and bases which cover that position through different
-reads side by side. MPileup facilitates the piling up of multiple sam files
-against each other and same reference at the same time.
+reference positions and bases which cover that position through different reads
+side by side. MPileup facilitates the piling up of multiple sam files against
+each other and same reference at the same time.
 
 Mpileup has replaced the pileup. The input expects the data to be sorted by
 position.
@@ -1397,9 +1385,10 @@ Refer: flags_htsopt_field.c
 
 The HTSLib api supports thread pooling for better performance. There are a few
 ways in which this can be used. The pool can be made specific for a file or a
-generic pool can be created and shared across multiple files. Another way to
-use thread pool is to schedule tasks explicitly to queues which gets executed
-using threads in pool.
+generic pool can be created and shared across multiple files. Thread pool can
+also be used to execute user defined tasks. The tasks are to be queued on a
+queue and threads in pool executes them and results can be queued back if
+required.
 
 The samples are trivial ones to showcase the usage of api and the number of
 threads to use has to be identified based on complexity and parallelism of the
@@ -1426,7 +1415,7 @@ Below excerpt shows file specific thread pool,
     }
 Refer: split_thread1.c
 
-Below excerpt shows a thread pool shared across files, 
+Below excerpt shows a thread pool shared across files,
 
     ...
     //create a pool of 4 threads
@@ -1446,80 +1435,155 @@ Refer: split_thread2.c
 Note that it is important to analyze the task in hand to decide the number of
 threads to be used. As an example, if the number of threads for reading is set
 to 2 and bam write to 1, keeping total number of threads the same, the
-performance may decrease as decoding is easier than encoding.
+performance may decrease as bam decoding is easier than encoding.
 
-Task to be performed on data can be scheduled to a queue and a thread pool can
-be associated to it. There can be multiple pools and queues(processes). There
-are 2 type of queues, one where the result is queued back and retrieved in
-ordered fashion and other where the result may be unordered based on processing
-speed and number of threads. Explicitly created threads can also be used along
-with hts thread pool.
+Custom task / user defined functions can be performed on data using thread pool
+and for that, the task has to be scheduled to a queue. Thread pool associated
+with the queue will perform the task. There can be multiple pools and queues.
+The order of execution of threads are decided based on many factors and load on
+each task may vary, so the completion of the tasks may not be in the order of
+their queueing. The queues can be used in two different ways, one where the
+result is enqueued to queue again to be read in same order as initial queueing,
+two where the resuls is not enqueued and is readily available, possibly in a
+different order than initial queueing. Explicitly created threads can also be
+used along with hts thread pool usage.
 
-hts_tpool_process_init initializes the queue / process associates a queue with
-thread pool and reserves space for given number of tasks. It takes a parameter
-indicating whether it is for unordered processing or for ordered processing
-where it has to queue the result back. Usually 2 times the number of threads
-are reserved. hts_tpool_dispatch queues the data to the queue. If blocking /
-non-blocking control is required, hts_tpool_dispatch2 can be used instead. If
-hts_tpool_dispatch3 is used instead, it takes cleanup routines as well. The
-cleanup routines will be executed when hts_tpool_process_reset api is invoked,
-to reset the queue to have a restart. hts_tpool_process_flush can ensure that
-all the piledup tasks are processed, in case the queueing and processing happen
-at different speed. hts_tpool_process_shutdown api stops the processing of queue.
+hts_tpool_process_init initializes the queue / process, associates a queue with
+thread pool and reserves space for given number of tasks on queue. It takes a
+parameter indicating whether the result need to be enqueued for retrieval or
+not. If the result is enqueued, it is retrieved in the order of scheduling of
+task. Another parameter sets the maximum number of slots for tasks in queue,
+usually 2 times the number of threads are used. The input and output have their
+own queues and they grow as required upto the max set. hts_tpool_dispatch api
+enqueues the task to the queue. The api blocks when there is no space in queue.
+This behavior can be controlled with hts_tpool_dispatch2 api. The queue can be
+reset using hts_tpool_process_reset api where all tasks are discarded. The api
+hts_tpool_dispatch3 supports configuring cleanup routines which are to be run
+when reset occurs on the queue. hts_tpool_process_flush api can ensure that
+all the piled up tasks are processed, a possible case when the queueing and
+processing happen at different speeds. hts_tpool_process_shutdown api stops the
+processing of queue.
 
-Below excerpt shows the usage of 2 queues with a trivial sample, one where the
-processed result may be unordered - based on execution order - and writes as sam
-file. Other queue shows the processing and queueing back, for ordered retrieval
-and save as bam file,
+The order of execution of tasks depends on the number of threads involved and
+how the threads are scheduled by operating system. When the results are enqueued
+back to queue, they are read in same order of enqueueing of task and in that
+case the order of execution will not be noticed. When the results are not
+enqueued the results are available right away and the order of execution may be
+noticeable. Based on the nature of task and need of order maintenance, users
+can select either of the queueing.
 
+Below excerpts shows the usage of queues and threads in both cases. In the 1st,
+alignments are updated with an aux tag indicating GC ratio. The order of data
+has to be maintained even after update, hence the result queueing is used to
+ensure same order as initial. A number of alignments are bunched together for
+optimal processing.
     ...
-    //thread pool
-    if (!(pool = hts_tpool_init(cnt))) {
+    void *thread_ordered_proc(void *args)
+    {
     ...
-    //queue to use with thread pool, no queuing of results for Q1 and results queued for Q2
-    if (!(queue1 = hts_tpool_process_init(pool, cnt * 2, 1)) || 
-        !(queue2 = hts_tpool_process_init(pool, cnt * 2, 0))) {
+        for ( i = 0; i < bamdata->count; ++i) {
+            //add count
+            if (addcount(bamdata->bamarray[i]) < 0) {
     ...
-    //open output files - w write as SAM, wb  write as BAM
-    outfile1 = sam_open(file1, "w");
-    outfile2 = sam_open(file2, "wb");
+        return bamdata;
     ...
-    //start output writer thread for ordered processing
-    twritedata.outfile = outfile2; twritedata.queue = queue2; twritedata.done = &stopcond; twritedata.lock = &stopcondsynch;
-    twritedata.samhdr = in_samhdr;
-    if (pthread_create(&thread, NULL, threadfn_orderedwrite, &twritedata)) {
+    void *threadfn_orderedwrite(void *args)
+    {
+        ...
+        do {
+            //get result and write; wait if no result is in queue - until shutdown of queue
+            while ((r = hts_tpool_next_result(tdata->queue))) {
+                bamdata = (data*) hts_tpool_result_data(r);
+                for (i = 0; i < bamdata->count; ++i) {
+                    if (sam_write1(tdata->outfile, tdata->samhdr, bamdata->bamarray[i]) < 0) {
+        ...
+                hts_tpool_delete_result(r, 0);          //release the result memory
+        ..
+        } while (pthread_cond_timedwait(tdata->done, tdata->lock, &timeout) == ETIMEDOUT);
     ...
-    //check flags and schedule
-    while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
-        if (bamdata->core.flag & BAM_FREAD1) {
-            //read1, scheduling for unordered output, using Q1; processing occurs in order of thread execution
-            td_unordered *tdata = calloc(1, sizeof(td_unordered));
-            tdata->bamdata = bamdata; tdata->outfile = outfile1; tdata->lock = &filesynch; tdata->samhdr = in_samhdr;
-            if (hts_tpool_dispatch(pool, queue1, thread_unordered_proc, tdata) == -1) {
+    int main(int argc, char *argv[])
+    {
     ...
-        else if (bamdata->core.flag & BAM_FREAD2) {
-            //read2, scheduling for ordered output, using Q2; proces and result queueing occurs in order of thread execution and result retrieval
-            //showcases the threaded execution and ordered result handling on read2
-            if (hts_tpool_dispatch(pool, queue2, thread_ordered_proc, bamdata) == -1) {
+        if (!(pool = hts_tpool_init(cnt))) {                //thread pool
     ...
-        //EOF read
-        //clear the queues of any tasks; NOTE: will be blocked until queue is cleared
-        if (hts_tpool_process_flush(queue1) == -1 || hts_tpool_process_flush(queue2) == -1) {
+        //queue to use with thread pool, for task and results
+        if (!(queue = hts_tpool_process_init(pool, cnt * 2, 0))) {
     ...
-    //trigger exit for ordered write thread
-    if (thread) {
-        //shutown queues to exit the result wait
-        hts_tpool_process_shutdown(queue1);
-        hts_tpool_process_shutdown(queue2);
+        if (!(infile = sam_open(inname, "r"))) {
     ...
-    if (queue1) {
-        hts_tpool_process_destroy(queue1);
+        if (!(outfile = sam_open(file, "w"))) {
     ...
-    if (thread) {
-        pthread_join(thread, NULL);
+        //start output writer thread for ordered processing
+        if (pthread_create(&thread, NULL, threadfn_orderedwrite, &twritedata)) {
     ...
-Refer: qtask_thread.c
+        while (c >= 0) {
+            bamdata = getbamstorage(chunk);
+            //read alignments, upto max size for this lot
+            for (cnt = 0; cnt < bamdata->size; ++cnt) {
+    ...
+                //queue the lot for processing
+                if (hts_tpool_dispatch(pool, queue, thread_ordered_proc,
+                    bamdata) == -1) {
+    ...
+        if (-1 == c) {
+            //EOF read, trigger processing for anything pending, NOTE: will be blocked until queue is cleared
+            if (hts_tpool_process_flush(queue) == -1) {
+    ...
+        usleep(WAIT * 1000000);                     //to ensure result check is done atleast once after processing
+        //trigger exit for ordered write thread
+        pthread_cond_signal(twritedata.done);
+    ...
+        //shutdown queues to exit the result wait
+        hts_tpool_process_shutdown(queue);
+    ...
+Refer: qtask_ordered.c
 
+In this 2nd, the alignments from input are split to different files containing
+alignment specific to given regions. The order in which the output files are
+created doesnt matter and hence no result queueing is used.
+    ...
+    void * splittoregions(void *args)
+    {
+    ...
+        if (!(infile = sam_open(data->infile, "r"))) {
+    ...
+        if (!(in_samhdr = sam_hdr_read(infile))) {
+    ...
+        if (!(bamdata = bam_init1())) {
+    ...
+        if (!(idx = sam_index_load(infile, data->infile))) {
+    ...
+        if (!(iter = sam_itr_querys(idx, in_samhdr, region))) {
+    ...
+        if (!(outfile = sam_open(file, "w"))) {
+    ...
+        if (sam_hdr_write(outfile, in_samhdr) < 0) {
+    ...
+        while ((ret = sam_itr_next(infile, iter, bamdata)) >= 0) {  //read and write relevant data
+            if (sam_write1(outfile, in_samhdr, bamdata) < 0) {
+    ...
+    int main(int argc, char *argv[])
+    {
+    ...
+        //get regions from bedfile
+        if ((regcnt = readbedfile(bedfile, &regions)) < 0) {
+    ...
+        if (!(pool = hts_tpool_init(cnt))) {                //thread pool
+    ...
+        if (!(queue = hts_tpool_process_init(pool, cnt * 2, 1))) {
+    ...
+        for (c = 0; c < regcnt; ++c) {
+    ...
+            //schedule jobs to run in parallel
+            if (hts_tpool_dispatch(pool, queue, splittoregions, task) < 0) {
+    ...
+        //trigger processing for anything pending, NOTE: will be blocked until queue is cleared
+        if (hts_tpool_process_flush(queue) == -1) {
+    ...
+        //shutdown queues to exit the result wait
+        hts_tpool_process_shutdown(queue);
+    ...
+Refer: qtask_unordered.c
 
 ## More Information
 

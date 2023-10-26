@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE
 
 */
 
-/* The pupose of this code is to demonstrate the library apis and need proper error handling and optimization */
+/* The purpose of this code is to demonstrate the library apis and need proper error handling and optimisation */
 
 #include <getopt.h>
 #include <unistd.h>
@@ -32,8 +32,8 @@ DEALINGS IN THE SOFTWARE
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
 
-/// print_usage - show flags_demo usage
-/** @param fp pointer to the file / terminal to which demo_usage to be dumped
+/// print_usage - show usage
+/** @param fp pointer to the file / terminal to which usage to be dumped
 returns nothing
 */
 static void print_usage(FILE *fp)
@@ -101,12 +101,6 @@ int main(int argc, char *argv[])
     }
     if (sam_write1(outfile, out_samhdr, bamdata) < 0) {
         printf("Failed to write data\n");
-        goto end;
-    }
-    //close and index it
-    sam_close(outfile); outfile = NULL;
-    if (fai_build3(outname, NULL, NULL) == -1) {
-        printf("Indexing failed with %d\n", errno);
         goto end;
     }
     ret = EXIT_SUCCESS;
