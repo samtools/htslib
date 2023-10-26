@@ -1506,17 +1506,12 @@ and save as bam file,
         //clear the queues of any tasks; NOTE: will be blocked until queue is cleared
         if (hts_tpool_process_flush(queue1) == -1 || hts_tpool_process_flush(queue2) == -1) {
     ...
-    //trigger exit for ordered write thread
-    if (thread) {
-        //shutown queues to exit the result wait
-        hts_tpool_process_shutdown(queue1);
-        hts_tpool_process_shutdown(queue2);
+    //shutown queues to exit the result wait
+    hts_tpool_process_shutdown(queue1);
+    hts_tpool_process_shutdown(queue2);
     ...
     if (queue1) {
         hts_tpool_process_destroy(queue1);
-    ...
-    if (thread) {
-        pthread_join(thread, NULL);
     ...
 Refer: qtask_thread.c
 

@@ -182,19 +182,19 @@ int main(int argc, char *argv[])
 {
     const char *inname = NULL, *outdir = NULL;
     char *file1 = NULL, *file2 = NULL;
-    int c = 0, ret = EXIT_FAILURE, cnt = 0;
+    int c = 0, ret = EXIT_FAILURE, cnt = 0, clearthread = 0;
     size_t size = 0;
     samFile *infile = NULL, *outfile1 = NULL, *outfile2 = NULL;
     sam_hdr_t *in_samhdr = NULL;
     bam1_t *bamdata = NULL;
     pthread_mutex_t filesynch = PTHREAD_MUTEX_INITIALIZER, stopcondsynch = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t stopcond = PTHREAD_COND_INITIALIZER;
-    pthread_t thread = 0;
+    pthread_t thread;
     td_orderedwrite twritedata = {0};
     hts_tpool *pool = NULL;
     hts_tpool_process *queue1 = NULL, *queue2 = NULL;
 
-    //split_t3 infile threadcount outdir
+    //qtask infile threadcount outdir
     if (argc != 4) {
         print_usage(stdout);
         goto end;
@@ -209,7 +209,8 @@ int main(int argc, char *argv[])
 
     //allocate space for output
     size = (strlen(outdir) + sizeof("/1.sam") + 1); //space for output file name and null termination
-    file1 = malloc(size); file2 = malloc(size);
+    file1 = malloc(size);
+    file2 = malloc(size);
     if (!file1 || !file2) {
         printf("Failed to set output path\n");
         goto end;
@@ -262,6 +263,7 @@ int main(int argc, char *argv[])
         printf("Failed to create writer thread\n");
         goto end;
     }
+    clearthread = 1;
     //write header
     if ((sam_hdr_write(outfile1, in_samhdr) == -1) ||
         (sam_hdr_write(outfile2, in_samhdr) == -1)) {
@@ -305,20 +307,18 @@ int main(int argc, char *argv[])
         printf("Error in reading data\n");
     }
 
+    //shutown queues to exit the result wait
+    hts_tpool_process_shutdown(queue1);
+    hts_tpool_process_shutdown(queue2);
     //trigger exit for ordered write thread
-    if (thread) {
-        //shutown queues to exit the result wait
-        hts_tpool_process_shutdown(queue1);
-        hts_tpool_process_shutdown(queue2);
-
-        pthread_mutex_lock(twritedata.lock);
-        pthread_cond_signal(twritedata.done);
-        pthread_mutex_unlock(twritedata.lock);
-        pthread_join(thread, NULL);
-        thread = 0;
-    }
+    pthread_mutex_lock(twritedata.lock);
+    pthread_cond_signal(twritedata.done);
+    pthread_mutex_unlock(twritedata.lock);
 end:
     //cleanup
+    if (clearthread) {
+        pthread_join(thread, NULL);
+    }
     if (in_samhdr) {
         sam_hdr_destroy(in_samhdr);
     }
@@ -348,9 +348,6 @@ end:
     }
     if (pool) {
         hts_tpool_destroy(pool);
-    }
-    if (thread) {
-        pthread_join(thread, NULL);
     }
     return ret;
 }
