@@ -39,7 +39,7 @@
 #   and this notice are preserved.  This file is offered as-is, without any
 #   warranty.
 
-#   AX_CHECK_COMPILE_FLAGS_NEEDED(FEATURE, FLAG, [ACTION-SUCCESS], [ACTION-FAILURE], [EXTRA-FLAGS], [INPUT])
+#   HTS_CHECK_COMPILE_FLAGS_NEEDED(FEATURE, FLAGS, [INPUT], [ACTION-SUCCESS], [ACTION-FAILURE], [EXTRA-FLAGS])
 
 AC_DEFUN([HTS_CHECK_COMPILE_FLAGS_NEEDED],
 [AC_PREREQ(2.64)dnl for _AC_LANG_PREFIX and AS_VAR_IF
@@ -50,7 +50,7 @@ AC_CACHE_CHECK([_AC_LANG compiler flags needed for $1], CACHEVAR, [
     [ax_check_save_flags=$[]_AC_LANG_PREFIX[]FLAGS
      _AC_LANG_PREFIX[]FLAGS="$[]_AC_LANG_PREFIX[]FLAGS $6 $2"
      AC_LINK_IFELSE([m4_default([$3],[AC_LANG_PROGRAM()])],
-       [AS_VAR_SET(CACHEVAR,[$2])],
+       [AS_VAR_SET(CACHEVAR,["$2"])],
        [AS_VAR_SET(CACHEVAR,[unsupported])])
      _AC_LANG_PREFIX[]FLAGS=$ax_check_save_flags])])
 AS_VAR_IF(CACHEVAR,unsupported, [
