@@ -826,8 +826,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
             return -1;
         }
 
-        cpos = htell(fd->fp);
-        assert(cpos == hpos + c->length);
+        off_t next_cpos = htell(fd->fp);
+        if (next_cpos != hpos + c->length) {
+            hts_log_error("Length %"PRId32" in container header at offset %lld does not match block lengths (%lld)",
+                          c->length, (long long) cpos, (long long) next_cpos - hpos);
+            return -1;
+        }
+        cpos = next_cpos;
 
         cram_free_container(c);
     }
