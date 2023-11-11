@@ -2216,7 +2216,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag);
  @field canonical_base    The canonical base referred to in the MM tag.
                           One of A, C, G, T or N.  Note this may not be the
                           explicit base recorded in the SEQ column (esp. if N).
- @field stran             0 or 1, indicating + or - strand from MM tag.
+ @field strand            0 or 1, indicating + or - strand from MM tag.
  @field qual              Quality code (256*probability), or -1 if unknown
 
  @discussion
@@ -2230,10 +2230,10 @@ typedef struct hts_base_mod {
     int qual;
 } hts_base_mod;
 
-#define HTS_MOD_UNKNOWN   -1  // In MM but no ML
+#define HTS_MOD_UNKNOWN   -1  // In MM but not ML
 #define HTS_MOD_UNCHECKED -2  // Not in MM and in explicit mode
 
-// Flags for hts_parse_basemod2
+// Flags for bam_parse_basemod2
 #define HTS_MOD_REPORT_UNCHECKED 1
 
 /// Allocates an hts_base_mode_state.
@@ -2259,7 +2259,7 @@ hts_base_mod_state *hts_base_mod_state_alloc(void);
 HTSLIB_EXPORT
 void hts_base_mod_state_free(hts_base_mod_state *state);
 
-/// Parses the Mm and Ml tags out of a bam record.
+/// Parses the MM and ML tags out of a bam record.
 /**
  * @param b        BAM alignment record
  * @param state    The base modification state pointer.
@@ -2268,11 +2268,12 @@ void hts_base_mod_state_free(hts_base_mod_state *state);
  *
  * This fills out the contents of the modification state, resetting the
  * iterator location to the first sequence base.
+ * (Parses the draft Mm/Ml tags instead if MM and/or ML are not present.)
  */
 HTSLIB_EXPORT
 int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state);
 
-/// Parses the Mm and Ml tags out of a bam record.
+/// Parses the MM and ML tags out of a bam record.
 /**
  * @param b        BAM alignment record
  * @param state    The base modification state pointer.
@@ -2283,6 +2284,7 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state);
  *
  * This fills out the contents of the modification state, resetting the
  * iterator location to the first sequence base.
+ * (Parses the draft Mm/Ml tags instead if MM and/or ML are not present.)
  */
 HTSLIB_EXPORT
 int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
