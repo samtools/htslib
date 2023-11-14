@@ -2202,7 +2202,7 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     if ( hfp->format.format == vcf || hfp->format.format == text_format )
         return vcf_write(hfp,h,v);
 
-    if ( v->errcode )
+    if ( v->errcode & ~BCF_ERR_LIMITS ) // todo: unsure about the other BCF_ERR_LIMITS branches in vcf_parse_format_alloc4()
     {
         // vcf_parse1() encountered a new contig or tag, undeclared in the
         // header.  At this point, the header must have been printed,
@@ -3004,9 +3004,12 @@ static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         // malformed VCF data is less likely to take excessive memory and/or
         // time.
         if ((uint64_t) mem->l + v->n_sample * (uint64_t)f->size > INT_MAX) {
-            hts_log_error("Excessive memory required by FORMAT fields at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
+            static int warned = 0;
+            if ( !warned ) hts_log_warning("Excessive memory required by FORMAT fields at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
+            warned = 1;
             v->errcode |= BCF_ERR_LIMITS;
-            return -1;
+            f->size = f->offset = 0;
+            continue;
         }
 
         f->offset = mem->l;
@@ -3065,7 +3068,12 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 return -1;
             }
 
-            if (htype == BCF_HT_STR) {
+            if ( !z->size )
+            {
+                // this field is to be ignored, it's too big
+                while ( *t != ':' && *t ) t++;
+            }
+            else if (htype == BCF_HT_STR) {
                 int l;
                 if (z->is_gt) {
                     // Genotypes.
@@ -3237,10 +3245,14 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 static int vcf_parse_format_gt6(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                                 const char *p, const char *q, fmt_aux_t *fmt) {
     kstring_t *str = &v->indiv;
-    int i;
+    int i, need_downsize = 0;
     if (v->n_sample > 0) {
         for (i = 0; i < v->n_fmt; ++i) {
             fmt_aux_t *z = &fmt[i];
+            if ( !z->size ) {
+                need_downsize = 1;
+                continue;
+            }
             bcf_enc_int1(str, z->key);
             if ((z->y>>4&0xf) == BCF_HT_STR && !z->is_gt) {
                 bcf_enc_size(str, z->size, BCF_BT_CHAR);
@@ -3256,6 +3268,19 @@ static int vcf_parse_format_gt6(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                     return -1;
                 }
             }
+        }
+
+    }
+    if ( need_downsize ) {
+        i = 1;
+        while ( i < v->n_fmt ) {
+            if ( !fmt[i].size )
+            {
+                memmove(&fmt[i-1],&fmt[i],sizeof(*fmt));
+                v->n_fmt--;
+            }
+            else
+                i++;
         }
     }
 
