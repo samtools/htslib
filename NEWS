@@ -1,7 +1,4 @@
 Noteworthy changes in release a.b
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Noteworthy changes in release 1.18 (25th July 2023)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Updates
@@ -39,10 +36,10 @@ Updates
   (PR#1669)
   
 * Speed up removal of lines in large headers.
-  (PR#1662, fixes #1460.  Reported by An\u017ee Stari\u010d)
-  
+  (PR#1662, fixes #1460.  Reported by Anže Starič)
+
 * Apply seqtk PR to improve kseq.h parsing performance.  Port of
-  Fabian Kl�tzl's (kloetzl) lh3/seqtk#123 and attractivechaos/klib#173 to
+  Fabian Klötzl's (kloetzl) lh3/seqtk#123 and attractivechaos/klib#173 to
   HTSlib.
   (PR#1674.  Thanks to John Marshall)
   
@@ -95,6 +92,9 @@ Bug fixes
 * Fix crypt4gh redirection.
   (PR#1675, fixes  grbot/crypt4gh-tutorial#2.  Reported by hth4)
 
+
+Noteworthy changes in release 1.18 (25th July 2023)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Updates
 -------
