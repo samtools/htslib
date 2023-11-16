@@ -528,6 +528,12 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
         cp += fd->vv.varint_put64(cp, NULL, s->hdr->ref_seq_start);
         cp += fd->vv.varint_put64(cp, NULL, s->hdr->ref_seq_span);
     } else {
+        if (s->hdr->ref_seq_start < 0 || s->hdr->ref_seq_start > INT_MAX) {
+            hts_log_error("Reference position too large for CRAM 3");
+            cram_free_block(b);
+            free(buf);
+            return NULL;
+        }
         cp += fd->vv.varint_put32(cp, NULL, s->hdr->ref_seq_start);
         cp += fd->vv.varint_put32(cp, NULL, s->hdr->ref_seq_span);
     }
