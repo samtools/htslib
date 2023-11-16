@@ -1760,6 +1760,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     int r1, r2, sn, nref, embed_ref, no_ref;
     spare_bams *spares;
 
+    if (!c->bams)
+        goto err;
+
     if (CRAM_MAJOR_VERS(fd->version) == 1)
         goto err;
 
