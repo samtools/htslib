@@ -1004,6 +1004,86 @@ static void test_header_pg_lines(void) {
     return;
 }
 
+// Test handling of @PG PP loops
+static void test_header_pg_loops(void) {
+    static const char *header_texts[2] = {
+        // Loop to self
+        "data:,"
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop1\n",
+
+        // circuit
+        "data:,"
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop2\n"
+        "@PG\tID:loop2\tPN:prog2\tPP:loop1\n"
+    };
+
+    static const char *expected[2] = {
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop1\n"
+        "@PG\tID:new_prog\tPN:new_prog\tPP:loop1\n",
+
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop2\n"
+        "@PG\tID:loop2\tPN:prog2\tPP:loop1\n"
+        "@PG\tID:new_prog\tPN:new_prog\n"
+    };
+
+    int i, r;
+    samFile *in = NULL;
+    sam_hdr_t *header = NULL;
+    const char *text = NULL;
+    enum htsLogLevel old_log_level = hts_get_log_level();
+
+    // Silence header loop warning
+    hts_set_log_level(HTS_LOG_OFF);
+
+    for (i = 0; i < 2; i++) {
+        in = sam_open(header_texts[i], "r");
+        if (!in) {
+            fail("couldn't open file for PG loop test %d", i);
+            goto err;
+        }
+
+        header = sam_hdr_read(in);
+        if (!header) {
+            fail("reading header for PG loop test %d", i);
+            goto err;
+        }
+
+        r = sam_hdr_add_pg(header, "new_prog", NULL);
+        if (r != 0) {
+            fail("sam_hdr_add_pg new_prog for PG loop test %d", i);
+            goto err;
+        }
+
+        text = sam_hdr_str(header);
+        if (!text || strcmp(text, expected[i]) != 0) {
+            fail("edited header does not match expected version for PG loop test %d", i);
+            fprintf(stderr,
+                    "---------- Expected:\n%s\n"
+                    "++++++++++ Got:\n%s\n"
+                    "====================\n",
+                    expected[i], text);
+            goto err;
+        }
+        sam_hdr_destroy(header);
+        header = NULL;
+        if (in) sam_close(in);
+        in = NULL;
+    }
+    hts_set_log_level(old_log_level);
+    return;
+
+ err:
+    sam_hdr_destroy(header);
+    header = NULL;
+    if (in) sam_close(in);
+    hts_set_log_level(old_log_level);
+    return;
+}
+
 static void test_header_updates(void) {
     static const char header_text[] =
         "@HD\tVN:1.4\n"
@@ -2256,6 +2336,7 @@ int main(int argc, char **argv)
     samrecord_layout();
     use_header_api();
     test_header_pg_lines();
+    test_header_pg_loops();
     test_header_updates();
     test_header_remove_lines();
     test_header_ref_altnames();
