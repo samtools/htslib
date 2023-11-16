@@ -1454,6 +1454,12 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
     if (pos < *ref_end)
         return 0;
 
+    // Refuse to work on excessively large blocks.
+    // We'll just switch to referenceless encoding, which is probably better
+    // here as this must be very sparse data anyway.
+    if (*ref_end - ref_start > UINT_MAX/sizeof(**hist))
+        return -1;
+
     // realloc
     hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
     hts_pos_t new_end = *ref_end = ref_start + 1000 + (pos-ref_start)*1.5;
