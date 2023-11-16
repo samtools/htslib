@@ -1458,7 +1458,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
     hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
     hts_pos_t new_end = *ref_end = ref_start + 1000 + (pos-ref_start)*1.5;
 
-    char *tmp = realloc(*ref, *ref_end-ref_start);
+    char *tmp = realloc(*ref, *ref_end-ref_start+1);
     if (!tmp)
         return -1;
     *ref = tmp;
