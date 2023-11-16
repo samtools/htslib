@@ -1648,6 +1648,8 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     char *ref = NULL;
     uint32_t (*hist)[5] = NULL;
     hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0;
+    if (ref_start < 0)
+        return -1; // cannot build consensus from unmapped data
 
     // initial allocation
     if (extend_ref(&ref, &hist,
