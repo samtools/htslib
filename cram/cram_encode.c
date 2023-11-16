@@ -3558,7 +3558,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->cigar  = 0;
         cr->ncigar = 0;
         cr->nfeature = 0;
-        cr->aend = cr->apos;
+        cr->aend = MIN(cr->apos, c->ref_end);
         for (i = 0; i < cr->len; i++)
             if (cram_stats_add(c->stats[DS_BA], seq[i]) < 0)
                 goto block_err;
