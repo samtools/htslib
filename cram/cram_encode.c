@@ -1696,6 +1696,7 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     c->ref       = ref;
     c->ref_start = ref_start+1;
     c->ref_end   = ref_end+1;
+    c->ref_free  = 1;
 
     return 0;
 
@@ -1836,8 +1837,13 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             // This starts as 'N' and is amended on-the-fly as we go
             // based on MD:Z tags.
             if ((c->ref_id = bam_ref(b)) >= 0) {
-                c->ref_free = 1;
                 c->ref = NULL;
+                // c->ref_free is boolean; whether to free c->ref.  In this
+                // case c->ref will be our auto-embedded sequence instead of
+                // a "global" portion of reference from fd->refs.
+                // Do not confuse with fd->ref_free which is a pointer to a
+                // reference string to free.
+                c->ref_free = 1;
             }
         }
         c->ref_seq_id = c->ref_id;
@@ -2418,7 +2424,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     c->comp_hdr_block = c_hdr;
 
     if (c->ref_seq_id >= 0) {
-        cram_ref_decr(fd->refs, c->ref_seq_id);
+        if (c->ref_free) {
+            free(c->ref);
+            c->ref = NULL;
+        } else {
+            cram_ref_decr(fd->refs, c->ref_seq_id);
+        }
     }
 
     /* Cache references up-front if we have unsorted access patterns */
