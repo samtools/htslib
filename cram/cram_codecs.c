@@ -1233,7 +1233,8 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
                                   void *dat,
                                   int version, varint_vec *vv) {
     cram_codec *c;
-    int min_val, max_val, len = 0;
+    hts_pos_t min_val, max_val;
+    int len = 0;
     int64_t range;
 
     c = malloc(sizeof(*c));
@@ -1251,8 +1252,8 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
     c->flush = NULL;
 
     if (dat) {
-        min_val = ((int *)dat)[0];
-        max_val = ((int *)dat)[1];
+        min_val = ((hts_pos_t *)dat)[0];
+        max_val = ((hts_pos_t *)dat)[1];
     } else {
         min_val = INT_MAX;
         max_val = INT_MIN;
@@ -1280,9 +1281,26 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
         }
     }
 
-    assert(max_val >= min_val);
-    c->u.e_beta.offset = -min_val;
+    if (max_val < min_val)
+        goto err;
+
     range = (int64_t) max_val - min_val;
+    switch (option) {
+    case E_SINT:
+        if (min_val < INT_MIN || range > INT_MAX)
+            goto err;
+        break;
+
+    case E_INT:
+        if (max_val > UINT_MAX || range > UINT_MAX)
+            goto err;
+        break;
+
+    default:
+        break;
+    }
+
+    c->u.e_beta.offset = -min_val;
     while (range) {
         len++;
         range >>= 1;
@@ -1290,6 +1308,10 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
     c->u.e_beta.nbits = len;
 
     return c;
+
+ err:
+    free(c);
+    return NULL;
 }
 
 /*

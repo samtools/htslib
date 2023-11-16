@@ -2104,7 +2104,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     } else {
         // Removed BETA in v4.0.
         // Should we consider dropping use of it for 3.0 too?
-        int p[2] = {0, c->max_apos};
+        hts_pos_t p[2] = {0, c->max_apos};
         h->codecs[DS_AP] = cram_encoder_init(E_BETA, NULL,
                                              is_v4 ? E_LONG : E_INT,
                                              p, fd->version, &fd->vv);
