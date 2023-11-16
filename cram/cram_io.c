@@ -5533,7 +5533,7 @@ int cram_write_eof_block(cram_fd *fd) {
  */
 int cram_close(cram_fd *fd) {
     spare_bams *bl, *next;
-    int i;
+    int i, ret = 0;
 
     if (!fd)
         return -1;
@@ -5543,7 +5543,7 @@ int cram_close(cram_fd *fd) {
             cram_update_curr_slice(fd->ctr, fd->version);
 
         if (-1 == cram_flush_container_mt(fd, fd->ctr))
-            return -1;
+            ret = -1;
     }
 
     if (fd->mode != 'w')
@@ -5553,7 +5553,7 @@ int cram_close(cram_fd *fd) {
         hts_tpool_process_flush(fd->rqueue);
 
         if (0 != cram_flush_result(fd))
-            return -1;
+            ret = -1;
 
         if (fd->mode == 'w')
             fd->ctr = NULL; // prevent double freeing
@@ -5568,10 +5568,10 @@ int cram_close(cram_fd *fd) {
     pthread_mutex_destroy(&fd->range_lock);
     pthread_mutex_destroy(&fd->bam_list_lock);
 
-    if (fd->mode == 'w') {
+    if (ret == 0 && fd->mode == 'w') {
         /* Write EOF block */
         if (0 != cram_write_eof_block(fd))
-            return -1;
+            ret = -1;
     }
 
     for (bl = fd->bl; bl; bl = next) {
@@ -5587,7 +5587,7 @@ int cram_close(cram_fd *fd) {
     }
 
     if (hclose(fd->fp) != 0)
-        return -1;
+        ret = -1;
 
     if (fd->file_def)
         cram_free_file_def(fd->file_def);
@@ -5631,10 +5631,11 @@ int cram_close(cram_fd *fd) {
 
     if (fd->idxfp)
         if (bgzf_close(fd->idxfp) < 0)
-            return -1;
+            ret = -1;
 
     free(fd);
-    return 0;
+
+    return ret;
 }
 
 /*
