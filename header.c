@@ -2139,23 +2139,34 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
         k = kh_get(m_s2i, hrecs->pg_hash, tag->str+3);
 
         if (k == kh_end(hrecs->pg_hash)) {
-            hts_log_warning("PG line with PN:%s has a PP link to missing program '%s'",
+            hts_log_warning("PG line with ID:%s has a PP link to missing program '%s'",
                     hrecs->pg[i].name, tag->str+3);
             continue;
         }
 
-        hrecs->pg[i].prev_id = hrecs->pg[kh_val(hrecs->pg_hash, k)].id;
-        hrecs->pg_end[kh_val(hrecs->pg_hash, k)] = -1;
-        chain_size[i] = chain_size[kh_val(hrecs->pg_hash, k)]+1;
+        int pp_idx = kh_val(hrecs->pg_hash, k);
+        if (pp_idx == i) {
+            hts_log_warning("PG line with ID:%s has a PP link to itself",
+                            hrecs->pg[i].name);
+            continue;
+        }
+
+        hrecs->pg[i].prev_id = hrecs->pg[pp_idx].id;
+        hrecs->pg_end[pp_idx] = -1;
+        chain_size[i] = chain_size[pp_idx]+1;
     }
 
+    int last_end = -1;
     for (i = j = 0; i < hrecs->npg; i++) {
-        if (hrecs->pg_end[i] != -1 && chain_size[i] > 0)
-            hrecs->pg_end[j++] = hrecs->pg_end[i];
+        if (hrecs->pg_end[i] != -1) {
+            last_end = hrecs->pg_end[i];
+            if (chain_size[i] > 0)
+                hrecs->pg_end[j++] = hrecs->pg_end[i];
+        }
     }
     /* Only leafs? Choose the last one! */
-    if (!j && hrecs->npg_end > 0) {
-        hrecs->pg_end[0] = hrecs->pg_end[hrecs->npg_end-1];
+    if (!j && hrecs->npg_end > 0 && last_end >= 0) {
+        hrecs->pg_end[0] = last_end;
         j = 1;
     }
 
@@ -2294,6 +2305,7 @@ int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
                 free(end);
                 return -1;
             }
+            assert(end[i] >= 0 && end[i] < hrecs->npg);
             va_start(args, name);
             if (-1 == sam_hrecs_vadd(hrecs, "PG", args,
                                      "ID", id,
