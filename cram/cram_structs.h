@@ -822,6 +822,7 @@ struct cram_fd {
     int slices_per_container;
     int embed_ref; // copied to container
     int no_ref;    // copied to container
+    int no_ref_counter; // decide if permanent switch
     int ignore_md5;
     int use_bz2;
     int use_rans;

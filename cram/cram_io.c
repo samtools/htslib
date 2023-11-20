@@ -5353,6 +5353,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->slices_per_container = SLICE_PER_CNT;
     fd->embed_ref = -1; // automatic selection
     fd->no_ref = 0;
+    fd->no_ref_counter = 0;
     fd->ap_delta = 0;
     fd->ignore_md5 = 0;
     fd->lossy_read_names = 0;

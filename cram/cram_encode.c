@@ -1488,6 +1488,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
 }
 
 // Walk through MD + seq to generate ref
+// Returns 1 on success, <0 on failure
 static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                               hts_pos_t ref_start, hts_pos_t *ref_end,
                               const uint8_t *MD) {
@@ -1784,6 +1785,20 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 //#define goto_err {fprintf(stderr, "ERR at %s:%d\n", __FILE__, __LINE__);goto err;}
 #define goto_err goto err
 
+    // Don't try embed ref if we repeatedly fail
+    pthread_mutex_lock(&fd->ref_lock);
+    int failed_embed = (fd->no_ref_counter >= 5); // maximum 5 tries
+    if (!failed_embed && c->embed_ref == -2) {
+        hts_log_warning("Retrying embed_ref=2 mode for #%d/5", fd->no_ref_counter);
+        fd->no_ref = c->no_ref = 0;
+        fd->embed_ref = c->embed_ref = 2;
+    } else if (failed_embed && c->embed_ref == -2) {
+        // We've tried several times, so this time give up for good
+        hts_log_warning("Keeping non-ref mode from now on");
+        fd->embed_ref = c->embed_ref = 0;
+    }
+    pthread_mutex_unlock(&fd->ref_lock);
+
  restart:
     /* Cache references up-front if we have unsorted access patterns */
     pthread_mutex_lock(&fd->ref_lock);
@@ -1916,10 +1931,16 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                                     "switching to non-ref mode");
                 }
                 pthread_mutex_lock(&fd->ref_lock);
-                c->embed_ref = fd->embed_ref = 0;
+                c->embed_ref = fd->embed_ref = -2; // was previously embed_ref
                 c->no_ref = fd->no_ref = 1;
+                fd->no_ref_counter++; // more likely to keep permanent action
                 pthread_mutex_unlock(&fd->ref_lock);
+                failed_embed = 1;
                 goto restart;
+            } else {
+                pthread_mutex_lock(&fd->ref_lock);
+                fd->no_ref_counter -= (fd->no_ref_counter > 0);
+                pthread_mutex_unlock(&fd->ref_lock);
             }
         }
 
