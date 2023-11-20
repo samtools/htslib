@@ -3696,6 +3696,14 @@ cram_container *cram_new_container(int nrec, int nslice) {
     return NULL;
 }
 
+static void free_bam_list(bam_seq_t **bams, int max_rec) {
+    int i;
+    for (i = 0; i < max_rec; i++)
+        bam_free(bams[i]);
+
+    free(bams);
+}
+
 void cram_free_container(cram_container *c) {
     enum cram_DS_ID id;
     int i;
@@ -3749,6 +3757,14 @@ void cram_free_container(cram_container *c) {
                 cram_codec *c = tm->codec;
 
                 if (c) c->free(c);
+
+                // If tm->blk or tm->blk2 is set, then we haven't yet got to
+                // cram_encode_container which copies the blocks to s->aux_block
+                // and NULLifies tm->blk*.  In this case we failed to complete
+                // the container construction, so we have to free up our partially
+                // converted CRAM.
+                cram_free_block(tm->blk);
+                cram_free_block(tm->blk2);
                 free(tm);
             }
         }
@@ -3758,6 +3774,9 @@ void cram_free_container(cram_container *c) {
 
     if (c->ref_free)
         free(c->ref);
+
+    if (c->bams)
+        free_bam_list(c->bams, c->max_c_rec);
 
     free(c);
 }
@@ -4419,6 +4438,14 @@ void cram_free_slice(cram_slice *s) {
             }
         }
         free(s->block);
+    }
+
+    {
+        // Normally already copied into s->block[], but potentially still
+        // here if we error part way through cram_encode_slice.
+        int i;
+        for (i = 0; i < s->naux_block; i++)
+            cram_free_block(s->aux_block[i]);
     }
 
     if (s->block_by_id)
@@ -5526,6 +5553,7 @@ int cram_write_eof_block(cram_fd *fd) {
 
     return 0;
 }
+
 /*
  * Closes a CRAM file.
  * Returns 0 on success
@@ -5575,14 +5603,10 @@ int cram_close(cram_fd *fd) {
     }
 
     for (bl = fd->bl; bl; bl = next) {
-        int i, max_rec = fd->seqs_per_slice * fd->slices_per_container;
+        int max_rec = fd->seqs_per_slice * fd->slices_per_container;
 
         next = bl->next;
-        for (i = 0; i < max_rec; i++) {
-            if (bl->bams[i])
-                bam_free(bl->bams[i]);
-        }
-        free(bl->bams);
+        free_bam_list(bl->bams, max_rec);
         free(bl);
     }
 

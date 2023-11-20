@@ -1163,8 +1163,10 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     if (c->tags_used) {
         int n;
         s->hdr->num_blocks = DS_END;
-        for (n = 0; n < s->naux_block; n++)
+        for (n = 0; n < s->naux_block; n++) {
             s->block[s->hdr->num_blocks++] = s->aux_block[n];
+            s->aux_block[n] = NULL;
+        }
     }
 
     /* Encode reads */
@@ -1454,23 +1456,23 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
     if (pos < *ref_end)
         return 0;
 
+    // realloc
+    hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
+    hts_pos_t new_end = ref_start + 1000 + (pos-ref_start)*1.5;
+
     // Refuse to work on excessively large blocks.
     // We'll just switch to referenceless encoding, which is probably better
     // here as this must be very sparse data anyway.
-    if (*ref_end - ref_start > UINT_MAX/sizeof(**hist))
-        return -1;
+    if (new_end - ref_start > UINT_MAX/sizeof(**hist)/2)
+        return -2;
 
-    // realloc
-    hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
-    hts_pos_t new_end = *ref_end = ref_start + 1000 + (pos-ref_start)*1.5;
-
-    char *tmp = realloc(*ref, *ref_end-ref_start+1);
+    char *tmp = realloc(*ref, new_end-ref_start+1);
     if (!tmp)
         return -1;
     *ref = tmp;
 
     uint32_t (*tmp5)[5] = realloc(**hist,
-                                  (*ref_end - ref_start)*sizeof(**hist));
+                                  (new_end - ref_start)*sizeof(**hist));
     if (!tmp5)
         return -1;
     *hist = tmp5;
