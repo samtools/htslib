@@ -1000,9 +1000,9 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->num_blocks      = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     hdr->num_content_ids = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     if (hdr->num_content_ids < 1 ||
-        hdr->num_content_ids >= SIZE_MAX / sizeof(int32_t)) {
-        /* Slice must have at least one data block,
-           and malloc'd size shouldn't wrap. */
+        hdr->num_content_ids >= 10000) {
+        // Slice must have at least one data block, and there is no need
+        // for more than 2 per possible aux-tag plus ancillary.
         free(hdr);
         return NULL;
     }
