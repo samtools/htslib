@@ -3008,7 +3008,8 @@ static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             if ( !warned ) hts_log_warning("Excessive memory required by FORMAT fields at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
             warned = 1;
             v->errcode |= BCF_ERR_LIMITS;
-            f->size = f->offset = 0;
+            f->size = -1;
+            f->offset = 0;
             continue;
         }
 
@@ -3068,7 +3069,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 return -1;
             }
 
-            if ( !z->size )
+            if ( z->size==-1 )
             {
                 // this field is to be ignored, it's too big
                 while ( *t != ':' && *t ) t++;
@@ -3249,7 +3250,7 @@ static int vcf_parse_format_gt6(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     if (v->n_sample > 0) {
         for (i = 0; i < v->n_fmt; ++i) {
             fmt_aux_t *z = &fmt[i];
-            if ( !z->size ) {
+            if ( z->size==-1 ) {
                 need_downsize = 1;
                 continue;
             }
@@ -3274,7 +3275,7 @@ static int vcf_parse_format_gt6(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     if ( need_downsize ) {
         i = 1;
         while ( i < v->n_fmt ) {
-            if ( !fmt[i].size )
+            if ( fmt[i].size==-1 )
             {
                 memmove(&fmt[i-1],&fmt[i],sizeof(*fmt));
                 v->n_fmt--;
