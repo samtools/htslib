@@ -1000,9 +1000,9 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->num_blocks      = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     hdr->num_content_ids = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     if (hdr->num_content_ids < 1 ||
-        hdr->num_content_ids >= SIZE_MAX / sizeof(int32_t)) {
-        /* Slice must have at least one data block,
-           and malloc'd size shouldn't wrap. */
+        hdr->num_content_ids >= 10000) {
+        // Slice must have at least one data block, and there is no need
+        // for more than 2 per possible aux-tag plus ancillary.
         free(hdr);
         return NULL;
     }
@@ -2351,7 +2351,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             s->ref_start = s->hdr->ref_seq_start;
             s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
             if (s->hdr->ref_seq_span > b->uncomp_size) {
-                hts_log_error("Embedded reference is too small at #%d:%d-%d",
+                hts_log_error("Embedded reference is too small at #%d:%"PRIhts_pos"-%"PRIhts_pos,
                               ref_id, s->ref_start, s->ref_end);
                 return -1;
             }
@@ -2410,7 +2410,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (s->hdr->ref_seq_start >= s->ref_start) {
                 start = s->hdr->ref_seq_start - s->ref_start;
             } else {
-                hts_log_warning("Slice starts before base 1 at #%d:%d-%d",
+                hts_log_warning("Slice starts before base 1 at #%d:%"PRIhts_pos"-%"PRIhts_pos,
                                 ref_id, s->ref_start, s->ref_end);
                 start = 0;
             }
@@ -2418,7 +2418,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (s->hdr->ref_seq_span <= s->ref_end - s->ref_start + 1) {
                 len = s->hdr->ref_seq_span;
             } else {
-                hts_log_warning("Slice ends beyond reference end at #%d:%d-%d",
+                hts_log_warning("Slice ends beyond reference end at #%d:%"PRIhts_pos"-%"PRIhts_pos,
                                 ref_id, s->ref_start, s->ref_end);
                 len = s->ref_end - s->ref_start + 1;
             }
@@ -2448,7 +2448,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             char M[33];
             const char *rname = sam_hdr_tid2name(sh, ref_id);
             if (!rname) rname="?"; // cannot happen normally
-            hts_log_error("MD5 checksum reference mismatch at %s:%d-%d",
+            hts_log_error("MD5 checksum reference mismatch at %s:%"PRIhts_pos"-%"PRIhts_pos,
                           rname, s->ref_start, s->ref_end);
             hts_log_error("CRAM  : %s", md5_print(s->hdr->md5, M));
             hts_log_error("Ref   : %s", md5_print(digest, M));

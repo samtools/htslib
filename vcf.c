@@ -1510,7 +1510,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     hlen = buf[0] | (buf[1] << 8) | (buf[2] << 16) | ((size_t) buf[3] << 24);
     if (hlen >= SIZE_MAX) { errno = ENOMEM; goto fail; }
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-    if (hlen > FUZZ_ALLOC_LIMIT) { errno = ENOMEM; goto fail; }
+    if (hlen > FUZZ_ALLOC_LIMIT/2) { errno = ENOMEM; goto fail; }
 #endif
     htxt = (char*)malloc(hlen + 1);
     if (!htxt) goto fail;

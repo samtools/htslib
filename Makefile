@@ -623,6 +623,10 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
 
+# To build the fuzzer, try:
+# make  CC="clang16 -fsanitize=address,undefined,fuzzer" \
+#     CFLAGS="-g -O3 -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION" \
+#     test/fuzz/hts_open_fuzzer
 test/fuzz/hts_open_fuzzer: test/fuzz/hts_open_fuzzer.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fuzz/hts_open_fuzzer.o libhts.a $(LIBS) -lpthread
 
