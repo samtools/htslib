@@ -68,8 +68,12 @@ static void view_sam(const uint8_t *data, size_t size, char *mode,
     if (!out)
         abort();
 
+#ifdef FUZZ_FAI
     // Not critical if this doesn't work, but can test more if
     // we're in the right location.
+    //
+    // We can't rely on what the pwd is for the OSS-fuzz so we don't enable
+    // this by default.
     if (hts_set_fai_filename(out, "../c2.fa") < 0) {
         static int warned = 0;
         if (!warned) {
@@ -77,6 +81,8 @@ static void view_sam(const uint8_t *data, size_t size, char *mode,
             fprintf(stderr, "Warning couldn't find the c2.fa file\n");
         }
     }
+#endif
+
     sam_hdr_t *hdr = sam_hdr_read(in);
     if (hdr == NULL) {
         if (close_abort)
