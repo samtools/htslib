@@ -68,10 +68,10 @@ INSTALL_PROGRAM = $(INSTALL)
 plugindir =
 
 BUILT_PROGRAMS = \
+	annot-tsv \
 	bgzip \
 	htsfile \
-	tabix \
-    annot-tsv
+	tabix
 
 BUILT_TEST_PROGRAMS = \
 	test/hts_endian \
@@ -500,6 +500,9 @@ htscodecs/htscodecs/rANS_static32x16pr_avx2.o htscodecs/htscodecs/rANS_static32x
 htscodecs/htscodecs/rANS_static32x16pr_avx512.o htscodecs/htscodecs/rANS_static32x16pr_avx512.pico: TARGET_CFLAGS = $(HTS_CFLAGS_AVX512)
 htscodecs/htscodecs/rANS_static32x16pr_sse4.o htscodecs/htscodecs/rANS_static32x16pr_sse4.pico: TARGET_CFLAGS = $(HTS_CFLAGS_SSE4)
 
+annot-tsv: annot-tsv.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ annot-tsv.o libhts.a $(LIBS) -lpthread
+
 bgzip: bgzip.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ bgzip.o libhts.a $(LIBS) -lpthread
 
@@ -509,13 +512,10 @@ htsfile: htsfile.o libhts.a
 tabix: tabix.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS) -lpthread
 
-annot-tsv: annot-tsv.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ annot-tsv.o libhts.a $(LIBS) -lpthread
-
+annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h)
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hfile_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
-annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h)
 
 # Runes to check that the htscodecs submodule is present
 ifdef HTSCODECS_SOURCES
@@ -862,7 +862,7 @@ install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
 	$(INSTALL_DATA) $(SRC)htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_MAN) $(SRC)bgzip.1 $(SRC)htsfile.1 $(SRC)tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_MAN) $(SRC)annot-tsv.1 $(SRC)bgzip.1 $(SRC)htsfile.1 $(SRC)tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_MAN) $(SRC)faidx.5 $(SRC)sam.5 $(SRC)vcf.5 $(DESTDIR)$(man5dir)
 	$(INSTALL_MAN) $(SRC)htslib-s3-plugin.7 $(DESTDIR)$(man7dir)
 
