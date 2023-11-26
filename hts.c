@@ -4982,19 +4982,32 @@ static char get_severity_tag(enum htsLogLevel severity)
     return '*';
 }
 
+static hts_log_func *hts_logger = NULL;
+static void *hts_logger_data = NULL;
+
+void hts_log_set_logger(hts_log_func *logger, void *data)
+{
+    hts_logger = logger;
+    hts_logger_data = data;
+}
+
 void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...)
 {
     int save_errno = errno;
     if (severity <= hts_verbose) {
         va_list argptr;
 
-        fprintf(stderr, "[%c::%s] ", get_severity_tag(severity), context);
-
         va_start(argptr, format);
-        vfprintf(stderr, format, argptr);
+        if (hts_logger) {
+            hts_logger(hts_logger_data, severity, get_severity_tag(severity), context, format, argptr);
+        }
+        else {
+            fprintf(stderr, "[%c::%s] ", get_severity_tag(severity), context);
+            vfprintf(stderr, format, argptr);
+            fprintf(stderr, "\n");
+        }
         va_end(argptr);
 
-        fprintf(stderr, "\n");
     }
     errno = save_errno;
 }
