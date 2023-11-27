@@ -2844,7 +2844,9 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
         // Container level tags_used, for TD series
         // Maps integer key ('X0i') to cram_tag_map struct.
-        int key = (aux[0]<<16)|(aux[1]<<8)|aux[2];
+        int key = (((unsigned char *) aux)[0]<<16 |
+                   ((unsigned char *) aux)[1]<<8  |
+                   ((unsigned char *) aux)[2]);
         k = kh_put(m_tagmap, c->tags_used, key, &r);
         if (-1 == r)
             goto err;
