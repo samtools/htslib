@@ -1862,7 +1862,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* To create M5 strings */
     /* Fetch reference sequence */
     if (!no_ref) {
-        if (!c->bams || !c->bams[0])
+        if (!c->bams || !c->curr_c_rec || !c->bams[0])
             goto_err;
         bam_seq_t *b = c->bams[0];
 
@@ -4124,9 +4124,25 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         if (c->bams[c->curr_c_rec] == NULL)
             return -1;
     }
+    if (bam_seq_len(b)) {
+        c->s_num_bases += bam_seq_len(b);
+    } else {
+        // No sequence in BAM record.  CRAM doesn't directly support this
+        // case, it ends up being stored as a string of N's for each query
+        // consuming CIGAR operation.  As this can become very inefficient
+        // in time and memory, data where the query length is excessively
+        // long are rejected.
+        hts_pos_t qlen = bam_cigar2qlen(b->core.n_cigar, bam_get_cigar(b));
+        if (qlen > 100000000) {
+            hts_log_error("CIGAR query length %"PRIhts_pos
+                          " for read \"%s\" is too long",
+                          qlen, bam_get_qname(b));
+            return -1;
+        }
+        c->s_num_bases += qlen;
+    }
     c->curr_rec++;
     c->curr_c_rec++;
-    c->s_num_bases += bam_seq_len(b);
     c->s_aux_bytes += bam_get_l_aux(b);
     c->n_mapped += (bam_flag(b) & BAM_FUNMAP) ? 0 : 1;
     fd->record_counter++;
