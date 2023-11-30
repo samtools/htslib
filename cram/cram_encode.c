@@ -3100,10 +3100,10 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                 goto err;
 
             int type = aux[3], blen;
-            uint32_t count = (uint32_t)((((unsigned char *)aux)[4]<< 0) +
-                                        (((unsigned char *)aux)[5]<< 8) +
-                                        (((unsigned char *)aux)[6]<<16) +
-                                        (((unsigned char *)aux)[7]<<24));
+            uint32_t count = (((uint32_t)((unsigned char *)aux)[4]) << 0 |
+                              ((uint32_t)((unsigned char *)aux)[5]) << 8 |
+                              ((uint32_t)((unsigned char *)aux)[6]) <<16 |
+                              ((uint32_t)((unsigned char *)aux)[7]) <<24);
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     goto err;
