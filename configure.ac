@@ -78,8 +78,11 @@ HTS_PROG_CC_WERROR(hts_late_cflags)
 # PTHREAD_MUTEX_RECURSIVE on some Linux distributions). Hence we set it to 600.
 
 # Define _XOPEN_SOURCE unless the user has already done so via $CPPFLAGS etc.
+# It is necessary to define _DEFAULT_SOURCE at the same time, otherwise
+# _XOPEN_SOURCE will suppress some declarations needed by AC_FUNC_MMAP.
 AC_CHECK_DECL([_XOPEN_SOURCE], [],
-  [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
+  [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])
+   AC_DEFINE([_DEFAULT_SOURCE], [1], [Enable default extensions.])],
   [])
 
 dnl Options for rANS32x16 sse4.1 version - sse4.1
