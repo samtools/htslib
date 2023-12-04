@@ -128,7 +128,7 @@ error(const char *format, ...)
 static nbp_t *nbp_init(void)
 {
     nbp_t *nbp = calloc(1,sizeof(nbp_t));
-    if ( !nbp ) error("Out of memory, failed to allocatae %zu bytes\n",sizeof(nbp_t));
+    if ( !nbp ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(nbp_t));
     return nbp;
 }
 static void nbp_destroy(nbp_t *nbp)
@@ -769,53 +769,65 @@ void process_line(args_t *args, char *line, size_t size)
 static const char *usage_text(void)
 {
     return
-        "About: Annotate regions of the target file (TGT) with information from overlapping regions\n"
-        "       of the source file (SRC). Multiple columns can be transferred (-f) and the transfer\n"
-        "       can be conditioned on requiring matching values in one or more columns (-m).\n"
-        "       In addition to column transfer (-f) and special annotations (-a), the program can\n"
-        "       operate in a simple grep-like mode and print matching lines (when neither -f nor -a\n"
-        "       are given) or drop matching lines (-x).\n"
+        "About: Annotate regions of the target file (TGT) with information from\n"
+        "       overlapping regions of the source file (SRC). Multiple columns can be\n"
+        "       transferred (-f) and the transfer can be conditioned on requiring\n"
+        "       matching values in one or more columns (-m).\n"
+        "       In addition to column transfer (-f) and special annotations (-a), the\n"
+        "       program can operate in a simple grep-like mode and print matching lines\n"
+        "       (when neither -f nor -a are given) or drop matching lines (-x).\n"
         "       All indexes and coordinates are 1-based and inclusive.\n"
         "\n"
         "Usage: annot-tsv [OPTIONS] -s source.txt -t target.txt > output.txt\n"
         "\n"
         "Common options:\n"
-        "   -c, --core SRC:TGT              Core columns in SRC and TGT file [chr,beg,end:chr,beg,end]\n"
-        "   -f, --transfer SRC:TGT          Columns to transfer. If SRC column does not exist, interpret\n"
-        "                                   as the default value to use. If the TGT column does not exist,\n"
-        "                                   a new column is created. If the TGT column does exist, its values\n"
-        "                                   are overwritten when overlap is found or left as is otherwise.\n"
-        "   -m, --match SRC:TGT             Require match in these columns for annotation transfer\n"
-        "   -o, --output FILE               Output file name [STDOUT]\n"
-        "   -s, --source-file FILE          Source file to take annotations from\n"
-        "   -t, --target-file FILE          Target file to be extend with annotations from -s\n"
+        "   -c, --core SRC:TGT      Core columns in SRC and TGT file\n"
+        "                             [chr,beg,end:chr,beg,end]\n"
+        "   -f, --transfer SRC:TGT  Columns to transfer. If SRC column does not exist,\n"
+        "                           interpret as the default value to use. If the TGT\n"
+        "                           column does not exist, a new column is created. If\n"
+        "                           the TGT column does exist, its values are overwritten\n"
+        "                           when overlap is found or left as is otherwise.\n"
+        "   -m, --match SRC:TGT     Require match in these columns for annotation\n"
+        "                           transfer\n"
+        "   -o, --output FILE       Output file name [STDOUT]\n"
+        "   -s, --source-file FILE  Source file to take annotations from\n"
+        "   -t, --target-file FILE  Target file to be extend with annotations from -s\n"
         "\n"
         "Other options:\n"
-        "       --allow-dups                Add annotations multiple times\n"
-        "       --max-annots INT            Adding at most INT annotations per column to save time in big regions\n"
-        "       --version                   Print version string and exit\n"
-        "   -a, --annotate LIST             Add special annotations, one or more of:\n"
-        "                                       cnt  .. number of overlapping regions\n"
-        "                                       frac .. fraction of the target region with an overlap\n"
-        "                                       nbp  .. number of source base pairs in the overlap\n"
-        "   -H, --ignore-headers            Use numeric indexes, ignore the headers completely\n"
-        "   -O, --overlap FLOAT             Minimum required overlap (non-reciprocal, unless -r is given)\n"
-        "   -r, --reciprocal                Apply the -O requirement to both overlapping intervals\n"
-        "   -x, --drop-overlaps             Drop overlapping regions (precludes -f)\n"
+        "       --allow-dups        Add annotations multiple times\n"
+        "       --max-annots INT    Adding at most INT annotations per column to save\n"
+        "                           time in big regions\n"
+        "       --version           Print version string and exit\n"
+        "   -a, --annotate LIST     Add special annotations, one or more of:\n"
+        "                             cnt  .. number of overlapping regions\n"
+        "                             frac .. fraction of the target region with an\n"
+        "                                       overlap\n"
+        "                             nbp  .. number of source base pairs in the overlap\n"
+        "   -H, --ignore-headers    Use numeric indexes, ignore the headers completely\n"
+        "   -O, --overlap FLOAT     Minimum required overlap (non-reciprocal, unless -r\n"
+        "                           is given)\n"
+        "   -r, --reciprocal        Apply the -O requirement to both overlapping\n"
+        "                           intervals\n"
+        "   -x, --drop-overlaps     Drop overlapping regions (precludes -f)\n"
         "\n"
         "Examples:\n"
         "   # Header is present, match and transfer by column name\n"
-        "   annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end:CHR,POS,POS -m type,sample:TYPE,SMPL -f info:INFO\n"
+        "   annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end:CHR,POS,POS \\\n"
+        "       -m type,sample:TYPE,SMPL -f info:INFO\n"
         "\n"
         "   # Header is not present, match and transfer by column index (1-based)\n"
         "   annot-tsv -s src.txt.gz -t tgt.txt.gz -c 1,2,3:1,2,3 -m 4,5:4,5 -f 6:6\n"
         "\n"
-        "   # If the TGT part is not given, the program assumes that the SRC:TGT columns are identical\n"
+        "   # If the TGT part is not given, the program assumes that the SRC:TGT columns\n"
+        "   # are identical\n"
         "   annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end -m type,sample -f info\n"
         "\n"
         "   # One of the SRC or TGT file can be streamed from stdin\n"
-        "   gunzip -c src.txt.gz | annot-tsv -t tgt.txt.gz -c chr,beg,end -m type,sample -f info\n"
-        "   gunzip -c tgt.txt.gz | annot-tsv -s src.txt.gz -c chr,beg,end -m type,sample -f info\n"
+        "   gunzip -c src.txt.gz | \\\n"
+        "       annot-tsv -t tgt.txt.gz -c chr,beg,end -m type,sample -f info\n"
+        "   gunzip -c tgt.txt.gz | \\\n"
+        "       annot-tsv -s src.txt.gz -c chr,beg,end -m type,sample -f info\n"
         "\n"
         "   # Print matching regions as above but without modifying the records\n"
         "   gunzip -c src.txt.gz | annot-tsv -t tgt.txt.gz -c chr,beg,end -m type,sample\n"
@@ -841,6 +853,7 @@ int main(int argc, char **argv)
         {"overlap",required_argument,NULL,'O'},
         {"reciprocal",no_argument,NULL,'r'},
         {"drop-overlaps",no_argument,NULL,'x'},
+        {"help",no_argument,NULL,'h'},
         {NULL,0,NULL,0}
     };
     char *tmp = NULL;
@@ -850,7 +863,12 @@ int main(int argc, char **argv)
         switch (c)
         {
             case  0 : args->allow_dups = 1; break;
-            case  1 : printf("%s\n",hts_version()); return 0; break;
+            case  1 :
+                printf(
+"annot-tsv (htslib) %s\n"
+"Copyright (C) 2023 Genome Research Ltd.\n", hts_version());
+                return EXIT_SUCCESS;
+                break;
             case  2 :
                 args->max_annots = strtod(optarg, &tmp);
                 if ( tmp==optarg || *tmp ) error("Could not parse --max-annots  %s\n", optarg);
@@ -870,8 +888,8 @@ int main(int argc, char **argv)
             case 's': args->src.fname = optarg; break;
             case 'f': args->transfer_str = optarg; break;
             case 'x': args->mode = PRINT_NONMATCHING; break;
-            case 'h':
-            case '?': printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_SUCCESS); break;
+            case 'h': printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_SUCCESS); break;
+            case '?': printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_FAILURE); break;
             default: error("\nVersion: %s\n%s\n",hts_version(),usage_text()); break;
         }
     }
