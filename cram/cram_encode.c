@@ -1509,6 +1509,9 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
         return 0;
 
     // realloc
+    if (pos - ref_start > UINT_MAX)
+        return -2; // protect overflow in new_end calculation
+
     hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
     hts_pos_t new_end = ref_start + 1000 + (pos-ref_start)*1.5;
 
