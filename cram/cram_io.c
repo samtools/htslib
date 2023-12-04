@@ -2079,10 +2079,10 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     } else if (c) {
                         free(c);
                     } else {
-                        sz[m] = b->uncomp_size*2+1000; // arbitrarily worse than raw
+                        sz[m] = UINT_MAX; // arbitrarily worse than raw
                     }
                 } else {
-                    sz[m] = b->uncomp_size*2+1000; // arbitrarily worse than raw
+                    sz[m] = UINT_MAX; // arbitrarily worse than raw
                 }
             }
 
