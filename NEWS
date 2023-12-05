@@ -68,6 +68,10 @@ Build changes
 * Fix unused value warnings when built with NDEBUG.
   (PR#1688)
 
+* Remove some disused Makefile variables, fix typos and a warning.  Improve
+  bam_parse_basemod() documentation.
+  (PR#1705, Thanks to John Marshall)
+
 Bug fixes
 ---------
 
@@ -99,6 +103,16 @@ Bug fixes
 * Fix PG header linking when records make a loop.
   (PR#1702, fixes #1694.  Reported by Octavio Galland)
 
+* Prevent issues with no-stored-sequence records in CRAM files, by ensuring
+  they are accounted for properly in block size calculations, and by limiting
+  the maximum query length in the CIGAR data.  Originally seen as an overflow
+  by OSS-Fuzz / UBSAN, it turned out this could lead to excessive time and
+  memory use by HTSlib, and could result in it writing out unreadable CRAM
+  files.
+  (PR#1710)
+
+* Fix some illegal shifts and integer overflows found by OSS-Fuzz / UBSAN.
+  (PR#1707, PR#1712, PR#1713)
 
 Noteworthy changes in release 1.18 (25th July 2023)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
