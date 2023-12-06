@@ -4,6 +4,15 @@ Noteworthy changes in release a.b
 Updates
 -------
 
+* A temporary work-around has been put in the VCF parser so that it is
+  less likely to fail on rows with a large number of ALT alleles,
+  where Number=G tags like PL can expand beyond the 2Gb limit enforced
+  by HTSlib.  For now, where this happens the offending tag will be dropped
+  so the data can be processed, albeit without the likelihood data.
+
+  In future work, the library will instead convert such tags into their
+  local alternatives (see https://github.com/samtools/hts-specs/pull/434).
+
 * New program. Adds annot-tsv which annotates regions in a destination file with
   texts from overlapping regions in a source file.
   (PR#1619)
