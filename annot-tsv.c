@@ -889,7 +889,7 @@ int main(int argc, char **argv)
             case 'f': args->transfer_str = optarg; break;
             case 'x': args->mode = PRINT_NONMATCHING; break;
             case 'h': printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_SUCCESS); break;
-            case '?': printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_FAILURE); break;
+            case '?': // fall through
             default: error("\nVersion: %s\n%s\n",hts_version(),usage_text()); break;
         }
     }
