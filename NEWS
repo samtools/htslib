@@ -1,5 +1,130 @@
 Noteworthy changes in release a.b
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Updates
+-------
+
+* A temporary work-around has been put in the VCF parser so that it is
+  less likely to fail on rows with a large number of ALT alleles,
+  where Number=G tags like PL can expand beyond the 2Gb limit enforced
+  by HTSlib.  For now, where this happens the offending tag will be dropped
+  so the data can be processed, albeit without the likelihood data.
+
+  In future work, the library will instead convert such tags into their
+  local alternatives (see https://github.com/samtools/hts-specs/pull/434).
+
+* New program. Adds annot-tsv which annotates regions in a destination file with
+  texts from overlapping regions in a source file.
+  (PR#1619)
+
+* Change bam_parse_cigar() so that it can modify existing BAM records.  This
+  makes more useful as public API.  Previously it could only handle partially
+  formed BAM records.
+  (PR#1651, fixes #1650. Reported by Oleksii Nikolaienko)
+
+* Add "uncompressed" to hts_format_description() where appropriate.  This adds
+  an "uncompressed" description to uncompressed files that would normally be
+  compressed, such as BAM and BCF.
+  (PR#1656, in relation to samtools#1884.  Thanks to John Marshall)
+
+* Speed up to the VCF parser and writer.
+  (PR#1644 and PR#1663)
+
+* Add an hclen (hard clip length) SAM filter function.
+  (PR#1660, with reference to samtools#813)
+
+* Avoid really closing stdin/stdout in hclose()/hts_close()/et al.
+  See discussion in PR for details.
+  (PR#1665.  Thanks to John Marshall)
+
+* Add support to handle multiple files in bgzip.
+  (PR#1658, fixes #1642.  Requested by bw2)
+
+* Enable auto-vectorisation in CRAM 3.1 codecs.  Speeds decoding on some
+  sequencing platform data.
+  (PR#1669)
+
+* Speed up removal of lines in large headers.
+  (PR#1662, fixes #1460.  Reported by Anže Starič)
+
+* Apply seqtk PR to improve kseq.h parsing performance.  Port of
+  Fabian Klötzl's (kloetzl) lh3/seqtk#123 and attractivechaos/klib#173 to
+  HTSlib.
+  (PR#1674.  Thanks to John Marshall)
+
+Build changes
+-------------
+
+* Updated htscodecs submodule.
+  (PR#1685, PR#1717)
+
+* Apply the packed attribute to uint*_u types for Clang to prevent
+  -fsanitize=alignment failures.
+  (PR#1667.  Thanks to Fangrui Song)
+
+* Fuzz testing improvements.
+  (PR#1664)
+
+* Add C++ casts for external headers in klist.h and kseq.h.
+  (PR#1683.  See also PR#1674 and PR#1682)
+
+* Add test case compiling the public headers as C++.
+  (PR#1682.  Thanks to John Marshall)
+
+* Enable optimisation level -O3 for SAM QUAL+33 formatting.
+  (PR#1679)
+
+* Make compiler flag detection work with zig cc.
+  (PR#1687)
+
+* Fix unused value warnings when built with NDEBUG.
+  (PR#1688)
+
+* Remove some disused Makefile variables, fix typos and a warning.  Improve
+  bam_parse_basemod() documentation.
+  (PR#1705, Thanks to John Marshall)
+
+Bug fixes
+---------
+
+* Fail bgzf_useek() when offset is above block limits.
+  (PR#1668)
+
+* Fix multi-threaded on-the-fly indexing problems.
+  (PR#1672, fixes samtools#1861 and bcftools#1985.  Reported by Mark Ebbert and
+  lacek)
+
+* Fix hfile_libcurl small seek bug.
+  (PR#1676, fixes samtools#1918.  Also may fix #1037, #1625 and samtools#1622.
+  Reported by Alex Reynolds, Mark Walker, Arthur Gilly and skatragadda-nygc.
+  Thanks to John Marshall)
+
+* Fix a minor memory leak in malformed CRAM EXTERNAL blocks. [fuzz]
+  (PR#1671)
+
+* Fix a cram decode hang from block_resize().
+  (PR#1680. Reported by Sebastian Deorowicz)
+
+* Cram fuzzing improvements.  Fixes a number of cram errors.
+  (PR#1701, fixes #1691, #1692, #1693, #1696, #1697, #1698, #1699 and #1700.
+  Thanks to Octavio Galland for finding and reporting all these)
+
+* Fix crypt4gh redirection.
+  (PR#1675, fixes  grbot/crypt4gh-tutorial#2.  Reported by hth4)
+
+* Fix PG header linking when records make a loop.
+  (PR#1702, fixes #1694.  Reported by Octavio Galland)
+
+* Prevent issues with no-stored-sequence records in CRAM files, by ensuring
+  they are accounted for properly in block size calculations, and by limiting
+  the maximum query length in the CIGAR data.  Originally seen as an overflow
+  by OSS-Fuzz / UBSAN, it turned out this could lead to excessive time and
+  memory use by HTSlib, and could result in it writing out unreadable CRAM
+  files.
+  (PR#1710)
+
+* Fix some illegal shifts and integer overflows found by OSS-Fuzz / UBSAN.
+  (PR#1707, PR#1712, PR#1713)
 
 Noteworthy changes in release 1.18 (25th July 2023)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
