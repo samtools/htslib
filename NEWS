@@ -55,6 +55,9 @@ Updates
 Build changes
 -------------
 
+* Updated htscodecs submodule.
+  (PR#1685, PR#1717)
+
 * Apply the packed attribute to uint*_u types for Clang to prevent
   -fsanitize=alignment failures.
   (PR#1667.  Thanks to Fangrui Song)
