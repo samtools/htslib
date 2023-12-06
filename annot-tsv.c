@@ -516,17 +516,17 @@ void init_data(args_t *args)
             if ( !strcasecmp(args->src.annots->off[i],"nbp") )
             {
                 args->dst.annots_idx[i] = ANN_NBP;
-                cols_append(args->dst.hdr.cols,"nbp");
+                cols_append(args->dst.hdr.cols,tmp->n==2?args->dst.annots->off[i]:"nbp");
             }
             else if ( !strcasecmp(args->src.annots->off[i],"frac") )
             {
                 args->dst.annots_idx[i] = ANN_FRAC;
-                cols_append(args->dst.hdr.cols,"frac");
+                cols_append(args->dst.hdr.cols,tmp->n==2?args->dst.annots->off[i]:"frac");
             }
             else if ( !strcasecmp(args->src.annots->off[i],"cnt") )
             {
                 args->dst.annots_idx[i] = ANN_CNT;
-                cols_append(args->dst.hdr.cols,"cnt");
+                cols_append(args->dst.hdr.cols,tmp->n==2?args->dst.annots->off[i]:"cnt");
             }
             else error("The annotation \"%s\" is not recognised\n", args->src.annots->off[i]);
         }
