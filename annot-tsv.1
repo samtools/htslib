@@ -117,7 +117,7 @@ Print version string and exit
 .PP
 .BR \-a ", " \-\-annotate " LIST"
 .RS 4
-Add one or more special annotation
+Add one or more special annotation and its target name separated by ':'. If no target name is given, the special annotation's name will be used in output header.
 .PP
 .I cnt
 .RS 4
@@ -185,7 +185,26 @@ annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end:3,1,2 -m sample:4 -f type,q
 350   400   chr1   smpl1   .     .
 350   400   chr1   smpl2   DUP   30
 .EE
+The next example demonstrates the special annotations nbp and cnt,
+with target name as pair,count.
+In this case we use a target file with headers so that column names will
+be copied to the output:
+.EX
+#beg  end   chr   sample
+150   200   chr1   smpl1
+150   200   chr1   smpl2
+350   400   chr1   smpl1
+350   400   chr1   smpl2
+.EE
 
+.EX
+annot-tsv -s src.txt.gz -t tgt_with_header.txt.gz -c chr,beg,end -m sample -f type,qual -a nbp,cnt:pair,count
+#[1]chr	[2]beg	[3]end	[4]sample	[5]type	[6]qual	[7]pair	[8]count
+chr1	150	200	smpl1	DEL	10	51	1
+chr1	150	200	smpl2	.	.	0	0
+chr1	350	400	smpl1	.	.	0	0
+chr1	350	400	smpl2	DUP	30	51	1
+.EE
 One of the SRC or TGT file can be streamed from stdin
 .EX
 cat src.txt | annot\-tsv \-t tgt.txt \-c chr,beg,end:3,2,1 \-m sample:4 \-f type,qual \-o output.txt
