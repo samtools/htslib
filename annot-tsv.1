@@ -70,7 +70,10 @@ All indexes and coordinates are 1-based and inclusive.
 .PP
 .BR \-c ", " \-\-core " SRC:TGT"
 .RS 4
-List of names of the core columns (chromosome, start and end coordinate) in the source and the target file (for example "chr,beg,end:CHROM,START,END"). If both files use the same format, the TGT names can be omitted (for example "chr,beg,end"). If SRC or TGT file has no header, 1-based indexes can be given instead (for example "chr,beg,end:1,2,3"). Note that regions are not required, the program can work with a list of positions (for example "chr,beg,end:CHROM,POS,POS").
+List of names of the core columns, in the order of chromosome, start and end positions, irrespective of the header name and order in which they appear in source or target files (for example "chr,beg,end:CHROM,START,END").
+If both files use the same header names, the TGT names can be omitted (for example "chr,beg,end").
+If SRC or TGT file has no header, 1-based indexes can be given instead (for example "chr,beg,end:3,1,2").
+Note that regions are not required, the program can work with a list of positions (for example "chr,beg,end:CHROM,POS,POS").
 .RE
 .PP
 .BR \-f ", " \-\-transfer " SRC:TGT"
@@ -190,20 +193,20 @@ with target name as pair,count.
 In this case we use a target file with headers so that column names will
 be copied to the output:
 .EX
-#beg  end   chr   sample
-150   200   chr1   smpl1
-150   200   chr1   smpl2
-350   400   chr1   smpl1
-350   400   chr1   smpl2
+#from	to	chrom	sample
+150	200	chr1	smpl1
+150	200	chr1	smpl2
+350	400	chr1	smpl1
+350	400	chr1	smpl2
 .EE
 
 .EX
-annot-tsv -s src.txt.gz -t tgt_with_header.txt.gz -c chr,beg,end -m sample -f type,qual -a nbp,cnt:pair,count
-#[1]chr	[2]beg	[3]end	[4]sample	[5]type	[6]qual	[7]pair	[8]count
-chr1	150	200	smpl1	DEL	10	51	1
-chr1	150	200	smpl2	.	.	0	0
-chr1	350	400	smpl1	.	.	0	0
-chr1	350	400	smpl2	DUP	30	51	1
+annot-tsv -s src.txt.gz -t tgt_hdr.txt.gz -c chr,beg,end:chrom,from,to -m sample -f type,qual -a nbp,cnt:pair,count
+#[1]from	[2]to	[3]chrom	[4]sample	[5]type	[6]qual	[7]pair	[8]count
+150	200	chr1	smpl1	DEL	10	51	1
+150	200	chr1	smpl2	.	.	0	0
+350	400	chr1	smpl1	.	.	0	0
+350	400	chr1	smpl2	DUP	30	51	1
 .EE
 One of the SRC or TGT file can be streamed from stdin
 .EX
