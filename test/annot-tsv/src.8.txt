@@ -1,0 +1,2 @@
+#sample	chr	beg	end	is_tp	dnm	inherited
+sampleA	2	111397196	113090173	TP-ACGH-WES	.	uncertain

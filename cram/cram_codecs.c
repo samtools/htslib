@@ -44,6 +44,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <stddef.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "../fuzz_settings.h"
+#endif
+
 #include "../htslib/hts_endian.h"
 
 #if defined(HAVE_EXTERNAL_LIBHTSCODECS)
@@ -478,10 +482,10 @@ cram_codec *cram_external_decode_init(cram_block_compression_hdr *hdr,
             else if (option == E_BYTE || option == E_BYTE_ARRAY)
                 c->decode = cram_external_decode_char;
             else
-                return NULL;
+                goto malformed;
             break;
         default:
-            return NULL;
+            goto malformed;
         }
     } else {
         // CRAM 3 and earlier encodes integers as EXTERNAL.  We need
@@ -1229,7 +1233,8 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
                                   void *dat,
                                   int version, varint_vec *vv) {
     cram_codec *c;
-    int min_val, max_val, len = 0;
+    hts_pos_t min_val, max_val;
+    int len = 0;
     int64_t range;
 
     c = malloc(sizeof(*c));
@@ -1247,8 +1252,8 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
     c->flush = NULL;
 
     if (dat) {
-        min_val = ((int *)dat)[0];
-        max_val = ((int *)dat)[1];
+        min_val = ((hts_pos_t *)dat)[0];
+        max_val = ((hts_pos_t *)dat)[1];
     } else {
         min_val = INT_MAX;
         max_val = INT_MIN;
@@ -1276,9 +1281,26 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
         }
     }
 
-    assert(max_val >= min_val);
-    c->u.e_beta.offset = -min_val;
+    if (max_val < min_val)
+        goto err;
+
     range = (int64_t) max_val - min_val;
+    switch (option) {
+    case E_SINT:
+        if (min_val < INT_MIN || range > INT_MAX)
+            goto err;
+        break;
+
+    case E_INT:
+        if (max_val > UINT_MAX || range > UINT_MAX)
+            goto err;
+        break;
+
+    default:
+        break;
+    }
+
+    c->u.e_beta.offset = -min_val;
     while (range) {
         len++;
         range >>= 1;
@@ -1286,6 +1308,10 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
     c->u.e_beta.nbits = len;
 
     return c;
+
+ err:
+    free(c);
+    return NULL;
 }
 
 /*
@@ -2795,7 +2821,12 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         errno = ENOMEM;
         return NULL;
     }
-
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (ncodes > FUZZ_ALLOC_LIMIT / sizeof(*codes)) {
+        errno = ENOMEM;
+        return NULL;
+    }
+#endif
     h = calloc(1, sizeof(*h));
     if (!h)
         return NULL;

@@ -737,10 +737,11 @@ int cram_index_container(cram_fd *fd,
         int ret;
 
         spos = htell(fd->fp);
-        if (spos - cpos - c->offset != c->landmark[j]) {
+        if (spos - cpos - (off_t) c->offset != c->landmark[j]) {
             hts_log_error("CRAM slice offset %"PRId64" does not match"
-                          " landmark %d in container header (%d)",
-                          spos - cpos - c->offset, j, c->landmark[j]);
+                          " landmark %d in container header (%"PRId32")",
+                          (int64_t) (spos - cpos - (off_t) c->offset),
+                          j, c->landmark[j]);
             return -1;
         }
 
@@ -826,8 +827,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
             return -1;
         }
 
-        cpos = htell(fd->fp);
-        assert(cpos == hpos + c->length);
+        off_t next_cpos = htell(fd->fp);
+        if (next_cpos != hpos + c->length) {
+            hts_log_error("Length %"PRId32" in container header at offset %lld does not match block lengths (%lld)",
+                          c->length, (long long) cpos, (long long) next_cpos - hpos);
+            return -1;
+        }
+        cpos = next_cpos;
 
         cram_free_container(c);
     }

@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -429,6 +430,11 @@ int main(int argc, char *argv[])
 
     if (p.pool)
         hts_tpool_destroy(p.pool);
+
+    if (fclose(stdout) != 0 && errno != EBADF) {
+        fprintf(stderr, "Error closing standard output.\n");
+        exit_code = EXIT_FAILURE;
+    }
 
     return exit_code;
 }

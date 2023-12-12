@@ -455,7 +455,8 @@ struct cram_container {
     int qs_seq_orient;           // 1 => same as seq. 0 => original orientation
 
     /* Copied from fd before encoding, to allow multi-threading */
-    int ref_start, first_base, last_base, ref_id, ref_end;
+    int ref_id;
+    hts_pos_t ref_start, first_base, last_base, ref_end;
     char *ref;
     int embed_ref;               // 1 if embedding ref, 2 if embedding cons
     int no_ref;                  // true if referenceless
@@ -648,8 +649,8 @@ struct cram_slice {
     khash_t(m_s2i) *pair[2];   // for identifying read-pairs in this slice.
 
     char *ref;                 // slice of current reference
-    int ref_start;             // start position of current reference;
-    int ref_end;               // end position of current reference;
+    hts_pos_t ref_start;       // start position of current reference;
+    hts_pos_t ref_end;         // end position of current reference;
     int ref_id;
 
     // For going from BAM to CRAM; an array of auxiliary blocks per type
@@ -802,12 +803,12 @@ struct cram_fd {
     int first_base, last_base; // copied to container
 
     // cached reference portion
-    refs_t *refs;              // ref meta-data structure
-    char *ref, *ref_free;      // current portion held in memory
-    int   ref_id;              // copied to container
-    int   ref_start;           // copied to container
-    int   ref_end;             // copied to container
-    char *ref_fn;   // reference fasta filename
+    refs_t   *refs;                // ref meta-data structure
+    char     *ref, *ref_free;      // current portion held in memory
+    int       ref_id;              // copied to container
+    hts_pos_t ref_start;           // copied to container
+    hts_pos_t ref_end;             // copied to container
+    char     *ref_fn;              // reference fasta filename
 
     // compression level and metrics
     int level;
@@ -821,6 +822,7 @@ struct cram_fd {
     int slices_per_container;
     int embed_ref; // copied to container
     int no_ref;    // copied to container
+    int no_ref_counter; // decide if permanent switch
     int ignore_md5;
     int use_bz2;
     int use_rans;

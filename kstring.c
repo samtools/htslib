@@ -63,78 +63,77 @@ int kputd(double d, kstring_t *s) {
 		return len;
 	}
 
-	uint64_t i = d*10000000000LL;
 	// Correction for rounding - rather ugly
-
 	// Optimised for small numbers.
-	// Better still would be __builtin_clz on hi/lo 32 and get the
-	// starting point very rapidly.
-	if (d<.0001)
-		i+=0;
-	else if (d<0.001)
-		i+=5;
-	else if (d < 0.01)
-		i+=50;
-	else if (d < 0.1)
-		i+=500;
-	else if (d < 1)
-		i+=5000;
-	else if (d < 10)
-		i+=50000;
-	else if (d < 100)
-		i+=500000;
-	else if (d < 1000)
-		i+=5000000;
-	else if (d < 10000)
-		i+=50000000;
-	else if (d < 100000)
-		i+=500000000;
-	else
-		i+=5000000000LL;
 
-	do {
-		*--cp = '0' + i%10;
-		i /= 10;
-	} while (i >= 1);
-	buf[20] = 0;
+	uint32_t i;
+	if (d<0.001)         i = rint(d*1000000000), cp -= 1;
+	else if (d < 0.01)   i = rint(d*100000000),  cp -= 2;
+	else if (d < 0.1)    i = rint(d*10000000),   cp -= 3;
+	else if (d < 1)      i = rint(d*1000000),    cp -= 4;
+	else if (d < 10)     i = rint(d*100000),     cp -= 5;
+	else if (d < 100)    i = rint(d*10000),      cp -= 6;
+	else if (d < 1000)   i = rint(d*1000),       cp -= 7;
+	else if (d < 10000)  i = rint(d*100),        cp -= 8;
+	else if (d < 100000) i = rint(d*10),         cp -= 9;
+	else                 i = rint(d),            cp -= 10;
+
+	// integer i is always 6 digits, so print it 2 at a time.
+	static const char kputuw_dig2r[] =
+		"00010203040506070809"
+		"10111213141516171819"
+		"20212223242526272829"
+		"30313233343536373839"
+		"40414243444546474849"
+		"50515253545556575859"
+		"60616263646566676869"
+		"70717273747576777879"
+		"80818283848586878889"
+		"90919293949596979899";
+
+	memcpy(cp-=2, &kputuw_dig2r[2*(i%100)], 2); i /= 100;
+	memcpy(cp-=2, &kputuw_dig2r[2*(i%100)], 2); i /= 100;
+	memcpy(cp-=2, &kputuw_dig2r[2*(i%100)], 2);
+
+	// Except when it rounds up (d=0.009999999 is i=1000000)
+	if (i >= 100)
+		*--cp = '0' + (i/100);
+
+
 	int p = buf+20-cp;
-	if (p <= 10) { // d < 1
-		//assert(d/1);
-		cp[6] = 0; ep = cp+5;// 6 precision
-		while (p < 10) {
+	if (p <= 10) { /* d < 1 */
+		// 0.00123 is 123, so add leading zeros and 0.
+		ep = cp+5; // 6 precision
+		while (p < 10) { // aka d < 1
 			*--cp = '0';
 			p++;
 		}
 		*--cp = '.';
 		*--cp = '0';
 	} else {
+		// 123.001 is 123001 with p==13, so move 123 down and add "."
+		// Equiv to memmove(cp-1, cp, p-10); cp--;
 		char *xp = --cp;
+		ep = cp+6;
 		while (p > 10) {
 			xp[0] = xp[1];
-			p--;
 			xp++;
+			p--;
 		}
 		xp[0] = '.';
-		cp[7] = 0; ep=cp+6;
-		if (cp[6] == '.') cp[6] = 0;
 	}
 
 	// Cull trailing zeros
 	while (*ep == '0' && ep > cp)
 		ep--;
-	char *z = ep+1;
-	while (ep > cp) {
-		if (*ep == '.') {
-			if (z[-1] == '.')
-				z[-1] = 0;
-			else
-				z[0] = 0;
-			break;
-		}
-		ep--;
-	}
 
-	int sl = strlen(cp);
+	// End can be 1 out due to the mostly-6 but occasionally 7 (i==1) case.
+	// Also code with "123." which should be "123"
+	if (*ep && *ep != '.')
+		ep++;
+	*ep = 0;
+
+	int sl = ep-cp;
 	len += sl;
 	kputsn(cp, sl, s);
 	return len;
@@ -204,8 +203,17 @@ char *kstrtok(const char *str, const char *sep_in, ks_tokaux_t *aux)
 		for (p = start; *p; ++p)
 			if (aux->tab[*p>>6]>>(*p&0x3f)&1) break;
 	} else {
-		for (p = start; *p; ++p)
-			if (*p == aux->sep) break;
+		// Using strchr is fast for next token, but slower for
+		// last token due to extra pass from strlen.  Overall
+		// on a VCF parse this func was 146% faster with // strchr.
+		// Equiv to:
+		// for (p = start; *p; ++p) if (*p == aux->sep) break;
+
+		// NB: We could use strchrnul() here from glibc if detected,
+		// which is ~40% faster again, but it's not so portable.
+		// i.e.   p = (uint8_t *)strchrnul((char *)start, aux->sep);
+		uint8_t *p2 = (uint8_t *)strchr((char *)start, aux->sep);
+		p = p2 ? p2 : start + strlen((char *)start);
 	}
 	aux->p = (const char *) p; // end of token
 	if (*p == 0) aux->finished = 1; // no more tokens

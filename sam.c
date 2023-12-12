@@ -37,6 +37,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <unistd.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "fuzz_settings.h"
+#endif
+
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
 #undef HTS_DEPRECATED
@@ -251,6 +255,9 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
 
     bufsize = h->l_text + 1;
     if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (bufsize > FUZZ_ALLOC_LIMIT) goto nomem;
+#endif
     h->text = (char*)malloc(bufsize);
     if (!h->text) goto nomem;
     h->text[h->l_text] = 0; // make sure it is NULL terminated
@@ -264,6 +271,10 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
     if (h->n_targets < 0) goto invalid;
 
     // read reference sequence names and lengths
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (h->n_targets > (FUZZ_ALLOC_LIMIT - bufsize)/(sizeof(char*)+sizeof(uint32_t)))
+        goto nomem;
+#endif
     if (h->n_targets > 0) {
         h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
         if (!h->target_name) goto nomem;
@@ -425,6 +436,12 @@ int sam_realloc_bam_data(bam1_t *b, size_t desired)
         errno = ENOMEM; // Not strictly true but we can't store the size
         return -1;
     }
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    if (new_m_data > FUZZ_ALLOC_LIMIT) {
+        errno = ENOMEM;
+        return -1;
+    }
+#endif
     if ((bam_get_mempolicy(b) & BAM_USER_OWNS_DATA) == 0) {
         new_data = realloc(b->data, new_m_data);
     } else {
@@ -887,8 +904,6 @@ static int bam_write_idx1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b) {
         return -1;
     if (!bfp->mt)
         hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
-    else
-        bgzf_idx_amend_last(bfp, fp->idx, bgzf_tell(bfp));
 
     int ret = bam_write1(bfp, b);
     if (ret < 0)
@@ -1252,6 +1267,26 @@ static int bam_sym_lookup(void *data, char *str, char **end,
                     return -1;
                 }
             }
+        }
+        break;
+
+    case 'h':
+        if (memcmp(str, "hclen", 5) == 0) {
+            int hclen = 0;
+            uint32_t *cigar = bam_get_cigar(b);
+            uint32_t ncigar = b->core.n_cigar;
+
+            // left
+            if (ncigar > 0 && bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP)
+                hclen = bam_cigar_oplen(cigar[0]);
+
+            // right
+            if (ncigar > 1 && bam_cigar_op(cigar[ncigar-1]) == BAM_CHARD_CLIP)
+                hclen += bam_cigar_oplen(cigar[ncigar-1]);
+
+            *end = str+5;
+            res->d = hclen;
+            return 0;
         }
         break;
 
@@ -2750,7 +2785,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         int n_cigar = bam_parse_cigar(p, &p, b);
         if (n_cigar < 1 || *p++ != '\t') goto err_ret;
         cigar = (uint32_t *)(b->data + old_l_data);
-        c->n_cigar = n_cigar;
 
         // can't use bam_endpos() directly as some fields not yet set up
         cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
@@ -2926,20 +2960,36 @@ ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
     }
     if (end) *end = (char *)in;
 
-    if (*in == '*') {
-        if (end) (*end)++;
+    n_cigar = (*in == '*') ? 0 : read_ncigar(in);
+    if (!n_cigar && b->core.n_cigar == 0) {
+        if (end) *end = (char *)in+1;
         return 0;
     }
-    n_cigar = read_ncigar(in);
-    if (!n_cigar) return 0;
-    if (possibly_expand_bam_data(b, n_cigar * sizeof(uint32_t)) < 0) {
+
+    ssize_t cig_diff = n_cigar - b->core.n_cigar;
+    if (cig_diff > 0 &&
+        possibly_expand_bam_data(b, cig_diff * sizeof(uint32_t)) < 0) {
         hts_log_error("Memory allocation error");
         return -1;
     }
 
-    if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return -1;
-    b->l_data += (n_cigar * sizeof(uint32_t));
-    if (end) *end = (char *)in+diff;
+    uint32_t *cig = bam_get_cigar(b);
+    if ((uint8_t *)cig != b->data + b->l_data) {
+        // Modifying an BAM existing BAM record
+        uint8_t  *seq = bam_get_seq(b);
+        memmove(cig + n_cigar, seq, (b->data + b->l_data) - seq);
+    }
+
+    if (n_cigar) {
+        if (!(diff = parse_cigar(in, cig, n_cigar)))
+            return -1;
+    } else {
+        diff = 1; // handle "*"
+    }
+
+    b->l_data += cig_diff * sizeof(uint32_t);
+    b->core.n_cigar = n_cigar;
+    if (end) *end = (char *)in + diff;
 
     return n_cigar;
 }
@@ -4167,6 +4217,15 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
     return pass_filter < 0 ? -2 : ret;
 }
 
+// With gcc, -O3 or -ftree-loop-vectorize is really key here as otherwise
+// this code isn't vectorised and runs far slower than is necessary (even
+// with the restrict keyword being used).
+static inline void HTS_OPT3
+add33(uint8_t *a, const uint8_t * b, int32_t len) {
+    uint32_t i;
+    for (i = 0; i < len; i++)
+        a[i] = b[i]+33;
+}
 
 static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
@@ -4217,10 +4276,8 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         if (s[0] == 0xff) {
             cp[i++] = '*';
         } else {
-            // local copy of c->l_qseq to aid unrolling
-            uint32_t lqseq = c->l_qseq;
-            for (i = 0; i < lqseq; ++i)
-                cp[i]=s[i]+33;
+            add33((uint8_t *)cp, s, c->l_qseq); // cp[i] = s[i]+33;
+            i = c->l_qseq;
         }
         cp[i] = 0;
         cp += i;

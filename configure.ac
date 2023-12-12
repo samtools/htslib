@@ -82,53 +82,22 @@ AC_CHECK_DECL([_XOPEN_SOURCE], [],
   [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
   [])
 
-
-dnl Check for various compiler flags to enable SIMD features
-dnl Options for rANS32x16 sse4.1 version - ssse3
-hts_cflags_sse4=""
-HTS_CHECK_COMPILE_FLAGS_NEEDED([ssse3], [-mssse3], [AC_LANG_PROGRAM([[
-    #ifdef __x86_64__
-    #include "x86intrin.h"
-    #endif
-  ]],[[
-    #ifdef __x86_64__
-    __m128i a = _mm_set_epi32(1, 2, 3, 4), b = _mm_set_epi32(4, 3, 2, 1);
-    __m128i c = _mm_shuffle_epi8(a, b);
-    return *((char *) &c);
-    #endif
-  ]])], [
-  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
-  AC_DEFINE([HAVE_SSSE3],1,[Defined to 1 if rANS source using SSSE3 can be compiled.])
-])
-
-dnl Options for rANS32x16 sse4.1 version - popcnt
-HTS_CHECK_COMPILE_FLAGS_NEEDED([popcnt], [-mpopcnt], [AC_LANG_PROGRAM([[
-    #ifdef __x86_64__
-    #include "x86intrin.h"
-    #endif
-  ]],[[
-    #ifdef __x86_64__
-    unsigned int i = _mm_popcnt_u32(1);
-    return i != 1;
-    #endif
-  ]])], [
-  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
-  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
-])
-
 dnl Options for rANS32x16 sse4.1 version - sse4.1
-HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
+ [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     #include "x86intrin.h"
     #endif
   ]],[[
     #ifdef __x86_64__
     __m128i a = _mm_set_epi32(1, 2, 3, 4), b = _mm_set_epi32(4, 3, 2, 1);
-    __m128i c = _mm_max_epu32(a, b);
-    return *((char *) &c);
+    __m128i c = _mm_shuffle_epi8(_mm_max_epu32(a, b), b);
+    return _mm_popcnt_u32(*((char *) &c));
     #endif
   ]])], [
-  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
+  hts_cflags_sse4="$flags_needed"
+  AC_DEFINE([HAVE_SSSE3],1,[Defined to 1 if rANS source using SSSE3 can be compiled.])
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_SSE4_1],1,[Defined to 1 if rANS source using SSE4.1 can be compiled.
 ])
 dnl Propagate HTSlib's unaligned access preference to htscodecs
@@ -142,7 +111,7 @@ dnl Propagate HTSlib's unaligned access preference to htscodecs
 AC_SUBST([hts_cflags_sse4])
 
 dnl Options for rANS32x16 avx2 version
-HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2 -mpopcnt], [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     #include "x86intrin.h"
     #endif
@@ -151,16 +120,18 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2], [AC_LANG_PROGRAM([[
     __m256i a = _mm256_set_epi32(1, 2, 3, 4, 5, 6, 7, 8);
     __m256i b = _mm256_add_epi32(a, a);
     long long c = _mm256_extract_epi64(b, 0);
-    return (int) c;
+    return _mm_popcnt_u32((int) c);
     #endif
   ]])], [
   hts_cflags_avx2="$flags_needed"
   AC_SUBST([hts_cflags_avx2])
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX2],1,[Defined to 1 if rANS source using AVX2 can be compiled.])
 ])
 
 dnl Options for rANS32x16 avx512 version
-HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
+ [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     #include "x86intrin.h"
     #endif
@@ -168,11 +139,12 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f], [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     __m512i a = _mm512_set1_epi32(1);
     __m512i b = _mm512_add_epi32(a, a);
-    return *((char *) &b);
+    return _mm_popcnt_u32(*((char *) &b));
     #endif
   ]])], [
   hts_cflags_avx512="$flags_needed"
   AC_SUBST([hts_cflags_avx512])
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
 ])
 

@@ -68,6 +68,7 @@ INSTALL_PROGRAM = $(INSTALL)
 plugindir =
 
 BUILT_PROGRAMS = \
+	annot-tsv \
 	bgzip \
 	htsfile \
 	tabix
@@ -134,9 +135,7 @@ HTS_CFLAGS_SSE4 =
 # Control building of SIMD code.  Not used if configure has been run.
 HTS_BUILD_AVX2 =
 HTS_BUILD_AVX512 =
-HTS_BUILD_SSSE3 =
-HTS_BUILD_POPCNT =
-HTS_BUILD_SSE4_1 =
+HTS_BUILD_SSE4 =
 
 include htslib_vars.mk
 include htscodecs.mk
@@ -151,12 +150,8 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.18
-MACH_O_CURRENT_VERSION = 3.1.18
-
-# $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
-# even if this is a dirty or untagged Git working tree.
-NUMERIC_VERSION := $(shell $(srcdir)/version.sh numeric)
+MACH_O_COMPATIBILITY_VERSION = 3.1.19
+MACH_O_CURRENT_VERSION = 3.1.19
 
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
@@ -169,7 +164,6 @@ print-version:
 
 show-version:
 	@echo PACKAGE_VERSION = $(PACKAGE_VERSION)
-	@echo NUMERIC_VERSION = $(NUMERIC_VERSION)
 
 config_vars.h: override escape=$(subst ',\x27,$(subst ",\",$(subst \,\\,$(1))))
 config_vars.h: override hts_cc_escaped=$(call escape,$(CC))
@@ -252,6 +246,7 @@ cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h)
 cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) $(htslib_cram_h) cram/string_alloc.h cram/mFILE.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
+fuzz_settings_h = fuzz_settings.h
 header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
 hfile_internal_h = hfile_internal.h $(htslib_hts_defs_h) $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
@@ -283,9 +278,7 @@ config.h:
 	echo '#endif' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
 	echo '#define HAVE_LIBCURL 1' >> $@
-	if [ "x$(HTS_BUILD_POPCNT)" != "x" ] && \
-	   [ "x$(HTS_BUILD_SSE4_1)" != "x" ] && \
-	   [ "x$(HTS_BUILD_SSSE3)" != "x" ]; then \
+	if [ "x$(HTS_BUILD_SSE4)" != "x" ]; then \
 	    echo '#define HAVE_POPCNT 1' >> $@ ; \
 	    echo '#define HAVE_SSE4_1 1' >> $@ ; \
 	    echo '#define HAVE_SSSE3 1' >> $@ ; \
@@ -354,7 +347,6 @@ print-config:
 	@echo HTS_CFLAGS_AVX2 = $(HTS_CFLAGS_AVX2)
 	@echo HTS_CFLAGS_AVX512 = $(HTS_CFLAGS_AVX512)
 	@echo HTS_CFLAGS_SSE4 = $(HTS_CFLAGS_SSE4)
-	@echo HTS_HAVE_NEON = $(HTS_HAVE_NEON)
 	@echo LDFLAGS = $(LDFLAGS)
 	@echo LIBHTS_OBJS = $(LIBHTS_OBJS)
 	@echo LIBS = $(LIBS)
@@ -456,8 +448,8 @@ hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h
 hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_log_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
-vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
-sam.o sam.pico: sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
+vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
+sam.o sam.pico: sam.c config.h $(fuzz_settings_h) $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 sam_mods.o sam_mods.pico: sam_mods.c config.h $(htslib_sam_h) $(textutils_internal_h)
 tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_hts_endian_h) $(hts_internal_h) $(htslib_khash_h)
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kstring_h) $(hts_internal_h)
@@ -475,12 +467,12 @@ probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
 realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(htslib_sam_h) $(hts_internal_h)
 
-cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
+cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(fuzz_settings_h) $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h) $(textutils_internal_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htscodecs_rANS_static4x16_h) $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(fuzz_settings_h) $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(htslib_hts_h)
@@ -508,6 +500,9 @@ htscodecs/htscodecs/rANS_static32x16pr_avx2.o htscodecs/htscodecs/rANS_static32x
 htscodecs/htscodecs/rANS_static32x16pr_avx512.o htscodecs/htscodecs/rANS_static32x16pr_avx512.pico: TARGET_CFLAGS = $(HTS_CFLAGS_AVX512)
 htscodecs/htscodecs/rANS_static32x16pr_sse4.o htscodecs/htscodecs/rANS_static32x16pr_sse4.pico: TARGET_CFLAGS = $(HTS_CFLAGS_SSE4)
 
+annot-tsv: annot-tsv.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ annot-tsv.o libhts.a $(LIBS) -lpthread
+
 bgzip: bgzip.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ bgzip.o libhts.a $(LIBS) -lpthread
 
@@ -517,6 +512,7 @@ htsfile: htsfile.o libhts.a
 tabix: tabix.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS) -lpthread
 
+annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h)
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hfile_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
@@ -565,10 +561,12 @@ htscodecs/htscodecs/version.h: force
 	fi
 endif
 
+# Maintainer extra targets built
+# - compile public headers as C++
 # Maintainer source code checks
 # - copyright boilerplate presence
 # - tab and trailing space detection
-maintainer-check:
+maintainer-check: test/usepublic.o
 	test/maintainer/check_copyright.pl .
 	test/maintainer/check_spaces.pl .
 
@@ -619,7 +617,11 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
 
-test/fuzz/hts_open_fuzzer: test/fuzz/hts_open_fuzzer.o
+# To build the fuzzer, try:
+# make  CC="clang16 -fsanitize=address,undefined,fuzzer" \
+#     CFLAGS="-g -O3 -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION" \
+#     test/fuzz/hts_open_fuzzer
+test/fuzz/hts_open_fuzzer: test/fuzz/hts_open_fuzzer.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fuzz/hts_open_fuzzer.o libhts.a $(LIBS) -lpthread
 
 test/fieldarith: test/fieldarith.o libhts.a
@@ -775,6 +777,11 @@ test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
 test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c
 
+# Standalone target not added to $(BUILT_TEST_PROGRAMS) as some may not
+# have a compiler that compiles as C++ when given a .cpp source file.
+test/usepublic.o: test/usepublic.cpp config.h $(htslib_bgzf_h) $(htslib_cram_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(htslib_hts_log_h) $(htslib_hts_os_h) $(htslib_kbitset_h) $(htslib_kfunc_h) $(htslib_khash_h) $(htslib_khash_str2int_h) $(htslib_klist_h) $(HTSPREFIX)htslib/knetfile.h $(htslib_kroundup_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_sam_h) $(htslib_synced_bcf_reader_h) $(htslib_tbx_h) $(htslib_thread_pool_h) $(htslib_vcf_h) $(htslib_vcf_sweep_h) $(htslib_vcfutils_h)
+	$(CC) $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) -c -o $@ test/usepublic.cpp
+
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS) -lpthread
@@ -855,7 +862,7 @@ install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
 	$(INSTALL_DATA) $(SRC)htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_MAN) $(SRC)bgzip.1 $(SRC)htsfile.1 $(SRC)tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_MAN) $(SRC)annot-tsv.1 $(SRC)bgzip.1 $(SRC)htsfile.1 $(SRC)tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_MAN) $(SRC)faidx.5 $(SRC)sam.5 $(SRC)vcf.5 $(DESTDIR)$(man5dir)
 	$(INSTALL_MAN) $(SRC)htslib-s3-plugin.7 $(DESTDIR)$(man7dir)
 
