@@ -938,10 +938,18 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
          fmt->format == fastq_format))
         fp->format.format = fmt->format;
 
-    if (fmt && fmt->specific)
-        if (hts_opt_apply(fp, fmt->specific) != 0)
+    if (fmt && fmt->specific) {
+        if (hts_opt_apply(fp, fmt->specific) != 0) {
+            if (((hts_opt*)fmt->specific)->opt == CRAM_OPT_REFERENCE &&
+                (errno == ENOENT || errno == EIO || errno == EBADF ||
+                  errno == EACCES || errno == EISDIR)) {
+                /* error during reference file operation
+                 for these specific errors, set the error as EINVAL */
+                errno = EINVAL;
+            }
             goto error;
-
+        }
+    }
     if ( rmme ) free(rmme);
     return fp;
 
@@ -1595,6 +1603,10 @@ error:
 int hts_close(htsFile *fp)
 {
     int ret = 0, save;
+    if (!fp) {
+        errno = EINVAL;
+        return -1;
+    }
 
     switch (fp->format.format) {
     case binary_format:
