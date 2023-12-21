@@ -446,7 +446,7 @@ static int fai_build3_core(const char *fn, const char *fnfai, const char *fngzi)
     bgzf = bgzf_open(fn, "r");
 
     if ( !bgzf ) {
-        hts_log_error("Failed to open the file %s", fn);
+        hts_log_error("Failed to open the file %s : %s", fn, strerror(errno));
         goto fail;
     }
 
