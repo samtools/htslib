@@ -3102,11 +3102,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             if (aux_end - aux < 4+4)
                 goto err;
 
-            int type = aux[3], blen;
-            uint32_t count = (((uint32_t)((unsigned char *)aux)[4]) << 0 |
-                              ((uint32_t)((unsigned char *)aux)[5]) << 8 |
-                              ((uint32_t)((unsigned char *)aux)[6]) <<16 |
-                              ((uint32_t)((unsigned char *)aux)[7]) <<24);
+            int type = aux[3];
+            uint64_t count = (((uint64_t)((unsigned char *)aux)[4]) << 0 |
+                              ((uint64_t)((unsigned char *)aux)[5]) << 8 |
+                              ((uint64_t)((unsigned char *)aux)[6]) <<16 |
+                              ((uint64_t)((unsigned char *)aux)[7]) <<24);
+            uint64_t blen;
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     goto err;
@@ -3141,10 +3142,10 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             }
 
             blen += 5; // sub-type & length
-            if (aux_end - aux < blen)
+            if (aux_end - aux < blen || blen > INT_MAX)
                 goto err;
 
-            if (codec->encode(s, codec, aux, blen) < 0)
+            if (codec->encode(s, codec, aux, (int) blen) < 0)
                 goto err;
             aux += blen;
             break;
