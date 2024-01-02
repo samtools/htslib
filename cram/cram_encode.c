@@ -3099,7 +3099,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         }
 
         case 'B': {
-            if (aux_end - aux < 3+4)
+            if (aux_end - aux < 4+4)
                 goto err;
 
             int type = aux[3], blen;
