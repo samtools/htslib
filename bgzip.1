@@ -71,7 +71,9 @@ otherwise when compressing bgzip will write to a new file with a .gz
 suffix and remove the original.  When decompressing the input file must
 have a .gz suffix, which will be removed to make the output name.  Again
 after decompression completes the input file will be removed. When multiple
-files are given as input, the operation is performed on all of them.
+files are given as input, the operation is performed on all of them. Access
+and modification time of input file from filesystem is set to output file. 
+Note, access time may get updated by system when it deems appropriate.
 
 .SH OPTIONS
 .TP 10
