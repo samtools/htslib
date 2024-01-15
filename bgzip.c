@@ -34,6 +34,8 @@
 #include <stdarg.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "htslib/hfile.h"
@@ -41,6 +43,7 @@
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
+#  include <sys/utime.h>
 #endif
 
 static const int WINDOW_SIZE = BGZF_BLOCK_SIZE;
@@ -103,6 +106,64 @@ static int confirm_filename(int *is_forced, const char *name, const char *ext)
     return ask_yn();
 }
 
+/* getfilespec - get file status data
+   path        - file path for which status to be retrieved
+   status      - pointer to status structure in which the data to be stored
+   returns 0 on success and -1 on failure
+*/
+static int getfilespec(const char *path, struct stat *status)
+{
+    if (!path || !status) {     //invalid
+        return -1;
+    }
+    if (!strcmp(path, "-")) {   //cant get / set for stdin/out, return success
+        return 0;
+    }
+    if (stat(path, status) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* setfilespec - set file status data
+   path        - file path for which status to be set
+   status      - pointer to status structure in which the data is present
+   returns 0 on success and -1 on failure
+   sets only the time as of now.
+*/
+static int setfilespec(const char *path, const struct stat *status)
+{
+    if (!path || !status) {     //invalid
+        return -1;
+    }
+    if (!strcmp(path, "-")) {   //cant get / set for stdin/out, return success
+        return 0;
+    }
+
+#ifdef _WIN32
+    struct _utimbuf tval;
+    //time upto sec - access & modification time
+    tval.actime = status->st_atime;
+    tval.modtime = status->st_mtime;
+    if (_utime(path, &tval) < 0) {
+        fprintf(stderr, "[bgzip] Failed to set file specifications.\n");
+        return -1;
+    }
+#else
+    struct timeval tval[2];
+    memset(&tval[0], 0, sizeof(tval));
+    //time upto sec - access time
+    tval[0].tv_sec = status->st_atime;
+    //time upto sec - modification time
+    tval[1].tv_sec = status->st_mtime;
+    if (utimes(path, &tval[0]) < 0) {
+        fprintf(stderr, "[bgzip] Failed to set file specifications.\n");
+        return -1;
+    }
+#endif //_WIN32
+    return 0;
+}
+
 static int bgzip_main_usage(FILE *fp, int status)
 {
     fprintf(fp, "\n");
@@ -135,6 +196,8 @@ int main(int argc, char **argv)
     long start, end, size;
     char *index_fname = NULL;
     int threads = 1, isstdin = 0, usedstdout = 0, ret = 0;
+    struct stat filestat;
+    char *statfilename = NULL;
 
     static const struct option loptions[] =
     {
@@ -211,6 +274,7 @@ int main(int argc, char **argv)
         /*stdout is in use when explicitly selected or when stdin in is in use, it need to be closed
         explicitly to get all io errors*/
         usedstdout |= isstdin || pstdout || test;
+        statfilename = NULL;
 
         if (compress == 1) {
             hFILE* f_src = NULL;
@@ -257,7 +321,7 @@ int main(int argc, char **argv)
                         free(name);
                         return 1;
                     }
-                    free(name);
+                    statfilename = name;
                 }
             }
             else if (!pstdout && isatty(fileno((FILE *)stdout)) )
@@ -275,8 +339,12 @@ int main(int argc, char **argv)
                 bgzf_mt(fp, threads, 256);
 
             buffer = malloc(WINDOW_SIZE);
-            if (!buffer)
+            if (!buffer) {
+                if (statfilename) {
+                    free(statfilename);
+                }
                 return 1;
+            }
             if (rebgzip){
                 if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.%s\n", !isstdin ? argv[optind] : index_fname, !isstdin ? "gzi" : "");
 
@@ -360,8 +428,12 @@ int main(int argc, char **argv)
                             error("Could not write %d bytes: Error %d\n",
                                 n, fp->errcode);
                         if (flush)
-                            if (bgzf_flush_try(fp, 65536) < 0) // force
+                            if (bgzf_flush_try(fp, 65536) < 0) {// force
+                                if (statfilename) {
+                                    free(statfilename);
+                                }
                                 return -1;
+                            }
 
                         memmove(buffer, buffer+n, c2-n);
                         n = c2-n;
@@ -391,6 +463,19 @@ int main(int argc, char **argv)
                 error("Output close failed: Error %d\n", fp->errcode);
             if (hclose(f_src) < 0)
                 error("Input close failed\n");
+            if (statfilename) {
+                //get input file timestamp
+                if (!getfilespec(argv[optind], &filestat)) {
+                    //set output file timestamp
+                    if (setfilespec(statfilename, &filestat) < 0) {
+                        fprintf(stderr, "[bgzip] Failed to set file specification.\n");
+                    }
+                }
+                else {
+                    fprintf(stderr, "[bgzip] Failed to get file specification.\n");
+                }
+                free(statfilename);
+            }
             if (argc > optind && !pstdout && !keep && !isstdin) unlink(argv[optind]);
             free(buffer);
         }
@@ -487,7 +572,7 @@ int main(int argc, char **argv)
                         free(name);
                         return 1;
                     }
-                    free(name);
+                    statfilename = name;
                 }
             }
             else if (!pstdout && isatty(fileno((FILE *)stdin)) )
@@ -549,6 +634,19 @@ int main(int argc, char **argv)
             end = end_reg;
             free(buffer);
             if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
+            if (statfilename) {
+                //get input file timestamp
+                if (!getfilespec(argv[optind], &filestat)) {
+                    //set output file timestamp
+                    if (setfilespec(statfilename, &filestat) < 0) {
+                        fprintf(stderr, "[bgzip] Failed to set file specification.\n");
+                    }
+                }
+                else {
+                    fprintf(stderr, "[bgzip] Failed to get file specification.\n");
+                }
+                free(statfilename);
+            }
             if (argc > optind && !pstdout && !test && !keep && !isstdin) unlink(argv[optind]);
             if (!isstdin && !pstdout && !test) {
                 close(f_dst);                               //close output file when it is not stdout
