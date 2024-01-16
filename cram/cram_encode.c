@@ -953,14 +953,14 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
      */
     {
         int i;
-        for (i = 0; i < s->naux_block; i++) {
-            if (!s->aux_block[i] || s->aux_block[i] == s->block[0])
+        for (i = DS_END /*num_blk - naux_blk*/; i < s->hdr->num_blocks; i++) {
+            if (!s->block[i] || s->block[i] == s->block[0])
                 continue;
 
-            if (s->aux_block[i]->method != RAW)
+            if (s->block[i]->method != RAW)
                 continue;
 
-            if (cram_compress_block2(fd, s, s->aux_block[i], s->aux_block[i]->m,
+            if (cram_compress_block2(fd, s, s->block[i], s->block[i]->m,
                                      method, level))
                 return -1;
         }
