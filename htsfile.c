@@ -250,7 +250,7 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "htsfile (htslib) %s\n"
-"Copyright (C) 2023 Genome Research Ltd.\n",
+"Copyright (C) 2024 Genome Research Ltd.\n",
                    hts_version());
             exit(EXIT_SUCCESS);
             break;
