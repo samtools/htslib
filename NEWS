@@ -1,6 +1,24 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Fixed a regression in release 1.19 that caused all aux records to
+  be stored uncompressed in CRAM files.  The resulting files were
+  correctly formatted, but bigger than they needed to be.
+  (PR#1729, fixes samtools#1968.  Reported by Clockris)
+
+* Fixed possible out-of-bounds reads due to an incorrect check on
+  B tag lengths in cram_encode_aux().  (PR#1725)
+
+* Fixed an incorrect check on tag length which could fail to catch a
+  two byte out-of-bounds read in bam_get_aux(). (PR#1728)
+
+* Made errors reported by hts_open_format() less confusing when it can't
+  open the reference file.  (PR#1724, fixes #1723.  Reported by
+  Alex Leonard)
+
+* Made hts_close() fail more gracefully if it's passed a NULL pointer
+  (PR#1724)
+
 Noteworthy changes in release 1.19 (12th December 2023)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
