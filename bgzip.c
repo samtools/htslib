@@ -176,7 +176,7 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "bgzip (htslib) %s\n"
-"Copyright (C) 2023 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2024 Genome Research Ltd.\n", hts_version());
             return EXIT_SUCCESS;
         case  2:  binary = 1; break;
         case 'h': return bgzip_main_usage(stdout, EXIT_SUCCESS);
