@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Noteworthy changes in release 1.19.1 (22nd January 2024)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 * Fixed a regression in release 1.19 that caused all aux records to
   be stored uncompressed in CRAM files.  The resulting files were
   correctly formatted, but bigger than they needed to be.
