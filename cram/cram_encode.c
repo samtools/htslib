@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2020, 2022-2023 Genome Research Ltd.
+Copyright (c) 2012-2020, 2022-2024 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -953,14 +953,14 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
      */
     {
         int i;
-        for (i = 0; i < s->naux_block; i++) {
-            if (!s->aux_block[i] || s->aux_block[i] == s->block[0])
+        for (i = DS_END /*num_blk - naux_blk*/; i < s->hdr->num_blocks; i++) {
+            if (!s->block[i] || s->block[i] == s->block[0])
                 continue;
 
-            if (s->aux_block[i]->method != RAW)
+            if (s->block[i]->method != RAW)
                 continue;
 
-            if (cram_compress_block2(fd, s, s->aux_block[i], s->aux_block[i]->m,
+            if (cram_compress_block2(fd, s, s->block[i], s->block[i]->m,
                                      method, level))
                 return -1;
         }
@@ -3099,14 +3099,15 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         }
 
         case 'B': {
-            if (aux_end - aux < 3+4)
+            if (aux_end - aux < 4+4)
                 goto err;
 
-            int type = aux[3], blen;
-            uint32_t count = (((uint32_t)((unsigned char *)aux)[4]) << 0 |
-                              ((uint32_t)((unsigned char *)aux)[5]) << 8 |
-                              ((uint32_t)((unsigned char *)aux)[6]) <<16 |
-                              ((uint32_t)((unsigned char *)aux)[7]) <<24);
+            int type = aux[3];
+            uint64_t count = (((uint64_t)((unsigned char *)aux)[4]) << 0 |
+                              ((uint64_t)((unsigned char *)aux)[5]) << 8 |
+                              ((uint64_t)((unsigned char *)aux)[6]) <<16 |
+                              ((uint64_t)((unsigned char *)aux)[7]) <<24);
+            uint64_t blen;
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     goto err;
@@ -3141,10 +3142,10 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             }
 
             blen += 5; // sub-type & length
-            if (aux_end - aux < blen)
+            if (aux_end - aux < blen || blen > INT_MAX)
                 goto err;
 
-            if (codec->encode(s, codec, aux, blen) < 0)
+            if (codec->encode(s, codec, aux, (int) blen) < 0)
                 goto err;
             aux += blen;
             break;

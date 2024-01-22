@@ -4693,7 +4693,7 @@ uint8_t *bam_aux_first(const bam1_t *b)
 {
     uint8_t *s = bam_get_aux(b);
     uint8_t *end = b->data + b->l_data;
-    if (s >= end) { errno = ENOENT; return NULL; }
+    if (end - s <= 2) { errno = ENOENT; return NULL; }
     return s+2;
 }
 
@@ -4702,7 +4702,7 @@ uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s)
     uint8_t *end = b->data + b->l_data;
     uint8_t *next = s? skip_aux((uint8_t *) s, end) : end;
     if (next == NULL) goto bad_aux;
-    if (next >= end) { errno = ENOENT; return NULL; }
+    if (end - next <= 2) { errno = ENOENT; return NULL; }
     return next+2;
 
  bad_aux:
