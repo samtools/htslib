@@ -2799,15 +2799,22 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         // RG:Z
         if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
             char *rg = &aux[3];
+            aux = rg;
+            while (aux < aux_end && *aux++);
+            if (aux == aux_end && aux[-1] != '\0') {
+                hts_log_error("Unterminated RG:Z tag for read \"%s\"",
+                              bam_get_qname(b));
+                goto err;
+            }
             brg = sam_hrecs_find_rg(fd->header->hrecs, rg);
             if (brg) {
-                while (aux < aux_end && *aux++);
                 if (CRAM_MAJOR_VERS(fd->version) >= 4)
                     BLOCK_APPEND(td_b, "RG*", 3);
                 continue;
             } else {
                 // RG:Z tag will be stored verbatim
                 hts_log_warning("Missing @RG header for RG \"%s\"", rg);
+                aux = rg - 3;
             }
         }
 
@@ -2816,6 +2823,11 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             if (cr->len && !no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_MD) {
                 if (MD && MD->s && strncasecmp(MD->s, aux+3, orig + aux_size - (aux+3)) == 0) {
                     while (aux < aux_end && *aux++);
+                    if (aux == aux_end && aux[-1] != '\0') {
+                        hts_log_error("Unterminated MD:Z tag for read \"%s\"",
+                                      bam_get_qname(b));
+                        goto err;
+                    }
                     if (CRAM_MAJOR_VERS(fd->version) >= 4)
                         BLOCK_APPEND(td_b, "MD*", 3);
                     continue;
@@ -3093,6 +3105,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             aux += 3;
             aux_s = aux;
             while (aux < aux_end && *aux++);
+            if (aux == aux_end && aux[-1] != '\0') {
+                hts_log_error("Unterminated %c%c:%c tag for read \"%s\"",
+                              aux_s[-3], aux_s[-2], aux_s[-1],
+                              bam_get_qname(b));
+                goto err;
+            }
             if (codec->encode(s, codec, aux_s, aux - aux_s) < 0)
                 goto err;
             break;
