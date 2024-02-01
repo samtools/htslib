@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2023 Genome Research Ltd.
+    Copyright (C) 2012-2024 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -3029,6 +3029,26 @@ static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
     }
 
+    // check for duplicate tags
+    int i;
+    for (i=1; i<v->n_fmt; i++)
+    {
+        fmt_aux_t *ifmt = &fmt[i];
+        if ( ifmt->size==-1 ) continue; // already marked for removal
+        for (j=0; j<i; j++)
+        {
+            fmt_aux_t *jfmt = &fmt[j];
+            if ( jfmt->size==-1 ) continue; // already marked for removal
+            if ( ifmt->key!=jfmt->key ) continue;
+            static int warned = 0;
+            if ( !warned ) hts_log_warning("Duplicate FORMAT tag %s at %s:%"PRIhts_pos, bcf_hdr_int2id(h,BCF_DT_ID,ifmt->key), bcf_seqname_safe(h,v), v->pos+1);
+            warned = 1;
+            v->errcode |= BCF_ERR_TAG_INVALID;
+            ifmt->size = -1;
+            ifmt->offset = 0;
+            break;
+        }
+    }
     return 0;
 }
 
@@ -3072,7 +3092,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 
             if ( z->size==-1 )
             {
-                // this field is to be ignored, it's too big
+                // this field is to be ignored, it's either too big or a duplicate
                 while ( *t != ':' && *t ) t++;
             }
             else if (htype == BCF_HT_STR) {
@@ -3274,18 +3294,17 @@ static int vcf_parse_format_gt6(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 
     }
     if ( need_downsize ) {
-        i = 1;
+        i = 0;
         while ( i < v->n_fmt ) {
             if ( fmt[i].size==-1 )
             {
-                memmove(&fmt[i-1],&fmt[i],sizeof(*fmt));
                 v->n_fmt--;
+                if ( i < v->n_fmt ) memmove(&fmt[i],&fmt[i+1],sizeof(*fmt)*(v->n_fmt-i));
             }
             else
                 i++;
         }
     }
-
     return 0;
 }
 
