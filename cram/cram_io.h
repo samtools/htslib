@@ -391,7 +391,7 @@ void refs_free(refs_t *r);
  * Returns reference on success;
  *         NULL on failure
  */
-char *cram_get_ref(cram_fd *fd, int id, int start, int end);
+char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end);
 void cram_ref_incr(refs_t *r, int id);
 void cram_ref_decr(refs_t *r, int id);
 /**@}*/
