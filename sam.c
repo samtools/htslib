@@ -2383,6 +2383,14 @@ int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
  *** SAM record I/O ***
  **********************/
 
+// Future experiments to try for improving the robustness of compilation.
+// If parsing suddenly changes speed again, we may wish to force specific
+// alignment within this code so that it is immune to location changes
+// caused by modifications elsewhere.  For now however it appears to
+// have consistent behaviour.
+//
+//__attribute__((aligned(32)))
+//__attribute__((optimize("align-loops=5")))
 static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
                             char *r, bam1_t *b)
 {
@@ -2410,66 +2418,69 @@ static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
     b->data[b->l_data++] = type;
     i32_to_le(n, b->data + b->l_data);
     b->l_data += sizeof(uint32_t);
+
     // This ensures that q always ends up at the next comma after
     // reading a number even if it's followed by junk.  It
     // prevents the possibility of trying to read more than n items.
 #define skip_to_comma_(q) do { while (*(q) > '\t' && *(q) != ',') (q)++; } while (0)
+
     if (type == 'c') {
-        while (q < r) {
+        while (q < r && *q == ',') {
             *(b->data + b->l_data) = hts_str2int(q + 1, &q, 8, &overflow);
             b->l_data++;
-            skip_to_comma_(q);
         }
     } else if (type == 'C') {
-        while (q < r) {
-            if (*q != '-') {
+        while (q < r && *q == ',') {
+            if (q[1] != '-') {
                 *(b->data + b->l_data) = hts_str2uint(q + 1, &q, 8, &overflow);
                 b->l_data++;
             } else {
                 overflow = 1;
+                q++;
+                skip_to_comma_(q);
             }
-            skip_to_comma_(q);
         }
     } else if (type == 's') {
-        while (q < r) {
+        while (q < r && *q == ',') {
             i16_to_le(hts_str2int(q + 1, &q, 16, &overflow), b->data + b->l_data);
             b->l_data += 2;
-            skip_to_comma_(q);
         }
     } else if (type == 'S') {
-        while (q < r) {
-            if (*q != '-') {
+        while (q < r && *q == ',') {
+            if (q[1] != '-') {
                 u16_to_le(hts_str2uint(q + 1, &q, 16, &overflow), b->data + b->l_data);
                 b->l_data += 2;
             } else {
                 overflow = 1;
+                q++;
+                skip_to_comma_(q);
             }
-            skip_to_comma_(q);
         }
     } else if (type == 'i') {
-        while (q < r) {
+        while (q < r && *q == ',') {
             i32_to_le(hts_str2int(q + 1, &q, 32, &overflow), b->data + b->l_data);
             b->l_data += 4;
-            skip_to_comma_(q);
         }
     } else if (type == 'I') {
-        while (q < r) {
-            if (*q != '-') {
+        while (q < r && *q == ',') {
+            if (q[1] != '-') {
                 u32_to_le(hts_str2uint(q + 1, &q, 32, &overflow), b->data + b->l_data);
                 b->l_data += 4;
             } else {
                 overflow = 1;
+                q++;
+                skip_to_comma_(q);
             }
-            skip_to_comma_(q);
         }
     } else if (type == 'f') {
-        while (q < r) {
+        while (q < r && *q == ',') {
             float_to_le(strtod(q + 1, &q), b->data + b->l_data);
             b->l_data += 4;
-            skip_to_comma_(q);
         }
-    } else {
-        hts_log_error("Unrecognized type B:%c", type);
+    }
+    if (q < r) {
+        // Unknown B array type or junk in the numbers
+        hts_log_error("Malformed B:%c", type);
         return -1;
     }
 

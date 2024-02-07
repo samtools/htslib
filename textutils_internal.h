@@ -221,27 +221,43 @@ static inline int64_t hts_str2int(const char *in, char **end, int bits,
     uint32_t fast = (bits - 1) * 1000 / 3322 + 1; // log(10)/log(2) ~= 3.322
     const unsigned char *v = (const unsigned char *) in;
     const unsigned int ascii_zero = '0'; // Prevents conversion to signed
-    unsigned char d;
-    int neg = 1;
+    unsigned int d;
 
+    int neg;
     switch(*v) {
     case '-':
-        neg=-1;
-        limit++; /* fall through */
+        limit++;
+        neg=1;
+        v++;
+        // See "dup" comment below
+        while (--fast && *v>='0' && *v<='9')
+            n = n*10 + *v++ - ascii_zero;
+        break;
+
     case '+':
         v++;
-        break;
+        // fall through
+
     default:
+        neg = 0;
+        // dup of above.  This is somewhat unstable and mainly for code
+        // size cheats to prevent instruction cache lines spanning 32-byte
+        // blocks in the sam_parse_B_vals calling code.  It's been tested
+        // on gcc7, gcc13, clang10 and clang16 with -O2 and -O3.  While
+        // not exhaustive, this code duplication gives stable fast results
+        // while a single copy does not.
+        // (NB: system was "seq4d", so quite old)
+        while (--fast && *v>='0' && *v<='9')
+            n = n*10 + *v++ - ascii_zero;
         break;
     }
 
-    while (--fast && *v>='0' && *v<='9')
-        n = n*10 + *v++ - ascii_zero;
-
-    if (!fast) {
+    // NB gcc7 is slow with (unsigned)(*v - ascii_zero) < 10,
+    // while gcc13 prefers it.
+    if (*v>='0' && !fast) { // rejects ',' and tab
         uint64_t limit_d_10 = limit / 10;
         uint64_t limit_m_10 = limit - 10 * limit_d_10;
-         while ((d = *v - ascii_zero) < 10) {
+        while ((d = *v - ascii_zero) < 10) {
             if (n < limit_d_10 || (n == limit_d_10 && d <= limit_m_10)) {
                 n = n*10 + d;
                 v++;
@@ -256,7 +272,7 @@ static inline int64_t hts_str2int(const char *in, char **end, int bits,
 
     *end = (char *)v;
 
-    return (n && neg < 0) ? -((int64_t) (n - 1)) - 1 : (int64_t) n;
+    return neg ? (int64_t)-n : (int64_t)n;
 }
 
 /// Convert a string to an unsigned integer, with overflow detection
@@ -279,12 +295,12 @@ Both end and failed must be non-NULL.
  */
 
 static inline uint64_t hts_str2uint(const char *in, char **end, int bits,
-                                      int *failed) {
+                                    int *failed) {
     uint64_t n = 0, limit = (bits < 64 ? (1ULL << bits) : 0) - 1;
     const unsigned char *v = (const unsigned char *) in;
     const unsigned int ascii_zero = '0'; // Prevents conversion to signed
     uint32_t fast = bits * 1000 / 3322 + 1; // log(10)/log(2) ~= 3.322
-    unsigned char d;
+    unsigned int d;
 
     if (*v == '+')
         v++;
@@ -292,7 +308,7 @@ static inline uint64_t hts_str2uint(const char *in, char **end, int bits,
     while (--fast && *v>='0' && *v<='9')
         n = n*10 + *v++ - ascii_zero;
 
-    if (!fast) {
+    if ((unsigned)(*v - ascii_zero) < 10 && !fast) {
         uint64_t limit_d_10 = limit / 10;
         uint64_t limit_m_10 = limit - 10 * limit_d_10;
         while ((d = *v - ascii_zero) < 10) {
