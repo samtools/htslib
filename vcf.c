@@ -1557,6 +1557,7 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     u32_to_le(htxt.l, hlen);
     if ( bgzf_write(fp, hlen, 4) !=4 ) return -1;
     if ( bgzf_write(fp, htxt.s, htxt.l) != htxt.l ) return -1;
+    if ( bgzf_flush(fp) < 0) return -1;
 
     free(htxt.s);
     return 0;
