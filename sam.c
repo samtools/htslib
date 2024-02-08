@@ -2383,17 +2383,175 @@ int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
  *** SAM record I/O ***
  **********************/
 
-// Future experiments to try for improving the robustness of compilation.
-// If parsing suddenly changes speed again, we may wish to force specific
-// alignment within this code so that it is immune to location changes
-// caused by modifications elsewhere.  For now however it appears to
-// have consistent behaviour.
-//
-//__attribute__((aligned(32)))
-//__attribute__((optimize("align-loops=5")))
-static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
-                            char *r, bam1_t *b)
-{
+// The speed of this code can vary considerably depending on minor code
+// changes elsewhere as some of the tight loops are particularly prone to
+// speed changes when the instruction blocks are split over a 32-byte
+// boundary.  To protect against this, we explicitly specify an alignment
+// for this function.  If this is insufficient, we may also wish to
+// consider alignment of blocks within this function via
+// __attribute__((optimize("align-loops=5"))) (gcc) or clang equivalents.
+// However it's not very portable.
+// Instead we break into separate functions so we can explicitly specify
+// use __attribute__((aligned(32))) instead and force consistent loop
+// alignment.
+static inline int64_t grow_B_array(bam1_t *b, uint32_t *n, size_t size) {
+    // Avoid overflow on 32-bit platforms, but it breaks BAM anyway
+    if (*n > INT32_MAX*0.666) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    size_t bytes = (size_t)size * (size_t)(*n>>1);
+    if (possibly_expand_bam_data(b, bytes) < 0) {
+        hts_log_error("Out of memory");
+        return -1;
+    }
+
+    (*n)+=*n>>1;
+    return 0;
+}
+
+
+// This ensures that q always ends up at the next comma after
+// reading a number even if it's followed by junk.  It
+// prevents the possibility of trying to read more than n items.
+#define skip_to_comma_(q) do { while (*(q) > '\t' && *(q) != ',') (q)++; } while (0)
+
+HTS_ALIGN32
+static char *sam_parse_Bc_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 1) < 0)
+                return NULL;
+        }
+        *(b->data + b->l_data) = hts_str2int(q + 1, &q, 8, overflow);
+        b->l_data++;
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static char *sam_parse_BC_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 1) < 0)
+                return NULL;
+        }
+        if (q[1] != '-') {
+            *(b->data + b->l_data) = hts_str2uint(q + 1, &q, 8, overflow);
+            b->l_data++;
+        } else {
+            *overflow = 1;
+            q++;
+            skip_to_comma_(q);
+        }
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static char *sam_parse_Bs_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 2) < 0)
+                return NULL;
+        }
+        i16_to_le(hts_str2int(q + 1, &q, 16, overflow),
+                  b->data + b->l_data);
+        b->l_data += 2;
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static char *sam_parse_BS_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 2) < 0)
+                return NULL;
+        }
+        if (q[1] != '-') {
+            u16_to_le(hts_str2uint(q + 1, &q, 16, overflow),
+                      b->data + b->l_data);
+            b->l_data += 2;
+        } else {
+            *overflow = 1;
+            q++;
+            skip_to_comma_(q);
+        }
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static char *sam_parse_Bi_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 4) < 0)
+                return NULL;
+        }
+        i32_to_le(hts_str2int(q + 1, &q, 32, overflow),
+                  b->data + b->l_data);
+        b->l_data += 4;
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static char *sam_parse_BI_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 4) < 0)
+                return NULL;
+        }
+        if (q[1] != '-') {
+            u32_to_le(hts_str2uint(q + 1, &q, 32, overflow),
+                      b->data + b->l_data);
+            b->l_data += 4;
+        } else {
+            *overflow = 1;
+            q++;
+            skip_to_comma_(q);
+        }
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static char *sam_parse_Bf_vals(bam1_t *b, char *q, uint32_t *nused,
+                               uint32_t *nalloc, int *overflow) {
+    while (*q == ',') {
+        if ((*nused)++ >= (*nalloc)) {
+            if (grow_B_array(b, nalloc, 4) < 0)
+                return NULL;
+        }
+        float_to_le(strtod(q + 1, &q), b->data + b->l_data);
+        b->l_data += 4;
+    }
+    return q;
+}
+
+HTS_ALIGN32
+static int sam_parse_B_vals_r(char type, uint32_t nalloc, char *in,
+                              char **end, bam1_t *b,
+                              int *ctr) {
+    // Protect against infinite recursion when dealing with invalid input.
+    // An example string is "XX:B:C,-".  The lack of a number means min=0,
+    // but it overflowed due to "-" and so we repeat ad-infinitum.
+    //
+    // Loop detection is the safest solution incase there are other
+    // strange corner cases with malformed inputs.
+    if (++(*ctr) > 2) {
+        hts_log_error("Malformed data in B:%c array", type);
+        return -1;
+    }
+
     int orig_l = b->l_data;
     char *q = in;
     int32_t size;
@@ -2406,83 +2564,60 @@ static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
         return -1;
     }
 
-    // Ensure space for type + values
-    bytes = (size_t) n * (size_t) size;
-    if (bytes / size != n
+    // Ensure space for type + values.
+    // The first pass through here we don't know the number of entries and
+    // nalloc == 0.  We start with a small working set and then parse the
+    // data, growing as needed.
+    //
+    // If we have a second pass through we do know the number of entries
+    // and nalloc is already known.  We have no need to expand the bam data.
+    if (!nalloc)
+         nalloc=7;
+
+    // Ensure allocated memory is big enough (for current nalloc estimate)
+    bytes = (size_t) nalloc * (size_t) size;
+    if (bytes / size != nalloc
         || possibly_expand_bam_data(b, bytes + 2 + sizeof(uint32_t))) {
         hts_log_error("Out of memory");
         return -1;
     }
 
+    uint32_t nused = 0;
+
     b->data[b->l_data++] = 'B';
     b->data[b->l_data++] = type;
-    i32_to_le(n, b->data + b->l_data);
+    // 32-bit B-array length is inserted later once we know it.
+    int b_len_idx = b->l_data;
     b->l_data += sizeof(uint32_t);
 
-    // This ensures that q always ends up at the next comma after
-    // reading a number even if it's followed by junk.  It
-    // prevents the possibility of trying to read more than n items.
-#define skip_to_comma_(q) do { while (*(q) > '\t' && *(q) != ',') (q)++; } while (0)
-
     if (type == 'c') {
-        while (q < r && *q == ',') {
-            *(b->data + b->l_data) = hts_str2int(q + 1, &q, 8, &overflow);
-            b->l_data++;
-        }
+        if (!(q = sam_parse_Bc_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     } else if (type == 'C') {
-        while (q < r && *q == ',') {
-            if (q[1] != '-') {
-                *(b->data + b->l_data) = hts_str2uint(q + 1, &q, 8, &overflow);
-                b->l_data++;
-            } else {
-                overflow = 1;
-                q++;
-                skip_to_comma_(q);
-            }
-        }
+        if (!(q = sam_parse_BC_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     } else if (type == 's') {
-        while (q < r && *q == ',') {
-            i16_to_le(hts_str2int(q + 1, &q, 16, &overflow), b->data + b->l_data);
-            b->l_data += 2;
-        }
+        if (!(q = sam_parse_Bs_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     } else if (type == 'S') {
-        while (q < r && *q == ',') {
-            if (q[1] != '-') {
-                u16_to_le(hts_str2uint(q + 1, &q, 16, &overflow), b->data + b->l_data);
-                b->l_data += 2;
-            } else {
-                overflow = 1;
-                q++;
-                skip_to_comma_(q);
-            }
-        }
+        if (!(q = sam_parse_BS_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     } else if (type == 'i') {
-        while (q < r && *q == ',') {
-            i32_to_le(hts_str2int(q + 1, &q, 32, &overflow), b->data + b->l_data);
-            b->l_data += 4;
-        }
+        if (!(q = sam_parse_Bi_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     } else if (type == 'I') {
-        while (q < r && *q == ',') {
-            if (q[1] != '-') {
-                u32_to_le(hts_str2uint(q + 1, &q, 32, &overflow), b->data + b->l_data);
-                b->l_data += 4;
-            } else {
-                overflow = 1;
-                q++;
-                skip_to_comma_(q);
-            }
-        }
+        if (!(q = sam_parse_BI_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     } else if (type == 'f') {
-        while (q < r && *q == ',') {
-            float_to_le(strtod(q + 1, &q), b->data + b->l_data);
-            b->l_data += 4;
-        }
+        if (!(q = sam_parse_Bf_vals(b, q, &nused, &nalloc, &overflow)))
+            return -1;
     }
-    if (q < r) {
+    if (*q != '\t' && *q != '\0') {
         // Unknown B array type or junk in the numbers
         hts_log_error("Malformed B:%c", type);
         return -1;
     }
+    i32_to_le(nused, b->data + b_len_idx);
 
     if (!overflow) {
         *end = q;
@@ -2490,6 +2625,7 @@ static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
     } else {
         int64_t max = 0, min = 0, val;
         // Given type was incorrect.  Try to rescue the situation.
+        char *r = q;
         q = in;
         overflow = 0;
         b->l_data = orig_l;
@@ -2504,19 +2640,19 @@ static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
         if (!overflow) {
             if (min < 0) {
                 if (min >= INT8_MIN && max <= INT8_MAX) {
-                    return sam_parse_B_vals('c', n, in, end, r, b);
+                    return sam_parse_B_vals_r('c', nalloc, in, end, b, ctr);
                 } else if (min >= INT16_MIN && max <= INT16_MAX) {
-                    return sam_parse_B_vals('s', n, in, end, r, b);
+                    return sam_parse_B_vals_r('s', nalloc, in, end, b, ctr);
                 } else if (min >= INT32_MIN && max <= INT32_MAX) {
-                    return sam_parse_B_vals('i', n, in, end, r, b);
+                    return sam_parse_B_vals_r('i', nalloc, in, end, b, ctr);
                 }
             } else {
                 if (max < UINT8_MAX) {
-                    return sam_parse_B_vals('C', n, in, end, r, b);
+                    return sam_parse_B_vals_r('C', nalloc, in, end, b, ctr);
                 } else if (max <= UINT16_MAX) {
-                    return sam_parse_B_vals('S', n, in, end, r, b);
+                    return sam_parse_B_vals_r('S', nalloc, in, end, b, ctr);
                 } else if (max <= UINT32_MAX) {
-                    return sam_parse_B_vals('I', n, in, end, r, b);
+                    return sam_parse_B_vals_r('I', nalloc, in, end, b, ctr);
                 }
             }
         }
@@ -2525,6 +2661,14 @@ static int sam_parse_B_vals(char type, uint32_t n, char *in, char **end,
         return -1;
     }
 #undef skip_to_comma_
+}
+
+HTS_ALIGN32
+static int sam_parse_B_vals(char type, char *in, char **end, bam1_t *b)
+{
+    int ctr = 0;
+    uint32_t nalloc = 0;
+    return sam_parse_B_vals_r(type, nalloc, in, end, b, &ctr);
 }
 
 static inline unsigned int parse_sam_flag(char *v, char **rv, int *overflow) {
@@ -2670,16 +2814,11 @@ static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient,
             b->data[b->l_data++] = '\0';
             q = end;
         } else if (type == 'B') {
-            uint32_t n;
-            char *r;
             type = *q++; // q points to the first ',' following the typing byte
             _parse_err(*q && *q != ',' && *q != '\t',
                        "B aux field type not followed by ','");
 
-            for (r = q, n = 0; *r > '\t'; ++r)
-                if (*r == ',') ++n;
-
-            if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
+            if (sam_parse_B_vals(type, q, &q, b) < 0)
                 goto err_ret;
         } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
 
