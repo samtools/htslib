@@ -4566,9 +4566,19 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
 }
 
 /*
- * Check the existence of a local index file using part of the alignment file name.
- * The order is alignment.bam.csi, alignment.csi, alignment.bam.bai, alignment.bai
+ * Check the existence of a local index file using part of the alignment
+ * file name.
+ *
+ * For a filename fn of fn.fmt (eg fn.bam or fn.cram) the order of checks is
+ * fn.fmt.csi,  fn.csi,
+ * fn.fmt.bai,  fn.bai  - if fmt is HTS_FMT_BAI
+ * fn.fmt.tbi,  fn.tbi  - if fmt is HTS_FMT_TBI
+ * fn.fmt.crai, fn.crai - if fmt is HTS_FMT_CRAI
+ * fn.fmt.fai           - if fmt is HTS_FMT_FAI
+ *   also .gzi if fmt is ".gz"
+ *
  * @param fn    - pointer to the file name
+ * @param fmt   - one of the HTS_FMT index formats
  * @param fnidx - pointer to the index file name placeholder
  * @return        1 for success, 0 for failure
  */
@@ -4576,11 +4586,12 @@ int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
     int i, l_fn, l_ext;
     const char *fn_tmp = NULL;
     char *fnidx_tmp;
-    char *csi_ext = ".csi";
-    char *bai_ext = ".bai";
-    char *tbi_ext = ".tbi";
-    char *crai_ext = ".crai";
-    char *fai_ext = ".fai";
+    const char *csi_ext = ".csi";
+    const char *bai_ext = ".bai";
+    const char *tbi_ext = ".tbi";
+    const char *crai_ext = ".crai";
+    const char *fai_ext = ".fai";
+    const char *gzi_ext = ".gzi";
 
     if (!fn)
         return 0;
@@ -4677,10 +4688,21 @@ int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
                 }
         }
     } else if (fmt == HTS_FMT_FAI) { // Or .fai
-        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, fai_ext);
+        // Check .gzi if we have a .gz file
+        strcpy(fnidx_tmp, fn_tmp);
+        int gzi_ok = 1;
+        if ((l_fn > 3 && strcmp(fn_tmp+l_fn-3, ".gz") == 0) ||
+            (l_fn > 5 && strcmp(fn_tmp+l_fn-5, ".bgzf") == 0)) {
+            strcpy(fnidx_tmp + l_fn, gzi_ext);
+            gzi_ok = stat(fnidx_tmp, &sbuf)==0;
+        }
+
+        // Now check for .fai.  Occurs second as we're returning this
+        // in *fnidx irrespective of whether we did gzi check.
+        strcpy(fnidx_tmp + l_fn, fai_ext);
         *fnidx = fnidx_tmp;
-        if(stat(fnidx_tmp, &sbuf) == 0)
-            return 1;
+        if (stat(fnidx_tmp, &sbuf) == 0)
+            return gzi_ok;
         else
             return 0;
     }
