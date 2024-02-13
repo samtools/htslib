@@ -57,3 +57,7 @@ P MM-pileup2.out $pileup_mod < MM-pileup2.sam
 P MM-pileup.out $pileup_mod < MM-MNp.sam
 N MM-pileup.out $pileup_mod < MM-MNf1.sam
 N MM-pileup.out $pileup_mod < MM-MNf2.sam
+N MM-pileup.out $test_mod < MM-MNf1.sam
+N MM-pileup.out $test_mod < MM-MNf2.sam
+N MM-pileup.out $test_mod < MM-bounds+.sam
+N MM-pileup.out $test_mod < MM-bounds-.sam
