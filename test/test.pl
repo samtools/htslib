@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2023 Genome Research Ltd.
+#    Copyright (C) 2012-2024 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -586,6 +586,36 @@ sub test_bgzip {
     ($ret, $out) = _cmd($c);
     if ($ret) {
         failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    passed($opts,$test);
+
+    # try writing to an explicit file name, round trip test
+    $test = sprintf('%s %2s threads', 'bgzip --output',
+                    $threads ? $threads : 'no');
+    print "$test: ";
+
+    my $compressed_op = "$$opts{tmp}/arbitrary.$threads.gz";
+    my $uncompressed_op = "$$opts{tmp}/arbitrary.$threads.txt";
+
+    $c = "$$opts{bin}/bgzip $at '$data' -o '$compressed_op'";
+
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "$$opts{bin}/bgzip $at -d $compressed_op --output '$uncompressed_op'";
+
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed_op'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, $out ? $out : "'$data' '$uncompressed_op' differ");
         return;
     }
     passed($opts,$test);

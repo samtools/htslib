@@ -297,9 +297,15 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (write_fname && pstdout) {
-        fprintf(stderr, "[bgzip] Cannot write to %s and stdout at the same time.\n", write_fname);
-        return 1;
+    if (write_fname) {
+        if (pstdout) {
+            fprintf(stderr, "[bgzip] Cannot write to %s and stdout at the same time.\n", write_fname);
+            return 1;
+        } else if (strncmp(write_fname, "-", strlen(write_fname)) == 0) {
+            // stdout has special handling so treat as -c
+            pstdout = 1;
+            write_fname = NULL;
+        }
     }
 
     do {
@@ -713,16 +719,19 @@ int main(int argc, char **argv)
             if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
 
             if (statfilename) {
-                //get input file timestamp
-                if (!getfilespec(argv[optind], &filestat)) {
-                    //set output file timestamp
-                    if (setfilespec(statfilename, &filestat) < 0) {
-                        fprintf(stderr, "[bgzip] Failed to set file specification.\n");
+                if (!write_fname) {
+                    //get input file timestamp
+                    if (!getfilespec(argv[optind], &filestat)) {
+                        //set output file timestamp
+                        if (setfilespec(statfilename, &filestat) < 0) {
+                            fprintf(stderr, "[bgzip] Failed to set file specification.\n");
+                        }
+                    }
+                    else {
+                        fprintf(stderr, "[bgzip] Failed to get file specification.\n");
                     }
                 }
-                else {
-                    fprintf(stderr, "[bgzip] Failed to get file specification.\n");
-                }
+
                 free(statfilename);
             }
 
