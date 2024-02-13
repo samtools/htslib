@@ -4448,8 +4448,8 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
     return str->l;
 
  bad_aux:
-    hts_log_error("Corrupted aux data for read %.*s",
-                  b->core.l_qname, bam_get_qname(b));
+    hts_log_error("Corrupted aux data for read %.*s flag %d",
+                  b->core.l_qname, bam_get_qname(b), b->core.flag);
     errno = EINVAL;
     return -1;
 
@@ -4856,7 +4856,8 @@ uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s)
     return next+2;
 
  bad_aux:
-    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
+    hts_log_error("Corrupted aux data for read %s flag %d",
+                  bam_get_qname(b), b->core.flag);
     errno = EINVAL;
     return NULL;
 }
@@ -4878,7 +4879,8 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
     return NULL;
 
  bad_aux:
-    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
+    hts_log_error("Corrupted aux data for read %s flag %d",
+                  bam_get_qname(b), b->core.flag);
     errno = EINVAL;
     return NULL;
 }
@@ -4902,7 +4904,8 @@ uint8_t *bam_aux_remove(bam1_t *b, uint8_t *s)
     return s;
 
  bad_aux:
-    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
+    hts_log_error("Corrupted aux data for read %s flag %d",
+                  bam_get_qname(b), b->core.flag);
     errno = EINVAL;
     return NULL;
 }
