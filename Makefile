@@ -548,8 +548,10 @@ htscodecs/htscodecs:
 
 # Build the htscodecs/htscodecs/version.h file if necessary
 htscodecs/htscodecs/version.h: force
-	@if test -e $(srcdir)/htscodecs/.git && test -e $(srcdir)/htscodecs/configure.ac ; then \
-	  vers=`cd $(srcdir)/htscodecs && git describe --always --dirty --match 'v[0-9]\.[0-9]*'` && \
+	@if test -e $(srcdir)/htscodecs/configure.ac ; then \
+	  if test -e $(srcdir)/htscodecs/.git ; then \
+	    vers=`cd $(srcdir)/htscodecs && git describe --always --dirty --match 'v[0-9]\.[0-9]*'` ; \
+	  fi ; \
 	  case "$$vers" in \
 	    v*) vers=$${vers#v} ;; \
 	    *) iv=`awk '/^AC_INIT/ { match($$0, /^AC_INIT\(htscodecs, *([0-9](\.[0-9])*)\)/, m); print substr($$0, m[1, "start"], m[1, "length"]) }' $(srcdir)/htscodecs/configure.ac` ; vers="$$iv$${vers:+-g$$vers}" ;; \
