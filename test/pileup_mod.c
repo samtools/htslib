@@ -73,8 +73,10 @@ void process_pileup(sam_hdr_t *h, const bam_pileup1_t *p,
 // as each new read is added or removed from the pileups.
 int pileup_cd_create(void *data, const bam1_t *b, bam_pileup_cd *cd) {
     hts_base_mod_state *m = hts_base_mod_state_alloc();
-    if (bam_parse_basemod(b, m) < 0)
+    if (bam_parse_basemod(b, m) < 0) {
+        hts_base_mod_state_free(m);
         return -1;
+    }
     cd->p = m;
     return 0;
 }
