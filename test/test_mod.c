@@ -213,17 +213,18 @@ int main(int argc, char **argv) {
         puts("\n===\n");
     }
     fflush(stdout);
+    int ret = 0;
     if (sam_close(in) != 0 || r < -1)
-        goto err;
+        ret = 1;
 
     bam_destroy1(b);
     sam_hdr_destroy(h);
     hts_base_mod_state_free(m);
-    return 0;
+    return ret;
 
  err:
     bam_destroy1(b);
     sam_hdr_destroy(h);
     hts_base_mod_state_free(m);
-    return 1;
+    return sam_close(in) != 0 ? 1 : 2;
 }
