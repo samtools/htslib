@@ -1099,7 +1099,7 @@ int sam_idx_save(htsFile *fp) {
         if (hts_idx_finish(fp->idx, bgzf_tell(fp->fp.bgzf)) < 0)
             return -1;
 
-        return hts_idx_save_as(fp->idx, NULL, fp->fnidx, hts_idx_fmt(fp->idx));
+        return hts_idx_save_but_not_close(fp->idx, fp->fnidx, hts_idx_fmt(fp->idx));
 
     } else if (fp->format.format == cram) {
         // flushed and closed by cram_close
