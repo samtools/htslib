@@ -1959,6 +1959,11 @@ int bgzf_flush(BGZF *fp)
         return ret;
     }
 #endif
+
+    if (!fp->is_compressed) {
+        return hflush(fp->fp);
+    }
+
     while (fp->block_offset > 0) {
         int block_length;
         if ( fp->idx_build_otf )

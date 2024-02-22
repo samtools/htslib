@@ -67,6 +67,11 @@ void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset);
 
 int hts_idx_fmt(hts_idx_t *idx);
 
+// Internal interface to save on-the-fly indexes.  The index file handle
+// is kept open so hts_close() can close if after writing out the EOF
+// block for its own file.
+int hts_idx_save_but_not_close(hts_idx_t *idx, const char *fnidx, int fmt);
+
 // Construct a unique filename based on fname and open it.
 struct hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname);
 
