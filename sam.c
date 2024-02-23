@@ -5710,7 +5710,7 @@ void bam_plp_destroy(bam_plp_t iter)
     lbnode_t *p, *pnext;
     if ( iter->overlaps ) kh_destroy(olap_hash, iter->overlaps);
     for (p = iter->head; p != NULL; p = pnext) {
-        if (iter->plp_destruct)
+        if (iter->plp_destruct && p != iter->tail)
             iter->plp_destruct(iter->data, &p->b, &p->cd);
         pnext = p->next;
         mp_free(iter->mp, p);
