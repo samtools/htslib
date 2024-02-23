@@ -51,6 +51,7 @@ typedef struct s3_auth_data {
     kstring_t user_query_string;
     kstring_t host;
     kstring_t profile;
+    enum {s3_auto, s3_virtual, s3_path} url_style;
     time_t creds_expiry_time;
     char *bucket;
     kstring_t auth_hdr;
@@ -563,17 +564,30 @@ static int redirect_endpoint_callback(void *auth, long response,
             kputs(new_region, &ad->region);
 
             ad->host.l = 0;
-            ksprintf(&ad->host, "s3.%s.amazonaws.com", new_region);
+            
+            if (ad->url_style == s3_path) {
+                ksprintf(&ad->host, "s3.%s.amazonaws.com", new_region);
+            } else {
+                // Get host until first dot.
+                int dotposition = strcspn(ad->host.s, ".");
+                kstring_t url_prefix = KS_INITIALIZE;
+                kputsn(ad->host.s, dotposition, &url_prefix);
+                // Get substring of ad->host.s until first dot
 
+                ksprintf(&ad->host, "%s.s3.%s.amazonaws.com", url_prefix.s, new_region);
+
+                free(url_prefix.s);
+            }
             if (ad->region.l && ad->host.l) {
                url->l = 0;
                kputs(ad->host.s, url);
                kputsn(ad->bucket, strlen(ad->bucket), url);
-               if (ad->user_query_string.l) {
-                   kputc('?', url);
-                   kputsn(ad->user_query_string.s, ad->user_query_string.l, url);
-               }
+
                ret = 0;
+            }
+            if (ad->user_query_string.l) {
+                kputc('?', url);
+                kputsn(ad->user_query_string.s, ad->user_query_string.l, url);
             }
         }
     }
@@ -591,11 +605,12 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
     ptrdiff_t bucket_len;
     int is_https = 1, dns_compliant;
     char *query_start;
-    enum {s3_auto, s3_virtual, s3_path} address_style = s3_auto;
+    
 
     if (!ad)
         return NULL;
     ad->mode = strchr(mode, 'r') ? 'r' : 'w';
+    ad->url_style = s3_auto;
 
     // Our S3 URL format is s3[+SCHEME]://[ID[:SECRET[:TOKEN]]@]BUCKET/PATH
 
@@ -647,9 +662,9 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
 
         if ((v = getenv("HTS_S3_ADDRESS_STYLE")) != NULL) {
             if (strcasecmp(v, "virtual") == 0) {
-                address_style = s3_virtual;
+                ad->url_style = s3_virtual;
             } else if (strcasecmp(v, "path") == 0) {
-                address_style = s3_path;
+                ad->url_style = s3_path;
             }
         }
     }
@@ -669,11 +684,11 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
 
         if (url_style.l) {
             if (strcmp(url_style.s, "virtual") == 0) {
-                address_style = s3_virtual;
+                ad->url_style = s3_virtual;
             } else if (strcmp(url_style.s, "path") == 0) {
-                address_style = s3_path;
+                ad->url_style = s3_path;
             } else {
-                address_style = s3_auto;
+                ad->url_style = s3_auto;
             }
         }
         if (expiry_time.l) {
@@ -703,9 +718,9 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
             // Conforming to s3cmd's GitHub PR#416, host_bucket without the "%(bucket)s" string
             // indicates use of path style adressing.
             if (strstr(url_style.s, "%(bucket)s") == NULL) {
-                address_style = s3_path;
+                ad->url_style = s3_path;
             } else {
-                address_style = s3_auto;
+                ad->url_style = s3_auto;
             }
         }
 
@@ -717,9 +732,9 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
 
 
     // if address_style is set, force the dns_compliant setting
-    if (address_style == s3_virtual) {
+    if (ad->url_style == s3_virtual) {
         dns_compliant = 1;
-    } else if (address_style == s3_path) {
+    } else if (ad->url_style == s3_path) {
         dns_compliant = 0;
     } else {
         dns_compliant = is_dns_compliant(bucket, path, is_https);
@@ -872,7 +887,7 @@ static int make_signature(s3_auth_data *ad, kstring_t *string_to_sign, char *sig
     const unsigned char service[] = "s3";
     const unsigned char request[] = "aws4_request";
 
-    kstring_t secret_access_key = {0, 0, NULL};
+    kstring_t secret_access_key = KS_INITIALIZE;
     unsigned int len;
     unsigned int i, j;
 
@@ -899,11 +914,11 @@ static int make_signature(s3_auth_data *ad, kstring_t *string_to_sign, char *sig
 
 
 static int make_authorisation(s3_auth_data *ad, char *http_request, char *content, kstring_t *auth) {
-    kstring_t signed_headers = {0, 0, NULL};
-    kstring_t canonical_headers = {0, 0, NULL};
-    kstring_t canonical_request = {0, 0, NULL};
-    kstring_t scope = {0, 0, NULL};
-    kstring_t string_to_sign = {0, 0, NULL};
+    kstring_t signed_headers = KS_INITIALIZE;
+    kstring_t canonical_headers = KS_INITIALIZE;
+    kstring_t canonical_request = KS_INITIALIZE;
+    kstring_t scope = KS_INITIALIZE;
+    kstring_t string_to_sign = KS_INITIALIZE;
     char cr_hash[HASH_LENGTH_SHA256];
     char signature_string[HASH_LENGTH_SHA256];
     int ret = -1;
@@ -1024,7 +1039,7 @@ static int order_query_string(kstring_t *qs) {
     int *query_offset = NULL;
     int num_queries, i;
     char **queries = NULL;
-    kstring_t ordered = {0, 0, NULL};
+    kstring_t ordered = KS_INITIALIZE;
     char *escaped = NULL;
     int ret = -1;
 
@@ -1298,6 +1313,20 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
 
         if (fp == NULL) goto error;
 
+        if (http_response >= 300 && http_response < 400) {
+            // Follow additional redirect.
+            url.l  = 0;
+            ksprintf(&url, "https://%s%s", ad->host.s, ad->bucket);
+            fp = hopen(url.s, mode, "va_list", argsp,
+                   "httphdr_callback", v4_auth_header_callback,
+                   "httphdr_callback_data", ad,
+                   "redirect_callback", redirect_endpoint_callback,
+                   "redirect_callback_data", ad,
+                   "http_response_ptr", &http_response,
+                   "fail_on_error", 0,
+                   NULL);
+        }
+
         if (http_response == 400) {
             ad->refcount = 1;
             if (handle_400_response(fp, ad) != 0) {
@@ -1314,11 +1343,11 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
             ad->refcount = 1;
             errno = http_status_errno(http_response);
             goto error;
-        }
-
+        } 
+        
         if (fp == NULL) goto error;
     } else {
-        kstring_t final_url = {0, 0, NULL};
+        kstring_t final_url = KS_INITIALIZE;
 
          // add the scheme marker
         ksprintf(&final_url, "s3w+%s", url.s);
