@@ -564,18 +564,17 @@ static int redirect_endpoint_callback(void *auth, long response,
             kputs(new_region, &ad->region);
 
             ad->host.l = 0;
-            
+
             if (ad->url_style == s3_path) {
+                // Path style https://s3.{region-code}.amazonaws.com/{bucket-name}/{key-name}
                 ksprintf(&ad->host, "s3.%s.amazonaws.com", new_region);
             } else {
-                // Get host until first dot.
-                int dotposition = strcspn(ad->host.s, ".");
+                // Virtual https://{bucket-name}.s3.{region-code}.amazonaws.com/{key-name}
+                // Extract the {bucket-name} from {ad->host} to include in subdomain 
                 kstring_t url_prefix = KS_INITIALIZE;
-                kputsn(ad->host.s, dotposition, &url_prefix);
-                // Get substring of ad->host.s until first dot
+                kputsn(ad->host.s, strcspn(ad->host.s, "."), &url_prefix);
 
                 ksprintf(&ad->host, "%s.s3.%s.amazonaws.com", url_prefix.s, new_region);
-
                 free(url_prefix.s);
             }
             if (ad->region.l && ad->host.l) {
