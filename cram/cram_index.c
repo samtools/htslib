@@ -410,6 +410,9 @@ cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
         // Continue from a previous search.
         // We switch to just scanning the linked list, as the nested
         // lists are typically short.
+        if (refid == HTS_IDX_NOCOOR)
+            refid = -1;
+
         e = from->e_next;
         if (e && e->refid == refid && e->start <= pos)
             return e;
@@ -423,6 +426,7 @@ cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
         // fail, or already there, dealt with elsewhere.
         return NULL;
 
+    case -1:
     case HTS_IDX_NOCOOR:
         refid = -1;
         pos = 0;
