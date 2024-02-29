@@ -570,7 +570,7 @@ static int redirect_endpoint_callback(void *auth, long response,
                 ksprintf(&ad->host, "s3.%s.amazonaws.com", new_region);
             } else {
                 // Virtual https://{bucket-name}.s3.{region-code}.amazonaws.com/{key-name}
-                // Extract the {bucket-name} from {ad->host} to include in subdomain 
+                // Extract the {bucket-name} from {ad->host} to include in subdomain
                 kstring_t url_prefix = KS_INITIALIZE;
                 kputsn(ad->host.s, strcspn(ad->host.s, "."), &url_prefix);
 
@@ -604,7 +604,6 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
     ptrdiff_t bucket_len;
     int is_https = 1, dns_compliant;
     char *query_start;
-    
 
     if (!ad)
         return NULL;
@@ -1342,8 +1341,8 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
             ad->refcount = 1;
             errno = http_status_errno(http_response);
             goto error;
-        } 
-        
+        }
+
         if (fp == NULL) goto error;
     } else {
         kstring_t final_url = KS_INITIALIZE;
