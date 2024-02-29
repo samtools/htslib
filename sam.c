@@ -5861,8 +5861,7 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
     // Loop over the overlapping region nulling qualities in either
     // seq a or b.
     int err = 0;
-    while ( 1 )
-    {
+    while ( 1 ) {
         // Step to next matching reference position in a and b
         while ( a_ret >= 0 && a_iref>=0 && a_iref < iref - a->core.pos )
             a_ret = cigar_iref2iseq_next(&a_cigar, a_cigar_max,
@@ -5871,8 +5870,6 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
             err = a_ret<-1?-1:0;
             break;
         }
-        if ( iref < a_iref + a->core.pos )
-            iref = a_iref + a->core.pos;
 
         while ( b_ret >= 0 && b_iref>=0 && b_iref < iref - b->core.pos )
             b_ret = cigar_iref2iseq_next(&b_cigar, b_cigar_max, &b_icig,
@@ -5881,14 +5878,55 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
             err = b_ret<-1?-1:0;
             break;
         }
+
+        if ( iref < a_iref + a->core.pos )
+            iref = a_iref + a->core.pos;
+
         if ( iref < b_iref + b->core.pos )
             iref = b_iref + b->core.pos;
 
         iref++;
 
-        if ( a_iref+a->core.pos != b_iref+b->core.pos )
-            // only CMATCH positions, don't know what to do with indels
-            continue;
+        // If A or B has a deletion then we catch up the other to this point.
+        // We also amend quality values using the same rules for mismatch.
+        if (a_iref+a->core.pos != b_iref+b->core.pos) {
+            if (a_iref+a->core.pos < b_iref+b->core.pos
+                && b_cigar > bam_get_cigar(b)
+                && bam_cigar_op(b_cigar[-1]) == BAM_CDEL) {
+                // Del in B means it's moved on further than A
+                do {
+                    a_qual[a_iseq] = amul
+                        ? a_qual[a_iseq]*0.8
+                        : 0;
+                    a_ret = cigar_iref2iseq_next(&a_cigar, a_cigar_max,
+                                                 &a_icig, &a_iseq, &a_iref);
+                    if (a_ret < 0)
+                        return -(a_ret<-1); // 0 or -1
+                } while (a_iref + a->core.pos < b_iref+b->core.pos);
+            } else if (a_cigar > bam_get_cigar(a)
+                       && bam_cigar_op(a_cigar[-1]) == BAM_CDEL) {
+                // Del in A means it's moved on further than B
+                do {
+                    b_qual[b_iseq] = bmul
+                        ? b_qual[b_iseq]*0.8
+                        : 0;
+                    b_ret = cigar_iref2iseq_next(&b_cigar, b_cigar_max,
+                                                 &b_icig, &b_iseq, &b_iref);
+                    if (b_ret < 0)
+                        return -(b_ret<-1); // 0 or -1
+                } while (b_iref + b->core.pos < a_iref+a->core.pos);
+            } else {
+                // Anything else, eg ref-skip, we don't support here
+                continue;
+            }
+        }
+
+        // fprintf(stderr, "a_cig=%ld,%ld b_cig=%ld,%ld iref=%ld "
+        //         "a_iref=%ld b_iref=%ld a_iseq=%ld b_iseq=%ld\n",
+        //         a_cigar-bam_get_cigar(a), a_icig,
+        //         b_cigar-bam_get_cigar(b), b_icig,
+        //         iref, a_iref+a->core.pos+1, b_iref+b->core.pos+1,
+        //         a_iseq, b_iseq);
 
         if (a_iseq > a->core.l_qseq || b_iseq > b->core.l_qseq)
             // Fell off end of sequence, bad CIGAR?

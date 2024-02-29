@@ -71,3 +71,8 @@ P c1#pad3.out $pileup -m c1#pad3.sam
 
 # Issue #852.  Problem caused by alignments with entirely S/I ops in CIGAR.
 P small.out $pileup -m small.bam
+
+# Overlap removal and the effect on quality values
+P mp_overlap1.out $pileup -m mp_overlap1.sam
+P mp_overlap2.out $pileup -m mp_overlap2.sam
+
