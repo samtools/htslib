@@ -1311,10 +1311,14 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
 
         if (fp == NULL) goto error;
 
-        if (http_response >= 300 && http_response < 400) {
+        if (http_response == 307) {
             // Follow additional redirect.
+            ad->refcount = 1;
+            hclose_abruptly(fp);
+
             url.l  = 0;
             ksprintf(&url, "https://%s%s", ad->host.s, ad->bucket);
+
             fp = hopen(url.s, mode, "va_list", argsp,
                    "httphdr_callback", v4_auth_header_callback,
                    "httphdr_callback_data", ad,
