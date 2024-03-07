@@ -209,6 +209,11 @@ HTSLIB_EXPORT
 int cram_container_is_empty(cram_fd *fd);
 
 
+/* Returns chromosome and start/span from container struct */
+HTSLIB_EXPORT
+void cram_container_get_coords(cram_container *c,
+                               int *refid, hts_pos_t *start, hts_pos_t *span);
+
 /*
  *-----------------------------------------------------------------------------
  * cram_block
@@ -328,6 +333,18 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
  */
 HTSLIB_EXPORT
 int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice);
+
+/*
+ * Copies a container, but filtering it down to a specific region (as
+ * already specified in 'in'
+ *
+ * Returns 0 on success
+ *        -1 on EOF
+ *        -2 on error
+ */
+HTSLIB_EXPORT
+int cram_filter_container(cram_fd *in, cram_fd *out, cram_container *c,
+                          int *ref_id);
 
 /*
  * Decodes a CRAM block compression header.
@@ -743,6 +760,62 @@ static inline void sam_hdr_free(SAM_hdr *hdr) { sam_hdr_destroy(hdr); }
  */
 HTSLIB_EXPORT
 refs_t *cram_get_refs(htsFile *fd);
+
+/*!
+ * Returns the file offsets of CRAM slices covering a specific region
+ * query.  Note both offsets are the START of the slice.
+ *
+ * first will point to the start of the first overlapping slice
+ * last will point to the start of the last overlapping slice
+ *
+ * @return
+ * Returns 0 on success
+ *        <0 on failure
+ */
+HTSLIB_EXPORT
+int cram_index_extents(cram_fd *fd, int refid, hts_pos_t start, hts_pos_t end,
+                       off_t *first, off_t *last);
+
+/*! Returns the total number of containers in the CRAM index.
+ *
+ * Note the index is not required to have an entry for every container, but it
+ * will always have an index entry for the start of each chromosome.
+ * (Although in practice our indices do container one entry per container.)
+ *
+ * This is equivalent to cram_num_containers_between(fd, 0, 0, NULL, NULL)
+ */
+HTSLIB_EXPORT
+int64_t cram_num_containers(cram_fd *fd);
+
+/*! Returns the number of containers in the CRAM index within given offsets.
+ *
+ * The cstart and cend offsets are the locations of the start of containers
+ * as returned by index_container_offset.
+ *
+ * If non-NULL, first and last will hold the inclusive range of container
+ * numbers, counting from zero.
+ *
+ * @return
+ * Returns the number of containers, equivalent to *last-*first+1.
+ */
+HTSLIB_EXPORT
+int64_t cram_num_containers_between(cram_fd *fd,
+                                    off_t cstart, off_t cend,
+                                    int64_t *first, int64_t *last);
+
+/*! Returns the byte offset for the start of the n^th container.
+ *
+ * The index must have previously been loaded, otherwise <0 is returned.
+ */
+HTSLIB_EXPORT
+off_t cram_container_num2offset(cram_fd *fd, int64_t n);
+
+/*! Returns the container number for the first container at offset >= pos.
+ *
+ * The index must have previously been loaded, otherwise <0 is returned.
+ */
+HTSLIB_EXPORT
+int64_t cram_container_offset2num(cram_fd *fd, off_t pos);
 
 /**@}*/
 

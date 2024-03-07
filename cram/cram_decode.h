@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013, 2018 Genome Research Ltd.
+Copyright (c) 2012-2013, 2018, 2024 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -95,6 +95,15 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b);
 
 
 /*! INTERNAL:
+ * Loads and decodes the next slice worth of data.
+ *
+ * @return
+ * Returns cram slice pointer on success;
+ *         NULL on failure
+ */
+cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp);
+
+/*! INTERNAL:
  * Decode an entire slice from container blocks. Fills out s->crecs[] array.
  *
  * @return
@@ -104,6 +113,22 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b);
 int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                       sam_hdr_t *hdr);
 
+
+/*! INTERNAL:
+ * Converts a cram in-memory record into a bam in-memory record. We
+ * pass a pointer to a bam_seq_t pointer along with the a pointer to
+ * the allocated size. These can initially be pointers to NULL and zero.
+ *
+ * This function will reallocate the bam buffer as required and update
+ * (*bam)->alloc accordingly, allowing it to be used within a loop
+ * efficiently without needing to allocate new bam objects over and
+ * over again.
+ *
+ * Returns the used size of the bam record on success
+ *         -1 on failure.
+ */
+int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
+                cram_record *cr, int rec, bam_seq_t **bam);
 
 /*
  * Drains and frees the decode read-queue for a multi-threaded reader.
