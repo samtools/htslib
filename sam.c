@@ -708,7 +708,7 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
     if (recal_bin)
         b->core.bin = hts_reg2bin(b->core.pos, bam_endpos(b), 14, 5);
     if (give_warning)
-        hts_log_error("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
+        hts_log_warning("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
     return 1;
 }
 
