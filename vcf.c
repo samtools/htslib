@@ -3234,6 +3234,10 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             fmt_aux_t *z = &fmt[j];
             const int htype = z->y>>4&0xf;
             int l;
+
+            if (z->size == -1) // this field is to be ignored
+                continue;
+
             if (htype == BCF_HT_STR) {
                 if (z->is_gt) {
                     int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
