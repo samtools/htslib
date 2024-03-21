@@ -1669,6 +1669,7 @@ int hts_close(htsFile *fp)
     hts_filter_free(fp->filter);
     free(fp->fn);
     free(fp->fn_aux);
+    free((void *)fp->fnidx);
     free(fp->line.s);
     free(fp);
     errno = save;
@@ -1710,6 +1711,11 @@ int hts_flush(htsFile *fp)
 const htsFormat *hts_get_format(htsFile *fp)
 {
     return fp? &fp->format : NULL;
+}
+
+const char *hts_get_fn(htsFile *fp)
+{
+    return fp? fp->fn : NULL;
 }
 
 const char *hts_format_file_extension(const htsFormat *format) {
