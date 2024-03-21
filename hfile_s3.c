@@ -578,11 +578,14 @@ static int redirect_endpoint_callback(void *auth, long response,
                 free(url_prefix.s);
             }
             if (ad->region.l && ad->host.l) {
+               int e = 0;
                url->l = 0;
-               kputs(ad->host.s, url);
-               kputsn(ad->bucket, strlen(ad->bucket), url);
+               e |= kputs("https://", url) < 0;
+               e |= kputs(ad->host.s, url) < 0;
+               e |= kputsn(ad->bucket, strlen(ad->bucket), url) < 0;
 
-               ret = 0;
+               if (!e)
+                   ret = 0;
             }
             if (ad->user_query_string.l) {
                 kputc('?', url);
