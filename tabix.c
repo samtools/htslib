@@ -97,6 +97,7 @@ error_errno(const char *format, ...)
 #define IS_BCF  (1<<4)
 #define IS_BAM  (1<<5)
 #define IS_CRAM (1<<6)
+#define IS_GAF  (1<<7)
 #define IS_TXT  (IS_GFF|IS_BED|IS_SAM|IS_VCF)
 
 int file_type(const char *fname)
@@ -109,6 +110,7 @@ int file_type(const char *fname)
     else if (l>=4 && strcasecmp(fname+l-4, ".bcf") == 0) return IS_BCF;
     else if (l>=4 && strcasecmp(fname+l-4, ".bam") == 0) return IS_BAM;
     else if (l>=4 && strcasecmp(fname+l-5, ".cram") == 0) return IS_CRAM;
+    else if (l>=7 && strcasecmp(fname+l-7, ".gaf.gz") == 0) return IS_GAF;
 
     htsFile *fp = hts_open(fname,"r");
     if (!fp) {
@@ -589,7 +591,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
     fprintf(fp, "   -f, --force                overwrite existing index without asking\n");
     fprintf(fp, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
-    fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf\n");
+    fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf, gaf\n");
     fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
     fprintf(fp, "   -S, --skip-lines INT       skip first INT lines [0]\n");
     fprintf(fp, "\n");
@@ -682,6 +684,7 @@ int main(int argc, char *argv[])
                 else if (strcmp(optarg, "bed") == 0) conf = tbx_conf_bed;
                 else if (strcmp(optarg, "sam") == 0) conf = tbx_conf_sam;
                 else if (strcmp(optarg, "vcf") == 0) conf = tbx_conf_vcf;
+                else if (strcmp(optarg, "gaf") == 0) conf = tbx_conf_gaf;
                 else if (strcmp(optarg, "bcf") == 0) detect = 1; // bcf is autodetected, preset is not needed
                 else if (strcmp(optarg, "bam") == 0) detect = 1; // same as bcf
                 else error("The preset string not recognised: '%s'\n", optarg);
@@ -744,6 +747,7 @@ int main(int argc, char *argv[])
     {
         if ( ftype==IS_GFF ) conf = tbx_conf_gff;
         else if ( ftype==IS_BED ) conf = tbx_conf_bed;
+        else if ( ftype==IS_GAF ) conf = tbx_conf_gaf;
         else if ( ftype==IS_SAM ) conf = tbx_conf_sam;
         else if ( ftype==IS_VCF )
         {

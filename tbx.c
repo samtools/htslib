@@ -53,6 +53,7 @@ const tbx_conf_t tbx_conf_sam = { TBX_SAM, 3, 4, 0, '@', 0 };
 
 HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_vcf = { TBX_VCF, 1, 2, 0, '#', 0 };
+const tbx_conf_t tbx_conf_gaf = { TBX_GAF, 1, 6, 0, '#', 0 };
 
 typedef struct {
     int64_t beg, end;
@@ -64,6 +65,7 @@ static inline int get_tid(tbx_t *tbx, const char *ss, int is_add)
 {
     khint_t k;
     khash_t(s2i) *d;
+    if ((tbx->conf.preset&0xffff) == TBX_GAF) return(0);
     if (tbx->dict == 0) tbx->dict = kh_init(s2i);
     if (!tbx->dict) return -1; // Out of memory
     d = (khash_t(s2i)*)tbx->dict;
@@ -103,24 +105,45 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                 intv->ss = line + b; intv->se = line + i;
             } else if (id == conf->bc) {
                 // here ->beg is 0-based.
-                intv->beg = strtoll(line + b, &s, 0);
+                if ((conf->preset&0xffff) == TBX_GAF){
+                    // if gaf find the smallest and largest node id
+                    char *t;
+                    int64_t nodeid = -1;
+                    for (s = line + b + 1; s < line + i;) {
+                        nodeid = strtoll(s, &t, 0);
+                        if(intv->beg == -1){
+                            intv->beg = intv->end = nodeid;
+                        } else {
+                            if(nodeid < intv->beg){
+                                intv->beg = nodeid;
+                            }
 
-                if (conf->bc <= conf->ec) // don't overwrite an already set end point
-                    intv->end = intv->beg;
+                            if(nodeid > intv->end){
+                                intv->end = nodeid;
+                            }
+                        }
+                        s = t + 1;
+                    }
+                } else {
+                    intv->beg = strtoll(line + b, &s, 0);
 
-                if ( s==line+b ) return -1; // expected int
+                    if (conf->bc <= conf->ec) // don't overwrite an already set end point
+                        intv->end = intv->beg;
 
-                if (!(conf->preset&TBX_UCSC))
-                    --intv->beg;
-                else if (conf->bc <= conf->ec)
-                    ++intv->end;
+                    if ( s==line+b ) return -1; // expected int
 
-                if (intv->beg < 0) {
-                    hts_log_warning("Coordinate <= 0 detected. "
-                                    "Did you forget to use the -0 option?");
-                    intv->beg = 0;
+                    if (!(conf->preset&TBX_UCSC))
+                        --intv->beg;
+                    else if (conf->bc <= conf->ec)
+                        ++intv->end;
+
+                    if (intv->beg < 0) {
+                        hts_log_warning("Coordinate <= 0 detected. "
+                                        "Did you forget to use the -0 option?");
+                        intv->beg = 0;
+                    }
+                    if (intv->end < 1) intv->end = 1;
                 }
-                if (intv->end < 1) intv->end = 1;
             } else {
                 if ((conf->preset&0xffff) == TBX_GENERIC) {
                     if (id == conf->ec)
@@ -187,7 +210,13 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
 {
     if (tbx_parse1(&tbx->conf, str->l, str->s, intv) == 0) {
         int c = *intv->se;
-        *intv->se = '\0'; intv->tid = get_tid(tbx, intv->ss, is_add); *intv->se = c;
+        *intv->se = '\0';
+        if ((tbx->conf.preset&0xffff) == TBX_GAF){
+            intv->tid = 0;
+        } else {
+            intv->tid = get_tid(tbx, intv->ss, is_add);
+        }
+        *intv->se = c;
         if (intv->tid < 0) return -2;  // get_tid out of memory
         return (intv->beg >= 0 && intv->end >= 0)? 0 : -1;
     } else {
@@ -196,6 +225,7 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
         {
             case TBX_SAM: type = "TBX_SAM"; break;
             case TBX_VCF: type = "TBX_VCF"; break;
+            case TBX_GAF: type = "TBX_GAF"; break;
             case TBX_UCSC: type = "TBX_UCSC"; break;
             default: type = "TBX_GENERIC"; break;
         }
