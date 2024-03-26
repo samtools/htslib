@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE
 
 */
 
-/* The pupose of this code is to demonstrate the library apis and need proper error handling and optimization */
+/* The purpose of this code is to demonstrate the library apis and need proper error handling and optimisation */
 
 #include <getopt.h>
 #include <unistd.h>

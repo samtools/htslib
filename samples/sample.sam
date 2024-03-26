@@ -9,7 +9,7 @@
 @CO	1234567890123456789012345678901234567890
 @CO	AAAAACTGAAAACCCCTTTTGGGGACTGTTAACAGTTTTT	T1
 @CO	TTTTCCCCACTGAAAACCCCTTTTGGGGACTGTTAACAGT	T2
-@CO	ITR1-ITR2M, ITR2-ITR2M are proper pairs in T1 and T2, UNMP1 is partly mapped and pair is unmapped, UNMP2 & 3 are unmappped
+@CO	ITR1-ITR2M, ITR2-ITR2M are proper pairs in T1 and T2, UNMP1 is partly mapped and pair is unmapped, UNMP2 & 3 are unmapped
 @CO	A1-A2, A4-A3 are proper pairs with A4-A3 in different read order. A5 is secondary alignment
 ITR1	99	T1	5	40	4M	=	33	10	ACTG	()()
 ITR2	147	T2	23	49	2M	=	35	-10	TT	**

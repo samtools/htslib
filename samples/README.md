@@ -4,7 +4,7 @@ data, and is the core library used by [samtools][2] and [bcftools][3].
 
 A set of sample programs are available which showcases the usage of APIs in HTSlib.
 They are based on version 1.17 of HTSLib and are mainly for demonstration of API usage.
-Further optimization and error handling might be required for actual usage.
+Further optimisation and error handling might be required for actual usage.
 
 
 [1]: http://samtools.github.io/hts-specs/
@@ -72,7 +72,7 @@ indexed.
 [Read_ref][Read_ref]
 
   This application showcases the read and access of header data. It shows
-  all reference names which has length equal or greather to given input.
+  all reference names which has length equal or greater to given input.
 
 [Read_bam][Read_bam]
 
@@ -129,13 +129,17 @@ indexed.
 
 [Write_fast][Write_fast]
 
-  This application showcases the fasta/fastq data write. It appends given data
-  file and creates an index file for it.
+  This application showcases the fasta/fastq data write. It appends data on
+  given file.
 
 [Index_write][Index_write]
 
   This application showcases the creation of index along with output
   creation. Based on file type and shift, it creates bai, csi or crai files.
+
+[Index_fast][Index_fast]
+
+  This application showcases index creation on fasta/fastq reference data.
 
 [Read_reg][Read_reg]:
 
@@ -144,7 +148,7 @@ indexed.
 
 [Read_multireg][Read_multireg]:
 
-  This application showcases the usage of mulitple region specification in
+  This application showcases the usage of multiple region specification in
   alignment read.
 
 [Read_fast_index][Read_fast_index]
@@ -195,13 +199,19 @@ indexed.
   and other as bam. A pool of 4 threads is created and shared for both read
   and write.
 
-[Qtask_thread][Qtask_thread]
+[Qtask_ordered][Qtask_ordered]
 
-  This application shocases the use of mulitple queues, scheduling of different
-  tasks and getting results in orderered and unordered fashion. It saves the
-  read1 and read2 as separate files in given directory, one as sam and other
-  as bam. The samfile/read1 can have unordered data and bamfile/read2 will have
-  ordered data.
+  This application showcases the use of queues and threads for custom
+  processing. In this, alignments in input file are updated with GC ratio on a
+  custom aux tag. The processing may occur in any order and the result is
+  retrieved in same order as it was queued and saved to disk.
+
+[Qtask_unordered][Qtask_unordered]
+
+  This application showcases the use of queues and threads for custom
+  processing. In this, alignments in input files are split to different files
+  for requested regions. The processing may occur in any order and results may
+  appear in the order completion of processing.
 
 ### More Information
 
@@ -227,10 +237,10 @@ examples per demonstration tool.
 [Mod_aux_ba]: mod_aux_ba.c
 [Write_fast]: write_fast.c
 [Index_write]: index_write.c
+[Index_fasta]: index_fasta.c
 [Read_reg]: index_reg_read.c
 [Read_multireg]: index_multireg_read.c
 [Read_fast_index]: read_fast_index.c
-[Read_tbx]: read_with_tabix.c
 [Pileup]: pileup.c
 [Mpileup]: mpileup.c
 [Modstate]: modstate.c
@@ -238,5 +248,6 @@ examples per demonstration tool.
 [Flags_field]: flags_htsopt_field.c
 [Split_thread1]: split_thread1.c
 [Split_thread2]: split_thread2.c
-[Qtask_thread]: qtask_thread.c
+[Qtask_ordered]: qtask_ordered.c
+[Qtask_unordered]: qtask_unordered.c
 [DEMO]: DEMO.md
