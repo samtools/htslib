@@ -54,7 +54,6 @@ typedef struct tbx_t {
 } tbx_t;
 
 HTSLIB_EXPORT
-extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf;
 extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf, tbx_conf_gaf;
 
     #define tbx_itr_destroy(iter) hts_itr_destroy(iter)
