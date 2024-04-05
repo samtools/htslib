@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2021 Genome Research Ltd.
+    Copyright (C) 2013-2021, 2023-2024 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 

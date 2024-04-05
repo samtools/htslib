@@ -1,6 +1,6 @@
 /* textutils_internal.h -- non-bioinformatics utility routines for text etc.
 
-   Copyright (C) 2016,2018-2020 Genome Research Ltd.
+   Copyright (C) 2016,2018-2020, 2024 Genome Research Ltd.
 
    Author: John Marshall <jm18@sanger.ac.uk>
 

@@ -1,6 +1,6 @@
 /*  sam_mods.c -- Base modification handling in SAM and BAM.
 
-    Copyright (C) 2020-2023 Genome Research Ltd.
+    Copyright (C) 2020-2024 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
