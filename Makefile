@@ -275,6 +275,7 @@ config.h:
 	echo '#define HAVE_LIBLZMA 1' >> $@
 	echo '#ifndef __APPLE__' >> $@
 	echo '#define HAVE_LZMA_H 1' >> $@
+	echo '#define HAVE_LIBZSTD 1' >> $@
 	echo '#endif' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
 	echo '#define HAVE_LIBCURL 1' >> $@

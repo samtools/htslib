@@ -1060,6 +1060,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "USE_BZIP2") == 0)
         o->opt = CRAM_OPT_USE_BZIP2, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "use_zstd") == 0 ||
+             strcmp(o->arg, "USE_ZSTD") == 0)
+        o->opt = CRAM_OPT_USE_ZSTD, o->val.i = atoi(val);
+
     else if (strcmp(o->arg, "use_rans") == 0 ||
              strcmp(o->arg, "USE_RANS") == 0)
         o->opt = CRAM_OPT_USE_RANS, o->val.i = atoi(val);

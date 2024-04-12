@@ -228,7 +228,8 @@ enum cram_block_method_int {
     ARITH    = 6, ARITH_PR0 = ARITH,
     FQZ      = 7,
     TOK3     = 8,
-    // BSC = 9, ZSTD = 10
+    // BSC = 9, 
+    ZSTD = 10,
 
     // Methods not externalised, but used in metrics.
     // Externally they become one of the above methods.
@@ -825,6 +826,7 @@ struct cram_fd {
     int no_ref_counter; // decide if permanent switch
     int ignore_md5;
     int use_bz2;
+    int use_zstd;
     int use_rans;
     int use_lzma;
     int use_fqz;

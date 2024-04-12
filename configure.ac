@@ -186,6 +186,11 @@ AC_ARG_ENABLE([lzma],
                   [omit support for LZMA-compressed CRAM files])],
   [], [enable_lzma=yes])
 
+AC_ARG_ENABLE([zstd],
+  [AS_HELP_STRING([--disable-zstd],
+                  [omit support for Zstandard-compressed CRAM files])],
+  [], [enable_zstd=yes])
+
 AC_ARG_ENABLE([plugins],
   [AS_HELP_STRING([--enable-plugins],
                   [enable separately-compiled plugins for file access])],
@@ -397,6 +402,18 @@ produced elsewhere unreadable) or resolve this error to build HTSlib.])
   fi
   pc_requires="$pc_requires liblzma"
   static_LIBS="$static_LIBS -llzma"
+fi
+
+
+if test "$enable_zstd" != no; then
+  zstd_devel=ok
+  AC_CHECK_HEADERS([zstd.h], [], [zstd_devel=header-missing], [;])
+  AC_CHECK_LIB([zstd], [ZSTD_compress], [], [zstd_devel=missing])
+  if test $zstd_devel = missing; then
+    MSG_ERROR([libzstd development files not found])
+  fi
+  pc_requires="$pc_requires libzstd"
+  static_LIBS="$static_LIBS -lzstd"
 fi
 
 AS_IF([test "x$with_external_htscodecs" != "xno"],

@@ -307,6 +307,7 @@ enum hts_fmt_option {
     CRAM_OPT_MULTI_SEQ_PER_SLICE,
     CRAM_OPT_NO_REF,
     CRAM_OPT_USE_BZIP2,
+    CRAM_OPT_USE_ZSTD,
     CRAM_OPT_SHARED_REF,
     CRAM_OPT_NTHREADS,   // deprecated, use HTS_OPT_NTHREADS
     CRAM_OPT_THREAD_POOL,// make general

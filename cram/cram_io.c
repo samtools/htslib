@@ -69,6 +69,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define crc32(a,b,c) libdeflate_crc32((a),(b),(c))
 #endif
 
+#ifdef HAVE_LIBZSTD
+#include <zstd.h>
+#endif
+
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 #include "../fuzz_settings.h"
 #endif
@@ -1276,6 +1280,68 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
 }
 #endif
 
+#ifdef HAVE_LIBZSTD
+/* ----------------------------------------------------------------------
+ * Zstd compression code
+ */
+
+static char *zstd_mem_inflate(char *cdata, size_t csize, size_t *size) {
+    size_t dst_capacity = *size;
+    char *data = NULL;
+    size_t ret;
+
+
+    ZSTD_DCtx* const dctx = ZSTD_createDCtx();
+    if (!dctx) {
+        hts_log_error("Call to ZSTD_createDCtx failed");
+        return NULL;
+    }
+
+    data = malloc(dst_capacity);
+    if (!data) {
+        hts_log_error("Memory allocation failure");
+        ZSTD_freeDCtx(dctx);
+        return NULL;
+    }
+
+    ret = ZSTD_decompressDCtx(dctx, data, dst_capacity, cdata, csize);
+    if (ZSTD_isError(ret)) {
+        hts_log_error("ZSTD decompression failed: %s", ZSTD_getErrorName(ret));
+        free(data);
+        ZSTD_freeDCtx(dctx);
+        return NULL;
+    }
+
+    *size = ret;
+    ZSTD_freeDCtx(dctx);
+    return data;
+}
+
+static char *zstd_mem_deflate(char *data, size_t size, size_t *cdata_size,
+                              int level) {
+    size_t cdata_capacity = ZSTD_compressBound(size);
+    char *cdata = NULL;
+    size_t ret;
+
+    cdata = malloc(cdata_capacity);
+    if (!cdata) {
+        hts_log_error("Memory allocation failure");
+        return NULL;
+    }
+
+    ret = ZSTD_compress(cdata, cdata_capacity, data, size, level);
+    if (ZSTD_isError(ret)) {
+        hts_log_error("ZSTD compression failed: %s", ZSTD_getErrorName(ret));
+        free(cdata);
+        return NULL;
+    }
+
+    *cdata_size = ret;
+    return cdata;
+}
+
+#endif
+
 #ifdef HAVE_LIBLZMA
 /* ------------------------------------------------------------------------ */
 /*
@@ -1658,6 +1724,27 @@ int cram_uncompress_block(cram_block *b) {
         break;
 #endif
 
+#ifdef HAVE_LIBZSTD
+    case ZSTD:
+        uncomp_size = b->uncomp_size;
+        uncomp = zstd_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
+        if (!uncomp)
+            return -1;
+        if (uncomp_size != b->uncomp_size) {
+            free(uncomp);
+            return -1;
+        }
+        free(b->data);
+        b->data = (unsigned char *)uncomp;
+        b->alloc = uncomp_size;
+        b->method = RAW;
+        break;
+#else
+    case ZSTD:
+        hts_log_error("Zstd compression is not compiled into this version. Please rebuild and try again");
+        return -1;
+#endif
+
     case RANS: {
         unsigned int usize = b->uncomp_size, usize2;
         uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
@@ -1774,6 +1861,15 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
 #else
         return zlib_mem_deflate(in, in_size, out_size, level, strat);
 #endif
+
+// for zstd, we use the zstd_mem_compress function
+#ifdef HAVE_LIBZSTD
+    case ZSTD:
+        
+        return zstd_mem_deflate(in, in_size, out_size, level);
+
+#endif
+
 
     case BZIP2: {
 #ifdef HAVE_LIBBZ2
@@ -1930,7 +2026,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
         RAW, GZIP, BZIP2, LZMA, RANS, RANSPR, ARITH, FQZ, TOK3,
 
         // Reserved for possible expansion
-        0, 0,
+        0, ZSTD,
 
         // Internally parameterised versions matching back to above
         // external values
@@ -2338,6 +2434,7 @@ char *cram_block_method2str(enum cram_block_method_int m) {
     case ARITH_PR129: return "ARITH_PR129";
     case ARITH_PR192: return "ARITH_PR192";
     case ARITH_PR193: return "ARITH_PR193";
+    case ZSTD:        return "ZSTD";
     case BM_ERROR: break;
     }
     return "?";
@@ -5770,6 +5867,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         // slacken the exact TLEN round-trip checks.
         fd->tlen_approx = fd->lossy_read_names;
         fd->tlen_zero = fd->lossy_read_names;
+        break;
+
+    case CRAM_OPT_USE_ZSTD:
+        fd->use_zstd = va_arg(args, int);
         break;
 
     case CRAM_OPT_USE_BZIP2:
