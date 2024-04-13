@@ -636,7 +636,8 @@ cram_method_details *cram_expand_method(uint8_t *data, int32_t size,
                 cm->level = 1;
         }
         break;
-
+    case CRAM_COMP_ZSTD:
+        break;
     default:
         break;
     }

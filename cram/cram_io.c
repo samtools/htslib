@@ -123,6 +123,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define CRAM_DEFAULT_LEVEL 5
 
+#ifdef HAVE_LIBZSTD
+
+ZSTD_CCtx* zstd_cctx = NULL;
+ZSTD_DCtx* zstd_dctx = NULL;
+ZSTD_DDict *zstd_ddict = NULL;
+
+#endif
+
 /* ----------------------------------------------------------------------
  * ITF8 encoding and decoding.
  *
@@ -1282,43 +1290,80 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
 
 #ifdef HAVE_LIBZSTD
 /* ----------------------------------------------------------------------
- * Zstd compression code
+ *
+ * Zstd compression 
  */
 
 static char *zstd_mem_inflate(char *cdata, size_t csize, size_t *size) {
+
+    // if the global context is not initialized, we do it here
+    if (zstd_dctx == NULL) {
+        zstd_dctx = ZSTD_createDCtx();
+        if (!zstd_dctx) {
+            hts_log_error("Call to ZSTD_createDCtx failed");
+            return NULL;
+        }
+    }
+
     size_t dst_capacity = *size;
     char *data = NULL;
     size_t ret;
 
-
-    ZSTD_DCtx* const dctx = ZSTD_createDCtx();
-    if (!dctx) {
-        hts_log_error("Call to ZSTD_createDCtx failed");
-        return NULL;
-    }
-
     data = malloc(dst_capacity);
     if (!data) {
         hts_log_error("Memory allocation failure");
-        ZSTD_freeDCtx(dctx);
+        ZSTD_freeDCtx(zstd_dctx);
         return NULL;
     }
 
-    ret = ZSTD_decompressDCtx(dctx, data, dst_capacity, cdata, csize);
+    ret = ZSTD_decompressDCtx(zstd_dctx, data, dst_capacity, cdata, csize);
     if (ZSTD_isError(ret)) {
         hts_log_error("ZSTD decompression failed: %s", ZSTD_getErrorName(ret));
         free(data);
-        ZSTD_freeDCtx(dctx);
+        ZSTD_freeDCtx(zstd_dctx);
         return NULL;
     }
 
     *size = ret;
-    ZSTD_freeDCtx(dctx);
+
     return data;
 }
 
 static char *zstd_mem_deflate(char *data, size_t size, size_t *cdata_size,
                               int level) {
+    // if the global context is not initialized, we do it here
+    if (zstd_cctx == NULL) {
+        zstd_cctx = ZSTD_createCCtx();
+        if (!zstd_cctx) {
+            hts_log_error("Call to ZSTD_createCCtx failed");
+            return NULL;
+        }
+
+        FILE *dictFile = fopen("dictionary", "rb");
+        if (dictFile == NULL) {
+            perror("Failed to open dictionary file");
+            return NULL;
+        }
+
+        fseek(dictFile, 0, SEEK_END);
+        size_t dictSize = ftell(dictFile);
+        fseek(dictFile, 0, SEEK_SET);
+
+        void* dictBuffer = malloc(dictSize);
+        fread(dictBuffer, 1, dictSize, dictFile);
+        fclose(dictFile);
+
+    
+        size_t const loadDictResult = ZSTD_CCtx_loadDictionary(zstd_cctx, dictBuffer, dictSize);
+        if (ZSTD_isError(loadDictResult)) {
+            hts_log_error("ZSTD dictionary loading failed: %s", ZSTD_getErrorName(loadDictResult));
+            return NULL;
+        }
+
+        hts_log_warning("Dictionary loaded successfully");
+    }
+
+
     size_t cdata_capacity = ZSTD_compressBound(size);
     char *cdata = NULL;
     size_t ret;
@@ -1329,7 +1374,7 @@ static char *zstd_mem_deflate(char *data, size_t size, size_t *cdata_size,
         return NULL;
     }
 
-    ret = ZSTD_compress(cdata, cdata_capacity, data, size, level);
+    ret = ZSTD_compressCCtx(zstd_cctx, cdata, cdata_capacity, data, size, level);
     if (ZSTD_isError(ret)) {
         hts_log_error("ZSTD compression failed: %s", ZSTD_getErrorName(ret));
         free(cdata);
@@ -2010,7 +2055,6 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
 int cram_compress_block2(cram_fd *fd, cram_slice *s,
                          cram_block *b, cram_metrics *metrics,
                          int method, int level) {
-
     if (!b)
         return 0;
 
@@ -2053,6 +2097,8 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             method |= 1<<BZIP2;
         if (fd->use_lzma)
             method |= 1<<LZMA;
+        if (fd->use_zstd)
+            method |= 1<<ZSTD;
     }
 
     if (level == -1)
@@ -2126,7 +2172,6 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     method = (method|(1<<RANS_PR64))&~(1<<RANS_PR192);
                 if (method & (1<<RANS_PR193))
                     method = (method|(1<<RANS_PR64)|(1<<RANS_PR1))&~(1<<RANS_PR193);
-
                 if (method & (1<<ARITH_PR128))
                     method = (method|(1<<ARITH_PR0))&~(1<<ARITH_PR128);
                 if (method & (1<<ARITH_PR129))
@@ -2154,6 +2199,9 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     case GZIP:     strat = Z_FILTERED; break;
                     case GZIP_1:   strat = Z_DEFAULT_STRATEGY; lvl = 1; break;
                     case GZIP_RLE: strat = Z_RLE; break;
+                    #ifdef HAVE_LIBZSTD
+                    case ZSTD:     strat = 0; break;
+                    #endif
                     case FQZ:      strat = CRAM_MAJOR_VERS(fd->version); break;
                     case FQZ_b:    strat = CRAM_MAJOR_VERS(fd->version)+256; break;
                     case FQZ_c:    strat = CRAM_MAJOR_VERS(fd->version)+2*256; break;
@@ -2260,8 +2308,8 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                         metrics->sz[m] *= 1+(meth_cost[m]-1)/3;
                 } // else cost is ignored
 
-                // Ensure these are never used; BSC and ZSTD
-                metrics->sz[9] = metrics->sz[10] = INT_MAX;
+                // Ensure BSC these is never used
+                metrics->sz[9] = INT_MAX;
 
                 for (m = 0; m < CRAM_MAX_METHOD; m++) {
                     if ((!metrics->sz[m]) || (!(method & (1u<<m))))
@@ -2285,6 +2333,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 case GZIP:     strat = Z_FILTERED; break;
                 case GZIP_1:   strat = Z_DEFAULT_STRATEGY; break;
                 case GZIP_RLE: strat = Z_RLE; break;
+                case ZSTD:     strat = 0; break;
                 case FQZ:      strat = CRAM_MAJOR_VERS(fd->version); break;
                 case FQZ_b:    strat = CRAM_MAJOR_VERS(fd->version)+256; break;
                 case FQZ_c:    strat = CRAM_MAJOR_VERS(fd->version)+2*256; break;
@@ -5769,6 +5818,15 @@ int cram_close(cram_fd *fd) {
             ret = -1;
 
     free(fd);
+
+    #ifdef HAVE_LIBZSTD
+    if (zstd_cctx)
+        ZSTD_freeCCtx(zstd_cctx);
+    zstd_cctx = NULL;
+    if (zstd_dctx)
+        ZSTD_freeDCtx(zstd_dctx);
+    zstd_dctx = NULL;
+    #endif
 
     return ret;
 }

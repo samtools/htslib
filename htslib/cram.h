@@ -98,6 +98,8 @@ enum cram_block_method {
     CRAM_COMP_ARITH    = 6, // aka Range coding
     CRAM_COMP_FQZ      = 7, // FQZComp
     CRAM_COMP_TOK3     = 8, // Name tokeniser
+
+    CRAM_COMP_ZSTD     = 9, // Zstandard
 };
 #endif
 
