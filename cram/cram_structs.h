@@ -885,6 +885,8 @@ struct cram_fd {
     // We suffer with delta to unrelated things (previous pair), but gain
     // in delta between them.  (Ideal would be a per read setting.)
     int ap_delta;
+
+    char    *zstd_dict;
 };
 
 // Translation of required fields to cram data series

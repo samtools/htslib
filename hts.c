@@ -379,6 +379,68 @@ decompress_peek_xz(hFILE *fp, unsigned char *dest, size_t destsize)
 }
 #endif
 
+#ifdef HAVE_LIBZSTD
+static int
+read_zstd_header(hFILE *fp, unsigned long long *decompressed_size, unsigned int *dictionary_id)
+{
+    unsigned char header[14];
+    ssize_t nread = hread(fp, header, sizeof(header));
+    
+    
+    if (nread < 0) {
+        return -1;
+    }
+
+    if (memcmp(header, "\x28\xB5\x2F\xFD", 4) != 0) {
+        return -1;
+    }
+
+    unsigned char first_byte = header[4];
+    size_t frame_content_size = (first_byte >> 6) & 3;
+    int single_segment = (first_byte & 1 << 5) != 0;
+
+    if(single_segment && frame_content_size == 0) {
+        frame_content_size = 1;
+    } else if (!single_segment && frame_content_size == 0) {
+        frame_content_size = 0;
+    } else {
+        frame_content_size = 1 << frame_content_size;
+    }
+
+    /*
+    int unused = (first_byte & 1 << 4) != 0;
+    int reserved = (first_byte & 1 << 3) != 0;
+    int checksum_flag = (first_byte & 1 << 2) != 0; // set if the file has checksum
+    */
+    size_t dictionary_id_size = first_byte & 3;
+    if (dictionary_id_size == 3) {
+        dictionary_id_size = 4;
+    }
+
+    if (dictionary_id_size > 0) {
+        unsigned int header_dictionary_id = 0;
+        for (size_t i = 0; i < dictionary_id_size; i++) {
+            header_dictionary_id |= (unsigned char)header[5 + i + !single_segment] << (i * 8);
+        }
+    
+        dictionary_id = &header_dictionary_id;
+    }
+
+    if (frame_content_size > 0) {
+        // frame size can be 2^64 - 1
+        unsigned long long frame_size = 0;
+        for (size_t i = 0; i < frame_content_size; i++) {
+            frame_size |= (unsigned char)header[5 + dictionary_id_size + !single_segment + i] << (i * 8);
+        }
+
+        decompressed_size = &frame_size;
+    }
+
+    return 0;
+}
+#endif
+
+
 // Parse "x.y" text, taking care because the string is not NUL-terminated
 // and filling in major/minor only when the digits are followed by a delimiter,
 // so we don't misread "1.10" as "1.1" due to reaching the end of the buffer.
@@ -581,6 +643,13 @@ int hts_detect_format2(hFILE *hfile, const char *fname, htsFormat *fmt)
 #endif
     }
     else if (len >= 4 && memcmp(s, "\x28\xb5\x2f\xfd", 4) == 0) {
+        unsigned int dictionary_id = -1;
+        unsigned long long decompressed_size = 0;
+
+        if (read_zstd_header(hfile, &decompressed_size, &dictionary_id) < 0) {
+            return 0;
+        }
+
         fmt->compression = zstd_compression;
         return 0;
     }
@@ -1064,6 +1133,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "USE_ZSTD") == 0)
         o->opt = CRAM_OPT_USE_ZSTD, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "zstd_dictionary") == 0 ||
+             strcmp(o->arg, "ZSTD_DICTIONARY") == 0)
+        o->opt = CRAM_OPT_ZSTD_DICTIONARY, o->val.s = val;
+
     else if (strcmp(o->arg, "use_rans") == 0 ||
              strcmp(o->arg, "USE_RANS") == 0)
         o->opt = CRAM_OPT_USE_RANS, o->val.i = atoi(val);
@@ -1228,6 +1301,7 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
             case CRAM_OPT_VERSION:
             case CRAM_OPT_PREFIX:
             case HTS_OPT_FILTER:
+            case CRAM_OPT_ZSTD_DICTIONARY:
             case FASTQ_OPT_AUX:
             case FASTQ_OPT_BARCODE:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)

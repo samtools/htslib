@@ -1294,13 +1294,52 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
  * Zstd compression 
  */
 
+static int init_zstd(char* dict) {
+    zstd_dctx = ZSTD_createDCtx();
+    if (!zstd_dctx) {
+        hts_log_error("Call to ZSTD_createDCtx failed");
+        return -1;
+    }
+
+
+    zstd_cctx = ZSTD_createCCtx();
+    if (!zstd_cctx) {
+        hts_log_error("Call to ZSTD_createCCtx failed");
+        return -1;
+    }
+
+    if (dict != NULL) {
+        FILE *dictFile = fopen(dict, "r");
+        if (dictFile == NULL) {
+            fprintf(stderr, "Failed to open dictionary file %s\n", dict);
+            return -1;
+        }
+
+        fseek(dictFile, 0, SEEK_END);
+        size_t dictSize = ftell(dictFile);
+        fseek(dictFile, 0, SEEK_SET);
+
+        void* dictBuffer = malloc(dictSize);
+        fread(dictBuffer, 1, dictSize, dictFile);
+        fclose(dictFile);
+
+
+        size_t const loadDictResult = ZSTD_CCtx_loadDictionary(zstd_cctx, dictBuffer, dictSize);
+        if (ZSTD_isError(loadDictResult)) {
+            hts_log_error("ZSTD dictionary loading failed: %s", ZSTD_getErrorName(loadDictResult));
+            return -1;
+        }
+
+        hts_log_info("Dictionary loaded from %s", dict);
+    }
+
+    return 0;
+}
+
 static char *zstd_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
-    // if the global context is not initialized, we do it here
     if (zstd_dctx == NULL) {
-        zstd_dctx = ZSTD_createDCtx();
-        if (!zstd_dctx) {
-            hts_log_error("Call to ZSTD_createDCtx failed");
+        if (init_zstd(NULL) != 0) {
             return NULL;
         }
     }
@@ -1331,36 +1370,10 @@ static char *zstd_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
 static char *zstd_mem_deflate(char *data, size_t size, size_t *cdata_size,
                               int level) {
-    // if the global context is not initialized, we do it here
     if (zstd_cctx == NULL) {
-        zstd_cctx = ZSTD_createCCtx();
-        if (!zstd_cctx) {
-            hts_log_error("Call to ZSTD_createCCtx failed");
+        if (init_zstd(NULL) != 0) {
             return NULL;
         }
-
-        FILE *dictFile = fopen("dictionary", "rb");
-        if (dictFile == NULL) {
-            perror("Failed to open dictionary file");
-            return NULL;
-        }
-
-        fseek(dictFile, 0, SEEK_END);
-        size_t dictSize = ftell(dictFile);
-        fseek(dictFile, 0, SEEK_SET);
-
-        void* dictBuffer = malloc(dictSize);
-        fread(dictBuffer, 1, dictSize, dictFile);
-        fclose(dictFile);
-
-    
-        size_t const loadDictResult = ZSTD_CCtx_loadDictionary(zstd_cctx, dictBuffer, dictSize);
-        if (ZSTD_isError(loadDictResult)) {
-            hts_log_error("ZSTD dictionary loading failed: %s", ZSTD_getErrorName(loadDictResult));
-            return NULL;
-        }
-
-        hts_log_warning("Dictionary loaded successfully");
     }
 
 
@@ -2099,6 +2112,14 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             method |= 1<<LZMA;
         if (fd->use_zstd)
             method |= 1<<ZSTD;
+    }
+
+    if (!zstd_cctx && method & (1<<ZSTD)) {
+        // get zstd ready to go with the correct zstd dictionary
+        if (init_zstd(fd->zstd_dict) != 0) {
+            hts_log_error("Failed to initialise zstd");
+            return -1;
+        }
     }
 
     if (level == -1)
@@ -5930,6 +5951,15 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_USE_ZSTD:
         fd->use_zstd = va_arg(args, int);
         break;
+
+    case CRAM_OPT_ZSTD_DICTIONARY: {
+        char* dict = va_arg(args, char *);
+        if (dict) {
+            fd->zstd_dict = strdup(dict);
+            if (!fd->zstd_dict)
+                return -1;
+        }
+    }
 
     case CRAM_OPT_USE_BZIP2:
         fd->use_bz2 = va_arg(args, int);
