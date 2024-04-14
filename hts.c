@@ -379,7 +379,6 @@ decompress_peek_xz(hFILE *fp, unsigned char *dest, size_t destsize)
 }
 #endif
 
-#ifdef HAVE_LIBZSTD
 static int
 read_zstd_header(hFILE *fp, unsigned long long *decompressed_size, unsigned int *dictionary_id)
 {
@@ -438,8 +437,6 @@ read_zstd_header(hFILE *fp, unsigned long long *decompressed_size, unsigned int 
 
     return 0;
 }
-#endif
-
 
 // Parse "x.y" text, taking care because the string is not NUL-terminated
 // and filling in major/minor only when the digits are followed by a delimiter,
