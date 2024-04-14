@@ -408,7 +408,7 @@ fi
 if test "$enable_zstd" != no; then
   zstd_devel=ok
   AC_CHECK_HEADERS([zstd.h], [], [zstd_devel=header-missing], [;])
-  AC_CHECK_LIB([zstd], [ZSTD_compress], [], [zstd_devel=missing])
+  AC_CHECK_LIB([zstd], [ZSTD_createDCtx, ZSTD_createCCtx, ZSTD_CCtx_loadDictionary, ZSTD_decompressDCtx, ZSTD_compressCCtx, ZSTD_compressBound], [], [zstd_devel=missing])
   if test $zstd_devel = missing; then
     MSG_ERROR([libzstd development files not found])
   fi
