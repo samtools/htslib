@@ -1,11 +1,11 @@
-z	2	3	^!A^!A^!A
-z	3	3	GGG
-z	4	3	CCC
-z	5	3	TT+3(CCC)T
-z	6	3	TTT
-z	7	3	AAA
-z	8	3	GGG
-z	9	3	CCC
-z	10	3	AAA
-z	11	3	GGG
-z	12	3	G$G$G+2(=A)$
+z	2	3	^!A^!A^!A	000
+z	3	3	GGG	111
+z	4	3	CCC	222
+z	5	3	TT+3(CCC)T	333
+z	6	3	TTT	444
+z	7	3	AAA	555
+z	8	3	GGG	666
+z	9	3	CCC	777
+z	10	3	AAA	888
+z	11	3	GGG	999
+z	12	3	G$G$G+2(=A)$	000

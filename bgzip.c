@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2019, 2021-2023 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2019, 2021-2024 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,8 @@
 #include <stdarg.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "htslib/hfile.h"
@@ -41,6 +43,7 @@
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
+#  include <sys/utime.h>
 #endif
 
 static const int WINDOW_SIZE = BGZF_BLOCK_SIZE;
@@ -103,6 +106,89 @@ static int confirm_filename(int *is_forced, const char *name, const char *ext)
     return ask_yn();
 }
 
+/* getfilespec - get file status data
+   path        - file path for which status to be retrieved
+   status      - pointer to status structure in which the data to be stored
+   returns 0 on success and -1 on failure
+*/
+static int getfilespec(const char *path, struct stat *status)
+{
+    if (!path || !status) {     //invalid
+        return -1;
+    }
+    if (!strcmp(path, "-")) {   //cant get / set for stdin/out, return success
+        return 0;
+    }
+    if (stat(path, status) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* setfilespec - set file status data
+   path        - file path for which status to be set
+   status      - pointer to status structure in which the data is present
+   returns 0 on success and -1 on failure
+   sets only the time as of now.
+*/
+static int setfilespec(const char *path, const struct stat *status)
+{
+    if (!path || !status) {     //invalid
+        return -1;
+    }
+    if (!strcmp(path, "-")) {   //cant get / set for stdin/out, return success
+        return 0;
+    }
+
+#ifdef _WIN32
+    struct _utimbuf tval;
+    //time upto sec - access & modification time
+    tval.actime = status->st_atime;
+    tval.modtime = status->st_mtime;
+    if (_utime(path, &tval) < 0) {
+        fprintf(stderr, "[bgzip] Failed to set file specifications.\n");
+        return -1;
+    }
+#else
+    struct timeval tval[2];
+    memset(&tval[0], 0, sizeof(tval));
+    //time upto sec - access time
+    tval[0].tv_sec = status->st_atime;
+    //time upto sec - modification time
+    tval[1].tv_sec = status->st_mtime;
+    if (utimes(path, &tval[0]) < 0) {
+        fprintf(stderr, "[bgzip] Failed to set file specifications.\n");
+        return -1;
+    }
+#endif //_WIN32
+    return 0;
+}
+
+
+static int check_name_and_extension(char *name, int *forced) {
+    size_t pos;
+    char *ext;
+
+    for (pos = strlen(name); pos > 0; --pos)
+        if (name[pos] == '.' || name[pos] == '/') break;
+
+    if (pos == 0 || name[pos] != '.') {
+        fprintf(stderr, "[bgzip] can't find an extension in %s -- please rename\n", name);
+        return 1;
+    }
+
+    name[pos] = '\0';
+    ext = &name[pos+1];
+
+    if (!(known_extension(ext) || confirm_filename(forced, name, ext))) {
+        fprintf(stderr, "[bgzip] unknown extension .%s -- declining to decompress to %s\n", ext, name);
+        return 2;                            //explicit N, continue and return 2
+    }
+
+    return 0;
+}
+
+
 static int bgzip_main_usage(FILE *fp, int status)
 {
     fprintf(fp, "\n");
@@ -119,6 +205,7 @@ static int bgzip_main_usage(FILE *fp, int status)
     fprintf(fp, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
     fprintf(fp, "   -k, --keep                 don't delete input files during operation\n");
     fprintf(fp, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
+    fprintf(fp, "   -o, --output FILE          write to file, keep original files unchanged\n");
     fprintf(fp, "   -r, --reindex              (re)index compressed file\n");
     fprintf(fp, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
     fprintf(fp, "   -t, --test                 test integrity of compressed file\n");
@@ -133,8 +220,10 @@ int main(int argc, char **argv)
     BGZF *fp;
     char *buffer;
     long start, end, size;
-    char *index_fname = NULL;
-    int threads = 1, isstdin = 0, usedstdout = 0, ret = 0;
+    struct stat filestat;
+    char *statfilename = NULL;
+    char *index_fname = NULL, *write_fname = NULL;
+    int threads = 1, isstdin = 0, usedstdout = 0, ret = 0, exp_out_open = 0, f_dst = -1;
 
     static const struct option loptions[] =
     {
@@ -154,11 +243,12 @@ int main(int argc, char **argv)
         {"version", no_argument, NULL, 1},
         {"keep", no_argument, NULL, 'k'},
         {"binary", no_argument, NULL, 2},
+        {"output", required_argument, NULL, 'o'},
         {NULL, 0, NULL, 0}
     };
 
     compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0; keep = 0; binary = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grtk",loptions,NULL)) >= 0){
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grtko:",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
@@ -173,6 +263,7 @@ int main(int argc, char **argv)
         case '@': threads = atoi(optarg); break;
         case 't': test = 1; compress = 0; reindex = 0; break;
         case 'k': keep = 1; break;
+        case 'o': write_fname = optarg; break;
         case 1:
             printf(
 "bgzip (htslib) %s\n"
@@ -201,16 +292,32 @@ int main(int argc, char **argv)
     }
     /* avoid -I / indexfile with multiple inputs while index/reindex. these wont be set during
     read/decompress and are not considered even if set */
-    if ( (index || reindex) && index_fname && argc - optind > 1) {
+    if ( (index || reindex) && !write_fname && index_fname && argc - optind > 1) {
         fprintf(stderr, "[bgzip] Cannot specify index filename with multiple data file on index, reindex.\n");
         return 1;
     }
 
+    if (write_fname) {
+        if (pstdout) {
+            fprintf(stderr, "[bgzip] Cannot write to %s and stdout at the same time.\n", write_fname);
+            return 1;
+        } else if (strncmp(write_fname, "-", strlen(write_fname)) == 0) {
+            // stdout has special handling so treat as -c
+            pstdout = 1;
+            write_fname = NULL;
+        }
+    }
+
     do {
         isstdin = optind >= argc ? 1 : !strcmp("-", argv[optind]);          //using stdin or not?
-        /*stdout is in use when explicitly selected or when stdin in is in use, it need to be closed
+        /* when a named output file is not used, stdout is in use when explicitly
+        selected or when stdin in is in use, it needs to be closed
         explicitly to get all io errors*/
-        usedstdout |= isstdin || pstdout || test;
+
+        if (!write_fname)
+            usedstdout |= isstdin || pstdout || test;
+
+        statfilename = NULL;
 
         if (compress == 1) {
             hFILE* f_src = NULL;
@@ -230,7 +337,16 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-            if ( argc>optind && !isstdin )                  //named input file that isn't an explicit "-"
+            if (write_fname) {
+                if (!exp_out_open) {  // only open this file once for writing, close at the end
+                    if ((fp = bgzf_open(write_fname, out_mode)) == NULL) {
+                        fprintf(stderr, "[bgzip] can't create %s: %s\n", write_fname, strerror(errno));
+                        return 1;
+                    } else {
+                        exp_out_open = 1;
+                    }
+                }
+            } else if ( argc>optind && !isstdin )            //named input file that isn't an explicit "-"
             {
                 if (pstdout)
                     fp = bgzf_open("-", out_mode);
@@ -257,7 +373,7 @@ int main(int argc, char **argv)
                         free(name);
                         return 1;
                     }
-                    free(name);
+                    statfilename = name;
                 }
             }
             else if (!pstdout && isatty(fileno((FILE *)stdout)) )
@@ -275,8 +391,12 @@ int main(int argc, char **argv)
                 bgzf_mt(fp, threads, 256);
 
             buffer = malloc(WINDOW_SIZE);
-            if (!buffer)
+            if (!buffer) {
+                if (statfilename) {
+                    free(statfilename);
+                }
                 return 1;
+            }
             if (rebgzip){
                 if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.%s\n", !isstdin ? argv[optind] : index_fname, !isstdin ? "gzi" : "");
 
@@ -360,8 +480,12 @@ int main(int argc, char **argv)
                             error("Could not write %d bytes: Error %d\n",
                                 n, fp->errcode);
                         if (flush)
-                            if (bgzf_flush_try(fp, 65536) < 0) // force
+                            if (bgzf_flush_try(fp, 65536) < 0) {// force
+                                if (statfilename) {
+                                    free(statfilename);
+                                }
                                 return -1;
+                            }
 
                         memmove(buffer, buffer+n, c2-n);
                         n = c2-n;
@@ -373,7 +497,7 @@ int main(int argc, char **argv)
                             n, fp->errcode);
                 }
             }
-            if ( index )
+            if ( index && !write_fname )
             {
                 if (index_fname) {
                     if (bgzf_index_dump(fp, index_fname, NULL) < 0)
@@ -387,11 +511,31 @@ int main(int argc, char **argv)
                     error("Can not write index for stdin data without index filename, use -I option to set index file.\n");
                 }
             }
-            if (bgzf_close(fp) < 0)
-                error("Output close failed: Error %d\n", fp->errcode);
+
+            if (!write_fname) {
+                if (bgzf_close(fp) < 0)
+                    error("Output close failed: Error %d\n", fp->errcode);
+            }
+
             if (hclose(f_src) < 0)
                 error("Input close failed\n");
-            if (argc > optind && !pstdout && !keep && !isstdin) unlink(argv[optind]);
+
+            if (statfilename) {
+                //get input file timestamp
+                if (!getfilespec(argv[optind], &filestat)) {
+                    //set output file timestamp
+                    if (setfilespec(statfilename, &filestat) < 0) {
+                        fprintf(stderr, "[bgzip] Failed to set file specification.\n");
+                    }
+                }
+                else {
+                    fprintf(stderr, "[bgzip] Failed to get file specification.\n");
+                }
+                free(statfilename);
+            }
+
+            if (argc > optind && !pstdout && !keep && !isstdin && !write_fname) unlink(argv[optind]);
+
             free(buffer);
         }
         else if ( reindex )
@@ -431,7 +575,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            int f_dst, is_forced_tmp = is_forced;
+            int is_forced_tmp = is_forced;
 
             if ( argc>optind && !isstdin )
             {
@@ -448,46 +592,55 @@ int main(int argc, char **argv)
 
                 if (pstdout || test) {
                     f_dst = fileno(stdout);
-                }
-                else {
+                } else {
                     const int wrflags = O_WRONLY | O_CREAT | O_TRUNC;
-                    char *name = argv[optind], *ext;
-                    size_t pos;
-                    for (pos = strlen(name); pos > 0; --pos)
-                        if (name[pos] == '.' || name[pos] == '/') break;
-                    if (pos == 0 || name[pos] != '.') {
-                        fprintf(stderr, "[bgzip] can't remove an extension from %s -- please rename\n", argv[optind]);
+                    char *name;
+                    int check;
+
+                    if (!(name = strdup(argv[optind]))) {
+                        fprintf(stderr, "[bgzip] unable to allocate memory for output file name.\n");
                         bgzf_close(fp);
                         return 1;
                     }
-                    name = strdup(argv[optind]);
-                    name[pos] = '\0';
-                    ext = &name[pos+1];
-                    if (! (known_extension(ext) || confirm_filename(&is_forced_tmp, name, ext))) {
-                        fprintf(stderr, "[bgzip] unknown extension .%s -- declining to decompress to %s\n", ext, name);
+
+                    if ((check = check_name_and_extension(name, &is_forced_tmp))) {
                         bgzf_close(fp);
-                        free(name);
-                        ret = 2;                            //explicit N, continue and return 2
-                        continue;
-                    }
-                    f_dst = open(name, is_forced_tmp? wrflags : wrflags|O_EXCL, 0666);
-                    if (f_dst < 0 && errno == EEXIST) {
-                        if (confirm_overwrite(name)) {
-                            f_dst = open(name, wrflags, 0666);
-                        }
-                        else {
-                            ret = 2;                        //explicit N - no overwrite, continue and return 2
-                            free(name);
-                            bgzf_close(fp);
+
+                        if (check == 1) {
+                            return 1;
+                        } else {
+                            ret = 2;
                             continue;
                         }
                     }
-                    if (f_dst < 0) {
-                        fprintf(stderr, "[bgzip] can't create %s: %s\n", name, strerror(errno));
-                        free(name);
-                        return 1;
+
+                    if (!exp_out_open) {
+                        if (write_fname) { // only open file once and don't care about overwriting
+                            is_forced_tmp = 1;
+                            exp_out_open = 1;
+                        }
+
+                        f_dst = open(write_fname ? write_fname : name, is_forced_tmp? wrflags : wrflags|O_EXCL, 0666);
+
+                        if (f_dst < 0 && errno == EEXIST) {
+                            if (confirm_overwrite(name)) {
+                                f_dst = open(name, wrflags, 0666);
+                            }
+                            else {
+                                ret = 2;                        //explicit N - no overwrite, continue and return 2
+                                bgzf_close(fp);
+                                free(name);
+                                continue;
+                            }
+                        }
+                        if (f_dst < 0) {
+                            fprintf(stderr, "[bgzip] can't create %s: %s\n", name, strerror(errno));
+                            free(name);
+                            return 1;
+                        }
                     }
-                    free(name);
+
+                    statfilename = name;
                 }
             }
             else if (!pstdout && isatty(fileno((FILE *)stdin)) )
@@ -504,6 +657,21 @@ int main(int argc, char **argv)
                     fprintf(stderr, "[bgzip] stdin is not compressed -- ignored\n");
                     bgzf_close(fp);
                     return 1;
+                }
+
+                if (!write_fname) {
+                    f_dst = fileno(stdout);
+                } else {
+                    if (!exp_out_open) {
+                        exp_out_open = 1;
+
+                        f_dst = open(write_fname, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+
+                        if (f_dst < 0) {
+                            fprintf(stderr, "[bgzip] can't create %s: %s\n", write_fname, strerror(errno));
+                            return 1;
+                        }
+                    }
                 }
             }
 
@@ -549,8 +717,26 @@ int main(int argc, char **argv)
             end = end_reg;
             free(buffer);
             if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
-            if (argc > optind && !pstdout && !test && !keep && !isstdin) unlink(argv[optind]);
-            if (!isstdin && !pstdout && !test) {
+
+            if (statfilename) {
+                if (!write_fname) {
+                    //get input file timestamp
+                    if (!getfilespec(argv[optind], &filestat)) {
+                        //set output file timestamp
+                        if (setfilespec(statfilename, &filestat) < 0) {
+                            fprintf(stderr, "[bgzip] Failed to set file specification.\n");
+                        }
+                    }
+                    else {
+                        fprintf(stderr, "[bgzip] Failed to get file specification.\n");
+                    }
+                }
+
+                free(statfilename);
+            }
+
+            if (argc > optind && !pstdout && !test && !keep && !isstdin && !write_fname) unlink(argv[optind]);
+            if (!isstdin && !pstdout && !test && !write_fname) {
                 close(f_dst);                               //close output file when it is not stdout
             }
         }
@@ -562,6 +748,25 @@ int main(int argc, char **argv)
             fprintf(stderr, "[bgzip] Failed to close stdout, errno %d", errno);
             ret = 1;
         }
+    } else if (write_fname) {
+        if (compress == 1) { // close explicit output file (this is for compression)
+            if (index) {
+                if (index_fname) {
+                    if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+                        error("Could not write index to '%s'\n", index_fname);
+                } else {
+                    if (bgzf_index_dump(fp, write_fname, ".gzi") < 0)
+                        error("Could not write index to '%s.gzi'\n", write_fname);
+                }
+            }
+
+            if (bgzf_close(fp) < 0)
+                error("Output close failed: Error %d\n", fp->errcode);
+        } else {
+            close(f_dst);
+        }
     }
+
+
     return ret;
 }

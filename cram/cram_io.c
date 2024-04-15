@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2023 Genome Research Ltd.
+Copyright (c) 2012-2024 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -3221,7 +3221,8 @@ void cram_ref_decr(refs_t *r, int id) {
  * Returns all or part of a reference sequence on success (malloced);
  *         NULL on failure.
  */
-static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
+static char *load_ref_portion(BGZF *fp, ref_entry *e,
+                              hts_pos_t start, hts_pos_t end) {
     off_t offset, len;
     char *seq;
 
@@ -3317,7 +3318,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
  */
 ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
     ref_entry *e = r->ref_id[id];
-    int start = 1, end = e->length;
+    hts_pos_t start = 1, end = e->length;
     char *seq;
 
     if (e->seq) {
@@ -3401,7 +3402,7 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
  * Returns reference on success,
  *         NULL on failure
  */
-char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
+char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     ref_entry *r;
     char *seq;
     int ostart = start;
@@ -4928,7 +4929,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
             if (!sam_hrecs_find_key(ty, "M5", NULL)) {
                 char unsigned buf[16];
                 char buf2[33];
-                int rlen;
+                hts_pos_t rlen;
                 hts_md5_context *md5;
 
                 if (!fd->refs ||
@@ -4956,7 +4957,19 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                 rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
                 if (!(md5 = hts_md5_init()))
                     return -1;
-                hts_md5_update(md5, ref, rlen);
+                if (HTS_POS_MAX <= ULONG_MAX) {
+                    // Platforms with 64-bit unsigned long update in one go
+                    hts_md5_update(md5, ref, rlen);
+                } else {
+                    // Those with 32-bit ulong (Windows) may have to loop
+                    // over epic references
+                    hts_pos_t pos = 0;
+                    while (rlen - pos > ULONG_MAX) {
+                        hts_md5_update(md5, ref + pos, ULONG_MAX);
+                        pos += ULONG_MAX;
+                    }
+                    hts_md5_update(md5, ref + pos, (unsigned long)(rlen - pos));
+                }
                 hts_md5_final(buf, md5);
                 hts_md5_destroy(md5);
                 cram_ref_decr(fd->refs, i);

@@ -1,10 +1,10 @@
-.TH tabix 1 "22 January 2024" "htslib-1.19.1" "Bioinformatics tools"
+.TH tabix 1 "15 April 2024" "htslib-1.20" "Bioinformatics tools"
 .SH NAME
 .PP
 tabix \- Generic indexer for TAB-delimited genome position files
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
-.\" Copyright (C) 2014, 2016, 2018, 2020, 2022 Genome Research Ltd.
+.\" Copyright (C) 2014, 2016, 2018, 2020, 2022, 2024 Genome Research Ltd.
 .\"
 .\" Author: Heng Li <lh3@sanger.ac.uk>
 .\"
@@ -77,6 +77,8 @@ and BAI index formats can handle individual chromosomes up to 512 Mbp
 (2^29 bases) in length.
 If your input file might contain data lines with begin or end positions
 greater than that, you will need to use a CSI index.
+
+Multiple threads can be used for operations except listing of sequence names.
 
 .SH INDEXING OPTIONS
 .TP 10
@@ -167,6 +169,10 @@ The default is 3, which turns on error and warning messages;
 2 reduces warning messages;
 1 prints only error messages and 0 is mostly silent.
 Values higher than 3 produce additional informational and debugging messages.
+.TP
+.BI "-@, --threads " INT
+Set number of threads to use for the operation.
+The default is 0, where no extra threads are in use.
 .PP
 .SH EXAMPLE
 (grep "^#" in.gff; grep -v "^#" in.gff | sort -t"`printf '\(rst'`" -k1,1 -k4,4n) | bgzip > sorted.gff.gz;

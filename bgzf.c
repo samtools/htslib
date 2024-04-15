@@ -2,7 +2,7 @@
 
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013-2022 Genome Research Ltd
+   Copyright (C) 2009, 2013-2023 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -1959,6 +1959,11 @@ int bgzf_flush(BGZF *fp)
         return ret;
     }
 #endif
+
+    if (!fp->is_compressed) {
+        return hflush(fp->fp);
+    }
+
     while (fp->block_offset > 0) {
         int block_length;
         if ( fp->idx_build_otf )

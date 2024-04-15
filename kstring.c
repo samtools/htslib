@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013-2018, 2020-2021 Genome Research Ltd.
+   Copyright (C) 2013-2018, 2020-2021, 2023 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the

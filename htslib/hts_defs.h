@@ -67,6 +67,12 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_OPT3
 #endif
 
+#if HTS_COMPILER_HAS(aligned) || HTS_GCC_AT_LEAST(4,3)
+#define HTS_ALIGN32 __attribute__((aligned(32)))
+#else
+#define HTS_ALIGN32
+#endif
+
 // GCC introduced warn_unused_result in 3.4 but added -Wno-unused-result later
 #if HTS_COMPILER_HAS(__warn_unused_result__) || HTS_GCC_AT_LEAST(4,5)
 #define HTS_RESULT_USED __attribute__ ((__warn_unused_result__))

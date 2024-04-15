@@ -1,3 +1,91 @@
+Noteworthy changes in release 1.20 (15th April 2024)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Updates
+-------
+
+* When working on named files, bgzip now sets the modified and access times
+  of the output files it makes to match those of the corresponding input.
+  (PR #1727, feature request #1718.  Requested by Gert Hulselmans)
+
+* It's now possible to use a -o option to specify the output file name in
+  bgzip.
+  (PR #1747, feature request #1726.  Requested by Gert Hulselmans)
+
+* Improved error faidx error messages.
+  (PR #1743, thanks to Nick Moore)
+
+* Faster reading of SAM array (type "B") tags.  These often turn up
+  in ONT and PacBio data.
+  (PR #1741)
+
+* Improved validity checking of base modification tags.
+  (PR #1749)
+
+* mpileup overlap removal now works where one read has a deletion.
+  (PR #1751, fixes samtools/samtools#1992.  Reported by Long Tian)
+
+* The S3 plugin can now find buckets via S3 access point aliases.
+  (PR #1756, thanks to Matt Pawelczyk;
+   fixes samtools/samtools#1984.  Reported by Albert Li)
+
+* Added a --threads option (and -@ short option) to tabix.
+  (PR #1755, feature request #1735.  Requested by Dan Bolser)
+
+* tabix can now index Graph Alignment Format (GAF) files.
+  (See https://github.com/lh3/gfatools/blob/master/doc/rGFA.md)
+  (PR #1763, thanks to Adam Novak)
+
+Bug fixes
+---------
+
+* Security fix: Prevent possible heap overflow in cram_encode_aux() on
+  bad RG:Z tags.
+  (PR #1737)
+
+* Security fix: Prevent attempts to call a NULL pointer if certain URL
+  schemes are used in CRAM @SQ UR: tags.
+  (PR #1757)
+
+* Security fix: Fixed a bug where following certain AWS S3 redirects could
+  downgrade the connection from TLS (i.e. https://) to unencrypted http://.
+  This could happen when using path-based URLs and AWS_DEFAULT_REGION
+  was set to a region other that the one where the data was stored.
+  (PR #1762, fixes #1760. Reported by andaca)
+
+* Fixed arithmetic overflow when loading very long references for CRAM.
+  (PR #1738, fixes #1738.  Reported by Shane McCarthy)
+
+* Fixed faidx and CRAM reference look-ups on compressed	fasta where the .fai
+  index file was present, but the .gzi index of compressed offsets was not.
+  (PR #1745, fixes #1744.  Reported by Theodore Li)
+
+* Fixed BCF indexing on-the-fly bug which produced invalid indexes when
+  using multiple compression threads.
+  (PR #1742, fixes #1740.  Reported by graphenn)
+
+* Ensure that pileup destructors are called by bam_plp_destroy(), to
+  prevent memory leaks.
+  (PR #1749, PR #1754)
+
+* Ensure on-the-fly index timestamps are always older than the data file.
+  Previously the files could be closed out of order, leading to warnings
+  being printed when using the index.
+  (PR #1753, fixes #1732.  Reported by Gert Hulselmans)
+
+* To prevent data corruption when reading (strictly invalid) VCF files
+  with duplicated FORMAT tags, all but the first copy of the data
+  associated with the tag are now dropped with a warning.
+  (PR #1752, PR #1761, fixes #1733.  Reported by anthakki)
+
+* Fixed a bug introduced in release 1.19 (PR #1689) which broke variant
+  record data if it tried to remove an over-long tag.
+  (PR #1752, PR #1761)
+
+* Changed error to warning when complaining about use of the CG tag
+  in SAM or CRAM files.
+  (PR #1758, fixes samtools/samtools#2002)
+
 Noteworthy changes in release 1.19.1 (22nd January 2024)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -33,6 +121,7 @@ Updates
 
   In future work, the library will instead convert such tags into their
   local alternatives (see https://github.com/samtools/hts-specs/pull/434).
+  (PR #1689)
 
 * New program. Adds annot-tsv which annotates regions in a destination file with
   texts from overlapping regions in a source file.

@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2021 Genome Research Ltd.
+    Copyright (C) 2013-2021, 2023-2024 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -884,11 +884,18 @@ char *hfile_mem_steal_buffer(hFILE *file, size_t *length) {
     return buf;
 }
 
+// open() stub for mem: which only works with the vopen() interface
+// Use 'data:,' for data encoded in the URL
+static hFILE *hopen_not_supported(const char *fname, const char *mode) {
+    errno = EINVAL;
+    return NULL;
+}
+
 int hfile_plugin_init_mem(struct hFILE_plugin *self)
 {
     // mem files are declared remote so they work with a tabix index
     static const struct hFILE_scheme_handler handler =
-            {NULL, hfile_always_remote, "mem", 2000 + 50, hopenv_mem};
+            {hopen_not_supported, hfile_always_remote, "mem", 2000 + 50, hopenv_mem};
     self->name = "mem";
     hfile_add_scheme_handler("mem", &handler);
     return 0;
@@ -923,7 +930,7 @@ static hFILE *crypt4gh_needed(const char *url, const char *mode)
 int hfile_plugin_init_crypt4gh_needed(struct hFILE_plugin *self)
 {
     static const struct hFILE_scheme_handler handler =
-        { crypt4gh_needed, NULL, "crypt4gh-needed", 0, NULL };
+        { crypt4gh_needed, hfile_always_local, "crypt4gh-needed", 0, NULL };
     self->name = "crypt4gh-needed";
     hfile_add_scheme_handler("crypt4gh", &handler);
     return 0;
@@ -1022,6 +1029,10 @@ void hfile_add_scheme_handler(const char *scheme,
                               const struct hFILE_scheme_handler *handler)
 {
     int absent;
+    if (handler->open == NULL || handler->isremote == NULL) {
+        hts_log_warning("Couldn't register scheme handler for %s: missing method", scheme);
+        return;
+    }
     if (!schemes) {
         if (try_exe_add_scheme_handler(scheme, handler) != 0) {
             hts_log_warning("Couldn't register scheme handler for %s", scheme);

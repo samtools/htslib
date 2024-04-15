@@ -1,6 +1,6 @@
 /*  sam_mods.c -- Base modification handling in SAM and BAM.
 
-    Copyright (C) 2020-2023 Genome Research Ltd.
+    Copyright (C) 2020-2024 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
+#include <assert.h>
 
 #include "htslib/sam.h"
 #include "textutils_internal.h"
@@ -245,7 +246,7 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
     }
 
     uint8_t *mi = bam_aux_get(b, "MN");
-    if (mi && bam_aux2i(mi) != b->core.l_qseq) {
+    if (mi && bam_aux2i(mi) != b->core.l_qseq && b->core.l_qseq) {
         // bam_aux2i with set errno = EINVAL and return 0 if the tag
         // isn't integer, but 0 will be a seq-length mismatch anyway so
         // triggers an error here too.
@@ -359,7 +360,7 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                 if (!cp_end) {
                     // empty list
                     delta = INT_MAX;
-                    cp_end = cp+1;
+                    cp_end = cp;
                 }
             }
             // Now delta is first in list or computed remainder,
@@ -378,7 +379,7 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                 }
                 state->MMcount  [mod_num] = delta;
                 if (b->core.flag & BAM_FREVERSE) {
-                    state->MM   [mod_num] = cp+1;
+                    state->MM   [mod_num] = me+1;
                     state->MMend[mod_num] = cp_end;
                     state->ML   [mod_num] = ml ? ml+n +(ndelta-1)*stride: NULL;
                 } else {
@@ -425,6 +426,10 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                 return -1;
             }
         }
+    }
+    if (ml && ml != ml_end) {
+        hts_log_error("%s: Too many entries in ML tag", bam_get_qname(b));
+        return -1;
     }
 
     state->nmods = mod_num;
@@ -496,6 +501,11 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
         if (b->core.flag & BAM_FREVERSE) {
             // process MM list backwards
             char *cp;
+            if (state->MMend[i]-1 < state->MM[i]) {
+                // Should be impossible to hit if coding is correct
+                hts_log_error("Assert failed while processing base modification states");
+                return -1;
+            }
             for (cp = state->MMend[i]-1; cp != state->MM[i]; cp--)
                 if (*cp == ',')
                     break;
@@ -544,9 +554,6 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
  */
 int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
                      hts_base_mod *mods, int n_mods, int *pos) {
-    if (state->seq_pos >= b->core.l_qseq)
-        return 0;
-
     // Look through state->MMcount arrays to see when the next lowest is
     // per base type;
     int next[16], freq[16] = {0}, i;
@@ -579,24 +586,29 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
     }
     *pos = state->seq_pos = i;
 
-    if (i >= b->core.l_qseq) {
-        // Check for more MM elements than bases present.
-        for (i = 0; i < state->nmods; i++) {
-            if (!(b->core.flag & BAM_FREVERSE) &&
-                state->MMcount[i] < 0x7f000000) {
-                hts_log_warning("MM tag refers to bases beyond sequence length");
-                return -1;
-            }
-        }
-        return 0;
-    }
-
     if (b->core.flag & BAM_FREVERSE) {
         for (i = 0; i < state->nmods; i++)
             state->MMcount[i] -= freq[seqi_rc[state->canonical[i]]];
     } else {
         for (i = 0; i < state->nmods; i++)
             state->MMcount[i] -= freq[state->canonical[i]];
+    }
+
+    if (b->core.l_qseq && state->seq_pos >= b->core.l_qseq &&
+        !(b->core.flag & BAM_FREVERSE)) {
+        // Spots +ve orientation run-overs.
+        // The -ve orientation is spotted in bam_parse_basemod2
+        int i;
+        for (i = 0; i < state->nmods; i++) {
+            // Check if any remaining items in MM after hitting the end
+            // of the sequence.
+            if (state->MMcount[i] < 0x7f000000 ||
+                (*state->MM[i]!=0 && *state->MM[i]!=';')) {
+                hts_log_warning("MM tag refers to bases beyond sequence length");
+                return -1;
+            }
+        }
+        return 0;
     }
 
     int r = bam_mods_at_next_pos(b, state, mods, n_mods);

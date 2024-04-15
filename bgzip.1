@@ -1,10 +1,10 @@
-.TH bgzip 1 "22 January 2024" "htslib-1.19.1" "Bioinformatics tools"
+.TH bgzip 1 "15 April 2024" "htslib-1.20" "Bioinformatics tools"
 .SH NAME
 .PP
 bgzip \- Block compression/decompression utility
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
-.\" Copyright (C) 2018, 2021-2023 Genome Research Limited.
+.\" Copyright (C) 2018, 2021-2024 Genome Research Limited.
 .\"
 .\" Author: Heng Li <lh3@sanger.ac.uk>
 .\"
@@ -50,6 +50,8 @@ bgzip \- Block compression/decompression utility
 .IR index_name ]
 .RB [ -l
 .IR compression_level ]
+.RB [ -o
+.IR outfile ]
 .RB [ -s
 .IR size ]
 .RB [ -@
@@ -71,7 +73,9 @@ otherwise when compressing bgzip will write to a new file with a .gz
 suffix and remove the original.  When decompressing the input file must
 have a .gz suffix, which will be removed to make the output name.  Again
 after decompression completes the input file will be removed. When multiple
-files are given as input, the operation is performed on all of them.
+files are given as input, the operation is performed on all of them. Access
+and modification time of input file from filesystem is set to output file. 
+Note, access time may get updated by system when it deems appropriate.
 
 .SH OPTIONS
 .TP 10
@@ -128,6 +132,10 @@ Do not delete input file during operation.
 Compression level to use when compressing.
 From 0 to 9, or -1 for the default level set by the compression library. [-1]
 .TP
+.BI "-o, --output " FILE
+Write to a file, keep original files unchanged, will overwrite an existing
+file.
+.TP
 .B "-r, --reindex"
 Rebuild the index on an existing compressed file.
 .TP
@@ -136,7 +144,7 @@ Decompress INT bytes (uncompressed size) to standard output.
 Implies -c.
 .TP
 .B "-t, --test"
-Test the intregrity of the compressed file.
+Test the integrity of the compressed file.
 .TP
 .BI "-@, --threads " INT
 Number of threads to use [1].
