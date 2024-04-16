@@ -81,7 +81,7 @@ gcc_task:
     apt-get install -y --no-install-suggests --no-install-recommends     \
         ca-certificates libc-dev make git autoconf automake              \
         zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev \
-        cmake
+        cmake libzstd-dev
 
   << : *LIBDEFLATE
   << : *COMPILE
@@ -119,7 +119,7 @@ ubuntu_task:
     apt-get install -y --no-install-suggests --no-install-recommends     \
         ca-certificates clang libc-dev make git autoconf automake        \
         zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev \
-        libdeflate-dev
+        libdeflate-dev libzstd-dev
 
   << : *COMPILE
   << : *TEST
