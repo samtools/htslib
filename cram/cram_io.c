@@ -2113,6 +2113,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             method |= 1<<ZSTD;
     }
 
+#ifdef HAVE_LIBZSTD
     if (!zstd_cctx && method & (1<<ZSTD)) {
         // get zstd ready to go with the correct zstd dictionary
         if (init_zstd(fd->zstd_dict) != 0) {
@@ -2120,6 +2121,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             return -1;
         }
     }
+#endif
 
     if (level == -1)
         level = fd->level;
