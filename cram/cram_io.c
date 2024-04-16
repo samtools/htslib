@@ -127,7 +127,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ZSTD_CCtx* zstd_cctx = NULL;
 ZSTD_DCtx* zstd_dctx = NULL;
-ZSTD_DDict *zstd_ddict = NULL;
 
 #endif
 
