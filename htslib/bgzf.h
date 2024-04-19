@@ -31,6 +31,7 @@
 #define HTSLIB_BGZF_H
 
 #include <stdint.h>
+#include <string.h>
 #include <sys/types.h>
 
 #include "hts_defs.h"
@@ -142,6 +143,25 @@ typedef struct BGZF BGZF;
      */
     HTSLIB_EXPORT
     ssize_t bgzf_read(BGZF *fp, void *data, size_t length) HTS_RESULT_USED;
+
+/**
+ * bgzf_read optimised for small quantities, as a static inline
+ * See bgzf_read() normal function for return values.
+ */
+static inline ssize_t bgzf_read_small(BGZF *fp, void *data, size_t length) {
+    // A block length of 0 implies current block isn't loaded (see
+    // bgzf_seek_common).  That gives negative available so careful on types
+    if ((ssize_t)length < fp->block_length - fp->block_offset) {
+        // Short cut the common and easy mode
+        memcpy((uint8_t *)data,
+               (uint8_t *)fp->uncompressed_block + fp->block_offset,
+               length);
+        fp->block_offset += length;
+        return length;
+    } else {
+        return bgzf_read(fp, data, length);
+    }
+}
 
     /**
      * Write _length_ bytes from _data_ to the file.  If no I/O errors occur,
