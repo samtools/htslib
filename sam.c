@@ -56,6 +56,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_expr.h"
 #include "header.h"
 
+#define bgzf_read bgzf_read_small
+
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 KHASH_SET_INIT_INT(tag)
