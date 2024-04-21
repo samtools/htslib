@@ -1534,6 +1534,13 @@ static inline int hts_bin_bot(int bin, int n_lvls)
     return (bin - hts_bin_first(l)) << (n_lvls - l) * 3;
 }
 
+/// Compute the (0-based exclusive) maximum position covered by a binning index
+static inline hts_pos_t hts_bin_maxpos(int min_shift, int n_lvls)
+{
+    hts_pos_t one = 1;
+    return one << (min_shift + n_lvls * 3);
+}
+
 /**************
  * Endianness *
  **************/

@@ -4288,7 +4288,7 @@ static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
     }
     if ( !max_len ) max_len = (1LL<<31) - 1;  // In case contig line is broken.
     max_len += 256;
-    s = 1LL << (min_shift + starting_n_lvls * 3);
+    s = hts_bin_maxpos(min_shift, starting_n_lvls);
     for (n_lvls = starting_n_lvls; max_len > s; ++n_lvls, s <<= 3);
 
     if (nids_out) *nids_out = nids;
