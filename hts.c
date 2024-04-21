@@ -2446,9 +2446,14 @@ int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
     return ret;
 }
 
+static inline hts_pos_t hts_idx_maxpos(const hts_idx_t *idx)
+{
+    return hts_bin_maxpos(idx->min_shift, idx->n_lvls);
+}
+
 int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end)
 {
-    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
+    hts_pos_t maxpos = hts_idx_maxpos(idx);
     if (tid < 0 || (beg <= maxpos && end <= maxpos))
         return 0;
 
@@ -3341,6 +3346,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
+    hts_pos_t idx_maxpos;
     hts_itr_t *iter;
     uint32_t unmapped = 0, rel_off;
 
@@ -3385,6 +3391,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
 
             if ( !kh_size(bidx) ) { iter->finished = 1; return iter; }
 
+            idx_maxpos = hts_idx_maxpos(idx);
+            if (beg >= idx_maxpos) { iter->finished = 1; return iter; }
+
             rel_off = beg>>idx->min_shift;
             // compute min_off
             bin = hts_bin_first(idx->n_lvls) + rel_off;
@@ -3427,7 +3436,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             // compute max_off: a virtual offset from a bin to the right of end
             // First check if end lies within the range of the index (it won't
             // if it's HTS_POS_MAX)
-            if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+            if (end <= idx_maxpos) {
                 bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
                 if (bin >= idx->n_bins) bin = 0;
                 while (1) {
@@ -3513,7 +3522,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
     bidx_t *bidx;
     uint64_t min_off, max_off, t_off = (uint64_t)-1;
     int tid;
-    hts_pos_t beg, end;
+    hts_pos_t beg, end, idx_maxpos;
     hts_reglist_t *curr_reg;
     uint32_t unmapped = 0, rel_off;
 
@@ -3555,6 +3564,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
             else
                 unmapped = 1;
 
+            idx_maxpos = hts_idx_maxpos(idx);
+
             for(j=0; j<curr_reg->count; j++) {
                 hts_pair32_t *curr_intv = &curr_reg->intervals[j];
                 if (curr_intv->end < curr_intv->beg)
@@ -3562,6 +3573,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 
                 beg = curr_intv->beg;
                 end = curr_intv->end;
+                if (beg >= idx_maxpos)
+                    continue;
                 rel_off = beg>>idx->min_shift;
 
                 /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
@@ -3606,7 +3619,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 // compute max_off: a virtual offset from a bin to the right of end
                 // First check if end lies within the range of the index (it
                 // won't if it's HTS_POS_MAX)
-                if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+                if (end <= idx_maxpos) {
                     bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
                     if (bin >= idx->n_bins) bin = 0;
                     while (1) {

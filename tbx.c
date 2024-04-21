@@ -321,7 +321,7 @@ static void adjust_max_ref_len_sam(const char *str, int64_t *max_ref_len)
 // files with very large contigs.
 static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
 {
-    int64_t s = 1LL << (min_shift + n_lvls * 3);
+    int64_t s = hts_bin_maxpos(min_shift, n_lvls);
     max_len += 256;
     for (; max_len > s; ++n_lvls, s <<= 3) {}
     return n_lvls;
