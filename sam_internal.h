@@ -99,7 +99,8 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
         seq[i] = seq_nt16_str[bam_seqi(nib, i)];
 }
 
-#if HTS_GCC_AT_LEAST(4,8)
+#if HTS_BUILD_IS_X86_64 && HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS
+#include "immintrin.h"
 /*
  * Convert a nibble encoded BAM sequence to a string of bases.
  *
@@ -108,7 +109,7 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
  * be converted to the IUPAC characters.
  * It falls back on the nibble2base_default function for the remainder.
  */
-#include "tmmintrin.h"
+
 __attribute__((target("ssse3")))
 static inline void nibble2base_ssse3(uint8_t *nib, char *seq, int len) {
     seq[0] = 0;
