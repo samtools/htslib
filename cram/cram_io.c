@@ -1984,11 +1984,15 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
         // We also get large fluctuations based on genome coordinate for
         // e.g. SA:Z and SC series, but we consider the typical scale of
         // delta between blocks and use this to look for abnormality.
+
+        // Equivalent to (but minus possible integer overflow)
+        //   (b->uncomp_size + 1000)/4 > metrics->input_avg_sz+1000 ||
+        //    b->uncomp_size + 1000    < (metrics->input_avg_sz+1000)/4)
         if (metrics->input_avg_sz &&
-            (b->uncomp_size + 1000 > 4*(metrics->input_avg_sz+1000) ||
-             b->uncomp_size + 1000 < (metrics->input_avg_sz+1000)/4) &&
-            ABS(b->uncomp_size-metrics->input_avg_sz)
-                > 10*metrics->input_avg_delta) {
+            (b->uncomp_size/4 - 750 > metrics->input_avg_sz ||
+             b->uncomp_size         < metrics->input_avg_sz/4 - 750) &&
+            ABS(b->uncomp_size-metrics->input_avg_sz)/10
+                > metrics->input_avg_delta) {
             metrics->next_trial = 0;
         }
 
