@@ -73,7 +73,8 @@ gcc_task:
        USE_CONFIG: no
     - environment:
        USE_CONFIG: yes
-       CFLAGS: -std=c99 -pedantic -Wformat=2
+       CFLAGS: -std=c99 -pedantic -Wformat=2 -fsanitize=address
+       LDFLAGS: -fsanitize=address
        USE_LIBDEFLATE: yes
 
   install_script: |
@@ -108,8 +109,7 @@ ubuntu_task:
        DO_UNTRACKED_FILE_CHECK: yes
     - environment:
        USE_CONFIG: yes
-       CFLAGS: -g -Wall -O3 -fsanitize=address
-       LDFLAGS: -fsanitize=address
+       CFLAGS: -g -Wall -O3
        USE_LIBDEFLATE: yes
 
   # NB: we could consider building a docker image with these
