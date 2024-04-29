@@ -2358,7 +2358,7 @@ void sam_hdr_incr_ref(sam_hdr_t *bh) {
  * Returns a sam_hrecs_t struct on success (free with sam_hrecs_free())
  *         NULL on failure
  */
-sam_hrecs_t *sam_hrecs_new() {
+sam_hrecs_t *sam_hrecs_new(void) {
     sam_hrecs_t *hrecs = calloc(1, sizeof(*hrecs));
 
     if (!hrecs)

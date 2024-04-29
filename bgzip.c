@@ -57,7 +57,7 @@ static void error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
-static int ask_yn()
+static int ask_yn(void)
 {
     char line[1024];
     if (fgets(line, sizeof line, stdin) == NULL)

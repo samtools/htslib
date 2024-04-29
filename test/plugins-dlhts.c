@@ -177,7 +177,7 @@ int main(int argc, char **argv)
 
 #else
 
-int main()
+int main(void)
 {
     printf("Tests skipped due to " SKIP "\n");
     return EXIT_SUCCESS;

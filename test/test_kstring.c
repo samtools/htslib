@@ -290,7 +290,7 @@ static char *mock_fgets(char *str, int num, void *p) {
     return str;
 }
 
-static int test_kgetline() {
+static int test_kgetline(void) {
     kstring_t s = KS_INITIALIZE;
     int mock_state = 0;
 
@@ -346,7 +346,7 @@ static ssize_t mock_fgets2(char *str, size_t num, void *p) {
     return strlen(str);
 }
 
-static int test_kgetline2() {
+static int test_kgetline2(void) {
     kstring_t s = KS_INITIALIZE;
     int mock_state = 0;
 

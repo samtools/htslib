@@ -625,7 +625,7 @@ void test_invalid_end_tag(void)
     hts_set_log_level(logging);
 }
 
-void test_open_format() {
+void test_open_format(void) {
     char mode[5];
     int ret;
     strcpy(mode, "r");

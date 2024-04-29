@@ -39,7 +39,7 @@ void error(const char *format, ...)
     exit(-1);
 }
 
-static void test_bcf_set_variant_type()
+static void test_bcf_set_variant_type(void)
 {
     // Test SNVs
     bcf_variant_t var1;

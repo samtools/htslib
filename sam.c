@@ -104,7 +104,7 @@ const int8_t bam_cigar_table[256] = {
     -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1
 };
 
-sam_hdr_t *sam_hdr_init()
+sam_hdr_t *sam_hdr_init(void)
 {
     sam_hdr_t *bh = (sam_hdr_t*)calloc(1, sizeof(sam_hdr_t));
     if (bh == NULL) return NULL;
@@ -421,7 +421,7 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
  *** BAM alignment I/O ***
  *************************/
 
-bam1_t *bam_init1()
+bam1_t *bam_init1(void)
 {
     return (bam1_t*)calloc(1, sizeof(bam1_t));
 }

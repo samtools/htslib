@@ -1997,7 +1997,7 @@ static void test_mempolicy(void)
     }
 }
 
-static void test_bam_set1_minimal()
+static void test_bam_set1_minimal(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2028,7 +2028,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_full()
+static void test_bam_set1_full(void)
 {
     const char *qname = "!??AAA~~~~";
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
@@ -2075,7 +2075,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_even_and_odd_seq_len()
+static void test_bam_set1_even_and_odd_seq_len(void)
 {
     const char *seq_even = "TGGACTACGA";
     const char *seq_odd  = "TGGACTACGAC";
@@ -2105,7 +2105,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_with_seq_but_no_qual()
+static void test_bam_set1_with_seq_but_no_qual(void)
 {
     const char *seq = "TGGACTACGA";
 
@@ -2129,7 +2129,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_qname()
+static void test_bam_set1_validate_qname(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2146,7 +2146,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_seq()
+static void test_bam_set1_validate_seq(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2163,7 +2163,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_cigar()
+static void test_bam_set1_validate_cigar(void)
 {
     const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
@@ -2192,7 +2192,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_size_limits()
+static void test_bam_set1_validate_size_limits(void)
 {
     const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
@@ -2224,7 +2224,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_write_and_read_back()
+static void test_bam_set1_write_and_read_back(void)
 {
     const char *qname = "q1";
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
