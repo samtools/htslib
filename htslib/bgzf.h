@@ -175,6 +175,22 @@ static inline ssize_t bgzf_read_small(BGZF *fp, void *data, size_t length) {
     HTSLIB_EXPORT
     ssize_t bgzf_write(BGZF *fp, const void *data, size_t length) HTS_RESULT_USED;
 
+/**
+ * bgzf_write optimised for small quantities, as a static inline
+ * See bgzf_write() normal function for return values.
+ */
+static inline ssize_t bgzf_write_small(BGZF *fp, void *data, size_t length) {
+    if (fp->is_compressed && BGZF_BLOCK_SIZE - fp->block_offset > length) {
+        // Short cut the common and easy mode
+        memcpy((uint8_t *)fp->uncompressed_block + fp->block_offset,
+               data, length);
+        fp->block_offset += length;
+        return length;
+    } else {
+        return bgzf_write(fp, data, length);
+    }
+}
+
     /**
      * Write _length_ bytes from _data_ to the file, the index will be used to
      * decide the amount of uncompressed data to be written to each bgzip block.
