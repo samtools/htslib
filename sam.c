@@ -56,8 +56,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_expr.h"
 #include "header.h"
 
-#define bgzf_read bgzf_read_small
-
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 KHASH_SET_INIT_INT(tag)
@@ -776,6 +774,7 @@ static int fixup_missing_qname_nul(bam1_t *b) {
  * Note a second interface that returns a bam pointer instead would avoid bam_copy1
  * in multi-threaded handling.  This may be worth considering for htslib2.
  */
+#define bgzf_read bgzf_read_small
 int bam_read1(BGZF *fp, bam1_t *b)
 {
     bam1_core_t *c = &b->core;
@@ -793,7 +792,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (block_len < 32) return -4;  // block_len includes core data
     if (fp->block_length - fp->block_offset > 32) {
         // Avoid bgzf_read and a temporary copy to a local buffer
-        uint8_t *x = fp->uncompressed_block + fp->block_offset;
+        uint8_t *x = (uint8_t *)fp->uncompressed_block + fp->block_offset;
         c->tid        = le_to_u32(x);
         c->pos        = le_to_i32(x+4);
         uint32_t x2   = le_to_u32(x+8);
@@ -859,7 +858,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
 
     return 4 + block_len;
 }
+#undef bgzf_read
 
+#define bgzf_write bgzf_write_small
 int bam_write1(BGZF *fp, const bam1_t *b)
 {
     const bam1_core_t *c = &b->core;
@@ -927,6 +928,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return ok? 4 + block_len : -1;
 }
+#undef bgzf_write
 
 /*
  * Write a BAM file and append to the in-memory index simultaneously.
