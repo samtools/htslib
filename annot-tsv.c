@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2018-2023 Genome Research Ltd.
+    Copyright (C) 2018-2024 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -71,6 +71,7 @@ typedef struct
     cols_t *core, *match, *transfer, *annots;
     int *core_idx, *match_idx, *transfer_idx, *annots_idx;
     int *nannots_added; // for --max-annots: the number of annotations added
+    char delim;
     int grow_n;
     kstring_t line;     // one buffered line, a byproduct of reading the header
     htsFile *fp;
@@ -100,10 +101,10 @@ typedef struct
 {
     nbp_t *nbp;
     dat_t dst, src;
-    char *core_str, *match_str, *transfer_str, *annots_str;
+    char *core_str, *match_str, *transfer_str, *annots_str, *headers_str, *delim_str;
     char *temp_dir, *out_fname;
     BGZF *out_fp;
-    int allow_dups, reciprocal, ignore_headers, max_annots, mode;
+    int allow_dups, reciprocal, max_annots, mode, no_write_hdr;
     double overlap;
     regidx_t *idx;
     regitr_t *itr;
@@ -282,7 +283,7 @@ int parse_tab_with_payload(const char *line, char **chr_beg, char **chr_end, hts
 
     dat_t *dat = (dat_t*) usr;
 
-    cols_t *cols = cols_split(line, NULL, '\t');
+    cols_t *cols = cols_split(line, NULL, dat->delim);
     *((cols_t**)payload) = cols;
 
     if ( cols->n < dat->core_idx[0] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[0]+1,cols->n,line);
@@ -315,47 +316,90 @@ void free_payload(void *payload)
     cols_destroy(cols);
 }
 
-// Parse header if present (first line has a leading #) or create a dummy header with
-// numeric column names. If dummy is set, read first data line (without a leading #)
-// and create a dummy header.
-void parse_header(dat_t *dat, char *fname, int dummy)
+// Parse header if present, the parameter irow indicates the header row line number:
+//      0   .. ignore headers, create numeric fields names, 1-based indices
+//      N>0 .. N-th line, all previous lines are discarded
+//      N<0 .. N-th line from the end of the comment block (comment lines are prefixed with #),
+//             all preceding lines are discarded.
+// When autodetect is set, the argument nth_row is ignored.
+// Note this makes no attempt to preserve comment lines on output
+void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
 {
     dat->fp = hts_open(fname,"r");
     if ( !dat->fp ) error("Failed to open: %s\n", fname);
 
+    // buffer comment lines when N<0
+    int nbuf = 0;
+    char **buf = NULL;
+    if ( nth_row < 0 )
+    {
+        buf = calloc(-nth_row,sizeof(*buf));
+        if ( !buf ) error("Out of memory, failed to allocate %zu bytes\n",(-nth_row)*sizeof(*buf));
+    }
+
+    int irow = 0;
     cols_t *cols = NULL;
     while ( hts_getline(dat->fp, KS_SEP_LINE, &dat->line) > 0 )
     {
-        if ( dat->line.s[0]=='#' )
+        if ( autodetect )
         {
-            // this is a header or comment line
-            if ( dummy ) continue;
-            cols = cols_split(dat->line.s, NULL, '\t');
+            // if the first line is comment line, use it as a header. Otherwise go
+            // with numeric indices
+            nth_row = dat->line.s[0]=='#' ? 1 : 0;
             break;
         }
+        if ( nth_row==0 )
+        {
+            // N=0 .. comment lines to be ignored, read until we get to the first data line
+            if ( dat->line.s[0]=='#' ) continue;
+            break;
+        }
+        if ( nth_row>0 )
+        {
+            // N>1 .. regardless of this being a comment or data line, read until Nth line
+            if ( ++irow < nth_row ) continue;
+            break;
+        }
+        // N<0 .. keep abs(N) comment lines in a sliding buffer
+        if ( dat->line.s[0]!='#' ) break;   // data line
+        if ( nbuf == -nth_row )
+        {
+            // one more comment line and the buffer is full. We could use round buffer
+            // for efficiency, but the assumption is abs(nth_row) is small
+            memmove(buf, &buf[1], (nbuf-1)*sizeof(*buf));
+            nbuf--;
+        }
+        buf[nbuf++] = strdup(dat->line.s);
+    }
 
-        // this a data line, we must be in a dummy mode
-        cols = cols_split(dat->line.s, NULL, '\t');
-        assert(cols && cols->n);
-        assert(cols->off[0][0] != '#');
+    if ( nth_row < 0 )
+    {
+        if ( nbuf!=-nth_row )
+            error("Found %d header lines in %s, cannot fetch N=%d from the end\n",nbuf,fname,-nth_row);
+        cols = cols_split(buf[0], NULL, dat->delim);
 
+    }
+    else
+        cols = cols_split(dat->line.s, NULL, dat->delim);
+
+    if ( !dat->line.l ) error("Failed to read: %s\n", fname);
+    assert(cols && cols->n);
+
+    if ( nth_row == 0 ) // create numeric indices
+    {
         // create a dummy header with numeric field names
         kstring_t str = {0,0,0};
         int i, n = cols->n;
         for (i=0; i<n; i++)
         {
-            if ( i>0 ) kputc('\t', &str);
+            if ( i>0 ) kputc(dat->delim, &str);
             kputw(i+1, &str);
         }
         cols_destroy(cols);
-        cols = cols_split(str.s, NULL, '\t');
+        cols = cols_split(str.s, NULL, dat->delim);
         free(str.s);
         dat->hdr.dummy = 1;
-
-        break;
     }
-    if ( !dat->line.l ) error("Failed to read: %s\n", fname);
-    assert(cols && cols->n);
 
     dat->hdr.name2idx = khash_str2int_init();
     int i;
@@ -377,24 +421,28 @@ void parse_header(dat_t *dat, char *fname, int dummy)
     }
     dat->hdr.cols = cols;
     if ( !dat->hdr.dummy ) dat->line.l = 0;
+
+    for (i=0; i<nbuf; i++) free(buf[i]);
+    free(buf);
 }
 void write_header(args_t *args, dat_t *dat)
 {
     if ( dat->hdr.dummy ) return;
+    if ( args->no_write_hdr>1 ) return;
     int i;
     kstring_t str = {0,0,0};
     kputc('#', &str);
     for (i=0; i<dat->hdr.cols->n; i++)
     {
-        if ( i>0 ) kputc('\t', &str);
-        ksprintf(&str,"[%d]", i+1);
+        if ( i>0 ) kputc(dat->delim, &str);
+        if ( !args->no_write_hdr ) ksprintf(&str,"[%d]", i+1);
         kputs(dat->hdr.cols->off[i], &str);
     }
     if ( dat->hdr.annots )
     {
         for (i=0; i<dat->hdr.annots->n; i++)
         {
-            if ( str.l > 1 ) kputc('\t', &str);
+            if ( str.l > 1 ) kputc(dat->delim, &str);
             kputs(dat->hdr.annots->off[i], &str);
         }
     }
@@ -434,8 +482,30 @@ void sanity_check_columns(char *fname, hdr_t *hdr, cols_t *cols, int **col2idx, 
 }
 void init_data(args_t *args)
 {
-    parse_header(&args->dst, args->dst.fname, args->ignore_headers);
-    parse_header(&args->src, args->src.fname, args->ignore_headers);
+    if ( !args->delim_str )
+        args->dst.delim = args->src.delim = '\t';
+    else if ( strlen(args->delim_str)==1 )
+        args->dst.delim = args->src.delim = *args->delim_str;
+    else if ( strlen(args->delim_str)==3 && args->delim_str[1]==':' )
+        args->src.delim = args->delim_str[0], args->dst.delim = args->delim_str[2];
+    else
+        error("Could not parse the option --delim %s\n",args->delim_str);
+
+    // --headers, determine header row index
+    int isrc = 0, idst = 0, autodetect = 1;
+    if ( args->headers_str )
+    {
+        cols_t *tmp = cols_split(args->headers_str, NULL, ':');
+        char *rmme;
+        isrc = strtol(tmp->off[0],&rmme,10);
+        if ( *rmme || tmp->off[0]==rmme ) error("Could not parse the option --headers %s\n",args->headers_str);
+        idst = strtol(tmp->n==2 ? tmp->off[1] : tmp->off[0],&rmme,10);
+        if ( *rmme || (tmp->n==2 ? tmp->off[1] : tmp->off[0])==rmme ) error("Could not parse the option --headers %s\n",args->headers_str);
+        cols_destroy(tmp);
+        autodetect = 0;
+    }
+    parse_header(&args->dst, args->dst.fname, idst, autodetect);
+    parse_header(&args->src, args->src.fname, isrc, autodetect);
 
     // -c, core columns
     if ( !args->core_str ) args->core_str = "chr,beg,end:chr,beg,end";
@@ -608,17 +678,17 @@ static void write_annots(args_t *args)
     {
         if ( args->dst.annots_idx[i]==ANN_NBP )
         {
-            kputc('\t',&args->tmp_kstr);
+            kputc(args->dst.delim,&args->tmp_kstr);
             kputw(len,&args->tmp_kstr);
         }
         else if ( args->dst.annots_idx[i]==ANN_FRAC )
         {
-            kputc('\t',&args->tmp_kstr);
+            kputc(args->dst.delim,&args->tmp_kstr);
             kputd((double)len/(args->nbp->end - args->nbp->beg + 1),&args->tmp_kstr);
         }
         else if ( args->dst.annots_idx[i]==ANN_CNT )
         {
-            kputc('\t',&args->tmp_kstr);
+            kputc(args->dst.delim,&args->tmp_kstr);
             kputw(args->nbp->n/2,&args->tmp_kstr);
         }
     }
@@ -758,7 +828,7 @@ void process_line(args_t *args, char *line, size_t size)
     write_string(args, dst_cols->off[0], 0);
     for (i=1; i<dst_cols->n; i++)
     {
-        write_string(args, "\t", 1);
+        write_string(args, &args->dst.delim, 1);
         write_string(args, dst_cols->off[i], 0);
     }
     write_annots(args);
@@ -796,6 +866,7 @@ static const char *usage_text(void)
         "\n"
         "Other options:\n"
         "       --allow-dups        Add annotations multiple times\n"
+        "       --help              This help message\n"
         "       --max-annots INT    Adding at most INT annotations per column to save\n"
         "                           time in big regions\n"
         "       --version           Print version string and exit\n"
@@ -804,7 +875,12 @@ static const char *usage_text(void)
         "                             frac .. fraction of the target region with an\n"
         "                                       overlap\n"
         "                             nbp  .. number of source base pairs in the overlap\n"
-        "   -H, --ignore-headers    Use numeric indexes, ignore the headers completely\n"
+        "   -d, --delim SRC:TGT     Column delimiter in SRC and TGT file\n"
+        "   -h, --headers SRC:TGT   Header row line number, 0:0 is equivalent to -H, negative\n"
+        "                             value counts from the end of comment line block [1:1]\n"
+        "   -H, --ignore-headers    Use numeric indices, ignore the headers completely\n"
+        "   -I, --no-header-idx     Suppress index numbers in the printed header. If given\n"
+        "                           twice, drop the entire header\n"
         "   -O, --overlap FLOAT     Minimum required overlap (non-reciprocal, unless -r\n"
         "                           is given)\n"
         "   -r, --reciprocal        Apply the -O requirement to both overlapping\n"
@@ -847,18 +923,21 @@ int main(int argc, char **argv)
         {"target-file",required_argument,NULL,'t'},
         {"allow-dups",no_argument,NULL,0},
         {"max-annots",required_argument,NULL,2},
+        {"no-header-idx",required_argument,NULL,'I'},
         {"version",no_argument,NULL,1},
         {"annotate",required_argument,NULL,'a'},
+        {"headers",no_argument,NULL,'h'},
         {"ignore-headers",no_argument,NULL,'H'},
         {"overlap",required_argument,NULL,'O'},
         {"reciprocal",no_argument,NULL,'r'},
         {"drop-overlaps",no_argument,NULL,'x'},
-        {"help",no_argument,NULL,'h'},
+        {"delim",required_argument,NULL,'d'},
+        {"help",no_argument,NULL,4},
         {NULL,0,NULL,0}
     };
     char *tmp = NULL;
     int c;
-    while ((c = getopt_long(argc, argv, "hc:f:m:o:s:t:a:HO:rx",loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "c:f:m:o:s:t:a:HO:rxh:Id:",loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -873,7 +952,10 @@ int main(int argc, char **argv)
                 args->max_annots = strtod(optarg, &tmp);
                 if ( tmp==optarg || *tmp ) error("Could not parse --max-annots  %s\n", optarg);
                 break;
-            case 'H': args->ignore_headers = 1; break;
+            case 'I': args->no_write_hdr++; break;
+            case 'd': args->delim_str = optarg; break;
+            case 'h': args->headers_str = optarg; break;
+            case 'H': args->headers_str = "0:0"; break;
             case 'r': args->reciprocal = 1; break;
             case 'c': args->core_str  = optarg; break;
             case 't': args->dst.fname = optarg; break;
@@ -888,7 +970,7 @@ int main(int argc, char **argv)
             case 's': args->src.fname = optarg; break;
             case 'f': args->transfer_str = optarg; break;
             case 'x': args->mode = PRINT_NONMATCHING; break;
-            case 'h': printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_SUCCESS); break;
+            case  4 : printf("\nVersion: %s\n%s\n",hts_version(),usage_text()); exit(EXIT_SUCCESS); break;
             case '?': // fall through
             default: error("\nVersion: %s\n%s\n",hts_version(),usage_text()); break;
         }
@@ -914,7 +996,11 @@ int main(int argc, char **argv)
     while ( read_next_line(&args->dst) )
     {
         int i;
-        for (i=0; i<args->dst.grow_n; i++) kputs("\t.", &args->dst.line);
+        for (i=0; i<args->dst.grow_n; i++)
+        {
+            kputc(args->dst.delim, &args->dst.line);
+            kputc('.', &args->dst.line);
+        }
         process_line(args, args->dst.line.s, args->dst.line.l);
         args->dst.line.l = 0;
     }
