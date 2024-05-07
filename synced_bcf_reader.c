@@ -71,6 +71,7 @@ typedef struct
 }
 aux_t;
 
+static bcf_sr_regions_t *bcf_sr_regions_alloc(void);
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end);
 static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
@@ -368,13 +369,22 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     if ( !files->explicit_regs && !files->streaming )
     {
         int n = 0, i;
-        const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
+        const char **names;
+
+        if ( !files->regions )
+        {
+            files->regions = bcf_sr_regions_alloc();
+            if ( !files->regions )
+            {
+                hts_log_error("Cannot allocate regions data structure");
+                return 0;
+            }
+        }
+
+        names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {
-            if ( !files->regions )
-                files->regions = _regions_init_string(names[i]);
-            else
-                _regions_add(files->regions, names[i], -1, -1);
+            _regions_add(files->regions, names[i], -1, -1);
         }
         free(names);
         _regions_sort_and_merge(files->regions);
@@ -956,6 +966,17 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     return 1;
 }
 
+// Allocate a new region list structure.
+static bcf_sr_regions_t *bcf_sr_regions_alloc(void)
+{
+    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
+    if ( !reg ) return NULL;
+
+    reg->start = reg->end = -1;
+    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    return reg;
+}
+
 // Add a new region into a list. On input the coordinates are 1-based, inclusive, then stored 0-based,
 // inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and merge_regions().
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end)
@@ -1037,9 +1058,8 @@ void _regions_sort_and_merge(bcf_sr_regions_t *reg)
 // wouldn't learn the chromosome name.
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
-    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-    reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    bcf_sr_regions_t *reg = bcf_sr_regions_alloc();
+    if ( !reg ) return NULL;
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
@@ -1189,9 +1209,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         return reg;
     }
 
-    reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-    reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    reg = bcf_sr_regions_alloc();
+    if ( !reg ) return NULL;
 
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
