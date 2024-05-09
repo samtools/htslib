@@ -366,6 +366,7 @@ void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
         {
             // one more comment line and the buffer is full. We could use round buffer
             // for efficiency, but the assumption is abs(nth_row) is small
+            free(buf[0]);
             memmove(buf, &buf[1], (nbuf-1)*sizeof(*buf));
             nbuf--;
         }
