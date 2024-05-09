@@ -278,6 +278,10 @@ config.h:
 	echo '#endif' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
 	echo '#define HAVE_LIBCURL 1' >> $@
+	if [ "x$(HTS_HAVE_CPUID)" != "x" ]; then \
+	    echo '#define HAVE_DECL___CPUID_COUNT 1' >> $@ ; \
+	    echo '#define HAVE_DECL___GET_CPUID_MAX 1' >> $@ ; \
+	fi
 	if [ "x$(HTS_BUILD_SSE4)" != "x" ]; then \
 	    echo '#define HAVE_POPCNT 1' >> $@ ; \
 	    echo '#define HAVE_SSE4_1 1' >> $@ ; \

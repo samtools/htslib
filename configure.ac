@@ -82,6 +82,14 @@ AC_CHECK_DECL([_XOPEN_SOURCE], [],
   [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
   [])
 
+dnl Check that we have cpuid, and if so run the x86 SIMD checks
+AC_CHECK_DECLS([__get_cpuid_max, __cpuid_count], [
+   hts_have_cpuid=yes
+], [
+   hts_have_cpuid=no
+], [[#include <cpuid.h>]])
+
+AS_IF(test "x$hts_have_cpuid" = "xyes", [
 dnl Options for rANS32x16 sse4.1 version - sse4.1
 HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
  [AC_LANG_PROGRAM([[
@@ -100,6 +108,7 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
   AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_SSE4_1],1,[Defined to 1 if rANS source using SSE4.1 can be compiled.
 ])
+
 dnl Propagate HTSlib's unaligned access preference to htscodecs
   AH_VERBATIM([UBSAN],[
 /* Prevent unaligned access in htscodecs SSE4 rANS codec */
@@ -147,6 +156,8 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
   AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
 ])
+
+]) dnl End of AS_IF(hts_have_cpuid)
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
