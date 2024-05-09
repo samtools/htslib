@@ -1416,6 +1416,7 @@ sub test_annot_tsv
     run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
     run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 -h 0:0');
     run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2 -II');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:-1 -II');
     run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.2.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2');
     run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.2.txt',args=>'-c chr2,beg2,end2:chr,beg,end -f smpl2:src_smpl -h 3:2');
     run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.3.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2 -I');
