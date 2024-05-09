@@ -774,16 +774,16 @@ static int fixup_missing_qname_nul(bam1_t *b) {
  * Note a second interface that returns a bam pointer instead would avoid bam_copy1
  * in multi-threaded handling.  This may be worth considering for htslib2.
  */
-#define bgzf_read bgzf_read_small
 int bam_read1(BGZF *fp, bam1_t *b)
 {
     bam1_core_t *c = &b->core;
     int32_t block_len, ret, i;
-    uint32_t x[8], new_l_data;
+    uint32_t new_l_data;
+    uint8_t tmp[32], *x;
 
     b->l_data = 0;
 
-    if ((ret = bgzf_read(fp, &block_len, 4)) != 4) {
+    if ((ret = bgzf_read_small(fp, &block_len, 4)) != 4) {
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
     }
@@ -792,34 +792,27 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (block_len < 32) return -4;  // block_len includes core data
     if (fp->block_length - fp->block_offset > 32) {
         // Avoid bgzf_read and a temporary copy to a local buffer
-        uint8_t *x = (uint8_t *)fp->uncompressed_block + fp->block_offset;
-        c->tid        = le_to_u32(x);
-        c->pos        = le_to_i32(x+4);
-        uint32_t x2   = le_to_u32(x+8);
-        c->bin        = x2>>16;
-        c->qual       = x2>>8&0xff;
-        c->l_qname    = x2&0xff;
-        c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
-        uint32_t x3   = le_to_u32(x+12);
-        c->flag       = x3>>16;
-        c->n_cigar    = x3&0xffff;
-        c->l_qseq     = le_to_u32(x+16);
-        c->mtid       = le_to_u32(x+20);
-        c->mpos       = le_to_i32(x+24);
-        c->isize      = le_to_i32(x+28);
+        x = (uint8_t *)fp->uncompressed_block + fp->block_offset;
         fp->block_offset += 32;
     } else {
-        if (bgzf_read(fp, &x, 32) != 32) return -3;
-        if (fp->is_be) {
-            for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
-        }
-        c->tid = x[0]; c->pos = (int32_t)x[1];
-        c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
-        c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
-        c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
-        c->l_qseq = x[4];
-        c->mtid = x[5]; c->mpos = (int32_t)x[6]; c->isize = (int32_t)x[7];
+        x = tmp;
+        if (bgzf_read(fp, x, 32) != 32) return -3;
     }
+
+    c->tid        = le_to_u32(x);
+    c->pos        = le_to_i32(x+4);
+    uint32_t x2   = le_to_u32(x+8);
+    c->bin        = x2>>16;
+    c->qual       = x2>>8&0xff;
+    c->l_qname    = x2&0xff;
+    c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
+    uint32_t x3   = le_to_u32(x+12);
+    c->flag       = x3>>16;
+    c->n_cigar    = x3&0xffff;
+    c->l_qseq     = le_to_u32(x+16);
+    c->mtid       = le_to_u32(x+20);
+    c->mpos       = le_to_i32(x+24);
+    c->isize      = le_to_i32(x+28);
 
     new_l_data = block_len - 32 + c->l_extranul;
     if (new_l_data > INT_MAX || c->l_qseq < 0 || c->l_qname < 1) return -4;
@@ -829,14 +822,14 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (realloc_bam_data(b, new_l_data) < 0) return -4;
     b->l_data = new_l_data;
 
-    if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
+    if (bgzf_read_small(fp, b->data, c->l_qname) != c->l_qname) return -4;
     if (b->data[c->l_qname - 1] != '\0') { // try to fix missing nul termination
         if (fixup_missing_qname_nul(b) < 0) return -4;
     }
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
     if (b->l_data < c->l_qname ||
-        bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
+        bgzf_read_small(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     if (bam_tag2cigar(b, 0, 0) < 0)
@@ -858,9 +851,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
 
     return 4 + block_len;
 }
-#undef bgzf_read
 
-#define bgzf_write bgzf_write_small
 int bam_write1(BGZF *fp, const bam1_t *b)
 {
     const bam1_core_t *c = &b->core;
@@ -891,15 +882,15 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     if (fp->is_be) {
         for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
         y = block_len;
-        if (ok) ok = (bgzf_write(fp, ed_swap_4p(&y), 4) >= 0);
+        if (ok) ok = (bgzf_write_small(fp, ed_swap_4p(&y), 4) >= 0);
         swap_data(c, b->l_data, b->data, 1);
     } else {
-        if (ok) ok = (bgzf_write(fp, &block_len, 4) >= 0);
+        if (ok) ok = (bgzf_write_small(fp, &block_len, 4) >= 0);
     }
-    if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
-    if (ok) ok = (bgzf_write(fp, b->data, c->l_qname - c->l_extranul) >= 0);
+    if (ok) ok = (bgzf_write_small(fp, x, 32) >= 0);
+    if (ok) ok = (bgzf_write_small(fp, b->data, c->l_qname - c->l_extranul) >= 0);
     if (c->n_cigar <= 0xffff) { // no long CIGAR; write normally
-        if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
+        if (ok) ok = (bgzf_write_small(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
     } else { // with long CIGAR, insert a fake CIGAR record and move the real CIGAR to the CG:B,I tag
         uint8_t buf[8];
         uint32_t cigar_st, cigar_en, cigar[2];
@@ -918,17 +909,16 @@ int bam_write1(BGZF *fp, const bam1_t *b)
         cigar[1] = (uint32_t)cigreflen << 4 | BAM_CREF_SKIP;
         u32_to_le(cigar[0], buf);
         u32_to_le(cigar[1], buf + 4);
-        if (ok) ok = (bgzf_write(fp, buf, 8) >= 0); // write cigar: <read_length>S<ref_length>N
-        if (ok) ok = (bgzf_write(fp, &b->data[cigar_en], b->l_data - cigar_en) >= 0); // write data after CIGAR
-        if (ok) ok = (bgzf_write(fp, "CGBI", 4) >= 0); // write CG:B,I
+        if (ok) ok = (bgzf_write_small(fp, buf, 8) >= 0); // write cigar: <read_length>S<ref_length>N
+        if (ok) ok = (bgzf_write_small(fp, &b->data[cigar_en], b->l_data - cigar_en) >= 0); // write data after CIGAR
+        if (ok) ok = (bgzf_write_small(fp, "CGBI", 4) >= 0); // write CG:B,I
         u32_to_le(c->n_cigar, buf);
-        if (ok) ok = (bgzf_write(fp, buf, 4) >= 0); // write the true CIGAR length
-        if (ok) ok = (bgzf_write(fp, &b->data[cigar_st], c->n_cigar * 4) >= 0); // write the real CIGAR
+        if (ok) ok = (bgzf_write_small(fp, buf, 4) >= 0); // write the true CIGAR length
+        if (ok) ok = (bgzf_write_small(fp, &b->data[cigar_st], c->n_cigar * 4) >= 0); // write the real CIGAR
     }
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return ok? 4 + block_len : -1;
 }
-#undef bgzf_write
 
 /*
  * Write a BAM file and append to the in-memory index simultaneously.
