@@ -373,12 +373,13 @@ void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
         buf[nbuf++] = strdup(dat->line.s);
     }
 
+    int keep_line = 0;
     if ( nth_row < 0 )
     {
         if ( nbuf!=-nth_row )
             error("Found %d header lines in %s, cannot fetch N=%d from the end\n",nbuf,fname,-nth_row);
         cols = cols_split(buf[0], NULL, dat->delim);
-
+        keep_line = 1;
     }
     else
         cols = cols_split(dat->line.s, NULL, dat->delim);
@@ -400,6 +401,7 @@ void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
         cols = cols_split(str.s, NULL, dat->delim);
         free(str.s);
         dat->hdr.dummy = 1;
+        keep_line = 1;
     }
 
     dat->hdr.name2idx = khash_str2int_init();
@@ -421,7 +423,7 @@ void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
         khash_str2int_set(dat->hdr.name2idx, cols->off[i], i);
     }
     dat->hdr.cols = cols;
-    if ( !dat->hdr.dummy ) dat->line.l = 0;
+    if ( !keep_line ) dat->line.l = 0;
 
     for (i=0; i<nbuf; i++) free(buf[i]);
     free(buf);
