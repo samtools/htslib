@@ -99,7 +99,9 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
         seq[i] = seq_nt16_str[bam_seqi(nib, i)];
 }
 
-#if HTS_BUILD_IS_X86_64 && HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS
+#if HTS_BUILD_IS_X86_64 \
+    && HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS \
+    && HAVE_BUILTIN_CPU_SUPPORT_SSSE3
 #include "immintrin.h"
 /*
  * Convert a nibble encoded BAM sequence to a string of bases.

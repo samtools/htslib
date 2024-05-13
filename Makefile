@@ -296,6 +296,9 @@ config.h:
 	if [ "x$(HTS_BUILD_AVX512)" != "x" ] ; then \
 	    echo '#define HAVE_AVX512 1' >> $@ ; \
 	fi
+	echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@
+	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
+	echo '#endif' >> $@
 
 # And similarly for htslib.pc.tmp ("pkg-config template").  No dependency
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate
