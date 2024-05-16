@@ -103,16 +103,6 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
     && HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS \
     && HAVE_BUILTIN_CPU_SUPPORT_SSSE3
 #include "simd.c"
-
-static void (*nibble2base)(uint8_t *nib, char *seq, int len) = nibble2base_default;
-
-__attribute__((constructor))
-static void nibble2base_resolve(void) {
-    if (__builtin_cpu_supports("ssse3")) {
-        nibble2base = nibble2base_ssse3;
-    }
-}
-
 #else
 static inline void nibble2base(uint8_t *nib, char *seq, int len) {
     nibble2base_default(nib, seq, len);
