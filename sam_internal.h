@@ -166,19 +166,15 @@ static inline void nibble2base_ssse3(uint8_t *nib, char *seq, int len) {
     }
     nibble2base_default(nibble_cursor, seq_cursor, seq_end_ptr - seq_cursor);
 }
-static void (*nibble2base)(uint8_t *nib, char *seq, int len);
 
-static void nibble2base_dispatch(uint8_t *nib, char *seq, int len) {
+static void (*nibble2base)(uint8_t *nib, char *seq, int len) = nibble2base_default;
+
+__attribute__((constructor))
+static void nibble2base_resolve(void) {
     if (__builtin_cpu_supports("ssse3")) {
         nibble2base = nibble2base_ssse3;
     }
-    else {
-        nibble2base = nibble2base_default;
-    }
-    nibble2base(nib, seq, len);
 }
-
-static void (*nibble2base)(uint8_t *nib, char *seq, int len) = nibble2base_dispatch;
 
 #else
 static inline void nibble2base(uint8_t *nib, char *seq, int len) {
