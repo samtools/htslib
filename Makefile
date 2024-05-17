@@ -924,9 +924,9 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* test/faidx/FAIL* \
-               test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* \
-               test/bgzf_boundaries/*.tmp.* \
+	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* \
+               test/longrefs/*.tmp.* test/tabix/*.tmp.* \
+               test/bgzf_boundaries/*.tmp.* test/*/FAIL* \
                header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	-rm -rf htscodecs/tests/test.out
 
