@@ -102,12 +102,18 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
 #if HTS_BUILD_IS_X86_64 \
     && HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS \
     && HAVE_BUILTIN_CPU_SUPPORT_SSSE3
-#include "simd.c"
-#else
-static inline void nibble2base(uint8_t *nib, char *seq, int len) {
-    nibble2base_default(nib, seq, len);
-}
+#define BUILDING_SIMD_NIBBLE2BASE
 #endif
+
+static inline void nibble2base(uint8_t *nib, char *seq, int len) {
+#ifdef BUILDING_SIMD_NIBBLE2BASE
+    extern void (*htslib_nibble2base)(uint8_t *nib, char *seq, int len);
+    htslib_nibble2base(nib, seq, len);
+#else
+    nibble2base_default(nib, seq, len);
+#endif
+}
+
 #ifdef __cplusplus
 }
 #endif
