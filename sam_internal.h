@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <errno.h>
 #include <stdint.h>
-#include "htslib/hts_defs.h"
+
 #include "htslib/sam.h"
 
 #ifdef __cplusplus
@@ -99,9 +99,8 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
         seq[i] = seq_nt16_str[bam_seqi(nib, i)];
 }
 
-#if HTS_BUILD_IS_X86_64 \
-    && HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS \
-    && HAVE_BUILTIN_CPU_SUPPORT_SSSE3
+#if defined HAVE_ATTRIBUTE_CONSTRUCTOR && \
+    defined __x86_64__ && defined HAVE_ATTRIBUTE_TARGET && defined HAVE_BUILTIN_CPU_SUPPORT_SSSE3
 #define BUILDING_SIMD_NIBBLE2BASE
 #endif
 

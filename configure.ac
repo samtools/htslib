@@ -173,6 +173,21 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
   AC_MSG_RESULT([no])
 ])
 
+dnl Check for function attribute used in conjunction with __builtin_cpu_supports
+AC_MSG_CHECKING([for __attribute__((target))])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  __attribute__((target("ssse3")))
+  int zero(void) {
+    return 0;
+  }
+]], [[zero();]])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_ATTRIBUTE_TARGET], 1,
+            [Define if __attribute__((target(...))) is available.])
+], [
+  AC_MSG_RESULT([no])
+])
+
 ]) dnl End of AS_IF(hts_have_cpuid)
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
@@ -315,6 +330,15 @@ AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
+
+AC_MSG_CHECKING([for __attribute__((constructor))])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+  static __attribute__((constructor)) void noop(void) {}
+]], [])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_ATTRIBUTE_CONSTRUCTOR], 1,
+            [Define if __attribute__((constructor)) is available.])
+], [AC_MSG_RESULT([no])])
 
 if test $enable_plugins != no; then
   AC_SEARCH_LIBS([dlsym], [dl], [],

@@ -34,10 +34,6 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_COMPILER_HAS(attribute) __has_attribute(attribute)
 #endif
 
-#ifdef __has_builtin
-#define HTS_COMPILER_HAS_BUILTIN(function) __has_builtin(function)
-#endif
-
 #elif defined __GNUC__
 #define HTS_GCC_AT_LEAST(major, minor) \
     (__GNUC__ > (major) || (__GNUC__ == (major) && __GNUC_MINOR__ >= (minor)))
@@ -46,10 +42,6 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTS_COMPILER_HAS
 #define HTS_COMPILER_HAS(attribute) 0
 #endif
-#ifndef HTS_COMPILER_HAS_BUILTIN
-#define HTS_COMPILER_HAS_BUILTIN(function) 0
-#endif
-
 #ifndef HTS_GCC_AT_LEAST
 #define HTS_GCC_AT_LEAST(major, minor) 0
 #endif
@@ -124,16 +116,6 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_FORMAT(type, idx, first) __attribute__((__format__ (type, idx, first)))
 #else
 #define HTS_FORMAT(type, idx, first)
-#endif
-
-#define HTS_COMPILER_HAS_TARGET_AND_BUILTIN_CPU_SUPPORTS \
- ((HTS_COMPILER_HAS(target) && HTS_COMPILER_HAS_BUILTIN(__builtin_cpu_supports)) \
- || HTS_GCC_AT_LEAST(4, 8))
-
-#if (defined(__x86_64__) || defined(_M_X64))
-#define HTS_BUILD_IS_X86_64 1
-#else
-#define HTS_BUILD_IS_X86_64 0
 #endif
 
 #if defined(_WIN32) || defined(__CYGWIN__)

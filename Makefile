@@ -298,6 +298,8 @@ config.h:
 	    echo '#define HAVE_AVX512 1' >> $@ ; \
 	fi
 	echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@
+	echo '#define HAVE_ATTRIBUTE_CONSTRUCTOR 1' >> $@
+	echo '#define HAVE_ATTRIBUTE_TARGET 1' >> $@
 	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
 	echo '#endif' >> $@
 
