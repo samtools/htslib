@@ -3258,7 +3258,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
     size_t reg_bin_count = 0, hash_bin_count;
     int res;
 
-    if (!iter || !idx || (bidx = idx->bidx[tid]) == NULL || beg >= end)
+    if (!iter || !idx || (bidx = idx->bidx[tid]) == NULL || beg > end)
         return -1;
 
     hash_bin_count = kh_n_buckets(bidx);
