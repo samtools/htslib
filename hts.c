@@ -4449,11 +4449,12 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                                     break;
 
                                 uint64_t max = iter->off[j].max;
-                                if ((max>>32) != tid)
+                                if ((max>>32) != tid) {
                                     tid = HTS_IDX_START; // => no range limit
-
-                                if (end < rl->intervals[max & 0xffffffff].end)
-                                    end = rl->intervals[max & 0xffffffff].end;
+                                } else {
+                                    if (end < rl->intervals[max & 0xffffffff].end)
+                                        end = rl->intervals[max & 0xffffffff].end;
+                                }
                                 if (v < iter->off[j].v)
                                     v = iter->off[j].v;
                                 j++;
