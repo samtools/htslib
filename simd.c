@@ -26,7 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "sam_internal.h"
 
-#include "immintrin.h"
+#include <immintrin.h>
 
 #ifdef BUILDING_SIMD_NIBBLE2BASE
 
@@ -41,11 +41,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 __attribute__((target("ssse3")))
 static void nibble2base_ssse3(uint8_t *nib, char *seq, int len) {
-    seq[0] = 0;
     const char *seq_end_ptr = seq + len;
     char *seq_cursor = seq;
     uint8_t *nibble_cursor = nib;
-    const char *seq_vec_end_ptr = seq_end_ptr - (2 * sizeof(__m128i));
+    const char *seq_vec_end_ptr = seq_end_ptr - (2 * sizeof(__m128i) - 1);
     __m128i first_upper_shuffle = _mm_setr_epi8(
         0, -1, 1, -1, 2, -1, 3, -1, 4, -1, 5, -1, 6, -1, 7, -1);
     __m128i first_lower_shuffle = _mm_setr_epi8(
