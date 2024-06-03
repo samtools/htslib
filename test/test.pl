@@ -887,6 +887,18 @@ sub test_view
     testv $opts, "./test_view $tv_args range.bam $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
 
+    # Regression check for out-of-bounds read on regions list (see
+    # samtools#2063).  As reg_insert() allocates at least four slots
+    # for chromosome regions, we need more than that many in the second
+    # chr. requested to ensure it has a bigger array.
+
+    $regions = "CHROMOSOME_I:1122-1122 CHROMOSOME_II:1136-1136 CHROMOSOME_II:1241-1241 CHROMOSOME_II:1267-1267 CHROMOSOME_II:1326-1326 CHROMOSOME_II:1345-1345 CHROMOSOME_II:1353-1353 CHROMOSOME_II:1366-1366 CHROMOSOME_II:1416-1416 CHROMOSOME_II:1459-1459 CHROMOSOME_II:1536-1536";
+    testv $opts, "./test_view $tv_args -i reference=ce.fa -M range.cram $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out2";
+
+    testv $opts, "./test_view $tv_args -M range.bam $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out2";
+
     if ($test_view_failures == 0) {
         passed($opts, "range.cram tests");
     } else {
