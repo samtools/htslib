@@ -45,6 +45,7 @@ shlib-exports-*.txt
 /bgzip
 /htsfile
 /tabix
+/test/bgzf_boundaries/*.tmp.*
 /test/faidx/*.tmp*
 /test/faidx/FAIL*
 /test/fieldarith
