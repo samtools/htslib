@@ -819,6 +819,43 @@ sub test_view
         }
     }
 
+    # BAM files with alignment records that span BGZF blocks
+    # HTSlib starts a new block if an alignment is likely to overflow the
+    # current one, so for its own data this will only happen for records
+    # longer than 64kbytes.  As other implementations may not do this,
+    # check that reading works correctly on some BAM files where records
+    # have been deliberately split between BGZF blocks.
+    print "test_view testing BAM records in multiple BGZF blocks:\n";
+    $test_view_failures = 0;
+    my $src_sam = "ce#1.sam";
+    foreach my $test_bam (qw(bgzf_boundaries/bgzf_boundaries1.bam
+                          bgzf_boundaries/bgzf_boundaries2.bam
+                          bgzf_boundaries/bgzf_boundaries3.bam)) {
+        testv $opts, "./test_view $tv_args -p $test_bam.tmp.sam $test_bam";
+        testv $opts, "./compare_sam.pl $test_bam.tmp.sam $src_sam";
+    }
+
+    # Test a file with a long alignment record.  Boundaries hit in the middle of
+    # the CIGAR data, and in the sequence.  Generate the test file here as it's
+    # big, but with fairly simple contents.
+    $src_sam = "bgzf_boundaries/large_rec.tmp.sam";
+    open(my $test_sam, '>', $src_sam) || die "Couldn't open $src_sam : $!\n";
+    print $test_sam "\@HD\tVN:1.6\tSO:coordinate\n";
+    print $test_sam "\@SQ\tSN:ref\tLN:100000\n";
+    print $test_sam "read\t0\tref\t1\t60\t", "1M1I" x 16000, "\t*\t0\t0\t", "A" x 32000, "\t", "Q" x 32000, "\n";
+    close($test_sam) || die "Error on closing $src_sam : $!\n";
+
+    testv $opts, "./test_view $tv_args -b -l 0 -p $src_sam.bam $src_sam";
+    testv $opts, "./test_view $tv_args -p $src_sam.bam.sam $src_sam.bam";
+    testv $opts, "./compare_sam.pl $src_sam $src_sam.bam.sam";
+
+    if ($test_view_failures == 0) {
+        passed($opts, "BAM records spanning multiple BGZF block tests");
+    } else {
+        failed($opts, "BAM records spanning multiple BGZF block tests",
+               "$test_view_failures subtests failed");
+    }
+
     # embed_ref=2 mode
     print "test_view testing embed_ref=2:\n";
     $test_view_failures = 0;
