@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
+#include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -542,7 +543,7 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, hts_pos_t start, hts_
     }
     if (!reader->itr) {
         hts_log_error("Could not seek: %s:%"PRIhts_pos"-%"PRIhts_pos, seq, start + 1, end + 1);
-        assert(0);
+        abort();
     }
     return 0;
 }
