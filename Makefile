@@ -85,6 +85,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test_expr \
 	test/test_faidx \
 	test/test_kfunc \
+	test/test_khash \
 	test/test_kstring \
 	test/test_mod \
 	test/test_nibbles \
@@ -605,6 +606,7 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	test/hts_endian
 	test/test_expr
 	test/test_kfunc
+	test/test_khash
 	test/test_kstring
 	test/test_nibbles -v
 	test/test_str2int
@@ -668,6 +670,9 @@ test/test_faidx: test/test_faidx.o libhts.a
 
 test/test_kfunc: test/test_kfunc.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_khash: test/test_khash.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_khash.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_kstring: test/test_kstring.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
@@ -778,6 +783,7 @@ test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_fa
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
+test/test_khash.o: test/test_khash.c config.h $(htslib_khash_h) $(htslib_kroundup_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
 test/test_nibbles.o: test/test_nibbles.c config.h $(htslib_sam_h) $(sam_internal_h)
