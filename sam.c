@@ -423,7 +423,11 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
 
 bam1_t *bam_init1(void)
 {
-    return (bam1_t*)calloc(1, sizeof(bam1_t));
+    bam1_t* ptr = calloc(1, sizeof(bam1_t));
+    if (ptr) {
+        *ptr = (bam1_t){0};
+    }
+    return ptr;
 }
 
 int sam_realloc_bam_data(bam1_t *b, size_t desired)
@@ -4874,6 +4878,7 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
 
 uint8_t *bam_aux_first(const bam1_t *b)
 {
+    if (!b->data) { errno = ENOENT; return NULL; }
     uint8_t *s = bam_get_aux(b);
     uint8_t *end = b->data + b->l_data;
     if (end - s <= 2) { errno = ENOENT; return NULL; }
