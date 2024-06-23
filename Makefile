@@ -87,6 +87,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test_kfunc \
 	test/test_kstring \
 	test/test_mod \
+	test/test_nibbles \
 	test/test_realn \
 	test/test-regidx \
 	test/test_str2int \
@@ -603,6 +604,7 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	test/test_expr
 	test/test_kfunc
 	test/test_kstring
+	test/test_nibbles -v
 	test/test_str2int
 	test/test_time_funcs
 	test/fieldarith test/fieldarith.sam
@@ -670,6 +672,9 @@ test/test_kstring: test/test_kstring.o libhts.a
 
 test/test_mod: test/test_mod.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_mod.o libhts.a $(LIBS) -lpthread
+
+test/test_nibbles: test/test_nibbles.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_nibbles.o libhts.a $(LIBS) -lpthread
 
 test/test_realn: test/test_realn.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
@@ -773,6 +778,7 @@ test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
+test/test_nibbles.o: test/test_nibbles.c config.h $(htslib_sam_h) $(sam_internal_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(textutils_internal_h)
