@@ -340,6 +340,16 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM([[
             [Define if __attribute__((constructor)) is available.])
 ], [AC_MSG_RESULT([no])])
 
+AC_MSG_CHECKING([for clock_gettime with CLOCK_PROCESS_CPUTIME_ID])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <time.h>]], [[
+  struct timespec ts;
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+]])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_CLOCK_GETTIME_CPUTIME], 1,
+            [Define if clock_gettime exists and accepts CLOCK_PROCESS_CPUTIME_ID.])
+], [AC_MSG_RESULT([no])])
+
 if test $enable_plugins != no; then
   AC_SEARCH_LIBS([dlsym], [dl], [],
     [MSG_ERROR([dlsym() not found
