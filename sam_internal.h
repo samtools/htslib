@@ -100,7 +100,8 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
 }
 
 #if defined HAVE_ATTRIBUTE_CONSTRUCTOR && \
-    defined __x86_64__ && defined HAVE_ATTRIBUTE_TARGET && defined HAVE_BUILTIN_CPU_SUPPORT_SSSE3
+    ((defined __x86_64__ && defined HAVE_ATTRIBUTE_TARGET && defined HAVE_BUILTIN_CPU_SUPPORT_SSSE3) || \
+     (defined __ARM_NEON))
 #define BUILDING_SIMD_NIBBLE2BASE
 #endif
 
