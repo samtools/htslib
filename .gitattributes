@@ -24,3 +24,14 @@ test/index_dos.sam -text
 # Remove the text attribute from various faidx test files
 test/faidx/faidx*.fa* -text
 test/faidx/fastqs*.fq* -text
+test/fastq/*.fa -text
+test/fastq/*.fq -text
+*.tst -text
+*.out -text
+*.crai    -text
+*.bai     -text
+*.csi     -text
+*.gzi     -text
+*.bcf     -text
+*.sam     -text
+*.sam.gz  -text
