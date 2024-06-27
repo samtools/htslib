@@ -43,6 +43,29 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kstring.h"
 #include "hts_internal.h"
 
+// Faster isgraph; assumes ASCII
+static inline int isgraph_(unsigned char c) {
+    return c > ' ' && c <= '~';
+}
+
+#ifdef isgraph
+#  undef isgraph
+#endif
+#define isgraph isgraph_
+
+// An optimised bgzf_getc.
+// We could consider moving this to bgzf.h, but our own code uses it here only.
+static inline int bgzf_getc_(BGZF *fp) {
+    if (fp->block_offset+1 < fp->block_length) {
+        int c = ((unsigned char*)fp->uncompressed_block)[fp->block_offset++];
+        fp->uncompressed_address++;
+        return c;
+    }
+
+    return bgzf_getc(fp);
+}
+#define bgzf_getc bgzf_getc_
+
 typedef struct {
     int id; // faidx_t->name[id] is for this struct.
     uint32_t line_len, line_blen;
@@ -727,7 +750,8 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
         return NULL;
     }
 
-    while ( l < end - beg && (c=bgzf_getc(fai->bgzf))>=0 )
+    BGZF *fp = fai->bgzf;
+    while ( l < end - beg && (c=bgzf_getc(fp))>=0 )
         if (isgraph(c)) s[l++] = c;
     if (c < 0) {
         hts_log_error("Failed to retrieve block: %s",
