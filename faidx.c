@@ -715,9 +715,8 @@ faidx_t *fai_load_format(const char *fn, enum fai_format_options format) {
 
 static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
                           uint64_t offset, hts_pos_t beg, hts_pos_t end, hts_pos_t *len) {
-    char *s;
-    size_t l;
-    int c = 0;
+    char *buffer, *s;
+    ssize_t nread, remaining, firstline_len, firstline_blen;
     int ret;
 
     if ((uint64_t) end - (uint64_t) beg >= SIZE_MAX - 2) {
@@ -743,27 +742,57 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
         return NULL;
     }
 
-    l = 0;
-    s = (char*)malloc((size_t) end - beg + 2);
-    if (!s) {
+    // Over-allocate so there is extra space for one end-of-line sequence
+    buffer = (char*)malloc((size_t) end - beg + val->line_len - val->line_blen + 1);
+    if (!buffer) {
         *len = -1;
         return NULL;
     }
 
-    BGZF *fp = fai->bgzf;
-    while ( l < end - beg && (c=bgzf_getc(fp))>=0 )
-        if (isgraph(c)) s[l++] = c;
-    if (c < 0) {
-        hts_log_error("Failed to retrieve block: %s",
-            c == -1 ? "unexpected end of file" : "error reading file");
-        free(s);
-        *len = -1;
-        return NULL;
+    remaining = *len = end - beg;
+    firstline_blen = val->line_blen - beg % val->line_blen;
+
+    // Special case when the entire interval requested is within a single FASTA/Q line
+    if (remaining <= firstline_blen) {
+        nread = bgzf_read_small(fai->bgzf, buffer, remaining);
+        if (nread < remaining) goto error;
+        buffer[nread] = '\0';
+        return buffer;
     }
 
-    s[l] = '\0';
-    *len = l;
-    return s;
+    s = buffer;
+    firstline_len = val->line_len - beg % val->line_blen;
+
+    // Read the (partial) first line and its line terminator, but increment  s  past the
+    // line contents only, so the terminator characters will be overwritten by the next line.
+    nread = bgzf_read_small(fai->bgzf, s, firstline_len);
+    if (nread < firstline_len) goto error;
+    s += firstline_blen;
+    remaining -= firstline_blen;
+
+    // Similarly read complete lines and their line terminator characters, but overwrite the latter.
+    while (remaining > val->line_blen) {
+        nread = bgzf_read_small(fai->bgzf, s, val->line_len);
+        if (nread < (ssize_t) val->line_len) goto error;
+        s += val->line_blen;
+        remaining -= val->line_blen;
+    }
+
+    if (remaining > 0) {
+        nread = bgzf_read_small(fai->bgzf, s, remaining);
+        if (nread < remaining) goto error;
+        s += remaining;
+    }
+
+    *s = '\0';
+    return buffer;
+
+error:
+    hts_log_error("Failed to retrieve block: %s",
+                  (nread == 0)? "unexpected end of file" : "error reading file");
+    free(buffer);
+    *len = -1;
+    return NULL;
 }
 
 static int fai_get_val(const faidx_t *fai, const char *str,
