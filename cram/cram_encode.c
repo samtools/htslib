@@ -3401,6 +3401,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     c->num_bases   += cr->len;
     cr->apos        = bam_pos(b)+1;
+    if (cr->apos < 0 || cr->apos > INT64_MAX/2)
+        goto err;
     if (c->pos_sorted) {
         if (cr->apos < s->last_apos && !fd->ap_delta) {
             c->pos_sorted = 0;
