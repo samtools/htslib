@@ -209,9 +209,8 @@ indexed.
 [Qtask_unordered][Qtask_unordered]
 
   This application showcases the use of queues and threads for custom
-  processing. In this, alignments in input files are split to different files
-  for requested regions. The processing may occur in any order and results may
-  appear in the order completion of processing.
+  processing. The count of bases and GC ratio are calculated and displayed.
+  The order of counting is irrelevant and hence ordered retrieval is not used.
 
 ### More Information
 

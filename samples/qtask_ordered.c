@@ -33,18 +33,26 @@ DEALINGS IN THE SOFTWARE
 #include <htslib/sam.h>
 #include <htslib/thread_pool.h>
 
+typedef struct data {
+    int count;                  //used up size
+    int maxsize;                //max size per data chunk
+    bam1_t **bamarray;          //bam1_t array for optimal queueing
+    struct data *next;          //pointer to next one - to reuse earlier allocations
+} data;
+
+typedef struct datacache
+{
+    pthread_mutex_t lock;       //synchronizes the access to cache
+    data *list;                 //data storage
+} datacache;
+
 typedef struct orderedwrite {
     samFile *outfile;           //output file handle
     sam_hdr_t *samhdr;          //header used to write data
     hts_tpool_process *queue;   //queue from which results to be retrieved
+    datacache *cache;           //to re-use allocated storage
     int result;                 //result code returned by writer thread
 } orderedwrite;
-
-typedef struct data {
-    int count;                  //used up size
-    int size;                   //max size
-    bam1_t **bamarray;          //bam1_t array for optimal queueing
-} data;
 
 /// print_usage - print the usage
 /** @param fp pointer to the file / terminal to which usage to be dumped
@@ -53,78 +61,71 @@ returns nothing
 static void print_usage(FILE *fp)
 {
     fprintf(fp, "Usage: qtask_ordered infile threadcount outdir [chunksize]\n\
-Calculates GC ratio - sum(G,C) / sum(A,T,C,G,N) - and adds to each alignment\n\
+Calculates GC ratio - sum(G,C) / sum(A,T,C,G) - and adds to each alignment\n\
 as xr:f aux tag. Output is saved in outdir.\n\
-chunksize [100] sets the number of alignments clubbed together to process.\n");
+chunksize [4096] sets the number of alignments clubbed together to process.\n");
     return;
 }
 
-/// addcount - calculates and adds the aux tag
-/** @param bamdata pointer to bam data
-returns 0 on success and -1 for failure
-*/
-int addcount(bam1_t *bamdata)
-{
-    int pos = 0, gc = 0, ret = 0;
-    float gcratio = 0;
-    uint8_t *data = bam_get_seq(bamdata);
-    for (pos = 0; pos < bamdata->core.l_qseq; ++pos) {
-        switch(seq_nt16_str[bam_seqi(data, pos)]) {
-            case 'G':   //fall through
-            case 'C':
-                gc++;
-            break;
-        }
-    }
-    gcratio = gc / (float) bamdata->core.l_qseq;
-
-    if (bam_aux_append(bamdata, "xr", 'f', sizeof(gcratio), (const uint8_t*)&gcratio) < 0) {
-        fprintf(stderr, "Failed to add aux tag xr, errno: %d\n", errno);
-        ret = -1;
-    }
-    return ret;
-}
-
-
 /// getbamstorage - allocates storage for alignments to queue
-/** @param chunk no of alignments to be queued together
-returns allocated data.
+/** @param chunk number of bam data to allocate
+ * @param bamcache cached storage
+returns already allocated data storage if one is available, otherwise allocates new
 */
-data* getbamstorage(int chunk)
+data* getbamstorage(int chunk, datacache *bamcache)
 {
     int i = 0;
-    data *bamdata = malloc(sizeof(data));
-    if (!bamdata) {
+    data *bamdata = NULL;
+
+    if (!bamcache) {
         return NULL;
+    }
+    //get from cache if there is an already allocated storage
+    if (pthread_mutex_lock(&bamcache->lock)) {
+        return NULL;
+    }
+    if (bamcache->list) {                   //available
+        bamdata = bamcache->list;
+        bamcache->list = bamdata->next;     //remove and set next one as available
+        bamdata->next = NULL;               //remove link
+        bamdata->count = 0;
+        goto end;
+    }
+    //allocate and use
+    if (!(bamdata = malloc(sizeof(data)))) {
+        goto end;
     }
     bamdata->bamarray = malloc(chunk * sizeof(bam1_t*));
     if (!bamdata->bamarray) {
-        return NULL;
+        free(bamdata);
+        bamdata = NULL;
+        goto end;
     }
     for (i = 0; i < chunk; ++i) {
         bamdata->bamarray[i] = bam_init1();
     }
+    bamdata->maxsize = chunk;
     bamdata->count = 0;
-    bamdata->size = chunk;
+    bamdata->next = NULL;
 
+end:
+    pthread_mutex_unlock(&bamcache->lock);
     return bamdata;
 }
 
 /// cleanup_bamstorage - frees a bamdata struct plus contents
 /** @param arg Pointer to data to free
-
     @p arg has type void * so it can be used as a callback passed
     to hts_tpool_dispatch3().
  */
 void cleanup_bamstorage(void *arg)
 {
     data *bamdata = (data *) arg;
-
     if (!bamdata)
         return;
     if (bamdata->bamarray) {
         int i;
-        for (i = 0; i < bamdata->size; i++) {
+        for (i = 0; i < bamdata->maxsize; i++) {
             bam_destroy1(bamdata->bamarray[i]);
         }
         free(bamdata->bamarray);
@@ -137,19 +138,31 @@ void cleanup_bamstorage(void *arg)
 returns the processed data
 the processing could be in any order based on the number of threads in use but read of output
 from queue will be in order
+a null data indicates the end of input and a null is returned to be added back to result queue
 */
 void *thread_ordered_proc(void *args)
 {
-    int i = 0;
+    int i = 0, pos = 0;
     data *bamdata = (data*)args;
+    float gcratio = 0;
+    uint8_t *data = NULL;
 
     if (bamdata == NULL)
         return NULL; // Indicates no more input
 
     for ( i = 0; i < bamdata->count; ++i) {
         //add count
-        if (addcount(bamdata->bamarray[i]) < 0) {
-            fprintf(stderr, "Failed to calculate gc data\n");
+        uint64_t count[16] = {0};
+        data = bam_get_seq(bamdata->bamarray[i]);
+        for (pos = 0; pos < bamdata->bamarray[i]->core.l_qseq; ++pos) {
+            count[bam_seqi(data,pos)]++;
+        }
+        /*it is faster to count all and use offset to get required counts rather than select
+        require ones inside the loop*/
+        gcratio = (count[2] /*C*/ + count[4] /*G*/) / (float) (count[1] /*A*/ + count[8] /*T*/ + count[2] + count[4]);
+
+        if (bam_aux_append(bamdata->bamarray[i], "xr", 'f', sizeof(gcratio), (const uint8_t*)&gcratio) < 0) {
+            fprintf(stderr, "Failed to add aux tag xr, errno: %d\n", errno);
             break;
         }
     }
@@ -166,11 +179,6 @@ void *threadfn_orderedwrite(void *args)
     hts_tpool_result *r = NULL;
     data *bamdata = NULL;
     int i = 0;
-    int count = 0;
-
-    struct timeval now;
-    struct timespec timeout;
-    long usec = 0;
 
     tdata->result = 0;
 
@@ -192,8 +200,12 @@ void *threadfn_orderedwrite(void *args)
                 break;
             }
         }
-        hts_tpool_delete_result(r, 0);          //release the result memory
-        cleanup_bamstorage(bamdata);
+        hts_tpool_delete_result(r, 0);              //release the result memory
+
+        pthread_mutex_lock(&tdata->cache->lock);
+        bamdata->next = tdata->cache->list;         //make current list as next
+        tdata->cache->list = bamdata;               //set as current to reuse
+        pthread_mutex_unlock(&tdata->cache->lock);
     }
 
     // Shut down the process queue.  If we stopped early due to a write failure,
@@ -222,6 +234,7 @@ int main(int argc, char *argv[])
     hts_tpool_process *queue = NULL;
     htsThreadPool tpool = {NULL, 0};
     data *bamdata = NULL;
+    datacache bamcache = {PTHREAD_MUTEX_INITIALIZER, NULL};
 
     //qtask infile threadcount outdir [chunksize]
     if (argc != 4 && argc != 5) {
@@ -231,25 +244,23 @@ int main(int argc, char *argv[])
     inname = argv[1];
     cnt = atoi(argv[2]);
     outdir = argv[3];
-    if (argc == 5) {
+    if (argc == 5) {    //chunk size present
         chunk = atoi(argv[4]);
     }
-
-    if (cnt < 1) {
+    if (cnt < 1) {      //set proper thread count
         cnt = 1;
     }
-    if (chunk < 1) {
-        chunk = 10000;
+    if (chunk < 1) {    //set valid  chunk size
+        chunk = 4096;
     }
 
     //allocate space for output
-    size = (strlen(outdir) + sizeof("/out.sam") + 1); //space for output file name and null termination
-    file = malloc(size);
-    if (!file) {
+    size = (strlen(outdir) + sizeof("/out.bam") + 1);   //space for output file name and null termination
+    if (!(file = malloc(size))) {
         fprintf(stderr, "Failed to set output path\n");
         goto end;
     }
-    snprintf(file, size, "%s/out.sam", outdir);         //output file name
+    snprintf(file, size, "%s/out.bam", outdir);         //output file name
     if (!(pool = hts_tpool_init(cnt))) {                //thread pool
         fprintf(stderr, "Failed to create thread pool\n");
         goto end;
@@ -266,7 +277,7 @@ int main(int argc, char *argv[])
         goto end;
     }
     //open output files - w write as SAM, wb  write as BAM
-    if (!(outfile = sam_open(file, "w"))) {
+    if (!(outfile = sam_open(file, "wb"))) {
         fprintf(stderr, "Could not open output file\n");
         goto end;
     }
@@ -281,21 +292,21 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Failed to read header from file!\n");
         goto end;
     }
-
     //write header
     if ((sam_hdr_write(outfile, in_samhdr) == -1)) {
         fprintf(stderr, "Failed to write header\n");
         goto end;
     }
 
-    /*tasks are queued, worker threads get them and process in parallel;
+    /* tasks are queued, worker threads get them and process in parallel;
     the results are queued and they are to be removed in parallel as well */
 
     // start output writer thread for ordered processing
     twritedata.outfile = outfile;
-    twritedata.queue = queue;
-    twritedata.samhdr = in_samhdr;
-    twritedata.result = 0;
+    twritedata.samhdr  = in_samhdr;
+    twritedata.result  = 0;
+    twritedata.queue   = queue;
+    twritedata.cache   = &bamcache;
     if (pthread_create(&thread, NULL, threadfn_orderedwrite, &twritedata)) {
         fprintf(stderr, "Failed to create writer thread\n");
         goto end;
@@ -304,9 +315,12 @@ int main(int argc, char *argv[])
 
     c = 0;
     while (c >= 0) {
-        bamdata = getbamstorage(chunk);
+        if (!(bamdata = getbamstorage(chunk, &bamcache))) {
+            fprintf(stderr, "Failed to allocate memory\n");
+            break;
+        }
         //read alignments, upto max size for this lot
-        for (cnt = 0; cnt < bamdata->size; ++cnt) {
+        for (cnt = 0; cnt < bamdata->maxsize; ++cnt) {
             c = sam_read1(infile, in_samhdr, bamdata->bamarray[cnt]);
             if (c < 0) {
                 break;      // EOF or failure
@@ -325,8 +339,7 @@ int main(int argc, char *argv[])
                 goto end;
             }
             bamdata = NULL;
-        }
-        else {
+        } else {
             fprintf(stderr, "Error in reading data\n");
             break;
         }
@@ -351,14 +364,7 @@ int main(int argc, char *argv[])
             // function to shut down.
             if (hts_tpool_dispatch(pool, queue, thread_ordered_proc,
                                    NULL) == -1) {
-                fprintf(stderr, "Failed to schedule processing\n");
-                ret = EXIT_FAILURE;
-            }
-
-            // trigger processing for anything pending
-            // NOTE: will be blocked until queue is cleared
-            if (hts_tpool_process_flush(queue) == -1) {
-                fprintf(stderr, "Failed to flush queues\n");
+                fprintf(stderr, "Failed to schedule sentinel job\n");
                 ret = EXIT_FAILURE;
             }
         } else {
@@ -373,8 +379,9 @@ int main(int argc, char *argv[])
         pthread_join(thread, NULL);
 
         // Once the writer thread has finished, check the result it sent back
-        if (twritedata.result != 0)
+        if (twritedata.result != 0) {
             ret = EXIT_FAILURE;
+        }
     }
 
     if (queue) {
@@ -387,17 +394,27 @@ int main(int argc, char *argv[])
         sam_hdr_destroy(in_samhdr);
     }
     if (infile) {
-        if (sam_close(infile) != 0)
+        if (sam_close(infile) != 0) {
             ret = EXIT_FAILURE;
+        }
     }
     if (outfile) {
-        if (sam_close(outfile) != 0)
+        if (sam_close(outfile) != 0) {
             ret = EXIT_FAILURE;
+        }
     }
 
-    if (bamdata) {
-        cleanup_bamstorage(bamdata);
+    pthread_mutex_lock(&bamcache.lock);
+    if (bamcache.list) {
+        struct data *tmp = NULL;
+        while (bamcache.list) {
+            tmp = bamcache.list;
+            bamcache.list = bamcache.list->next;
+            cleanup_bamstorage(tmp);
+        }
     }
+    pthread_mutex_unlock(&bamcache.lock);
+
     if (file) {
         free(file);
     }

@@ -1,4 +1,4 @@
-/*  qtask_unordered.c --  showcases the htslib api usage
+/*  qtask_ordered.c --  showcases the htslib api usage
 
     Copyright (C) 2024 Genome Research Ltd.
 
@@ -30,21 +30,30 @@ DEALINGS IN THE SOFTWARE
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include <htslib/hfile.h>
 #include <htslib/sam.h>
 #include <htslib/thread_pool.h>
 
-typedef struct beddata {
-    char *name;                 //chromosome name
-    hts_pos_t start;            //start position
-    hts_pos_t end;              //end position
-} beddata;
+struct datacache;
 
-typedef struct splitdata {
-    beddata *region;            //region information
-    const char *infile;         //input file
-    const char *outdir;         //output path
-} splitdata;
+typedef struct basecount {
+    uint64_t counts[16];        //count of all bases
+} basecount;
+
+typedef struct data {
+    int count;                  //used up size
+    int maxsize;                //max size per data chunk
+    bam1_t **bamarray;          //bam1_t array for optimal queueing
+
+    struct datacache *cache;
+    basecount *bases;           //count of all possible bases
+    struct data *next;          //pointer to next one - to reuse earlier allocations
+} data;
+
+typedef struct datacache
+{
+    pthread_mutex_t lock;       //synchronizes the access to cache
+    data *list;                 //data storage
+} datacache;
 
 /// print_usage - print the usage
 /** @param fp pointer to the file / terminal to which usage to be dumped
@@ -52,258 +61,258 @@ returns nothing
 */
 static void print_usage(FILE *fp)
 {
-    fprintf(fp, "Usage: qtask_unordered infile threadcount outdir bedfile\n\
-Splits the input to files specific for regions given in bedfile. Output is\n\
-saved in outdir. Expects the index file to be present along with infile.\n");
+    fprintf(fp, "Usage: qtask_unordered infile threadcount [chunksize]\n\
+Shows the base counts and calculates GC ratio - sum(G,C) / sum(A,T,C,G)\n\
+chunksize [4096] sets the number of alignments clubbed together to process.\n");
     return;
 }
 
-/// readbedfile - read the bedfile and return region array
-/** @param file bed file name
- *  @param data - output, pointer to array of beddata data, to hold bed regions
-returns number of regions in data
+/// getbamstorage - allocates storage for alignments to queue
+/** @param chunk number of bam data to allocate
+ * @param bases storage of result
+ * @param bamcache cached storage
+returns already allocated data storage if one is available, otherwise allocates new
 */
-int readbedfile(const char *file, struct beddata **data)
+data* getbamstorage(int chunk, basecount *bases, datacache *bamcache)
 {
-    int ret = -1, cnt = 0 , max = 0;
-    kstring_t line = KS_INITIALIZE;
-    htsFile *bedfile = NULL;
-    char *sptr = NULL, *token = NULL;
-    const char *sep ="\t";
-    beddata *bedtoks = NULL;
+    int i = 0;
+    data *bamdata = NULL;
 
-    if (!data || *data) {
-        printf("Invalid argument\n");
-        goto fail;
+    if (!bamcache || !bases) {
+        return NULL;
     }
-    if (!(bedfile = hts_open(file, "r"))) {
-        printf("Failed to open bedfile\n");
-        goto fail;
+    //get from cache if there is an already allocated storage
+    if (pthread_mutex_lock(&bamcache->lock)) {
+        return NULL;
     }
-    //get lines one by one and get region details
-    while (!(ret = kgetline(&line, (kgets_func*)hgets, bedfile->fp.hfile))) {
-        if (!line.l) {
-            continue;               //skip empty line
-        }
-        if  (line.s[0] == '#' || !strncmp("track ", line.s, sizeof("track ") - 1)) {
-            ks_clear(&line);
-            continue;               //ignore track lines and comments
-        }
-        token = strtok_r(line.s, sep, &sptr);
-        if (token) {                //allocate memory for regions
-            if ((cnt+1) > max) {
-                max += 100;         //for another 100 regions
-                bedtoks = realloc(bedtoks, sizeof(beddata) * max);
-            }
-        }
-        else {
-            break;
-        }
-        bedtoks[cnt].name = strdup(token);  //chromosome name
-        token = strtok_r(NULL, sep, &sptr);
-        if (!token) {
-            break;
-        }                                   //start position
-        bedtoks[cnt].start = token ? atoll(token) : 0;
-        token = strtok_r(NULL, sep, &sptr);
-        if (!token) {
-            break;
-        }                                   //end position
-        bedtoks[cnt++].end = token ? atoll(token) : 0;
-        ks_clear(&line);
+    if (bamcache->list) {                   //available
+        bamdata = bamcache->list;
+        bamcache->list = bamdata->next;     //remove and set next one as available
+        bamdata->next = NULL;               //remove link
+        bamdata->count = 0;
+
+        bamdata->bases = bases;
+        bamdata->cache = bamcache;
+        goto end;
     }
-    if (ret != EOF) {
-        goto fail;
+    //allocate and use
+    if (!(bamdata = malloc(sizeof(data)))) {
+        goto end;
     }
-    ret = cnt;
-    if (bedfile) {
-        hts_close(bedfile);
+    bamdata->bamarray = malloc(chunk * sizeof(bam1_t*));
+    if (!bamdata->bamarray) {
+        free(bamdata);
+        bamdata = NULL;
+        goto end;
     }
-    ks_free(&line);
-    if (!cnt) {
-        goto fail;
+    for (i = 0; i < chunk; ++i) {
+        bamdata->bamarray[i] = bam_init1();
     }
-    *data = bedtoks;
-    return ret;
-fail:
-    if (bedfile) {
-        hts_close(bedfile);
-    }
-    ks_free(&line);
-    if (bedtoks) {
-        for (max = cnt, cnt = 0; cnt < max; ++cnt) {
-            free(bedtoks[cnt].name);
-        }
-        free(bedtoks);
-    }
-    bedtoks = NULL;
-    return 0;
+    bamdata->maxsize = chunk;
+    bamdata->count = 0;
+    bamdata->next = NULL;
+
+    bamdata->bases = bases;
+    bamdata->cache = bamcache;
+
+end:
+    pthread_mutex_unlock(&bamcache->lock);
+    return bamdata;
 }
 
-/// splittoregions - saves the relevant data to separate file
+/// cleanup_bamstorage - frees a bamdata struct plus contents
+/** @param arg Pointer to data to free
+    @p arg has type void * so it can be used as a callback passed
+    to hts_tpool_dispatch3().
+ */
+void cleanup_bamstorage(void *arg)
+{
+    data *bamdata = (data *) arg;
+    if (!bamdata)
+        return;
+    if (bamdata->bamarray) {
+        int i;
+        for (i = 0; i < bamdata->maxsize; i++) {
+            bam_destroy1(bamdata->bamarray[i]);
+        }
+        free(bamdata->bamarray);
+    }
+    free(bamdata);
+}
+
+/// thread_unordered_proc - does the processing of task in queue and updates result
 /** @param args pointer to set of data to be processed
 returns NULL
 the processing could be in any order based on the number of threads in use
 */
-void * splittoregions(void *args)
+void *thread_unordered_proc(void *args)
 {
-    samFile *infile = NULL, *outfile = NULL;
-    sam_hdr_t *in_samhdr = NULL;
-    bam1_t *bamdata = NULL;
-    hts_itr_t *iter = NULL;
-    hts_idx_t *idx = NULL;
-    splitdata *data = (splitdata*)args;
-    char *file = NULL, *region = NULL;
-    int size = 0, ret = 0;
-    if (!(infile = sam_open(data->infile, "r"))) {
-        printf("Failed to open input file\n");
-        goto end;
-    }
-    if (!(in_samhdr = sam_hdr_read(infile))) {
-        printf("Failed to read header data\n");
-        goto end;
-    }
-    if (!(bamdata = bam_init1())) {
-        printf("Failed to initialize bamdata\n");
-        goto end;
-    }
-    size = strlen(data->region->name) + 50;         //region specification
-    if (!(region = malloc(size))) {
-        printf("Failed to allocate memory\n");
-        goto end;
-    }
-    snprintf(region, size, "%s:%"PRIhts_pos"-%"PRIhts_pos, data->region->name, data->region->start, data->region->end);
-    size += strlen(data->outdir);                   //output file with path
-    if (!(file = malloc(size))) {
-        printf("Failed to allocate memory\n");
-        goto end;
-    }
-    snprintf(file, size, "%s/%s_%"PRIhts_pos"_%"PRIhts_pos".sam", data->outdir, data->region->name, data->region->start, data->region->end);
-    if (!(idx = sam_index_load(infile, data->infile))) {
-        printf("Failed to load index\n");
-        goto end;
-    }
-    if (!(iter = sam_itr_querys(idx, in_samhdr, region))) {
-        printf("Failed to create iterator\n");
-        goto end;
-    }
-    if (!(outfile = sam_open(file, "w"))) {
-        printf("Failed to open output file\n");
-        goto end;
-    }
-    if (sam_hdr_write(outfile, in_samhdr) < 0) {
-        printf("Failed to write header\n");
-        goto end;
-    }
-    while ((ret = sam_itr_next(infile, iter, bamdata)) >= 0) {  //read and write relevant data
-        if (sam_write1(outfile, in_samhdr, bamdata) < 0) {
-            printf("Failed to write data\n");
-            goto end;
+    int i = 0;
+    data *bamdata = (data*)args;
+    uint64_t pos = 0;
+    uint8_t *data = NULL;
+    uint64_t counts[16] = {0};
+    for ( i = 0; i < bamdata->count; ++i) {
+        data = bam_get_seq(bamdata->bamarray[i]);
+        for (pos = 0; pos < bamdata->bamarray[i]->core.l_qseq; ++pos) {
+            /* it is faster to count all bases and select required ones later
+            compared to select and count here */
+            counts[bam_seqi(data, pos)]++;
         }
     }
-    if (ret != -1) {
-        printf("Failed to get all data\n");
+    //update result and add the memory block for reuse
+    pthread_mutex_lock(&bamdata->cache->lock);
+    for (i = 0; i < 16; i++) {
+        bamdata->bases->counts[i] += counts[i];
     }
 
-end:
-    free(data);
-    if (infile) {
-        sam_close(infile);
-    }
-    if (outfile) {
-        sam_close(outfile);
-    }
-    if (iter) {
-        sam_itr_destroy(iter);
-    }
-    if (idx) {
-        hts_idx_destroy(idx);
-    }
-    if (bamdata) {
-        bam_destroy1(bamdata);
-    }
-    if (in_samhdr) {
-        sam_hdr_destroy(in_samhdr);
-    }
-    if (file) {
-        free(file);
-    }
-    if (region) {
-        free(region);
-    }
+    bamdata->next = bamdata->cache->list;
+    bamdata->cache->list = bamdata;
+    pthread_mutex_unlock(&bamdata->cache->lock);
+
     return NULL;
 }
 
-/// main - splits the data to region specific files
+/// main - start of the demo
 /** @param argc - count of arguments
  *  @param argv - pointer to array of arguments
 returns 1 on failure 0 on success
 */
 int main(int argc, char *argv[])
 {
-    const char *inname = NULL, *outdir = NULL, *bedfile = NULL;
-    int c = 0, ret = EXIT_FAILURE, cnt = 0, regcnt = 0;
+    const char *inname = NULL;
+    int c = 0, ret = EXIT_FAILURE, cnt = 0, chunk = 0;
+    samFile *infile = NULL;
+    sam_hdr_t *in_samhdr = NULL;
     hts_tpool *pool = NULL;
     hts_tpool_process *queue = NULL;
-    beddata *regions = NULL;
+    htsThreadPool tpool = {NULL, 0};
+    data *bamdata = NULL;
+    basecount gccount = {{0}};
+    datacache bamcache = {PTHREAD_MUTEX_INITIALIZER, NULL};
 
-    //qtask infile threadcount outdir [chunksize]
-    if (argc != 5) {
+    //qtask infile threadcount [chunksize]
+    if (argc != 3 && argc != 4) {
         print_usage(stdout);
         goto end;
     }
     inname = argv[1];
     cnt = atoi(argv[2]);
-    outdir = argv[3];
-    bedfile = argv[4];
-    //get regions from bedfile
-    if ((regcnt = readbedfile(bedfile, &regions)) <= 0) {
-        printf("Failed to get bed data\n");
-        goto end;
+    if (argc == 4) {
+        chunk = atoi(argv[3]);
     }
     if (cnt < 1) {
         cnt = 1;
     }
-    if (!(pool = hts_tpool_init(cnt))) {                //thread pool
-        printf("Failed to create thread pool\n");
+    if (chunk < 1) {
+        chunk = 4096;
+    }
+
+    if (!(pool = hts_tpool_init(cnt))) {
+        fprintf(stderr, "Failed to create thread pool\n");
         goto end;
     }
+    tpool.pool = pool;      //to share the pool for file read and write as well
     //queue to use with thread pool, for tasks
     if (!(queue = hts_tpool_process_init(pool, cnt * 2, 1))) {
-        printf("Failed to create queue\n");
+        fprintf(stderr, "Failed to create queue\n");
         goto end;
     }
-    for (c = 0; c < regcnt; ++c) {
-        struct splitdata *task = malloc(sizeof(splitdata));
-        task->infile = inname;
-        task->outdir = outdir;
-        task->region = regions + c;
-        //schedule jobs to run in parallel
-        if (hts_tpool_dispatch(pool, queue, splittoregions, task) < 0) {
-            printf("Failed to schedule processing\n");
-            goto end;
+    //open input file - r reading
+    if (!(infile = sam_open(inname, "r"))) {
+        fprintf(stderr, "Could not open %s\n", inname);
+        goto end;
+    }
+    //share the thread pool with i/o files
+    if (hts_set_opt(infile, HTS_OPT_THREAD_POOL, &tpool) < 0) {
+        fprintf(stderr, "Failed to set threads to i/o files\n");
+        goto end;
+    }
+    //read header, required to resolve the target names to proper ids
+    if (!(in_samhdr = sam_hdr_read(infile))) {
+        fprintf(stderr, "Failed to read header from file!\n");
+        goto end;
+    }
+
+    /*tasks are queued, worker threads get them and process in parallel;
+    all bases are counted instead of counting atcg alone as it is faster*/
+
+    c = 0;
+    while (c >= 0) {
+        //use cached storage to avoid allocate/deallocate overheads
+        if (!(bamdata = getbamstorage(chunk, &gccount, &bamcache))) {
+            fprintf(stderr, "Failed to allocate memory\n");
+            break;
+        }
+        //read alignments, upto max size for this lot
+        for (cnt = 0; cnt < bamdata->maxsize; ++cnt) {
+            c = sam_read1(infile, in_samhdr, bamdata->bamarray[cnt]);
+            if (c < 0) {
+                break;      // EOF or failure
+            }
+        }
+        if (c >= -1 ) {
+            //max size data or reached EOF
+            bamdata->count = cnt;
+            // Queue the data for processing.  hts_tpool_dispatch3() is
+            // used here as it allows in-flight data to be cleaned up
+            // properly when stopping early due to errors.
+            if (hts_tpool_dispatch3(pool, queue, thread_unordered_proc, bamdata,
+                                    cleanup_bamstorage, cleanup_bamstorage,
+                                    0) == -1) {
+                fprintf(stderr, "Failed to schedule processing\n");
+                goto end;
+            }
+            bamdata = NULL;
+        } else {
+            fprintf(stderr, "Error in reading data\n");
+            break;
         }
     }
-    //trigger processing for anything pending, NOTE: will be blocked until queue is cleared
-    if (hts_tpool_process_flush(queue) == -1) {
-        printf("Failed to flush queues\n");
-        goto end;
+
+     if (-1 == c) {
+        // EOF read, ensure all are processed, waits for all to finish
+        if (hts_tpool_process_flush(queue) == -1) {
+            fprintf(stderr, "Failed to flush queue\n");
+        } else { //all done
+            //refer seq_nt16_str to find position of required bases
+            fprintf(stdout, "GCratio: %f\nBase counts:\n",
+                (gccount.counts[2] /*C*/ + gccount.counts[4] /*G*/) / (float)
+                    (gccount.counts[1] /*A*/ + gccount.counts[8] /*T*/ +
+                        gccount.counts[2] + gccount.counts[4]));
+
+            for (cnt = 0; cnt < 16; ++cnt) {
+                fprintf(stdout, "%c: %"PRIu64"\n", seq_nt16_str[cnt], gccount.counts[cnt]);
+            }
+
+            ret = EXIT_SUCCESS;
+        }
     }
-    ret = EXIT_SUCCESS;
-
-    //shutdown queues to exit the result wait
-    hts_tpool_process_shutdown(queue);
-
-end:
-    //cleanup
-    for (c = 0; c < regcnt; ++c) {
-        free(regions[c].name);
-    }
-    free(regions);
-
+ end:
     if (queue) {
         hts_tpool_process_destroy(queue);
     }
+
+    if (in_samhdr) {
+        sam_hdr_destroy(in_samhdr);
+    }
+    if (infile) {
+        if (sam_close(infile) != 0) {
+            ret = EXIT_FAILURE;
+        }
+    }
+
+    pthread_mutex_lock(&bamcache.lock);
+    if (bamcache.list) {
+        struct data *tmp = NULL;
+        while (bamcache.list) {
+            tmp = bamcache.list;
+            bamcache.list = bamcache.list->next;
+            cleanup_bamstorage(tmp);
+        }
+    }
+    pthread_mutex_unlock(&bamcache.lock);
+
     if (pool) {
         hts_tpool_destroy(pool);
     }
