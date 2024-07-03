@@ -44,6 +44,7 @@
 #include "htslib/kseq.h"
 #include "htslib/bgzf.h"
 #include "htslib/regidx.h"
+#include "textutils_internal.h"
 
 #define ANN_NBP     1
 #define ANN_FRAC    2
@@ -409,15 +410,15 @@ void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
     for (i=0; i<cols->n; i++)
     {
         char *ss = cols->off[i];
-        while ( *ss && (*ss=='#' || isspace(*ss)) ) ss++;
+        while ( *ss && (*ss=='#' || isspace_c(*ss)) ) ss++;
         if ( !*ss ) error("Could not parse the header field \"%s\": %s\n", cols->off[i],dat->line.s);
         if ( *ss=='[' )
         {
             char *se = ss+1;
-            while ( *se && isdigit(*se) ) se++;
+            while ( *se && isdigit_c(*se) ) se++;
             if ( *se==']' ) ss = se + 1;
         }
-        while ( *ss && (*ss=='#' || isspace(*ss)) ) ss++;
+        while ( *ss && (*ss=='#' || isspace_c(*ss)) ) ss++;
         if ( !*ss ) error("Could not parse the header field \"%s\": %s\n", cols->off[i],dat->line.s);
         cols->off[i] = ss;
         khash_str2int_set(dat->hdr.name2idx, cols->off[i], i);
