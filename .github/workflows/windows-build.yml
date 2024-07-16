@@ -15,18 +15,18 @@ jobs:
         msystem: mingw64
         update: false
         install: >-
-          git
-          zlib-devel
-          libbz2-devel
-          liblzma-devel
-          mingw-w64-x86_64-toolchain
           mingw-w64-x86_64-autotools
-          mingw-w64-x86_64-tools-git
+          mingw-w64-x86_64-bzip2
+          mingw-w64-x86_64-curl
           mingw-w64-x86_64-libdeflate
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-tools-git
+          mingw-w64-x86_64-xz
+          mingw-w64-x86_64-zlib
     - name: Compile htslib
       shell: msys2 {0}
       run: |
-        export PATH=/mingw64/bin:$PATH
+        export PATH="/mingw64/bin:$PATH:/c/Program Files/Git/bin"
         export MSYSTEM=MINGW64
         autoreconf -i
         ./configure
@@ -34,7 +34,7 @@ jobs:
     - name: Check Htslib
       shell: msys2 {0}
       run: |
-        export PATH=/mingw64/bin:$PATH
+        export PATH="/mingw64/bin:$PATH:/c/Program Files/Git/bin"
         export MSYSTEM=MINGW64
         make test-shlib-exports && make check
 
