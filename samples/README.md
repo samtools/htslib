@@ -202,8 +202,8 @@ indexed.
 [Qtask_ordered][Qtask_ordered]
 
   This application showcases the use of queues and threads for custom
-  processing. In this, alignments in input file are updated with GC ratio on a
-  custom aux tag. The processing may occur in any order and the result is
+  processing. Alignments in input file are updated with their GC ratio on a
+  custom aux tag. The processing may occur in any order but the results are
   retrieved in same order as it was queued and saved to disk.
 
 [Qtask_unordered][Qtask_unordered]

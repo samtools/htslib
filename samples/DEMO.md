@@ -138,14 +138,14 @@ one as sam and other as bam. A pool of 4 threads is created and shared for both
 read and write.
 
 Qtask_ordered - This application showcases the use of queues and threads for
-custom processing. In this, alignments in input file are updated with GC ratio
-on a custom aux tag. The processing may occur in any order and the result is
+custom processing. Alignments in input file are updated with their GC ratio
+on a custom aux tag. The processing may occur in any order but the result is
 retrieved in same order as it was queued and saved to disk.
 
-Qtask_unordered - This application showcases the use of queues and threads for
-custom processing. In this, alignments in input files are split to different
-files for requested regions. The processing may occur in any order and results
-may appear in the order completion of processing.
+Qtask_unordered - This application showcases the use of queues and threads
+for custom processing. The count of bases and GC ratio are calculated and
+displayed.  The order of counting is irrelevant and hence ordered retrieval is
+not used.
 
 ## Building the sample apps
 
