@@ -45,9 +45,9 @@ shlib-exports-*.txt
 /bgzip
 /htsfile
 /tabix
+/test/*/FAIL*
 /test/bgzf_boundaries/*.tmp.*
 /test/faidx/*.tmp*
-/test/faidx/FAIL*
 /test/fieldarith
 /test/hfile
 /test/hts_endian
@@ -57,7 +57,6 @@ shlib-exports-*.txt
 /test/plugins-dlhts
 /test/sam
 /test/tabix/*.tmp.*
-/test/tabix/FAIL*
 /test/test-bcf-sr
 /test/test-bcf-translate
 /test/test-bcf_set_variant_type

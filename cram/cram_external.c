@@ -49,7 +49,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #include "../htslib/hfile.h"
-#include "../hfile_internal.h"
 #include "cram.h"
 
 /*

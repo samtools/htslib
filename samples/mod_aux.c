@@ -27,6 +27,7 @@ DEALINGS IN THE SOFTWARE
 /* The pupose of this code is to demonstrate the library apis and need proper error handling and optimization */
 
 #include <getopt.h>
+#include <strings.h>
 #include <unistd.h>
 #include <htslib/sam.h>
 

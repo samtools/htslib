@@ -19,7 +19,7 @@
 @CO	ATCATCATTCCTACCGCTATAGCCT  r3; mixture
 @CO	  -  -   .   -. -     --
 @CO	         M    M
-@CO       -  -   ??  ?? ?     --
+@CO	  -  -   ??  ?? ?     --
 @CO	         hH  hh h     --
 @CO	
 r1	0	*	0	0	*	*	0	0	ATCATCATTCCTACCGCTATAGCCT	*	Mm:Z:C+mh,2,0,1;	Ml:B:C,200,10,50,170,160,20
