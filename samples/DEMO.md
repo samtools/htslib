@@ -377,7 +377,7 @@ It is the FASTA format which is mainly in use to store the reference data.
         if (infile->format.format == fastq_format) {
             printf("\nquality: ");
             for (c = 0; c < bamdata->core.l_qseq; ++c) {
-                printf("%c", bam_get_qual(bamdata)[c]);
+                printf("%c", bam_get_qual(bamdata)[c] + 33);
     ...
 Refer: read_fast.c
 
@@ -412,20 +412,19 @@ position and unique identifier values respectively.
     ...
     if (!(in_samhdr = sam_hdr_read(infile)))
         ... // error
-
-    if (tag)
-        ret = sam_hdr_find_tag_id(in_samhdr, header, id, idval, tag, &data);
-    else
-        ret = sam_hdr_find_line_id(in_samhdr, header, id, idval, &data);
     ...
-
-    linecnt = sam_hdr_count_lines(in_samhdr, header);
+      if (tag)
+          ret = sam_hdr_find_tag_id(in_samhdr, header, id, idval, tag, &data);
+      else
+          ret = sam_hdr_find_line_id(in_samhdr, header, id, idval, &data);
     ...
-    if (tag)
-        ret = sam_hdr_find_tag_pos(in_samhdr, header, c, tag, &data);
-    else
-        ret = sam_hdr_find_line_pos(in_samhdr, header, c, &data);
-    ...
+        linecnt = sam_hdr_count_lines(in_samhdr, header);
+        ...
+            if (tag)
+                ret = sam_hdr_find_tag_pos(in_samhdr, header, c, tag, &data);
+            else
+                ret = sam_hdr_find_line_pos(in_samhdr, header, c, &data);
+        ...
 Refer: read_header.c
 
 This will show the VN tag's value from HD header.

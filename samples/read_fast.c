@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
         if (infile->format.format == fastq_format) {
             printf("\nquality: ");
             for (c = 0; c < bamdata->core.l_qseq; ++c) {
-                printf("%c", bam_get_qual(bamdata)[c]);
+                printf("%c", bam_get_qual(bamdata)[c] + 33);
             }
         }
     }
