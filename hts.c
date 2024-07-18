@@ -3826,7 +3826,7 @@ void hts_itr_destroy(hts_itr_t *iter)
     }
 }
 
-static inline long long push_digit(long long i, char c)
+static inline unsigned long long push_digit(unsigned long long i, char c)
 {
     // ensure subtraction occurs first, avoiding overflow for >= MAX-48 or so
     int digit = c - '0';
@@ -3835,7 +3835,7 @@ static inline long long push_digit(long long i, char c)
 
 long long hts_parse_decimal(const char *str, char **strend, int flags)
 {
-    long long n = 0;
+    unsigned long long n = 0;
     int digits = 0, decimals = 0, e = 0, lost = 0;
     char sign = '+', esign = '+';
     const char *s, *str_orig = str;
