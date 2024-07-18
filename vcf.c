@@ -4020,7 +4020,10 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 
     kputc_('\t', s); // INFO
     if (v->n_info) {
-        uint8_t *ptr = (uint8_t *)v->shared.s + v->unpack_size[0] + v->unpack_size[1] + v->unpack_size[2];
+        uint8_t *ptr = v->shared.s
+            ? (uint8_t *)v->shared.s + v->unpack_size[0] +
+               v->unpack_size[1] + v->unpack_size[2]
+            : NULL;
         int first = 1;
         bcf_info_t *info = v->d.info;
 
