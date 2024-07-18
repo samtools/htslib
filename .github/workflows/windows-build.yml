@@ -30,6 +30,7 @@ jobs:
         export MSYSTEM=MINGW64
         autoreconf -i
         ./configure
+        make cc-version
         make -j6
     - name: Check Htslib
       shell: msys2 {0}
