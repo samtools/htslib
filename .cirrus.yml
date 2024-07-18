@@ -73,9 +73,11 @@ gcc_task:
        USE_CONFIG: no
     - environment:
        USE_CONFIG: yes
-       CFLAGS: -std=c99 -pedantic -Wformat=2 -fsanitize=address
-       LDFLAGS: -fsanitize=address
+       # ubsan is incompatible with some -Wformat opts so we do that on clang.
+       CFLAGS: -fsanitize=address,undefined -DHTS_ALLOW_UNALIGNED=0 -Wno-format-truncation -Wno-format-overflow
+       LDFLAGS: -fsanitize=address,undefined
        USE_LIBDEFLATE: yes
+       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
   install_script: |
     apt-get update
@@ -108,8 +110,9 @@ ubuntu_task:
        USE_CONFIG: yes
        DO_UNTRACKED_FILE_CHECK: yes
     - environment:
+       # Cirrus-CI's clang isn't installed with ubsan, so we do that in gcc
        USE_CONFIG: yes
-       CFLAGS: -g -Wall -O3
+       CFLAGS: -std=c99 -pedantic -Wformat -g -Wall -O3
        USE_LIBDEFLATE: yes
 
   # NB: we could consider building a docker image with these
