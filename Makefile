@@ -113,8 +113,14 @@ BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads6 \
 	test/thrash_threads7
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
-     htslib_static.mk htslib-uninstalled.pc
+all: lib-static lib-shared $(BUILT_PROGRAMS) plugins \
+	$(BUILT_TEST_PROGRAMS) htslib_static.mk htslib-uninstalled.pc
+
+# Report compiler and version
+cc-version:
+	-@$(CC) --version  2>/dev/null || true
+	-@$(CC) --qversion 2>/dev/null || true
+	-@$(CC) -V         2>/dev/null || true
 
 ALL_CPPFLAGS = -I. $(CPPFLAGS)
 
@@ -996,3 +1002,4 @@ force:
 .PHONY: clean-dylib install-dylib
 .PHONY: test_htscodecs_rans4x8 test_htscodecs_rans4x16 test_htscodecs_arith
 .PHONY: test_htscodecs_tok3 test_htscodecs_fqzcomp test_htscodecs_varint
+.PHONY: cc-version

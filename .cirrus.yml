@@ -40,6 +40,7 @@ compile_template: &COMPILE
     else
       MAKE_OPTS=-e
     fi
+    make cc-version
     if test "x$DO_MAINTAINER_CHECKS" = "xyes"; then
       make maintainer-check
     fi
