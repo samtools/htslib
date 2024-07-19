@@ -114,6 +114,4 @@ qtask_unordered: qtask_unordered.c
 clean:
 	find . -name "*.o" | xargs rm -rf
 	find . -name "*.dSYM" | xargs rm -rf
-	rm $(PRGS)
-
-
+	-rm -f $(PRGS)
