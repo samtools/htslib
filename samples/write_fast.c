@@ -53,7 +53,6 @@ int main(int argc, char *argv[])
     const char *outname = NULL;             //output file name
     int ret = EXIT_FAILURE;
     samFile *outfile = NULL;                //sam file
-    sam_hdr_t *out_samhdr = NULL;           //header of file
     bam1_t *bamdata = NULL;                 //to hold the read data
     char mode[4] = "a";
     const char *data = NULL, *qual = NULL;  //ref data and quality
@@ -93,22 +92,20 @@ int main(int argc, char *argv[])
     sam_open_format(outname, mode, fmt);
     */
 
-    snprintf(name, sizeof(name), "Test_%ld", time(NULL));
+    snprintf(name, sizeof(name), "Test_%ld", (long) time(NULL));
     //data
     if (bam_set1(bamdata, strlen(name), name, BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, strlen(data), data, qual, 0) < 0) {
         printf("Failed to set data\n");
         goto end;
     }
-    if (sam_write1(outfile, out_samhdr, bamdata) < 0) {
+    //as we write only FASTA/FASTQ, we can get away without providing headers
+    if (sam_write1(outfile, NULL, bamdata) < 0) {
         printf("Failed to write data\n");
         goto end;
     }
     ret = EXIT_SUCCESS;
 end:
     //clean up
-    if (out_samhdr) {
-        sam_hdr_destroy(out_samhdr);
-    }
     if (outfile) {
         sam_close(outfile);
     }
