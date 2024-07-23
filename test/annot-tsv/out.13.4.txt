@@ -1,0 +1,2 @@
+1	10	20	long	long,short
+1	15	15	short	short
