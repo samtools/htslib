@@ -170,13 +170,15 @@ Ignore the headers completely and use numeric indexes even when a header exists
 Suppress index numbers in the printed header. If given twice, drop the entire header.
 .RE
 .PP
-.BR \-O ", " \-\-overlap " FLOAT"
+.BR \-O ", " \-\-overlap " FLOAT,[FLOAT]"
 .RS 4
-Minimum overlap as a fraction of region length in at least one of the overlapping regions. If also
+Minimum overlap as a fraction of region length in SRC and TGT, respectively (with two numbers), or in
+at least one of the overlapping regions (with a single number). If also
 .BR \-r ", " \-\-reciprocal
 is given, require at least
 .I FLOAT
-overlap with respect to both regions
+overlap with respect to both regions. Two identical numbers are equivalent to running with
+.BR \-r ", " \-\-reciprocal
 .RE
 .PP
 .BR \-r ", " \-\-reciprocal

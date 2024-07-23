@@ -105,8 +105,8 @@ typedef struct
     char *core_str, *match_str, *transfer_str, *annots_str, *headers_str, *delim_str;
     char *temp_dir, *out_fname;
     BGZF *out_fp;
-    int allow_dups, reciprocal, max_annots, mode, no_write_hdr;
-    double overlap;
+    int allow_dups, max_annots, mode, no_write_hdr, overlap_either;
+    double overlap_src, overlap_dst;
     regidx_t *idx;
     regitr_t *itr;
     kstring_t tmp_kstr;
@@ -736,18 +736,20 @@ void process_line(args_t *args, char *line, size_t size)
     int has_match = 0, annot_len = 0;
     while ( regitr_overlap(args->itr) )
     {
-        if ( args->overlap )
+        if ( args->overlap_src || args->overlap_dst )
         {
-            double len1 = end - beg + 1;
-            double len2 = args->itr->end - args->itr->beg + 1;
+            double len_dst = end - beg + 1;
+            double len_src = args->itr->end - args->itr->beg + 1;
             double isec = (args->itr->end < end ? args->itr->end : end) - (args->itr->beg > beg ? args->itr->beg : beg) + 1;
-            if ( args->reciprocal )
+            int pass_dst = isec/len_dst < args->overlap_dst ? 0 : 1;
+            int pass_src = isec/len_src < args->overlap_src ? 0 : 1;
+            if ( args->overlap_either )
             {
-                if ( isec/len1 < args->overlap || isec/len2 < args->overlap ) continue;
+                if ( !pass_dst && !pass_src ) continue;
             }
             else
             {
-                if ( isec/len1 < args->overlap && isec/len2 < args->overlap ) continue;
+                if ( !pass_dst || !pass_src ) continue;
             }
         }
         cols_t *src_cols = regitr_payload(args->itr,cols_t*);
@@ -885,8 +887,9 @@ static const char *usage_text(void)
         "   -H, --ignore-headers    Use numeric indices, ignore the headers completely\n"
         "   -I, --no-header-idx     Suppress index numbers in the printed header. If given\n"
         "                           twice, drop the entire header\n"
-        "   -O, --overlap FLOAT     Minimum required overlap (non-reciprocal, unless -r\n"
-        "                           is given)\n"
+        "   -O, --overlap FLOAT[,FLOAT]     Minimum required overlap with respect to SRC,TGT.\n"
+        "                           If single value, the bigger overlap is considered.\n"
+        "                           Identical values are equivalent to running with -r.\n"
         "   -r, --reciprocal        Apply the -O requirement to both overlapping\n"
         "                           intervals\n"
         "   -x, --drop-overlaps     Drop overlapping regions (precludes -f)\n"
@@ -941,6 +944,7 @@ int main(int argc, char **argv)
     };
     char *tmp = NULL;
     int c;
+    int reciprocal = 0;
     while ((c = getopt_long(argc, argv, "c:f:m:o:s:t:a:HO:rxh:Id:",loptions,NULL)) >= 0)
     {
         switch (c)
@@ -960,16 +964,24 @@ int main(int argc, char **argv)
             case 'd': args->delim_str = optarg; break;
             case 'h': args->headers_str = optarg; break;
             case 'H': args->headers_str = "0:0"; break;
-            case 'r': args->reciprocal = 1; break;
+            case 'r': reciprocal = 1; break;
             case 'c': args->core_str  = optarg; break;
             case 't': args->dst.fname = optarg; break;
             case 'm': args->match_str = optarg; break;
             case 'a': args->annots_str = optarg; break;
             case 'o': args->out_fname = optarg; break;
             case 'O':
-                args->overlap = strtod(optarg, &tmp);
-                if ( tmp==optarg || *tmp ) error("Could not parse --overlap %s\n", optarg);
-                if ( args->overlap<0 || args->overlap>1 ) error("Expected value from the interval [0,1]: --overlap %s\n", optarg);
+                args->overlap_src = strtod(optarg, &tmp);
+                if ( tmp==optarg || (*tmp && *tmp!=',') ) error("Could not parse --overlap %s\n", optarg);
+                if ( args->overlap_src<0 || args->overlap_src>1 ) error("Expected value(s) from the interval [0,1]: --overlap %s\n", optarg);
+                if ( *tmp )
+                {
+                    args->overlap_dst = strtod(tmp+1, &tmp);
+                    if ( *tmp ) error("Could not parse --overlap %s\n", optarg);
+                    if ( args->overlap_dst<0 || args->overlap_dst>1 ) error("Expected value(s) from the interval [0,1]: --overlap %s\n", optarg);
+                }
+                else
+                    args->overlap_either = 1;
                 break;
             case 's': args->src.fname = optarg; break;
             case 'f': args->transfer_str = optarg; break;
@@ -994,6 +1006,16 @@ int main(int argc, char **argv)
         else args->mode = PRINT_MATCHING|PRINT_NONMATCHING;
     }
     if ( (args->transfer_str || args->annots_str) && !(args->mode & PRINT_MATCHING) ) error("The option -x cannot be combined with -f and -a\n");
+    if ( reciprocal )
+    {
+        if ( args->overlap_dst && args->overlap_src && args->overlap_dst!=args->overlap_src )
+            error("The combination of --reciprocal with --overlap %f,%f makes no sense: expected single value or identical values\n",args->overlap_src,args->overlap_dst);
+        if ( !args->overlap_src )
+            args->overlap_src = args->overlap_dst;
+        else
+            args->overlap_dst = args->overlap_src;
+        args->overlap_either = 0;
+    }
 
     init_data(args);
     write_header(args, &args->dst);
