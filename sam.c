@@ -2947,7 +2947,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     } else c->tid = -1;
 
     // pos
-    c->pos = hts_str2uint(p, &p, 63, &overflow) - 1;
+    c->pos = hts_str2uint(p, &p, 62, &overflow) - 1;
     if (*p++ != '\t') goto err_ret;
     if (c->pos < 0 && c->tid >= 0) {
         _parse_warn(1, "mapped query cannot have zero coordinate; treated as unmapped");
@@ -2990,15 +2990,16 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_warn(c->mtid < 0, "unrecognized mate reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     }
     // mpos
-    c->mpos = hts_str2uint(p, &p, 63, &overflow) - 1;
+    c->mpos = hts_str2uint(p, &p, 62, &overflow) - 1;
     if (*p++ != '\t') goto err_ret;
     if (c->mpos < 0 && c->mtid >= 0) {
         _parse_warn(1, "mapped mate cannot have zero coordinate; treated as unmapped");
         c->mtid = -1;
     }
     // tlen
-    c->isize = hts_str2int(p, &p, 64, &overflow);
+    c->isize = hts_str2int(p, &p, 63, &overflow);
     if (*p++ != '\t') goto err_ret;
+    _parse_err(overflow, "number outside allowed range");
     // seq
     q = _read_token(p);
     if (strcmp(q, "*")) {
