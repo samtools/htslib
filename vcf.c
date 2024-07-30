@@ -3703,7 +3703,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 
     overflow = 0;
     char *tmp = p;
-    v->pos = hts_str2uint(p, &p, 63, &overflow);
+    v->pos = hts_str2uint(p, &p, 62, &overflow);
     if (overflow) {
         hts_log_error("Position value '%s' is too large", tmp);
         goto err;
