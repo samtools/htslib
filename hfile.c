@@ -703,7 +703,7 @@ static int is_preload_url_remote(const char *url){
 
 static hFILE *hopen_preload(const char *url, const char *mode){
     hFILE* fp = hopen(url + 8, mode);
-    return hpreload(fp);
+    return fp ? hpreload(fp) : NULL;
 }
 
 hFILE *hdopen(int fd, const char *mode)
