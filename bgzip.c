@@ -48,7 +48,7 @@
 
 static const int WINDOW_SIZE = BGZF_BLOCK_SIZE;
 
-static void error(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -689,7 +689,7 @@ int main(int argc, char **argv)
                     if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 )
                         error("Could not load index: %s.gzi\n", argv[optind]);
                 }
-                if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %d-th (uncompressd) byte\n", start);
+                if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %ld-th (uncompressd) byte\n", start);
             }
 
             if (threads > 1)
