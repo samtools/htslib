@@ -1764,7 +1764,7 @@ static hFILE *hts_hfile(htsFile *fp) {
     case bcf:          // fall through
     case bam:          return bgzf_hfile(fp->fp.bgzf);
     case cram:         return cram_hfile(fp->fp.cram);
-    case text_format:  return fp->fp.hfile;
+    case text_format:  // fall through
     case vcf:          // fall through
     case fastq_format: // fall through
     case fasta_format: // fall through
