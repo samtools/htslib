@@ -1,6 +1,6 @@
 /*  hts_defs.h -- Miscellaneous definitions.
 
-    Copyright (C) 2013-2015,2017, 2019-2020 Genome Research Ltd.
+    Copyright (C) 2013-2015,2017, 2019-2020, 2024 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
