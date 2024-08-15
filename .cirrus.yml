@@ -113,7 +113,7 @@ ubuntu_task:
     - environment:
        # Cirrus-CI's clang isn't installed with ubsan, so we do that in gcc
        USE_CONFIG: yes
-       CFLAGS: -std=c99 -pedantic -Wformat -g -Wall -O3
+       CFLAGS: -std=c99 -pedantic -Wformat -Wformat=2 -g -Wall -O3
        USE_LIBDEFLATE: yes
 
   # NB: we could consider building a docker image with these
