@@ -72,6 +72,7 @@ gcc_task:
        DO_MAINTAINER_CHECKS: yes
        DO_UNTRACKED_FILE_CHECK: yes
        USE_CONFIG: no
+       CFLAGS: -g -O2 -Wall -Werror -fvisibility=hidden
     - environment:
        USE_CONFIG: yes
        # ubsan is incompatible with some -Wformat opts so we do that on clang.
@@ -141,7 +142,7 @@ rocky_task:
     LC_ALL: C
     CIRRUS_CLONE_DEPTH: 1
     USE_CONFIG: yes
-    CFLAGS: -std=gnu90 -Wformat -Wformat=2
+    CFLAGS: -g -O3 -std=gnu90 -Wformat -Wformat=2 -Wextra -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Wno-empty-body
 
   # NB: we could consider building a docker image with these
   # preinstalled and specifying that instead, to speed up testing.

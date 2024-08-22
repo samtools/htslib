@@ -1322,7 +1322,7 @@ int hts_parse_opt_list(htsFormat *fmt, const char *str) {
  *        -1 on failure.
  */
 int hts_parse_format(htsFormat *format, const char *str) {
-    char fmt[8];
+    char fmt[9];
     const char *cp = scan_keyword(str, ',', fmt, sizeof fmt);
 
     format->version.minor = 0; // unknown

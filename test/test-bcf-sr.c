@@ -179,6 +179,7 @@ int main(int argc, char *argv[])
                 break;
             case 'h':
                 usage(EXIT_SUCCESS);
+                // fall-through
             default: usage(EXIT_FAILURE);
         }
     }
