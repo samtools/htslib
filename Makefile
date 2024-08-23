@@ -666,22 +666,22 @@ test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
 
 test/test_bgzf: test/test_bgzf.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a $(LIBS) -lpthread
 
 test/test_expr: test/test_expr.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a $(LIBS) -lpthread
 
 test/test_faidx: test/test_faidx.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_faidx.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_faidx.o libhts.a $(LIBS) -lpthread
 
 test/test_kfunc: test/test_kfunc.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a $(LIBS) -lpthread
 
 test/test_khash: test/test_khash.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_khash.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_khash.o libhts.a $(LIBS) -lpthread
 
 test/test_kstring: test/test_kstring.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a $(LIBS) -lpthread
 
 test/test_mod: test/test_mod.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_mod.o libhts.a $(LIBS) -lpthread
@@ -717,10 +717,10 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LIBS) -lpthread
 
 test/test-bcf-sr: test/test-bcf-sr.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a $(LIBS) -lpthread
 
 test/test-bcf-translate: test/test-bcf-translate.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a $(LIBS) -lpthread
 
 test/test_introspection: test/test_introspection.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_introspection.o libhts.a $(LIBS) -lpthread
@@ -815,25 +815,25 @@ test/usepublic.o: test/usepublic.cpp config.h $(htslib_bgzf_h) $(htslib_cram_h) 
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads2: test/thrash_threads2.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads3: test/thrash_threads3.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads4: test/thrash_threads4.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads5: test/thrash_threads5.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads6: test/thrash_threads6.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads7: test/thrash_threads7.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a $(LIBS) -lpthread
 
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
