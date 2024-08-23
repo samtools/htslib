@@ -36,11 +36,13 @@
 #include <strings.h>
 #include <errno.h>
 
+#include "../htslib/hts_defs.h"
 #include "../htslib/synced_bcf_reader.h"
 #include "../htslib/hts.h"
 #include "../htslib/vcf.h"
 
-void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
+void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -49,7 +51,7 @@ void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
-void usage(int exit_code)
+void HTS_NORETURN usage(int exit_code)
 {
     fprintf(stderr, "Usage: test-bcf-sr [OPTIONS] vcf-list.txt\n");
     fprintf(stderr, "       test-bcf-sr [OPTIONS] -args file1.bcf [...]\n");
@@ -179,7 +181,6 @@ int main(int argc, char *argv[])
                 break;
             case 'h':
                 usage(EXIT_SUCCESS);
-                // fall-through
             default: usage(EXIT_FAILURE);
         }
     }
