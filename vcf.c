@@ -4257,6 +4257,30 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     return ret==fp->line.l ? 0 : -1;
 }
 
+
+int vcf_write_line_with_index(htsFile *fp,  const bcf_hdr_t *h, kstring_t *line, int tid,
+            hts_pos_t pos, hts_pos_t len)
+{
+    ssize_t ret;
+    
+    fprintf(stderr, "vcf_write_line_with_index start\n");
+
+    if (fp->format.compression == no_compression || !fp->idx) { // compressed reads only for indexing
+        return -1;
+    }
+    
+    ret = bgzf_write(fp->fp.bgzf, line->s, line->l); // error handling?
+    
+    if (bgzf_idx_push(fp->fp.bgzf, fp->idx, tid, pos, pos + len, bgzf_tell(fp->fp.bgzf), 1) < 0) {
+        return -1;
+    }
+    
+    fprintf(stderr, "vcf_write_line_with_index end\n");
+    
+    return 0; // again, more error handling needed
+}
+  
+
 /************************
  * Data access routines *
  ************************/

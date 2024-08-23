@@ -516,6 +516,9 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     */
     HTSLIB_EXPORT
     int vcf_write_line(htsFile *fp, kstring_t *line);
+    
+    HTSLIB_EXPORT
+    int vcf_write_line_with_index(htsFile *fp, const bcf_hdr_t *h, kstring_t *line, int tid, hts_pos_t pos, hts_pos_t len);
 
     /**************************************************************************
      *  Header querying and manipulation routines
