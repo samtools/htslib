@@ -182,7 +182,8 @@ static inline ssize_t bgzf_read_small(BGZF *fp, void *data, size_t length) {
  */
 static inline
 ssize_t bgzf_write_small(BGZF *fp, const void *data, size_t length) {
-    if (fp->is_compressed && BGZF_BLOCK_SIZE - fp->block_offset > length) {
+    if (fp->is_compressed
+        && (size_t) (BGZF_BLOCK_SIZE - fp->block_offset) > length) {
         // Short cut the common and easy mode
         memcpy((uint8_t *)fp->uncompressed_block + fp->block_offset,
                data, length);

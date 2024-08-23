@@ -362,8 +362,7 @@ int main(int argc, char **argv)
                         }
                         else {
                             ret = 2;                        //explicit N - no overwrite, continue and return 2
-                            if (hclose(f_src) < 0)
-                                ;                           //ignoring return value
+                            hclose_abruptly(f_src);
                             free(name);
                             continue;
                         }
