@@ -573,7 +573,7 @@ htscodecs/htscodecs/version.h: force
 	  vers=`cd $(srcdir)/htscodecs && git describe --always --dirty --match 'v[0-9]\.[0-9]*'` && \
 	  case "$$vers" in \
 	    v*) vers=$${vers#v} ;; \
-	    *) iv=`awk '/^AC_INIT/ { match($$0, /^AC_INIT\(htscodecs, *([0-9](\.[0-9])*)\)/, m); print substr($$0, m[1, "start"], m[1, "length"]) }' $(srcdir)/htscodecs/configure.ac` ; vers="$$iv$${vers:+-g$$vers}" ;; \
+	    *) iv=`awk '/^AC_INIT\(htscodecs,/ { match($$0, /[0-9](\.[0-9])*/); print substr($$0, RSTART, RLENGTH) }' $(srcdir)/htscodecs/configure.ac` ; vers="$$iv$${vers:+-g$$vers}" ;; \
 	  esac ; \
 	  if ! grep -s -q '"'"$$vers"'"' $@ ; then \
 	    echo 'Updating $@ : #define HTSCODECS_VERSION_TEXT "'"$$vers"'"' ; \
