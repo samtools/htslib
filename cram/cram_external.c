@@ -291,7 +291,7 @@ static cram_codec *cram_codec_iter_next(cram_codec_iter *iter,
             iter->curr_map = iter->curr_map->next;
             return cc;
         }
-    } while (iter->idx <= CRAM_MAP_HASH);
+    } while (iter->idx < CRAM_MAP_HASH);
 
     // End of codecs
     return NULL;
