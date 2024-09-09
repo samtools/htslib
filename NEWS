@@ -27,13 +27,16 @@ Updates
   fraction separately for source and target. (PR #1811)
 
 * Added new APIs to facilitate low-level CRAM container manipulations,
-  used by   the new "samtools cat" region filtering code. Functions are
-  cram_container_get_coords(), cram_filter_container(),
-  cram_index_extents(), cram_container_num2offset(),
-  cram_num_containers(), cram_num_containers_between(),
-  cram_skip_container().
-  Also improved cram_index_query() and cram_index_query() to cope with
-  HTS_IDX_NOCOOR regions.  (PR #1771)
+  used by the new "samtools cat" region filtering code. Functions are:
+    cram_container_get_coords()
+    cram_filter_container()
+    cram_index_extents()
+    cram_container_num2offset()
+    cram_container_offset2num()
+    cram_num_containers()
+    cram_num_containers_between()
+  Also improved cram_index_query() to cope with HTS_IDX_NOCOOR regions.
+  (PR #1771)
 
 * Bgzip now retains file modification and access times when
   compressing and decompressing. (PR #1727, fixes #1718.  Requested by
@@ -47,6 +50,9 @@ Updates
 * Improve the speed of the nibble2base() function on Intel (PR
   #1667, PR #1764, PR #1786, PR #1802, thanks to Ruben Vorderman) and
   ARM (PR #1795, thanks to John Marshall).
+
+* bgzf_getline() will now warn if it encounters UTF-16 data.
+  (PR #1487, thanks to John Marshall)
 
 * Speed up bgzf_read().  While this does not reduce CPU significantly,
   it does increase the maximum parallelism available permitting 10-15%
@@ -74,6 +80,8 @@ Build Changes
   (PR #1807, PR #1829, both thanks to John Marshall)
 
 * Updated htscodecs submodule to version 1.6.1 (PR #1828)
+
+* Fixed an awk script in the Makefile that only worked with gawk. (PR #1831)
 
 Bug fixes
 ---------
@@ -109,15 +117,14 @@ Bug fixes
   returning overlapping records. (PR #1787.  Fixes
   samtools/samtools#2060, reported by acorvelo)
 
-* Warn in bgzf_getline() encounters UTF-16 data.
-  (PR #1487, thanks to John Marshall)
-
 * Replace assert() with abort() in BCF synced reader.  This is not an
   ideal solution, but it gives consistent behaviour when compiling
   with or without NDEBUG.  (PR #1791, thanks to Martin Pollard)
 
 * Fixed failure to change the write block size on compressed SAM or VCF
   files due to an internal type confusion.  (PR #1826)
+
+* Fixed an out-of-bounds read in cram_codec_iter_next() (PR #1832)
 
 Noteworthy changes in release 1.20 (15th April 2024)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
