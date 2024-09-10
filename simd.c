@@ -42,7 +42,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #if defined __arm__ || defined __aarch64__
 
-#if defined __linux__ || defined __FreeBSD__
+#if defined HAVE_GETAUXVAL || defined HAVE_ELF_AUX_INFO
 #include <sys/auxv.h>
 #elif defined __APPLE__
 #include <sys/types.h>
@@ -61,11 +61,11 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 
 static inline int cpu_supports_neon(void) {
-#if defined __linux__ && defined __arm__ && defined HWCAP_NEON
+#if defined HAVE_GETAUXVAL && defined __arm__ && defined HWCAP_NEON
     return (getauxval(AT_HWCAP) & HWCAP_NEON) != 0;
-#elif defined __linux__ && defined __arm__ && defined HWCAP_ARM_NEON
+#elif defined HAVE_GETAUXVAL && defined __arm__ && defined HWCAP_ARM_NEON
     return (getauxval(AT_HWCAP) & HWCAP_ARM_NEON) != 0;
-#elif defined __linux__ && defined __aarch64__ && defined HWCAP_ASIMD
+#elif defined HAVE_GETAUXVAL && defined __aarch64__ && defined HWCAP_ASIMD
     return (getauxval(AT_HWCAP) & HWCAP_ASIMD) != 0;
 #elif defined __APPLE__ && defined __aarch64__
     int32_t ctl;
@@ -73,11 +73,11 @@ static inline int cpu_supports_neon(void) {
     if (sysctlbyname("hw.optional.AdvSIMD", &ctl, &ctlsize, NULL, 0) != 0) return 0;
     if (ctlsize != sizeof ctl) return 0;
     return ctl;
-#elif defined __FreeBSD__ && defined __arm__ && defined HWCAP_NEON
+#elif defined HAVE_ELF_AUX_INFO && defined __arm__ && defined HWCAP_NEON
     unsigned long cap;
     if (elf_aux_info(AT_HWCAP, &cap, sizeof cap) != 0) return 0;
     return (cap & HWCAP_NEON) != 0;
-#elif defined __FreeBSD__ && defined __aarch64__ && defined HWCAP_ASIMD
+#elif defined HAVE_ELF_AUX_INFO && defined __aarch64__ && defined HWCAP_ASIMD
     unsigned long cap;
     if (elf_aux_info(AT_HWCAP, &cap, sizeof cap) != 0) return 0;
     return (cap & HWCAP_ASIMD) != 0;
