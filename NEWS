@@ -89,6 +89,10 @@ Bug fixes
 * Fix small OSS-Fuzz reported issues with CRAM encoding and long
   CIGARS and/or illegal positions. (PR #1775, PR #1801, PR #1817)
 
+* Fix issues with on-the-fly indexing of VCF/BCF (bcftools --write-index)
+  when not using multiple threads. (PR #1837. Fixes samtools/bcftools#2267,
+  reported by Giulio Genovese)
+
 * Stricter limits on POS / MPOS / TLEN in sam_parse1().  This fixes
   a signed overflow reported by OSS-Fuzz and should help prevent other
   as-yet undetected bugs. (PR #1812)

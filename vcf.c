@@ -4238,6 +4238,8 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     if ( fp->format.compression!=no_compression ) {
         if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
             return -1;
+        if (fp->idx && !fp->fp.bgzf->mt)
+            hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     } else {
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
