@@ -516,9 +516,25 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     */
     HTSLIB_EXPORT
     int vcf_write_line(htsFile *fp, kstring_t *line);
-    
+
+
+
+    /// Write a line to a VCF file for indexing
+    /** @param line   Line to write
+        @param fp     File to write it to
+        @param h      The header for the vcf file
+        @param chr_id Chromosome id
+        @param name   Chromosome name
+        @param beg    Beginning position
+        @param end    End position
+        @return 0 on success; -1 on failure
+
+        @note Similar to vcf_write_line.  No checks are done on the line being added, apart from
+              ensuring that it ends with a newline.  This function
+              should therefore be used with care.
+    */
     HTSLIB_EXPORT
-    int vcf_write_line_with_index(htsFile *fp, const bcf_hdr_t *h, kstring_t *line, int tid, hts_pos_t pos, hts_pos_t len);
+    int vcf_write_line_with_index(htsFile *fp, const bcf_hdr_t *h, kstring_t *line, int chr_id, char *name, hts_pos_t pos, hts_pos_t len);
 
     /**************************************************************************
      *  Header querying and manipulation routines
