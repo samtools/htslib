@@ -33,7 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "../htslib/kstring.h"
 #include "../htslib/kseq.h"
 
-void error(const char *format, ...)
+void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -625,7 +625,7 @@ void test_invalid_end_tag(void)
     hts_set_log_level(logging);
 }
 
-void test_open_format() {
+void test_open_format(void) {
     char mode[5];
     int ret;
     strcpy(mode, "r");

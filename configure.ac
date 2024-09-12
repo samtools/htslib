@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2023 Genome Research Ltd.
+#    Copyright (C) 2015-2024 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -35,7 +35,7 @@ m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2020-2023 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2020-2024 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
@@ -82,6 +82,14 @@ AC_CHECK_DECL([_XOPEN_SOURCE], [],
   [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
   [])
 
+dnl Check that we have cpuid, and if so run the x86 SIMD checks
+AC_CHECK_DECLS([__get_cpuid_max, __cpuid_count], [
+   hts_have_cpuid=yes
+], [
+   hts_have_cpuid=no
+], [[#include <cpuid.h>]])
+
+AS_IF(test "x$hts_have_cpuid" = "xyes", [
 dnl Options for rANS32x16 sse4.1 version - sse4.1
 HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
  [AC_LANG_PROGRAM([[
@@ -100,6 +108,7 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
   AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_SSE4_1],1,[Defined to 1 if rANS source using SSE4.1 can be compiled.
 ])
+
 dnl Propagate HTSlib's unaligned access preference to htscodecs
   AH_VERBATIM([UBSAN],[
 /* Prevent unaligned access in htscodecs SSE4 rANS codec */
@@ -139,7 +148,9 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
     #ifdef __x86_64__
     __m512i a = _mm512_set1_epi32(1);
     __m512i b = _mm512_add_epi32(a, a);
-    return _mm_popcnt_u32(*((char *) &b));
+    __m256i c = _mm512_castsi512_si256(b);
+    __m256i d = _mm512_extracti64x4_epi64(a, 1);
+    return _mm_popcnt_u32(*((char *) &c)) + (*(char *) &d);
     #endif
   ]])], [
   hts_cflags_avx512="$flags_needed"
@@ -147,6 +158,37 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
   AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
 ])
+
+dnl Check for working __builtin_cpu_supports (ssse3 is broken on some clangs)
+AC_MSG_CHECKING([for working __builtin_cpu_supports("ssse3")])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+  if (__builtin_cpu_supports("ssse3")) {
+    return 0;
+  }
+])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_BUILTIN_CPU_SUPPORT_SSSE3], 1,
+            [Defined to 1 if __builtin_cpu_supports("ssse3") works])
+], [
+  AC_MSG_RESULT([no])
+])
+
+dnl Check for function attribute used in conjunction with __builtin_cpu_supports
+AC_MSG_CHECKING([for __attribute__((target))])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  __attribute__((target("ssse3")))
+  int zero(void) {
+    return 0;
+  }
+]], [[zero();]])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_ATTRIBUTE_TARGET], 1,
+            [Define if __attribute__((target(...))) is available.])
+], [
+  AC_MSG_RESULT([no])
+])
+
+]) dnl End of AS_IF(hts_have_cpuid)
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
@@ -288,6 +330,25 @@ AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
+
+AC_MSG_CHECKING([for __attribute__((constructor))])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+  static __attribute__((constructor)) void noop(void) {}
+]], [])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_ATTRIBUTE_CONSTRUCTOR], 1,
+            [Define if __attribute__((constructor)) is available.])
+], [AC_MSG_RESULT([no])])
+
+AC_MSG_CHECKING([for clock_gettime with CLOCK_PROCESS_CPUTIME_ID])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <time.h>]], [[
+  struct timespec ts;
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+]])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_CLOCK_GETTIME_CPUTIME], 1,
+            [Define if clock_gettime exists and accepts CLOCK_PROCESS_CPUTIME_ID.])
+], [AC_MSG_RESULT([no])])
 
 if test $enable_plugins != no; then
   AC_SEARCH_LIBS([dlsym], [dl], [],

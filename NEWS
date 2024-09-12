@@ -1,3 +1,135 @@
+Noteworthy changes in release 1.21 (12th September 2024)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The primary user-visible changes in this release are updates to the
+annot-tsv tool and some speed improvements.  Full details of other
+changes and bugs fixed are below.
+
+Notice: this is the last SAMtools / HTSlib release where CRAM 3.0 will be
+the default CRAM version.  From the next we will change to CRAM 3.1
+unless the version is explicitly specified, for example using
+"samtools view -O cram,version=3.0".
+
+
+Updates
+-------
+
+* Extend annot-tsv with several new command line options.
+    --delim permits use of other delimiters.
+    --headers for selection of other header formats.
+    --no-header-idx to suppress column index numbers in header.
+  Also removed -h as it is now short for --headers.  Note --help
+  still works. (PR #1779)
+
+* Allow annot-tsv -a to rename annotations. (PR #1709)
+
+* Extend annot-tsv --overlap to be able to specify the overlap
+  fraction separately for source and target. (PR #1811)
+
+* Added new APIs to facilitate low-level CRAM container manipulations,
+  used by the new "samtools cat" region filtering code. Functions are:
+    cram_container_get_coords()
+    cram_filter_container()
+    cram_index_extents()
+    cram_container_num2offset()
+    cram_container_offset2num()
+    cram_num_containers()
+    cram_num_containers_between()
+  Also improved cram_index_query() to cope with HTS_IDX_NOCOOR regions.
+  (PR #1771)
+
+* Bgzip now retains file modification and access times when
+  compressing and decompressing. (PR #1727, fixes #1718.  Requested by
+  Gert Hulselmans.)
+
+* Use FNV1a for string hashing in khash.  The old algorithm was
+  particularly weak with base-64 style strings and lead to a large
+  number of collisions.  (PR #1806.  Fixes   samtools/samtools#2066,
+  reported by Hans-Joachim Ruscheweyh)
+
+* Improve the speed of the nibble2base() function on Intel (PR
+  #1667, PR #1764, PR #1786, PR #1802, thanks to Ruben Vorderman) and
+  ARM (PR #1795, thanks to John Marshall).
+
+* bgzf_getline() will now warn if it encounters UTF-16 data.
+  (PR #1487, thanks to John Marshall)
+
+* Speed up bgzf_read().  While this does not reduce CPU significantly,
+  it does increase the maximum parallelism available permitting 10-15%
+  faster decoding. (PR #1772, PR #1800, Issue #1798)
+
+* Speed up faidx by use of better isgraph methods (PR #1797) and
+  whole-line reading (PR #1799, thanks to John Marshall).
+
+* Speed up kputll() function, speeding up BAM -> SAM conversion by
+  about 5% and also samtools depth.  (PR #1805)
+
+* Added more example code, covering fasta/fastq indexing, tabix
+  indexing and use of the thread pool. (PR #1666)
+
+Build Changes
+-------------
+
+* Code warning fixes for pedantic compilers (PR #1777) and avoid
+  some undefined behaviour (PR #1810, PR #1816, PR #1828).
+
+* Windows based CI has been migrated from AppVeyor to GitHub Actions.
+  (PR #1796, PR #1803, PR #1808)
+
+* Miscellaneous minor build infrastructure and code fixes.
+  (PR #1807, PR #1829, both thanks to John Marshall)
+
+* Updated htscodecs submodule to version 1.6.1 (PR #1828)
+
+* Fixed an awk script in the Makefile that only worked with gawk. (PR #1831)
+
+Bug fixes
+---------
+
+* Fix small OSS-Fuzz reported issues with CRAM encoding and long
+  CIGARS and/or illegal positions. (PR #1775, PR #1801, PR #1817)
+
+* Fix issues with on-the-fly indexing of VCF/BCF (bcftools --write-index)
+  when not using multiple threads. (PR #1837. Fixes samtools/bcftools#2267,
+  reported by Giulio Genovese)
+
+* Stricter limits on POS / MPOS / TLEN in sam_parse1().  This fixes
+  a signed overflow reported by OSS-Fuzz and should help prevent other
+  as-yet undetected bugs. (PR #1812)
+
+* Check that the underlying file open worked for preload: URLs.  Fixes
+  a NULL pointer dereference reported by OSS-Fuzz. (PR #1821)
+
+* Fix an infinite loop in hts_itr_query() when given extremely large
+  positions which cause integer overflow.  Also adds hts_bin_maxpos()
+  and hts_idx_maxpos() functions.
+  (PR #1774, thanks to John Marshall and reported by Jesus Alberto
+  Munoz Mesa)
+
+* Fix an out of bounds read in hts_itr_multi_next() when switching
+  chromosomes.  This bug is present in releases 1.11 to 1.20.
+  (PR #1788. Fixes samtools/samtools#2063, reported by acorvelo)
+
+* Work around parsing problems with colons in CHROM names.
+  Fixes samtools/bcftools#2139.  (PR #1781, John Marshall / James Bonfield)
+
+* Correct the CPU detection for Mac OS X 10.7.  cpuid is used by
+  htscodecs (see samtools/htscodecs#116), and the corresponding
+  changes in htslib are PR #1785.  Reported by Ryan Carsten Schmidt.
+
+* Make BAM zero-length intervals work the same as CRAM; permitted and
+  returning overlapping records. (PR #1787.  Fixes
+  samtools/samtools#2060, reported by acorvelo)
+
+* Replace assert() with abort() in BCF synced reader.  This is not an
+  ideal solution, but it gives consistent behaviour when compiling
+  with or without NDEBUG.  (PR #1791, thanks to Martin Pollard)
+
+* Fixed failure to change the write block size on compressed SAM or VCF
+  files due to an internal type confusion.  (PR #1826)
+
+* Fixed an out-of-bounds read in cram_codec_iter_next() (PR #1832)
+
 Noteworthy changes in release 1.20 (15th April 2024)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

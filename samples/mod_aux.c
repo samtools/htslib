@@ -24,14 +24,15 @@ DEALINGS IN THE SOFTWARE
 
 */
 
-/* The pupose of this code is to demonstrate the library apis and need proper error handling and optimization */
+/* The purpose of this code is to demonstrate the library apis and need proper error handling and optimisation */
 
 #include <getopt.h>
+#include <strings.h>
 #include <unistd.h>
 #include <htslib/sam.h>
 
-/// print_usage - print the demo_usage
-/** @param fp pointer to the file / terminal to which demo_usage to be dumped
+/// print_usage - print the usage
+/** @param fp pointer to the file / terminal to which usage to be dumped
 returns nothing
 */
 static void print_usage(FILE *fp)

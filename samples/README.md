@@ -4,7 +4,7 @@ data, and is the core library used by [samtools][2] and [bcftools][3].
 
 A set of sample programs are available which showcases the usage of APIs in HTSlib.
 They are based on version 1.17 of HTSLib and are mainly for demonstration of API usage.
-Further optimization and error handling might be required for actual usage.
+Further optimisation and error handling might be required for actual usage.
 
 
 [1]: http://samtools.github.io/hts-specs/
@@ -61,7 +61,7 @@ indexed.
 
 [Read_fast][Read_fast]
 
-  This application showcases the fasta/fastq data read.
+  This application showcases fasta/fastq data read without using index.
 
 [Read_header][Read_header]
 
@@ -72,7 +72,7 @@ indexed.
 [Read_ref][Read_ref]
 
   This application showcases the read and access of header data. It shows
-  all reference names which has length equal or greather to given input.
+  all reference names which has length equal or greater to given input.
 
 [Read_bam][Read_bam]
 
@@ -129,13 +129,17 @@ indexed.
 
 [Write_fast][Write_fast]
 
-  This application showcases the fasta/fastq data write. It appends a dummy
-  data to given file.
+  This application showcases the fasta/fastq data write. It appends data on
+  given file.
 
 [Index_write][Index_write]
 
   This application showcases the creation of index along with output
   creation. Based on file type and shift, it creates bai, csi or crai files.
+
+[Index_fast][Index_fast]
+
+  This application showcases index creation on fasta/fastq reference data.
 
 [Read_reg][Read_reg]:
 
@@ -144,8 +148,13 @@ indexed.
 
 [Read_multireg][Read_multireg]:
 
-  This application showcases the usage of mulitple region specification in
+  This application showcases the usage of multiple region specification in
   alignment read.
+
+[Read_fast_index][Read_fast_index]
+
+  This application showcases the fasta/fastq data read using index. It takes a
+  region (reference name[:start-end]) and gets data from that region.
 
 [Pileup][Pileup]:
 
@@ -181,8 +190,7 @@ indexed.
 
   This application showcases the use of threads in file handling. It saves
   the read1 and read2 as separate files in given directory, one as sam and
-  other as bam. 2 threads are used for read and 1 each dedicated for each
-  output file.
+  other as bam. 1 thread is used for read, 1 for sam write and 2 for bam write.
 
 [Split_thread2][Split_thread2]
 
@@ -190,6 +198,19 @@ indexed.
   saves the read1 and read2 as separate files in given directory, one as sam
   and other as bam. A pool of 4 threads is created and shared for both read
   and write.
+
+[Qtask_ordered][Qtask_ordered]
+
+  This application showcases the use of queues and threads for custom
+  processing. Alignments in input file are updated with their GC ratio on a
+  custom aux tag. The processing may occur in any order but the results are
+  retrieved in same order as it was queued and saved to disk.
+
+[Qtask_unordered][Qtask_unordered]
+
+  This application showcases the use of queues and threads for custom
+  processing. The count of bases and GC ratio are calculated and displayed.
+  The order of counting is irrelevant and hence ordered retrieval is not used.
 
 ### More Information
 
@@ -215,8 +236,10 @@ examples per demonstration tool.
 [Mod_aux_ba]: mod_aux_ba.c
 [Write_fast]: write_fast.c
 [Index_write]: index_write.c
+[Index_fasta]: index_fasta.c
 [Read_reg]: index_reg_read.c
 [Read_multireg]: index_multireg_read.c
+[Read_fast_index]: read_fast_index.c
 [Pileup]: pileup.c
 [Mpileup]: mpileup.c
 [Modstate]: modstate.c
@@ -224,4 +247,6 @@ examples per demonstration tool.
 [Flags_field]: flags_htsopt_field.c
 [Split_thread1]: split_thread1.c
 [Split_thread2]: split_thread2.c
+[Qtask_ordered]: qtask_ordered.c
+[Qtask_unordered]: qtask_unordered.c
 [DEMO]: DEMO.md

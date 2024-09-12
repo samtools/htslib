@@ -3401,6 +3401,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     c->num_bases   += cr->len;
     cr->apos        = bam_pos(b)+1;
+    if (cr->apos < 0 || cr->apos > INT64_MAX/2)
+        goto err;
     if (c->pos_sorted) {
         if (cr->apos < s->last_apos && !fd->ap_delta) {
             c->pos_sorted = 0;
@@ -3438,6 +3440,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         uint32_t *cig_to, *cig_from;
         int64_t apos = cr->apos-1, spos = 0;
         int64_t MD_last = apos; // last position of edit in MD tag
+
+        if (apos < 0) {
+            hts_log_error("Mapped read with position <= 0 is disallowed");
+            return -1;
+        }
 
         cr->cigar       = s->ncigar;
         cr->ncigar      = bam_cigar_len(b);

@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2023 Genome Research Ltd.
+#    Copyright (C) 2013-2024 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -85,8 +85,10 @@ BUILT_TEST_PROGRAMS = \
 	test/test_expr \
 	test/test_faidx \
 	test/test_kfunc \
+	test/test_khash \
 	test/test_kstring \
 	test/test_mod \
+	test/test_nibbles \
 	test/test_realn \
 	test/test-regidx \
 	test/test_str2int \
@@ -111,8 +113,14 @@ BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads6 \
 	test/thrash_threads7
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
-     htslib_static.mk htslib-uninstalled.pc
+all: lib-static lib-shared $(BUILT_PROGRAMS) plugins \
+	$(BUILT_TEST_PROGRAMS) htslib_static.mk htslib-uninstalled.pc
+
+# Report compiler and version
+cc-version:
+	-@$(CC) --version  2>/dev/null || true
+	-@$(CC) --qversion 2>/dev/null || true
+	-@$(CC) -V         2>/dev/null || true
 
 ALL_CPPFLAGS = -I. $(CPPFLAGS)
 
@@ -150,8 +158,8 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.20
-MACH_O_CURRENT_VERSION = 3.1.20
+MACH_O_COMPATIBILITY_VERSION = 3.1.21
+MACH_O_CURRENT_VERSION = 3.1.21
 
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
@@ -209,6 +217,7 @@ LIBHTS_OBJS = \
 	region.o \
 	sam.o \
 	sam_mods.o \
+	simd.o \
 	synced_bcf_reader.o \
 	vcf_sweep.o \
 	tbx.o \
@@ -278,6 +287,10 @@ config.h:
 	echo '#endif' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
 	echo '#define HAVE_LIBCURL 1' >> $@
+	if [ "x$(HTS_HAVE_CPUID)" != "x" ]; then \
+	    echo '#define HAVE_DECL___CPUID_COUNT 1' >> $@ ; \
+	    echo '#define HAVE_DECL___GET_CPUID_MAX 1' >> $@ ; \
+	fi
 	if [ "x$(HTS_BUILD_SSE4)" != "x" ]; then \
 	    echo '#define HAVE_POPCNT 1' >> $@ ; \
 	    echo '#define HAVE_SSE4_1 1' >> $@ ; \
@@ -292,6 +305,13 @@ config.h:
 	if [ "x$(HTS_BUILD_AVX512)" != "x" ] ; then \
 	    echo '#define HAVE_AVX512 1' >> $@ ; \
 	fi
+	echo '#if defined __x86_64__ || defined __arm__ || defined __aarch64__' >> $@
+	echo '#define HAVE_ATTRIBUTE_CONSTRUCTOR 1' >> $@
+	echo '#endif' >> $@
+	echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@
+	echo '#define HAVE_ATTRIBUTE_TARGET 1' >> $@
+	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
+	echo '#endif' >> $@
 
 # And similarly for htslib.pc.tmp ("pkg-config template").  No dependency
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate
@@ -451,6 +471,7 @@ hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
 vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
 sam.o sam.pico: sam.c config.h $(fuzz_settings_h) $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 sam_mods.o sam_mods.pico: sam_mods.c config.h $(htslib_sam_h) $(textutils_internal_h)
+simd.o simd.pico: simd.c config.h $(htslib_sam_h) $(sam_internal_h)
 tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_hts_endian_h) $(hts_internal_h) $(htslib_khash_h)
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kstring_h) $(hts_internal_h)
 bcf_sr_sort.o bcf_sr_sort.pico: bcf_sr_sort.c config.h $(bcf_sr_sort_h) $(htslib_khash_str2int_h) $(htslib_kbitset_h)
@@ -512,10 +533,10 @@ htsfile: htsfile.o libhts.a
 tabix: tabix.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS) -lpthread
 
-annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h)
+annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h) $(textutils_internal_h)
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hfile_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
-tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
+tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h) $(htslib_thread_pool_h)
 
 # Runes to check that the htscodecs submodule is present
 ifdef HTSCODECS_SOURCES
@@ -552,7 +573,7 @@ htscodecs/htscodecs/version.h: force
 	  vers=`cd $(srcdir)/htscodecs && git describe --always --dirty --match 'v[0-9]\.[0-9]*'` && \
 	  case "$$vers" in \
 	    v*) vers=$${vers#v} ;; \
-	    *) iv=`awk '/^AC_INIT/ { match($$0, /^AC_INIT\(htscodecs, *([0-9](\.[0-9])*)\)/, m); print substr($$0, m[1, "start"], m[1, "length"]) }' $(srcdir)/htscodecs/configure.ac` ; vers="$$iv$${vers:+-g$$vers}" ;; \
+	    *) iv=`awk '/^AC_INIT\(htscodecs,/ { match($$0, /[0-9]+(\.[0-9]+)*/); print substr($$0, RSTART, RLENGTH) }' $(srcdir)/htscodecs/configure.ac` ; vers="$$iv$${vers:+-g$$vers}" ;; \
 	  esac ; \
 	  if ! grep -s -q '"'"$$vers"'"' $@ ; then \
 	    echo 'Updating $@ : #define HTSCODECS_VERSION_TEXT "'"$$vers"'"' ; \
@@ -591,7 +612,9 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	test/hts_endian
 	test/test_expr
 	test/test_kfunc
+	test/test_khash
 	test/test_kstring
+	test/test_nibbles -v
 	test/test_str2int
 	test/test_time_funcs
 	test/fieldarith test/fieldarith.sam
@@ -643,22 +666,28 @@ test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
 
 test/test_bgzf: test/test_bgzf.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a $(LIBS) -lpthread
 
 test/test_expr: test/test_expr.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a $(LIBS) -lpthread
 
 test/test_faidx: test/test_faidx.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_faidx.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_faidx.o libhts.a $(LIBS) -lpthread
 
 test/test_kfunc: test/test_kfunc.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a $(LIBS) -lpthread
+
+test/test_khash: test/test_khash.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_khash.o libhts.a $(LIBS) -lpthread
 
 test/test_kstring: test/test_kstring.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a $(LIBS) -lpthread
 
 test/test_mod: test/test_mod.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_mod.o libhts.a $(LIBS) -lpthread
+
+test/test_nibbles: test/test_nibbles.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_nibbles.o libhts.a $(LIBS) -lpthread
 
 test/test_realn: test/test_realn.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
@@ -688,10 +717,10 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LIBS) -lpthread
 
 test/test-bcf-sr: test/test-bcf-sr.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a $(LIBS) -lpthread
 
 test/test-bcf-translate: test/test-bcf-translate.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a $(LIBS) -lpthread
 
 test/test_introspection: test/test_introspection.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_introspection.o libhts.a $(LIBS) -lpthread
@@ -760,8 +789,10 @@ test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_fa
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
+test/test_khash.o: test/test_khash.c config.h $(htslib_khash_h) $(htslib_kroundup_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
+test/test_nibbles.o: test/test_nibbles.c config.h $(htslib_sam_h) $(sam_internal_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_kstring_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(textutils_internal_h)
@@ -784,25 +815,25 @@ test/usepublic.o: test/usepublic.cpp config.h $(htslib_bgzf_h) $(htslib_cram_h) 
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads2: test/thrash_threads2.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads3: test/thrash_threads3.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads4: test/thrash_threads4.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads5: test/thrash_threads5.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads6: test/thrash_threads6.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a $(LIBS) -lpthread
 
 test/thrash_threads7: test/thrash_threads7.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a $(LIBS) -lpthread
 
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
@@ -905,8 +936,9 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* test/faidx/FAIL* \
-               test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* \
+	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* \
+               test/longrefs/*.tmp.* test/tabix/*.tmp.* \
+               test/bgzf_boundaries/*.tmp.* test/*/FAIL* \
                header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	-rm -rf htscodecs/tests/test.out
 
@@ -970,3 +1002,4 @@ force:
 .PHONY: clean-dylib install-dylib
 .PHONY: test_htscodecs_rans4x8 test_htscodecs_rans4x16 test_htscodecs_arith
 .PHONY: test_htscodecs_tok3 test_htscodecs_fqzcomp test_htscodecs_varint
+.PHONY: cc-version

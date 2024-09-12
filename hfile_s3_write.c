@@ -822,7 +822,7 @@ static hFILE *vhopen_s3_write(const char *url, const char *mode, va_list args) {
 }
 
 
-static void s3_write_exit() {
+static void s3_write_exit(void) {
     if (curl_share_cleanup(curl.share) == CURLSHE_OK)
         curl.share = NULL;
 

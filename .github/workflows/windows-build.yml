@@ -1,0 +1,41 @@
+name: Windows/MinGW-W64 CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Set up MSYS2 MinGW-W64
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: mingw64
+        update: false
+        install: >-
+          mingw-w64-x86_64-autotools
+          mingw-w64-x86_64-bzip2
+          mingw-w64-x86_64-curl
+          mingw-w64-x86_64-libdeflate
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-tools-git
+          mingw-w64-x86_64-xz
+          mingw-w64-x86_64-zlib
+    - name: Compile htslib
+      shell: msys2 {0}
+      run: |
+        export PATH="/mingw64/bin:$PATH:/c/Program Files/Git/bin"
+        export MSYSTEM=MINGW64
+        autoreconf -i
+        ./configure --enable-werror
+        make cc-version
+        make -j6
+    - name: Check Htslib
+      shell: msys2 {0}
+      run: |
+        export PATH="/mingw64/bin:$PATH:/c/Program Files/Git/bin"
+        export MSYSTEM=MINGW64
+        make test-shlib-exports && make check
+

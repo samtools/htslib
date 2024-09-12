@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2020, 2022-2023 Genome Research Ltd.
+    Copyright (C) 2014-2020, 2022-2024 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -1408,16 +1408,16 @@ static void check_big_ref(int parse_header)
         "@HD\tVN:1.4\n"
         "@SQ\tSN:large#1\tLN:5000000000\n"
         "@SQ\tSN:small#1\tLN:100\n"
-        "@SQ\tSN:large#2\tLN:9223372034707292158\n"
+        "@SQ\tSN:large#2\tLN:4611686018427387904\n"
         "@SQ\tSN:small#2\tLN:1\n"
         "r1\t0\tlarge#1\t4999999000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
         "r2\t0\tsmall#1\t1\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
-        "r3\t0\tlarge#2\t9223372034707292000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
-        "p1\t99\tlarge#2\t1\t50\t8M\t=\t9223372034707292150\t9223372034707292158\tACGTACGT\tabcdefgh\n"
-        "p1\t147\tlarge#2\t9223372034707292150\t50\t8M\t=\t1\t-9223372034707292158\tACGTACGT\tabcdefgh\n"
+        "r3\t0\tlarge#2\t4611686018427387000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
+        "p1\t99\tlarge#2\t1\t50\t8M\t=\t4611686018427387895\t4611686018427387903\tACGTACGT\tabcdefgh\n"
+        "p1\t147\tlarge#2\t4611686018427387895\t50\t8M\t=\t1\t-4611686018427387903\tACGTACGT\tabcdefgh\n"
         "r4\t0\tsmall#2\t2\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n";
     const hts_pos_t expected_lengths[] = {
-        5000000000LL, 100LL, 9223372034707292158LL, 1LL
+        5000000000LL, 100LL, 4611686018427387904LL, 1LL
     };
     const int expected_tids[] = {
         0, 1, 2, 2, 2, 3
@@ -1426,11 +1426,11 @@ static void check_big_ref(int parse_header)
         -1, -1, -1, 2, 2, -1
     };
     const hts_pos_t expected_positions[] = {
-        4999999000LL - 1, 1LL - 1, 9223372034707292000LL - 1, 1LL - 1,
-        9223372034707292150LL - 1, 2LL - 1
+        4999999000LL - 1, 1LL - 1, 4611686018427387000LL - 1, 1LL - 1,
+        4611686018427387895LL - 1, 2LL - 1
     };
     const hts_pos_t expected_mpos[] = {
-        -1, -1, -1, 9223372034707292150LL - 1, 1LL - 1, -1
+        -1, -1, -1, 4611686018427387895LL - 1, 1LL - 1, -1
     };
     samFile *in = NULL, *out = NULL;
     sam_hdr_t *header = NULL, *dup_header = NULL;
@@ -1997,7 +1997,7 @@ static void test_mempolicy(void)
     }
 }
 
-static void test_bam_set1_minimal()
+static void test_bam_set1_minimal(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2028,7 +2028,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_full()
+static void test_bam_set1_full(void)
 {
     const char *qname = "!??AAA~~~~";
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
@@ -2075,7 +2075,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_even_and_odd_seq_len()
+static void test_bam_set1_even_and_odd_seq_len(void)
 {
     const char *seq_even = "TGGACTACGA";
     const char *seq_odd  = "TGGACTACGAC";
@@ -2105,7 +2105,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_with_seq_but_no_qual()
+static void test_bam_set1_with_seq_but_no_qual(void)
 {
     const char *seq = "TGGACTACGA";
 
@@ -2129,7 +2129,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_qname()
+static void test_bam_set1_validate_qname(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2146,7 +2146,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_seq()
+static void test_bam_set1_validate_seq(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2163,7 +2163,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_cigar()
+static void test_bam_set1_validate_cigar(void)
 {
     const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
@@ -2192,7 +2192,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_size_limits()
+static void test_bam_set1_validate_size_limits(void)
 {
     const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
@@ -2224,7 +2224,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_write_and_read_back()
+static void test_bam_set1_write_and_read_back(void)
 {
     const char *qname = "q1";
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };

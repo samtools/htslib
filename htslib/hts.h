@@ -489,7 +489,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 102000
+#define HTS_VERSION 102100
 
 /*! @abstract Introspection on the features enabled in htslib
  *
@@ -1532,6 +1532,13 @@ static inline int hts_bin_bot(int bin, int n_lvls)
 {
     int l = hts_bin_level(bin);
     return (bin - hts_bin_first(l)) << (n_lvls - l) * 3;
+}
+
+/// Compute the (0-based exclusive) maximum position covered by a binning index
+static inline hts_pos_t hts_bin_maxpos(int min_shift, int n_lvls)
+{
+    hts_pos_t one = 1;
+    return one << (min_shift + n_lvls * 3);
 }
 
 /**************

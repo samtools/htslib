@@ -24,14 +24,14 @@ DEALINGS IN THE SOFTWARE
 
 */
 
-/* The pupose of this code is to demonstrate the library apis and need proper error handling and optimization */
+/* The purpose of this code is to demonstrate the library apis and need proper error handling and optimisation */
 
 #include <getopt.h>
 #include <unistd.h>
 #include <htslib/sam.h>
 
-/// print_usage - show flags_demo usage
-/** @param fp pointer to the file / terminal to which demo_usage to be dumped
+/// print_usage - show usage
+/** @param fp pointer to the file / terminal to which usage to be dumped
 returns nothing
 */
 static void print_usage(FILE *fp)
@@ -83,6 +83,8 @@ int main(int argc, char *argv[])
 
     //read data
     while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
+        printf("\nname: ");
+        printf("%s", bam_get_qname(bamdata));
         printf("\nsequence: ");
         for (c = 0; c < bamdata->core.l_qseq; ++c) {
             printf("%c", seq_nt16_str[bam_seqi(bam_get_seq(bamdata), c)]);
@@ -90,10 +92,11 @@ int main(int argc, char *argv[])
         if (infile->format.format == fastq_format) {
             printf("\nquality: ");
             for (c = 0; c < bamdata->core.l_qseq; ++c) {
-                printf("%c", bam_get_qual(bamdata)[c]);
+                printf("%c", bam_get_qual(bamdata)[c] + 33);
             }
         }
     }
+    printf("\n");
     if (c != -1) {
         //error
         printf("Failed to get data\n");

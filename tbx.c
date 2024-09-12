@@ -229,8 +229,11 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
             case TBX_UCSC: type = "TBX_UCSC"; break;
             default: type = "TBX_GENERIC"; break;
         }
-        hts_log_error("Failed to parse %s, was wrong -p [type] used?\nThe offending line was: \"%s\"",
-            type, str->s);
+        if (hts_is_utf16_text(str))
+            hts_log_error("Failed to parse %s: offending line appears to be encoded as UTF-16", type);
+        else
+            hts_log_error("Failed to parse %s: was wrong -p [type] used?\nThe offending line was: \"%s\"",
+                type, str->s);
         return -1;
     }
 }
@@ -321,7 +324,7 @@ static void adjust_max_ref_len_sam(const char *str, int64_t *max_ref_len)
 // files with very large contigs.
 static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
 {
-    int64_t s = 1LL << (min_shift + n_lvls * 3);
+    int64_t s = hts_bin_maxpos(min_shift, n_lvls);
     max_len += 256;
     for (; max_len > s; ++n_lvls, s <<= 3) {}
     return n_lvls;

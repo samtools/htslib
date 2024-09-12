@@ -88,17 +88,23 @@ alignment. It adds count of ATCGN base as an array in auxiliary data, BA:I.
 Modified data is written on standard output.
 
 Write_fast - This application showcases the fasta/fastq data write. It appends
-a dummy data to given file.
+data to given file.
 
 Index_write - This application showcases the creation of index along with
 output creation. Based on file type and shift, it creates bai, csi or crai
 files.
 
+Index_fast - This application showcases the index creation on fasta/fastq
+reference files.
+
 Read_reg - This application showcases the usage of region specification in
 alignment read.
 
-Read_multireg - This application showcases the usage of mulitple regionn
+Read_multireg - This application showcases the usage of multiple region
 specification in alignment read.
+
+Read_fast_index - This application showcases the fasta/fastq data read using
+index.
 
 Pileup - This application showcases the pileup api, where all alignments
 covering a reference position are accessed together. It displays the bases
@@ -131,6 +137,15 @@ handling. It saves the read1 and read2 as separate files in given directory,
 one as sam and other as bam. A pool of 4 threads is created and shared for both
 read and write.
 
+Qtask_ordered - This application showcases the use of queues and threads for
+custom processing. Alignments in input file are updated with their GC ratio
+on a custom aux tag. The processing may occur in any order but the result is
+retrieved in same order as it was queued and saved to disk.
+
+Qtask_unordered - This application showcases the use of queues and threads
+for custom processing. The count of bases and GC ratio are calculated and
+displayed.  The order of counting is irrelevant and hence ordered retrieval is
+not used.
 
 ## Building the sample apps
 
@@ -173,7 +188,7 @@ sam_read1 api. samFile pointer, header and bam storage are to be passed as
 argument and it returns 0 on success, -1 on end of file and < -1 in case of
 errors.
 
-The bam storage has to be initialised using bam_init1 api before the call and
+The bam storage has to be initialized using bam_init1 api before the call and
 can be reused for successive reads. Once done, it needs to be destroyed using
 bam_destroy1.  The member field named core - bam1_core_t - in bam storage,
 bam1_t, has the sequence data in an easily accessible way. Using the fields
@@ -185,30 +200,31 @@ and macros, data can easily be read from it.
     {
         ...
         //initialize
-        if (!(bamdata = bam_init1())) {
-        ...
+        if (!(bamdata = bam_init1()))
+           ... // error
         //open input files - r reading
-        if (!(infile = sam_open(inname, "r"))) {
-        ...
+        if (!(infile = sam_open(inname, "r")))
+           ... // error
         //read header
-        if (!(in_samhdr = sam_hdr_read(infile))) {
-        ...
+        if (!(in_samhdr = sam_hdr_read(infile)))
+           ... // error
+
         //read data, check flags and update count
         while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
-            if (bamdata->core.flag & BAM_FREAD1) {
+            if (bamdata->core.flag & BAM_FREAD1)
                 cntread1++;
-            }
-        ...
+            ...
+
         //clean up
-        if (in_samhdr) {
+        if (in_samhdr)
             sam_hdr_destroy(in_samhdr);
-        }
-        if (infile) {
+
+        if (infile)
             sam_close(infile);
-        }
-        if (bamdata) {
+
+        if (bamdata)
             bam_destroy1(bamdata);
-        }
+
         return ret;
     }
 Refer: flags_demo.c
@@ -255,21 +271,23 @@ set the reference name in the alignment. It returns -ve value on error.
     int main(int argc, char *argv[])
     {
         ...
-        if (!(infile = sam_open(inname, "r"))) {
-        ...
+        if (!(infile = sam_open(inname, "r")))
+           ... // error
         outfile1 = sam_open(file1, "w");            //as SAM
         outfile2 = sam_open(file2, "wb");           //as BAM
         ...
-        if (!(in_samhdr = sam_hdr_read(infile))) {
-        ...
+        if (!(in_samhdr = sam_hdr_read(infile)))
+           ... // error
+
         //write header
         if ((sam_hdr_write(outfile1, in_samhdr) == -1) ||
-         (sam_hdr_write(outfile2, in_samhdr) == -1)) {
-        ...
+         (sam_hdr_write(outfile2, in_samhdr) == -1))
+           ... // error
+
         while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
             if (bamdata->core.flag & BAM_FREAD1) {
                 if (sam_write1(outfile1, in_samhdr, bamdata) < 0) {
-        ...
+                    ... // error
     }
 Refer: split.c
 
@@ -284,10 +302,11 @@ Below code excerpt shows sam_open_mode api usage.
         ...
         //set file open mode based on file name for 1st and as explicit for 2nd
         if ((sam_open_mode(mode1+1, file1, NULL) == -1) ||
-         (sam_open_mode(mode2+1, file2, "sam.gz") == -1)) {
-        ...
-        if (!(infile = sam_open(inname, "r"))) {
-        ...
+         (sam_open_mode(mode2+1, file2, "sam.gz") == -1))
+           ... // error
+        if (!(infile = sam_open(inname, "r")))
+           ... // error
+
         //open output files
         outfile1 = sam_open(file1, mode1);                          //as compressed SAM through sam_open
         outfile2 = sam_open_format(file2, mode2, NULL);             //as compressed SAM through sam_open_format
@@ -321,7 +340,7 @@ api and used with sam_open_format api to create appropriate CRAM file.
             hts_parse_format(&fmt2, reffmt2) == -1 ||               //embed the reference internally
             hts_parse_format(&fmt3, "cram,embed_ref=2") == -1 ||    //embed autogenerated reference
             hts_parse_format(&fmt4, "cram,no_ref=1") == -1) {       //no reference data encoding at all
-    ...
+       ... // error
     outfile1 = sam_open_format(file1, "wc", &fmt1); outfile2 = sam_open_format(file2, "wc", &fmt2);
     ...
 Refer: cram.c
@@ -337,16 +356,20 @@ or explicit format text. This mode buffer can be used with sam_open or can be
 used with sam_open_format with explicit format information in htsFormat
 structure.
 
+It is the FASTA format which is mainly in use to store the reference data.
+
     ...
-    if (!(bamdata = bam_init1())) {
-    ...
-    if (!(infile = sam_open(inname, "r"))) {
-    ...
-    if (infile->format.format != fasta_format && infile->format.format != fastq_format) {
-    ...
-    if (!(in_samhdr = sam_hdr_read(infile))) {
-    ...
-    while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
+    if (!(bamdata = bam_init1()))
+      ... // error
+    if (!(infile = sam_open(inname, "r")))
+       ... // error
+    if (infile->format.format != fasta_format && infile->format.format != fastq_format)
+       ... // error
+    if (!(in_samhdr = sam_hdr_read(infile)))
+       ... // error
+
+    while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0)
+       ... // error
         printf("\nsequence: ");
         for (c = 0; c < bamdata->core.l_qseq; ++c) {
             printf("%c", seq_nt16_str[bam_seqi(bam_get_seq(bamdata), c)]);
@@ -354,23 +377,22 @@ structure.
         if (infile->format.format == fastq_format) {
             printf("\nquality: ");
             for (c = 0; c < bamdata->core.l_qseq; ++c) {
-                printf("%c", bam_get_qual(bamdata)[c]);
+                printf("%c", bam_get_qual(bamdata)[c] + 33);
     ...
 Refer: read_fast.c
 
     ...
     char mode[4] = "a";
     ...
-    if (sam_open_mode(mode + 1, outname, NULL) < 0) {
-    ...
-    if (!(outfile = sam_open(outname, mode))) {
-    ...
-    if (bam_set1(bamdata, sizeof("test"), "test", BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, 10, "AACTGACTGA", "1234567890", 0)
-     < 0) {
-    ...
+    if (sam_open_mode(mode + 1, outname, NULL) < 0)
+       ... // error
+    if (!(outfile = sam_open(outname, mode)))
+       ... // error
+    if (bam_set1(bamdata, strlen(name), name, BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, strlen(data), data, qual, 0) < 0)
+       ... // error
     if (sam_write1(outfile, out_samhdr, bamdata) < 0) {
         printf("Failed to write data\n");
-    ...
+        ...
 Refer: write_fast.c
 
 
@@ -388,18 +410,21 @@ line can be retrieved using sam_hdr_find_line_pos or sam_hdr_line_id with
 position and unique identifier values respectively.
 
     ...
-    if (!(in_samhdr = sam_hdr_read(infile))) {
+    if (!(in_samhdr = sam_hdr_read(infile)))
+        ... // error
     ...
-            ret = sam_hdr_find_tag_id(in_samhdr, header, id, idval, tag, &data);
-    ...
-            ret = sam_hdr_find_line_id(in_samhdr, header, id, idval, &data);
+      if (tag)
+          ret = sam_hdr_find_tag_id(in_samhdr, header, id, idval, tag, &data);
+      else
+          ret = sam_hdr_find_line_id(in_samhdr, header, id, idval, &data);
     ...
         linecnt = sam_hdr_count_lines(in_samhdr, header);
-    ...
-            ret = sam_hdr_find_tag_pos(in_samhdr, header, c, tag, &data);
-    ...
-            ret = sam_hdr_find_line_pos(in_samhdr, header, c, &data);
-    ...
+        ...
+            if (tag)
+                ret = sam_hdr_find_tag_pos(in_samhdr, header, c, tag, &data);
+            else
+                ret = sam_hdr_find_line_pos(in_samhdr, header, c, &data);
+        ...
 Refer: read_header.c
 
 This will show the VN tag's value from HD header.
@@ -417,16 +442,19 @@ Below code excerpt shows the reference names which has length above given value.
     ...
     //iterate and check each reference's length
     for (pos = 1, c = 0; c < linecnt; ++c) {
-        if ((ret = sam_hdr_find_tag_pos(in_samhdr, "SQ", c, "LN", &data) == -2)) {
-    ...
+        if ((ret = sam_hdr_find_tag_pos(in_samhdr, "SQ", c, "LN", &data) == -2))
+            ... // error
+
         size = atoll(data.s);
         if (size < minsize) {
             //not required
             continue;
         }
-        if (!(id = sam_hdr_line_name(in_samhdr, "SQ", c))) {
-            //sam_hdr_find_tag_pos(in_samhdr, "SQ", c, "SN", &data) can also do the same!
-    ...
+
+        //sam_hdr_find_tag_pos(in_samhdr, "SQ", c, "SN", &data) can also do the same!
+        if (!(id = sam_hdr_line_name(in_samhdr, "SQ", c)))
+            ... // error
+
         printf("%d,%s,%s\n", pos, id, data.s);
     ...
 Refer: read_refname.c
@@ -465,8 +493,8 @@ indexing the seq_nt16_str array.
         printf("MQUAL: %d\n", bamdata->core.qual);                              //map quality value
         cigar = bam_get_cigar(bamdata);                                         //retrieves the cigar data
         for (i = 0; i < bamdata->core.n_cigar; ++i) {                           //no. of cigar data entries
-            printf("%d%c", bam_cigar_oplen(cigar[i]), bam_cigar_opchr(cigar[i]));   //the macros gives the count of operation
-             and the symbol of operation for given cigar entry
+            printf("%d%c", bam_cigar_oplen(cigar[i]), bam_cigar_opchr(cigar[i]));
+            //the macros gives the count of operation and the symbol of operation for given cigar entry
         }
         printf("\nTLEN/ISIZE: %"PRIhts_pos"\n", bamdata->core.isize);
         data = bam_get_seq(bamdata);
@@ -475,8 +503,8 @@ indexing the seq_nt16_str array.
         ...
         for (i = 0; i < bamdata->core.l_qseq ; ++i) {       //sequence length
             printf("%c", seq_nt16_str[bam_seqi(data, i)]);  //retrieves the base from (internal compressed) sequence data
-        ...
-            printf("%c", bam_get_qual(bamdata)[i]+33);      //retrives the quality value
+            ...
+            printf("%c", bam_get_qual(bamdata)[i]+33);      //retrieves the quality value
         ...
 Refer: read_bam.c
 
@@ -516,15 +544,13 @@ given position of the array.
 
     ...
     while ((ret_r = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
-        if (i % 2) {    //use options alternatively to demonstrate both
-            //option 1 - get data as string with tag and type
-            if ((c = bam_aux_get_str(bamdata, tag, &sdata)) == 1) {
-                printf("%s\n",sdata.s);
-    ...
-            //option 2 - get raw data
-            if (!(data = bam_aux_get(bamdata, tag))) {
-    ...
-                if (printauxdata(stdout, bam_aux_type(data), -1, data) == EXIT_FAILURE) {
+        //option 1 - get data as string with tag and type
+        if ((c = bam_aux_get_str(bamdata, tag, &sdata)) == 1) {
+            printf("%s\n",sdata.s);
+        ...
+        //option 2 - get raw data
+        if ((data = bam_aux_get(bamdata, tag)) != NULL) {
+            printauxdata(stdout, bam_aux_type(data), -1, data);
     ...
 Refer: read_aux.c
 
@@ -539,8 +565,8 @@ Shows the MD aux tag from alignments.
             printf("%.2s:%c:", bam_aux_tag(data), NULL != strchr("cCsSiI", bam_aux_type(data)) ? 'i' : bam_aux_type(data));
               //macros gets the tag and type of aux data
             //dump the data
-            if (printauxdata(stdout, bam_aux_type(data), -1, data) == EXIT_FAILURE) {
-    ...
+            printauxdata(stdout, bam_aux_type(data), -1, data);
+            ...
             data = bam_aux_next(bamdata, data);                                     //get the next aux data
     ...
 Refer: dump_aux.c
@@ -563,19 +589,22 @@ sam_hdr_write api does the write of the header data to file.
 
     ...
     //add SQ line with SN as TR1 and TR2
-    if (sam_hdr_add_lines(in_samhdr, &sq[0], 0)) {                                      //length as 0 for NULL terminated data
-    ...
+    if (sam_hdr_add_lines(in_samhdr, &sq[0], 0))                                        //length as 0 for NULL terminated data
+        ... // error
+
     //add RG line with ID as RG1
-    if (sam_hdr_add_line(in_samhdr, "RG", "ID", "RG1", "LB", "Test", "SM", "S1", NULL)) {
-    ...
-    //add pg line
-    if (sam_hdr_add_pg(in_samhdr, "add_header", "VN", "Test", "CL", data.s, NULL)) {    //NULL is to indicate end of args
-    ...
-    if (sam_hdr_add_line(in_samhdr, "CO", "Test data", NULL)) {                         //NULL is to indicate end of args
-    ...
+    if (sam_hdr_add_line(in_samhdr, "RG", "ID", "RG1", "LB", "Test", "SM", "S1", NULL))
+        ... // error
+
+    //add PG/CO lines
+    if (sam_hdr_add_pg(in_samhdr, "add_header", "VN", "Test", "CL", data.s, NULL))      //NULL is to indicate end of args
+        ... // error
+    if (sam_hdr_add_line(in_samhdr, "CO", "Test data", NULL))                           //NULL is to indicate end of args
+        ... // error
+
     //write output
-    if (sam_hdr_write(outfile, in_samhdr) < 0) {
-    ...
+    if (sam_hdr_write(outfile, in_samhdr) < 0)
+        ... // error
 Refer: add_header.c
 
 Not all type of header data can be removed but where it is possible, either a
@@ -585,14 +614,14 @@ to be used. To remove all lines of a type, header type and unique identifier
 field tag are to be used.
 
     ...
-        //remove specific line
-        if (sam_hdr_remove_line_id(in_samhdr, header, id, idval)) {
-    ...
-        //remove multiple lines of a header type
-        if (sam_hdr_remove_lines(in_samhdr, header, id, NULL)) {
-    ...
-    if (sam_hdr_write(outfile, in_samhdr) < 0) {
-    ...
+
+    //remove specific line
+    if (sam_hdr_remove_line_id(in_samhdr, header, id, idval) < 0)
+        ... // error
+
+    //remove multiple lines of a header type
+    if (sam_hdr_remove_lines(in_samhdr, header, id, NULL) < 0)
+        ... // error
 Refer: rem_header.c
 
 Shows the file content after removing SQ line with SN 2.
@@ -640,13 +669,12 @@ be easier than update of existing record.
             break;
             case 3:// RNAME
             case 7:// RNEXT
-                if ((ret = sam_hdr_name2tid(in_samhdr, val)) < 0) {
-    ...
+                if ((ret = sam_hdr_name2tid(in_samhdr, val)) < 0)
+                    ... // error
                 if (field == 3) {
                     //reference
                     bamdata->core.tid = ret;
-                }
-                else {
+                } else {
                     //mate reference
                     bamdata->core.mtid = ret;
                 }
@@ -659,20 +687,21 @@ be easier than update of existing record.
             break;
             case 6:// CIGAR
             {
-    ...
+                ...
                 //get cigar array and set all data in new bam record
-                if ((ncigar = sam_parse_cigar(val, NULL, &cigar, &size)) < 0) {
-    ...
+                if ((ncigar = sam_parse_cigar(val, NULL, &cigar, &size)) < 0)
+                    ... // error
                 if (bam_set1(newbam, bamdata->core.l_qname, bam_get_qname(bamdata), bamdata->core.flag, bamdata->core.tid,
                  bamdata->core.pos, bamdata->core.qual, ncigar, cigar, bamdata->core.mtid, bamdata->core.mpos,
                   bamdata->core.isize, bamdata->core.l_qseq, (const char*)bam_get_seq(bamdata),
-                   (const char*)bam_get_qual(bamdata), bam_get_l_aux(bamdata)) < 0) {
-    ...
+                   (const char*)bam_get_qual(bamdata), bam_get_l_aux(bamdata)) < 0)
+                    ... // error
+
                 //correct sequence data as input is expected in ascii format and not as compressed inside bam!
                 memcpy(bam_get_seq(newbam), bam_get_seq(bamdata), (bamdata->core.l_qseq + 1) / 2);
                 //copy the aux data
                 memcpy(bam_get_aux(newbam), bam_get_aux(bamdata), bam_get_l_aux(bamdata));
-    ...
+            ...
             break;
             case 8:// PNEXT
                 bamdata->core.mpos = atoll(val);
@@ -681,18 +710,16 @@ be easier than update of existing record.
                 bamdata->core.isize = atoll(val);
             break;
             case 10:// SEQ
-    ...
+                ...
                 for( c = 0; c < i; ++c) {
                     bam_set_seqi(bam_get_seq(bamdata), c, seq_nt16_table[(unsigned char)val[c]]);
                 }
             break;
             case 11:// QUAL
-    ...
-                for (c = 0; c < i; ++c) {
+                ...
+                for (c = 0; c < i; ++c)
                     val[c] -= 33;               //phred score from ascii value
-                }
                 memcpy(bam_get_qual(bamdata), val, i);
-    ...
 Refer: mod_bam.c
 
 Shows data with RNAME modified to T2.
@@ -707,33 +734,32 @@ present at all, it can be appended using bam_aux_append.
     //matched to qname, update aux
     if (!(data = bam_aux_get(bamdata, tag))) {
         //tag not present append
-    ...
-        if (bam_aux_append(bamdata, tag, type, length, (const uint8_t*)val)) {
-    ...
-    else {
-        char auxtype = bam_aux_type(data);
+        ... // cut: computed length and val based on tag type
+        if (bam_aux_append(bamdata, tag, type, length, (const uint8_t*)val))
+            ... // error
+    } else {
         //update the tag with newer value
+        char auxtype = bam_aux_type(data);
         switch (type) {
             case 'f':
             case 'd':
-    ...
-                if (bam_aux_update_float(bamdata, tag, atof(val))) {
-    ...
+                ...
+                if (bam_aux_update_float(bamdata, tag, atof(val)))
+                    ... // error
             case 'C':
             case 'S':
             case 'I':
-    ...
-                if (bam_aux_update_int(bamdata, tag, atoll(val))) {
-    ...
+                ...
+                if (bam_aux_update_int(bamdata, tag, atoll(val)))
+                    ... // error
             case 'Z':
-    ...
-                if (bam_aux_update_str(bamdata, tag, length, val)) {
-    ...
+                ...
+                if (bam_aux_update_str(bamdata, tag, length, val))
+                    ... // error
             case 'A':
-    ...
+                ...
                 //update the char data directly on buffer
                 *(data+1) = val[0];
-    ...
 Refer: mod_aux.c
 
 Shows the given record's MD tag set to Test.
@@ -743,12 +769,14 @@ Shows the given record's MD tag set to Test.
 The array aux fields can be updated using bam_aux_update_array api.
 
     ...
-    if (bam_aux_update_array(bamdata, "BA", 'I', sizeof(cnt)/sizeof(cnt[0]), cnt)) {
-    ...
+    if (bam_aux_update_array(bamdata, "BA", 'I', sizeof(cnt)/sizeof(cnt[0]), cnt))
+        ... // error
 Refer: mod_aux_ba.c
 
 Shows the records updated with an array of integers, containing count of ACGT
-and N in that order.
+and N in that order. The bases are decoded before count for the sake of
+simplicity. Refer qtask_ordered.c for a better counting where decoding is made
+outside the loop.
 
     ./mod_aux_ba samtools/test/mpileup/mpileup.1.bam
 
@@ -761,14 +789,14 @@ can be read easily. There are different type of indices, BAI, CSI, CRAI, TBI,
 FAI etc. and are usually used with iterators.
 
 Indexing of plain/textual files are not supported, compressed SAM&FASTA/Q, BAM,
-and CRAM files can be indexed. CRAM files are indexed as .crai and the other two
-can be indexed as .bai or .csi files. Each of these types have different
-internal representations of the index information. Bai uses a fixed
-configuration values where as csi has them dynamically updated based on the
-alignment data.
+and CRAM files can be indexed. CRAM files are indexed as .crai and the others
+as .bai, .csi, .fai etc. Each of these types have different internal
+representations of the index information. Bai uses a fixed configuration values
+where as csi has them dynamically updated based on the alignment data.
 
 Indexes can be created either with save of alignment data or explicitly by
-read of existing alignment file.
+read of existing alignment file for alignment data (SAM/BAM/CRAM). For reference
+data it has to be explicitly created (FASTA).
 
 To create index along with alignment write, the sam_idx_init api need to be
 invoked before the start of alignment data write. This api takes the output
@@ -777,16 +805,17 @@ index, the min shift has to be 0.
 
 At the end of write, sam_idx_save api need to be invoked to save the index.
 
+    ...
     //write header
-    if (sam_hdr_write(outfile, in_samhdr)) {
-    ...
+    if (sam_hdr_write(outfile, in_samhdr))
+        ... // error
     // initialize indexing, before start of write
-    if (sam_idx_init(outfile, in_samhdr, size, fileidx)) {
-    ...
-        if (sam_write1(outfile, in_samhdr, bamdata) < 0) {
-    ...
-    if (sam_idx_save(outfile)) {
-    ...
+    if (sam_idx_init(outfile, in_samhdr, size, fileidx))
+        ... // error
+        if (sam_write1(outfile, in_samhdr, bamdata) < 0)
+            ... // error
+    if (sam_idx_save(outfile))
+        ... // error
 Refer:index_write.c
 
 Creates mpileup.1.bam and mpileup.1.bam.bai in /tmp/.
@@ -802,6 +831,20 @@ shift passed.
 The sam_index_build2 api takes the index file path as well and gives more
 control than the previous one.  The sam_index_build3 api provides an option to
 configure the number of threads in index creation.
+
+Index for reference data can be created using fai_build3 api. This creates
+index file with .fai extension. If the file is bgzip-ped, a .gzi file is
+created as well. It takes the path to input file and that of fai and gzi files.
+When fai/gzi path are NULL, they are created along with input file.
+These index files will be useful for reference data access.
+
+    ...
+    if (fai_build3(filename, NULL, NULL) == -1)
+        ... // error
+Refer: index_fast.c
+
+A tabix index can be created for compressed vcf/sam/bed and other data using
+tbx_index_build. It is mainly used with vcf and non-sam type files.
 
 
 ### Read with iterators
@@ -849,18 +892,19 @@ sam_itr_destroy and hts_idx_destroy apis does this.
 
     ...
     //load index file
-    if (!(idx = sam_index_load2(infile, inname, idxfile))) {
-    ...
+    if (!(idx = sam_index_load2(infile, inname, idxfile)))
+        ... // error
     //create iterator
-    if (!(iter = sam_itr_querys(idx, in_samhdr, region))) {
-    ...
+    if (!(iter = sam_itr_querys(idx, in_samhdr, region)))
+        ... // error
+
     //read using iterator
-    while ((c = sam_itr_next(infile, iter, bamdata)) >= 0) {
-    ...
-    if (iter) {
+    while ((c = sam_itr_next(infile, iter, bamdata)) >= 0)
+        ... // error
+
+    if (iter)
         sam_itr_destroy(iter);
-    }
-    if (idx) {
+    if (idx)
         hts_idx_destroy(idx);
     ...
 Refer:index_reg_read.c
@@ -891,19 +935,20 @@ itself.
 
     ...
     //load index file, assume it to be present in same location
-    if (!(idx = sam_index_load(infile, inname))) {
-    ...
+    if (!(idx = sam_index_load(infile, inname)))
+        ... // error
     //create iterator
-    if (!(iter = sam_itr_regarray(idx, in_samhdr, regions, regcnt))) {
-    ...
+    if (!(iter = sam_itr_regarray(idx, in_samhdr, regions, regcnt)))
+        ... // error
     if (regions) {
         //can be freed as it is no longer required
         free(regions);
         regions = NULL;
     }
+
     //get required area
-    while ((c = sam_itr_multi_next(infile, iter, bamdata) >= 0)) {
-    ...
+    while ((c = sam_itr_multi_next(infile, iter, bamdata) >= 0))
+        ... // process bamdata
 Refer:index_multireg_read.c
 
 With compressed sample.sam and 2 regions from reference T1 (30 to 32) and 1
@@ -921,13 +966,70 @@ hts_idx_destroy. The hts_reglist_t* array passed is destroyed by the library
 on iterator destroy. The regions array (array of char array/string) needs to be
 destroyed by the user itself.
 
+For fasta/fastq files, the index has to be loaded using fai_load3_format which
+takes the file, index file names and format. With single region specification
+fai_fetch64 can be used to get bases, and fai_fetchqual64 for quality in case
+of fastq data. With multiple region specification, with comma separation,
+faidx_fetch_seq64 and faidx_fetch_qual64 does the job. Regions has to be parsed
+using fai_parse_region in case of multiregion specifications. fai_adjust_region
+is used to adjust the start-end points based on available data.
+
+Below excerpt shows fasta/q access with single and multiregions,
+
+    ...
+    //load index
+    if (!(idx = fai_load3_format(inname, NULL, NULL, FAI_CREATE, fmt)))
+        ... // error
+
+    ...
+    if (!usemulti) {
+        //get data from single given region
+        if (!(data = fai_fetch64(idx, region, &len)))
+            ... // region not found
+
+        printf("Data: %"PRId64" %s\n", len, data);
+        free((void*)data);
+        //get quality for fastq type
+        if (fmt == FAI_FASTQ) {
+            if (!(data = fai_fetchqual64(idx, region, &len)))
+                ... // region not found
+        ...
+
+    } else { // usemulti
+        //parse, get each region and get data for each
+        while ((remaining = fai_parse_region(idx, region, &tid, &beg, &end, HTS_PARSE_LIST))) {     //here expects regions as csv
+            //parsed the region, correct end points based on actual data
+            if (fai_adjust_region(idx, tid, &beg, &end) == -1)
+                ... // error
+            //get data for given region
+            if (!(data = faidx_fetch_seq64(idx, faidx_iseq(idx, tid), beg, end, &len)))
+                ... // region not found
+
+            printf("Data: %"PRIhts_pos" %s\n", len, data);
+            free((void*)data);
+            data = NULL;
+            //get quality data for fastq
+            if (fmt == FAI_FASTQ) {
+                if (!(data = faidx_fetch_qual64(idx, faidx_iseq(idx, tid), beg, end, &len)))
+                    ... // error
+                printf("Qual: %"PRIhts_pos" %s\n", len, data);
+                free((void*)data);
+            ...
+            region = remaining;                                     //parse remaining region defs
+
+    ...
+    if (idx) {
+        fai_destroy(idx);
+    ...
+Refer: read_fast_index.c
+
 
 ### Pileup and MPileup
 
 Pileup shows the transposed view of the SAM alignment data, i.e. it shows the
-the reference positions and bases which cover that position through different
-reads side by side. MPileup facilitates the piling up of multiple sam files
-against each other and same reference at the same time.
+reference positions and bases which cover that position through different reads
+side by side. MPileup facilitates the piling up of multiple sam files against
+each other and same reference at the same time.
 
 Mpileup has replaced the pileup. The input expects the data to be sorted by
 position.
@@ -978,8 +1080,8 @@ above the cache limit are discarded.
 Once done, the pileup iterator to be discarded by sam_plp_destroy api.
 
     ...
-    if (!(plpiter = bam_plp_init(readdata, &conf))) {
-    ...
+    if (!(plpiter = bam_plp_init(readdata, &conf)))
+        ... // error
     //set constructor destructor callbacks
     bam_plp_constructor(plpiter, plpconstructor);
     bam_plp_destructor(plpiter, plpdestructor);
@@ -1011,7 +1113,7 @@ Once done, the pileup iterator to be discarded by sam_plp_destroy api.
                     printf("?");
                 }
     ...
-    if (plpiter) {
+    if (plpiter)
         bam_plp_destroy(plpiter);
     ...
 Refer:pileup.c
@@ -1067,8 +1169,8 @@ above the cache limit are discarded.
 Once done, the pileup iterator to be discarded by sam_mplp_destroy api.
 
     ...
-    if (!(mplpiter = bam_mplp_init(argc - 1, readdata, (void**) conf))) {
-    ...
+    if (!(mplpiter = bam_mplp_init(argc - 1, readdata, (void**) conf)))
+        ... // error
     //set constructor destructor callbacks
     bam_mplp_constructor(mplpiter, plpconstructor);
     bam_mplp_destructor(mplpiter, plpdestructor);
@@ -1134,13 +1236,13 @@ end of processing, the state need to be released using hts_base_mod_state_free
 api.
 
     ...
-    if (!(ms = hts_base_mod_state_alloc())) {
-    ...
+    if (!(ms = hts_base_mod_state_alloc()))
+        ... // error
     while ((ret_r = sam_read1(infile, in_samhdr, bamdata)) >= 0)
     {
-    ...
-        if (bam_parse_basemod(bamdata, ms)) {
-    ...
+        ...
+        if (bam_parse_basemod(bamdata, ms))
+            ... // error
         bm = bam_mods_recorded(ms, &cnt);
         for (k = 0; k < cnt; ++k) {
             printf("%c", bm[k]);
@@ -1191,7 +1293,7 @@ api.
             }
         }
     ...
-    if (ms) {
+    if (ms)
         hts_base_mod_state_free(ms);
     ...
 Refer:modstate.c
@@ -1221,7 +1323,7 @@ api.
     {
     ...
     if (!(plpiter = bam_plp_init(readdata, &conf))) {
-    ...
+        ... // error
     //set constructor destructor callbacks
     bam_plp_constructor(plpiter, plpconstructor);
     bam_plp_destructor(plpiter, plpdestructor);
@@ -1238,11 +1340,11 @@ api.
             }
             /*invoke bam mods_mods_at_qpos before bam_plp_insertion_mod that the base modification
             is retrieved before change in pileup pos thr' plp_insertion_mod call*/
-            if ((modlen = bam_mods_at_qpos(plp[j].b, plp[j].qpos, plp[j].cd.p, mods, NMODS)) == -1) {
-    ...
+            if ((modlen = bam_mods_at_qpos(plp[j].b, plp[j].qpos, plp[j].cd.p, mods, NMODS)) == -1)
+                ... // error
             //use plp_insertion/_mod to get insertion and del at the same position
-            if ((inslen = bam_plp_insertion_mod(&plp[j], (hts_base_mod_state*)plp[j].cd.p, &insdata, &dellen)) == -1) {
-    ...
+            if ((inslen = bam_plp_insertion_mod(&plp[j], (hts_base_mod_state*)plp[j].cd.p, &insdata, &dellen)) == -1)
+                ... // error
             //start and end are displayed in UPPER and rest on LOWER, only 1st modification considered
             //base and modification
             printf("%c%c%c", plp[j].is_head ? toupper(seq_nt16_str[bam_seqi(bam_get_seq(plp[j].b), plp[j].qpos)]) :
@@ -1260,7 +1362,7 @@ api.
                     printf("-%d", dellen);
                     for (k = 0; k < dellen; ++k) {
                         printf("?");
-    ...
+                ...
             else if (plp[j].indel < 0) {
                 //deletion
                 printf("%d", plp[j].indel);
@@ -1285,17 +1387,18 @@ data and a combination of flags for the required fields can be passed with
 CRAM_OPT_REQUIRED_FIELDS to this api.
 
     ...
-       //select required field alone, this is useful for CRAM alone
-       if (hts_set_opt(infile, CRAM_OPT_REQUIRED_FIELDS, SAM_FLAG) < 0) {
-    ...
-       //read header
-       in_samhdr = sam_hdr_read(infile);
+    //select required field alone, this is useful for CRAM alone
+    if (hts_set_opt(infile, CRAM_OPT_REQUIRED_FIELDS, SAM_FLAG) < 0)
+        ... // error
+
+    //read header
+    in_samhdr = sam_hdr_read(infile);
     ...
     //read data, check flags and update count
     while ((c = sam_read1(infile, in_samhdr, bamdata)) >= 0) {
-        if (bamdata->core.flag & BAM_FREAD1) {
+        if (bamdata->core.flag & BAM_FREAD1)
             cntread1++;
-    ...
+        ...
 Refer: flags_htsopt_field.c
 
 
@@ -1303,48 +1406,248 @@ Refer: flags_htsopt_field.c
 
 The HTSLib api supports thread pooling for better performance. There are a few
 ways in which this can be used. The pool can be made specific for a file or a
-generic pool can be created and shared across multiple files. Another way to
-use thread pool is to schedule tasks explicitly to queues which gets executed
-using threads in pool.
+generic pool can be created and shared across multiple files. Thread pool can
+also be used to execute user defined tasks. The tasks are to be added to queue,
+threads in pool executes them and results can be queued back if required.
 
 To have a thread pool specific for a file, hts_set_opt api can be used with the
-file pointer, HTS_OPT_NTHREADS and the number of threads to use in the pool.
-Closure of file releases the thread pool as well. To have a thread pool which
-can be shared across different files, it needs to be initialized using
-hts_tpool_init api, passing number of threads as argument. This thread pool can
-be associated with a file using hts_set_opt api. The file pointer,
-HTS_OPT_THREAD_POOL and the thread pool address are to be passed as arguments
-to api. The thread pool has to be released with hts_tpool_destroy.
+file pointer, HTS_OPT_NTHREADS and the number of threads to be in the pool.
+Thread pool is released on closure of file. To have a thread pool which can be
+shared across different files, it needs to be initialized using hts_tpool_init
+api, passing number of threads as an argument. This thread pool can be
+associated with a file using hts_set_opt api. The file pointer,
+HTS_OPT_THREAD_POOL and the thread pool address are to be passed as arguments to
+the api. The thread pool has to be released with hts_tpool_destroy.
+
+The samples are trivial ones to showcase the usage of api. The number of threads
+to use for different tasks has to be identified based on complexity and
+parallelism of the task.
 
 Below excerpt shows file specific thread pool,
 
     ...
     //create file specific threads
-    if (hts_set_opt(infile, HTS_OPT_NTHREADS, 2) < 0 ||     //2 thread specific for reading
+    if (hts_set_opt(infile, HTS_OPT_NTHREADS, 1) < 0 ||     //1 thread specific for reading
     hts_set_opt(outfile1, HTS_OPT_NTHREADS, 1) < 0 ||       //1 thread specific for sam write
-    hts_set_opt(outfile2, HTS_OPT_NTHREADS, 1) < 0) {       //1 thread specific for bam write
+    hts_set_opt(outfile2, HTS_OPT_NTHREADS, 2) < 0) {       //2 thread specific for bam write
         printf("Failed to set thread options\n");
         goto end;
     }
 Refer: split_thread1.c
 
-Below excerpt shows thread pool shared across files,
+Below excerpt shows a thread pool shared across files,
 
     ...
     //create a pool of 4 threads
-    if (!(tpool.pool = hts_tpool_init(4))) {
-    ...
+    if (!(tpool.pool = hts_tpool_init(4)))
+        ... // error
     //share the pool with all the 3 files
     if (hts_set_opt(infile, HTS_OPT_THREAD_POOL, &tpool) < 0 ||
     hts_set_opt(outfile1, HTS_OPT_THREAD_POOL, &tpool) < 0 ||
     hts_set_opt(outfile2, HTS_OPT_THREAD_POOL, &tpool) < 0) {
-    ...
-    if (tpool.pool) {
+        ... // error
+
+    ... // do something
+
+    //tidy up at end
+    if (tpool.pool)
         hts_tpool_destroy(tpool.pool);
-    }
     ...
 Refer: split_thread2.c
 
+Note that it is important to analyze the task in hand to decide the number of
+threads to be used. As an example, if the number of threads for reading is set
+to 2 and bam write to 1, keeping total number of threads the same, the
+performance may decrease as bam decoding is easier than encoding.
+
+Custom task / user defined functions can be performed on data using thread pool
+and for that, the task has to be scheduled to a queue. Thread pool associated
+with the queue will perform the task. There can be multiple pools and queues.
+The order of execution of threads are decided based on many factors and load on
+each task may vary, so the completion of the tasks may not be in the order of
+their queueing. The queues can be used in two different ways, one where the
+result is enqueued to queue again to be read in same order as initial queueing,
+second where the resuls are not enqueued and completed possibly in a different
+order than initial queueing. Explicitly created threads can also be used along
+with hts thread pool usage.
+
+hts_tpool_process_init initializes the queue / process, associates a queue with
+thread pool and reserves space for given number of tasks on queue. It takes a
+parameter indicating whether the result need to be enqueued for retrieval or
+not. If the result is enqueued, it is retrieved in the order of scheduling of
+task. Another parameter sets the maximum number of slots for tasks in queue,
+usually 2 times the number of threads are used. The input and output have their
+own queues and they grow as required upto the max set. hts_tpool_dispatch api
+enqueues the task to the queue. The api blocks when there is no space in queue.
+This behavior can be controlled with hts_tpool_dispatch2 api. The queue can be
+reset using hts_tpool_process_reset api where all tasks are discarded. The api
+hts_tpool_dispatch3 supports configuring cleanup routines which are to be run
+when reset occurs on the queue. hts_tpool_process_flush api can ensure that
+all the piled up tasks are processed, a possible case when the queueing and
+processing happen at different speeds. hts_tpool_process_shutdown api stops the
+processing of queue.
+
+There are a few apis which let the user to check the status of processing. The
+api hts_tpool_process_empty shows whether all the tasks are completed or not.
+The api hts_tpool_process_sz gives the number of tasks, at different states of
+processing. The api hts_tpool_process_len gives the number of results in output
+queue waiting to be collected.
+
+The order of execution of tasks depends on the number of threads involved and
+how the threads are scheduled by operating system. When the results are enqueued
+back to queue, they are read in same order of enqueueing of task and in that
+case the order of execution will not be noticed. When the results are not
+enqueued the results are available right away and the order of execution may be
+noticeable. Based on the nature of task and the need of order maintenance, users
+can select either of the queueing.
+
+Below excerpts shows the usage of queues and threads in both cases. In the 1st,
+alignments are updated with an aux tag indicating GC ratio. The order of data
+has to be maintained even after update, hence the result queueing is used to
+ensure same order as initial. A number of alignments are bunched together and
+reuse of allocated memory is made to make it perform better. A sentinel job is
+used to identify the completion of all tasks at the result collection side.
+    ...
+    void *thread_ordered_proc(void *args)
+    {
+        ...
+        for ( i = 0; i < bamdata->count; ++i) {
+            ...
+            for (pos = 0; pos < bamdata->bamarray[i]->core.l_qseq; ++pos)
+                count[bam_seqi(data,pos)]++;
+            ...
+            gcratio = (count[2] /*C*/ + count[4] /*G*/) / (float) (count[1] /*A*/ + count[8] /*T*/ + count[2] + count[4]);
+
+            if (bam_aux_append(bamdata->bamarray[i], "xr", 'f', sizeof(gcratio), (const uint8_t*)&gcratio) < 0) {
+
+    ...
+    void *threadfn_orderedwrite(void *args)
+    {
+        ...
+        //get result and write; wait if no result is in queue - until shutdown of queue
+        while (tdata->result == 0 &&
+            (r = hts_tpool_next_result_wait(tdata->queue)) != NULL) {
+            bamdata = (data*) hts_tpool_result_data(r);
+            ...
+            for (i = 0; i < bamdata->count; ++i) {
+                if (sam_write1(tdata->outfile, tdata->samhdr, bamdata->bamarray[i]) < 0) {
+                    ... // error
+            ...
+            hts_tpool_delete_result(r, 0);              //release the result memory
+            ...
+
+        // Shut down the process queue.  If we stopped early due to a write failure,
+        // this will signal to the other end that something has gone wrong.
+        hts_tpool_process_shutdown(tdata->queue);
+
+    ...
+    int main(int argc, char *argv[])
+    {
+        ...
+        if (!(pool = hts_tpool_init(cnt)))                  //thread pool
+            ... // error
+        tpool.pool = pool;      //to share the pool for file read and write as well
+        //queue to use with thread pool, for task and results
+        if (!(queue = hts_tpool_process_init(pool, cnt * 2, 0))) {
+    ...
+        //share the thread pool with i/o files
+        if (hts_set_opt(infile, HTS_OPT_THREAD_POOL, &tpool) < 0 ||
+            hts_set_opt(outfile, HTS_OPT_THREAD_POOL, &tpool) < 0)
+            ... // error
+        if (pthread_create(&thread, NULL, threadfn_orderedwrite, &twritedata))
+            ... // error
+        while (c >= 0) {
+            if (!(bamdata = getbamstorage(chunk, &bamcache)))
+                ... // error
+            for (cnt = 0; cnt < bamdata->maxsize; ++cnt) {
+                c = sam_read1(infile, in_samhdr, bamdata->bamarray[cnt]);
+                ...
+                if (hts_tpool_dispatch3(pool, queue, thread_ordered_proc, bamdata,
+                                        cleanup_bamstorage, cleanup_bamstorage,
+                                        0) == -1)
+                    ... // error
+        ...
+        if (queue) {
+            if (-1 == c) {
+                // EOF read, send a marker to tell the threadfn_orderedwrite()
+                // function to shut down.
+                if (hts_tpool_dispatch(pool, queue, thread_ordered_proc,
+                                    NULL) == -1) {
+                    ... // error
+                hts_tpool_process_shutdown(queue);
+
+        ...
+        // Wait for threadfn_orderedwrite to finish.
+        if (started_thread) {
+            pthread_join(thread, NULL);
+
+        ...
+        if (queue) {
+            // Once threadfn_orderedwrite has stopped, the queue can be
+            // cleaned up.
+            hts_tpool_process_destroy(queue);
+        }
+    ...
+Refer: qtask_ordered.c
+
+In this 2nd, the bases are counted and GC ratio of whole file is calculated.
+Order in which bases are counted is not relevant and no result queue required.
+The queue is created as input only.
+    ...
+    void *thread_unordered_proc(void *args)
+    {
+        ...
+        for ( i = 0; i < bamdata->count; ++i) {
+            data = bam_get_seq(bamdata->bamarray[i]);
+            for (pos = 0; pos < bamdata->bamarray[i]->core.l_qseq; ++pos)
+                counts[bam_seqi(data, pos)]++;
+
+        ...
+        //update result and add the memory block for reuse
+        pthread_mutex_lock(&bamdata->cache->lock);
+        for (i = 0; i < 16; i++) {
+            bamdata->bases->counts[i] += counts[i];
+        }
+
+        bamdata->next = bamdata->cache->list;
+        bamdata->cache->list = bamdata;
+        pthread_mutex_unlock(&bamdata->cache->lock);
+
+    ...
+    int main(int argc, char *argv[])
+    {
+        ...
+        if (!(queue = hts_tpool_process_init(pool, cnt * 2, 1)))
+            ... // error
+        c = 0;
+        while (c >= 0) {
+            ...
+            for (cnt = 0; cnt < bamdata->maxsize; ++cnt) {
+                c = sam_read1(infile, in_samhdr, bamdata->bamarray[cnt]);
+
+            ...
+            if (c >= -1 ) {
+                ...
+                if (hts_tpool_dispatch3(pool, queue, thread_unordered_proc, bamdata,
+                                        cleanup_bamstorage, cleanup_bamstorage,
+                                        0) == -1)
+                    ... // error
+        ...
+        if (-1 == c) {
+            // EOF read, ensure all are processed, waits for all to finish
+            if (hts_tpool_process_flush(queue) == -1) {
+                fprintf(stderr, "Failed to flush queue\n");
+            } else { //all done
+                //refer seq_nt16_str to find position of required bases
+                fprintf(stdout, "GCratio: %f\nBase counts:\n",
+                    (gccount.counts[2] /*C*/ + gccount.counts[4] /*G*/) / (float)
+                        (gccount.counts[1] /*A*/ + gccount.counts[8] /*T*/ +
+                            gccount.counts[2] + gccount.counts[4]));
+        ...
+        if (queue) {
+            hts_tpool_process_destroy(queue);
+        }
+Refer: qtask_unordered.c
 
 ## More Information
 
@@ -1421,9 +1724,9 @@ be destroyed as many times with sam_hdr_destroy api.
 ### Index
 
 Indices need the data to be sorted by position.  They can be of different
-types with extension .bai, .csi or .tbi for compressed SAM/BAM files and .crai
-for CRAM files.  The index name can be passed along with the alignment file
-itself by appending a specific character sequence. The apis can detect this
+types with extension .bai, .csi or .tbi for compressed SAM/BAM/VCF files and
+.crai for CRAM files.  The index name can be passed along with the alignment
+file itself by appending a specific character sequence. The apis can detect this
 sequence and extract the index path. ##idx## is the sequence which separates
 the file path and index path.
 

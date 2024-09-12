@@ -819,6 +819,43 @@ sub test_view
         }
     }
 
+    # BAM files with alignment records that span BGZF blocks
+    # HTSlib starts a new block if an alignment is likely to overflow the
+    # current one, so for its own data this will only happen for records
+    # longer than 64kbytes.  As other implementations may not do this,
+    # check that reading works correctly on some BAM files where records
+    # have been deliberately split between BGZF blocks.
+    print "test_view testing BAM records in multiple BGZF blocks:\n";
+    $test_view_failures = 0;
+    my $src_sam = "ce#1.sam";
+    foreach my $test_bam (qw(bgzf_boundaries/bgzf_boundaries1.bam
+                          bgzf_boundaries/bgzf_boundaries2.bam
+                          bgzf_boundaries/bgzf_boundaries3.bam)) {
+        testv $opts, "./test_view $tv_args -p $test_bam.tmp.sam $test_bam";
+        testv $opts, "./compare_sam.pl $test_bam.tmp.sam $src_sam";
+    }
+
+    # Test a file with a long alignment record.  Boundaries hit in the middle of
+    # the CIGAR data, and in the sequence.  Generate the test file here as it's
+    # big, but with fairly simple contents.
+    $src_sam = "bgzf_boundaries/large_rec.tmp.sam";
+    open(my $test_sam, '>', $src_sam) || die "Couldn't open $src_sam : $!\n";
+    print $test_sam "\@HD\tVN:1.6\tSO:coordinate\n";
+    print $test_sam "\@SQ\tSN:ref\tLN:100000\n";
+    print $test_sam "read\t0\tref\t1\t60\t", "1M1I" x 16000, "\t*\t0\t0\t", "A" x 32000, "\t", "Q" x 32000, "\n";
+    close($test_sam) || die "Error on closing $src_sam : $!\n";
+
+    testv $opts, "./test_view $tv_args -b -l 0 -p $src_sam.bam $src_sam";
+    testv $opts, "./test_view $tv_args -p $src_sam.bam.sam $src_sam.bam";
+    testv $opts, "./compare_sam.pl $src_sam $src_sam.bam.sam";
+
+    if ($test_view_failures == 0) {
+        passed($opts, "BAM records spanning multiple BGZF block tests");
+    } else {
+        failed($opts, "BAM records spanning multiple BGZF block tests",
+               "$test_view_failures subtests failed");
+    }
+
     # embed_ref=2 mode
     print "test_view testing embed_ref=2:\n";
     $test_view_failures = 0;
@@ -849,6 +886,18 @@ sub test_view
 
     testv $opts, "./test_view $tv_args range.bam $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
+
+    # Regression check for out-of-bounds read on regions list (see
+    # samtools#2063).  As reg_insert() allocates at least four slots
+    # for chromosome regions, we need more than that many in the second
+    # chr. requested to ensure it has a bigger array.
+
+    $regions = "CHROMOSOME_I:1122-1122 CHROMOSOME_II:1136-1136 CHROMOSOME_II:1241-1241 CHROMOSOME_II:1267-1267 CHROMOSOME_II:1326-1326 CHROMOSOME_II:1345-1345 CHROMOSOME_II:1353-1353 CHROMOSOME_II:1366-1366 CHROMOSOME_II:1416-1416 CHROMOSOME_II:1459-1459 CHROMOSOME_II:1536-1536";
+    testv $opts, "./test_view $tv_args -i reference=ce.fa -M range.cram $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out2";
+
+    testv $opts, "./test_view $tv_args -M range.bam $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out2";
 
     if ($test_view_failures == 0) {
         passed($opts, "range.cram tests");
@@ -1414,4 +1463,19 @@ sub test_annot_tsv
     run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.4.txt',args=>'-m smpl -f smpl');
     run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.5.txt',args=>'-m smpl ');
     run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 -h 0:0');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2 -II');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:-1 -II');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.2.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.2.txt',args=>'-c chr2,beg2,end2:chr,beg,end -f smpl2:src_smpl -h 3:2');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.3.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2 -I');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.3.txt',args=>'-c chr2,beg2,end2:chr,beg,end -f smpl2:src_smpl -h 3:2 -I');
+    run_annot_tsv($opts,src=>'src.12.txt',dst=>'dst.12.txt',out=>'out.12.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 -h 0:0 -d ,');
+    run_annot_tsv($opts,src=>'src.12.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>q[-c 1,2,3:1,2,3 -f 4:5 -h 0:0 -d $',:\t']);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.1.txt',args=>q[-c 1,2,3 -f 4:5]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.1.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.2.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5 -r]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.2.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5,0.5]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.3.txt',args=>q[-c 1,2,3 -f 4:5 -O 0,1]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.4.txt',args=>q[-c 1,2,3 -f 4:5 -O 1,0]);
 }

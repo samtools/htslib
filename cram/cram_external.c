@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015, 2018-2020, 2022-2023 Genome Research Ltd.
+Copyright (c) 2015, 2018-2020, 2022-2024 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -119,6 +119,16 @@ void cram_container_set_landmarks(cram_container *c, int32_t num_landmarks,
 /* Returns true if the container is empty (EOF marker) */
 int cram_container_is_empty(cram_fd *fd) {
     return fd->empty_container;
+}
+
+void cram_container_get_coords(cram_container *c,
+                               int *refid, hts_pos_t *start, hts_pos_t *span) {
+    if (refid)
+        *refid = c->ref_seq_id;
+    if (start)
+        *start = c->ref_seq_start;
+    if (span)
+        *span  = c->ref_seq_span;
 }
 
 
@@ -281,7 +291,7 @@ static cram_codec *cram_codec_iter_next(cram_codec_iter *iter,
             iter->curr_map = iter->curr_map->next;
             return cc;
         }
-    } while (iter->idx <= CRAM_MAP_HASH);
+    } while (iter->idx < CRAM_MAP_HASH);
 
     // End of codecs
     return NULL;
@@ -683,6 +693,7 @@ int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice) {
             cram_free_block(blk);
             return -1;
         }
+
         if (cram_write_block(out, blk) != 0) {
             cram_free_block(blk);
             return -1;
@@ -703,6 +714,192 @@ int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice) {
 
     return 0;
 }
+
+/*
+ * Discards the next containers worth of data.
+ * Only the cram structure has been read so far.
+ *
+ * Returns 0 on success,
+ *        -1 on failure
+ */
+static int cram_skip_container(cram_fd *in, cram_container *c) {
+    // Compression header
+    cram_block *blk;
+    if (!(blk = cram_read_block(in)))
+        return -1;
+    cram_free_block(blk);
+
+    int i;
+    for (i = 0; i < c->num_landmarks; i++) {
+        cram_block_slice_hdr *hdr;
+
+        if (!(blk = cram_read_block(in)))
+            return -1;
+        if (!(hdr = cram_decode_slice_header(in, blk))) {
+            cram_free_block(blk);
+            return -1;
+        }
+        cram_free_block(blk);
+
+        int num_blocks = cram_slice_hdr_get_num_blocks(hdr), j;
+        for (j = 0; j < num_blocks; j++) {
+            blk = cram_read_block(in);
+            if (!blk) {
+                cram_free_slice_header(hdr);
+                return -1;
+            }
+            cram_free_block(blk);
+        }
+        cram_free_slice_header(hdr);
+    }
+
+    return 0;
+}
+
+
+/*
+ * Copies a container, but filtering it down to a specific region,
+ * which has already been set on the 'in' fd.
+ *
+ * This is used in e.g. samtools cat where we specified a region and discover
+ * that a region doesn't entirely span the container, so we have to select
+ * which reads we need to copy out of it.
+ *
+ * If ref_id is non-NULL we also return the last ref_id we filtered.
+ * This can be -2 if it's multi-ref and we observe more than one reference,
+ * and actual ref_id >= -1 if it's multi-ref and we observe just one ref or
+ * it's fixed reference.
+ *
+ * Returns 0 on success
+ *        -1 on error
+ */
+int cram_filter_container(cram_fd *in, cram_fd *out, cram_container *c,
+                          int *ref_id) {
+    int err = 0, fixed_ref = -3;
+
+    if (ref_id)
+        *ref_id = c->ref_seq_id;
+
+    int rid = in->range.refid == -2 ? -1 : in->range.refid;
+    if (rid != c->ref_seq_id ||
+        in->range.start > c->ref_seq_start + c->ref_seq_span-1)
+        // Except for multi-ref cases
+        if (c->ref_seq_id != -2)
+            return cram_skip_container(in, c);
+
+    // Container compression header
+    cram_block *blk = cram_read_block(in);
+    if (!blk)
+        return -1;
+    c->comp_hdr = cram_decode_compression_header(in, blk);
+    in->ctr = c;
+
+    // If it's multi-ref but a constant ref-id, then we can still do
+    // basic level chromosome filtering.  Similarly multi-ref where we're
+    // _already_ in ref "*" (unmapped) means we can just copy the container
+    // as there are no positions to filter on and "*" sorts to the end.
+    // TODO: how to tell "already in" though?
+    if (c->ref_seq_id == -2) {
+        cram_codec *cd = c->comp_hdr->codecs[DS_RI];
+        if (cd && cd->codec == E_HUFFMAN && cd->u.huffman.ncodes == 1 &&
+            // this check should be always true anyway
+            rid == cd->u.huffman.codes[0].symbol)
+            // We're in multi-ref mode, but actually the entire container
+            // matches.  So if we're in whole-chromosome mode we can just
+            // copy.
+            if (in->range.start <= 1 &&
+                in->range.end >= (INT64_MAX&(0xffffffffULL<<32))) {
+                if (ref_id)
+                    *ref_id = rid;
+                err |= cram_write_container(out, c) < 0;
+                err |= cram_write_block(out, blk);
+                return cram_copy_slice(in, out, c->num_landmarks) | -err;
+            }
+    }
+
+    // A simple read-write loop with region filtering automatically due to
+    // an earlier CRAM_OPT_RANGE request.
+    //
+    // We can hit EOF when reaching the end of the range, but we still need
+    // to manually check we don't attempt to read beyond this single container.
+
+    cram_range rng_copy = in->range;
+    in->range.start = INT64_MIN;
+    in->range.end = INT64_MAX;
+
+    bam1_t *b = bam_init1();
+    while ((c->curr_slice < c->max_slice ||
+            c->slice->curr_rec < c->slice->max_rec)) {
+        cram_slice *s;
+        if (c->slice && c->slice->curr_rec < c->slice->max_rec)
+            s = c->slice;
+        else if (c->curr_slice < c->max_slice)
+            s = cram_next_slice(in, &c);
+        else
+            break; // end of container
+        c->slice = s;
+
+        // This is more efficient if we check as a cram record instead of a
+        // bam record as we don't have to parse CIGAR end.
+        cram_record *cr = &c->slice->crecs[c->slice->curr_rec];
+        if (fixed_ref == -3)
+            fixed_ref = cr->ref_id;
+        else if (fixed_ref != cr->ref_id)
+            fixed_ref = -2;
+
+        if (rng_copy.refid != cr->ref_id) {
+            if (rng_copy.refid == -2) {
+                if (cr->ref_id > -1) {
+                    // Want unmapped, but have mapped
+                    c->slice->curr_rec++;
+                    continue;
+                }
+            } else {
+                if (rng_copy.refid > cr->ref_id || rng_copy.refid == -1) {
+                    // multi-ref and not at the correct ref yet
+                    c->slice->curr_rec++;
+                    continue;
+                } else {
+                    // multi-ref and beyond the desired ref
+                    break;
+                }
+            }
+        }
+
+        // Correct ref, but check the desired region
+        if (cr->aend < rng_copy.start) {
+            c->slice->curr_rec++;
+            continue;
+        }
+        if (cr->apos > rng_copy.end)
+            break;
+
+        // Broadly rquivalent to cram_get_bam_seq, but starting from 'cr'
+        err |= cram_to_bam(in->header, in, s, cr, s->curr_rec++, &b) < 0;
+
+        if (cram_put_bam_seq(out, b) < 0) {
+            err |= 1;
+            break;
+        }
+    }
+    bam_destroy1(b);
+
+    if (ref_id)
+        *ref_id = fixed_ref;
+
+    in->range = rng_copy;
+
+    // Avoids double frees as we stole the container from our other
+    // file descriptor.
+    in->ctr    = NULL;
+    in->ctr_mt = NULL;
+
+    err |= cram_flush(out);
+    cram_free_block(blk);
+
+    return -err;
+}
+
 
 /*
  * Renumbers RG numbers in a cram compression header.

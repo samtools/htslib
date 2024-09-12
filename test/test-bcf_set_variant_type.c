@@ -29,7 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "../htslib/hts.h"
 #include "../vcf.c"
 
-void error(const char *format, ...)
+void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -39,7 +39,7 @@ void error(const char *format, ...)
     exit(-1);
 }
 
-static void test_bcf_set_variant_type()
+static void test_bcf_set_variant_type(void)
 {
     // Test SNVs
     bcf_variant_t var1;

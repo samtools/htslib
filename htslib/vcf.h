@@ -596,7 +596,8 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
 
     HTSLIB_EXPORT
-    int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
+    int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...)
+    HTS_FORMAT(HTS_PRINTF_FMT, 2, 3);
 
     /** VCF version, e.g. VCFv4.2 */
     HTSLIB_EXPORT

@@ -640,3 +640,13 @@ HTSLIB_1.18 {
 HTSLIB_1.20 {
     tbx_conf_gaf;
 } HTSLIB_1.18;
+
+HTSLIB_1.21 {
+    cram_container_get_coords;
+    cram_container_num2offset;
+    cram_container_offset2num;
+    cram_filter_container;
+    cram_index_extents;
+    cram_num_containers;
+    cram_num_containers_between;
+} HTSLIB_1.20;

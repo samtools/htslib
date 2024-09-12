@@ -220,7 +220,7 @@ static char token_type(hts_json_token *token)
 }
 
 HTSLIB_EXPORT
-hts_json_token * hts_json_alloc_token() {
+hts_json_token * hts_json_alloc_token(void) {
     return calloc(1, sizeof(hts_json_token));
 }
 

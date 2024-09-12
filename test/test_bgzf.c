@@ -1,6 +1,6 @@
 /* test/test_bgzf.c -- bgzf unit tests
 
-   Copyright (C) 2017, 2019, 2022-2023 Genome Research Ltd
+   Copyright (C) 2017, 2019, 2022-2024 Genome Research Ltd
 
    Author: Robert Davies <rmd@sanger.ac.uk>
 
@@ -179,7 +179,7 @@ static int try_bgzf_close(BGZF **bgz, const char *name, const char *func, int ex
 
 static ssize_t try_bgzf_read(BGZF *fp, void *data, size_t length,
                              const char *name, const char *func) {
-    ssize_t got = bgzf_read(fp, data, length);
+    ssize_t got = bgzf_read_small(fp, data, length);
     if (got < 0) {
         fprintf(stderr, "%s : Error from bgzf_read %s : %s\n",
                 func, name, strerror(errno));
@@ -189,7 +189,7 @@ static ssize_t try_bgzf_read(BGZF *fp, void *data, size_t length,
 
 static ssize_t try_bgzf_write(BGZF *fp, const void *data, size_t length,
                               const char *name, const char *func) {
-    ssize_t put = bgzf_write(fp, data, length);
+    ssize_t put = bgzf_write_small(fp, data, length);
     if (put < (ssize_t) length) {
         fprintf(stderr, "%s : %s %s : %s\n",
                 func, put < 0 ? "Error writing to" : "Short write on",
@@ -878,6 +878,49 @@ static int test_tell_read(Files *f, const char *mode) {
     return -1;
 }
 
+static int test_useek_read_small(Files *f, const char *mode) {
+
+    BGZF* bgz = NULL;
+    char bg_buf[99];
+
+    bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
+    if (!bgz) goto fail;
+
+
+    if (try_bgzf_write(bgz, "#>Hello, World!\n", 16,
+                       f->tmp_bgzf, __func__) != 16)
+        goto fail;
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
+    if (!bgz) goto fail;
+
+    if (try_bgzf_getc(bgz, 0, '#', f->tmp_bgzf, __func__) < 0 ||
+        try_bgzf_getc(bgz, 1, '>', f->tmp_bgzf, __func__) < 0)
+        goto fail;
+
+    if (try_bgzf_read(bgz, bg_buf, 5, f->tmp_bgzf, __func__) != 5)
+        goto fail;
+    if (memcmp(bg_buf, "Hello", 5) != 0)
+        goto fail;
+
+    if (try_bgzf_useek(bgz, 9, SEEK_SET, f->tmp_bgzf, __func__) < 0)
+        goto fail;
+
+    if (try_bgzf_read(bgz, bg_buf, 5, f->tmp_bgzf, __func__) != 5)
+        goto fail;
+    if (memcmp(bg_buf, "World", 5) != 0)
+        goto fail;
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__, 0) != 0) goto fail;
+    return 0;
+
+ fail:
+    fprintf(stderr, "%s: failed\n", __func__);
+    if (bgz) bgzf_close(bgz);
+    return -1;
+}
+
 static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
     BGZF* bgz = NULL;
     ssize_t bg_put;
@@ -1097,6 +1140,10 @@ int main(int argc, char **argv) {
     // bgzf_tell and bgzf_read
     if (test_tell_read(&f, "w") != 0) goto out;
     if (test_tell_read(&f, "wu") != 0) goto out;
+
+    // bgzf_useek and bgzf_read_small
+    if (test_useek_read_small(&f, "w") != 0) goto out;
+    if (test_useek_read_small(&f, "wu") != 0) goto out;
 
     // getline
     if (test_bgzf_getline(&f, "w", 0) != 0) goto out;

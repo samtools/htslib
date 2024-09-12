@@ -29,7 +29,7 @@
 
 #include "../htslib/vcf.h"
 
-void error(const char *format, ...)
+void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);

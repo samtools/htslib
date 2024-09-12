@@ -35,7 +35,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include "../htslib/hts_defs.h"
 #include "../htslib/kstring.h"
 
-void HTS_NORETURN fail(const char *format, ...)
+void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+fail(const char *format, ...)
 {
     int err = errno;
     va_list args;

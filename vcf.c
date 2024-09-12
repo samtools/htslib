@@ -1567,7 +1567,7 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
  *** BCF site I/O ***
  ********************/
 
-bcf1_t *bcf_init()
+bcf1_t *bcf_init(void)
 {
     bcf1_t *v;
     v = (bcf1_t*)calloc(1, sizeof(bcf1_t));
@@ -3703,7 +3703,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 
     overflow = 0;
     char *tmp = p;
-    v->pos = hts_str2uint(p, &p, 63, &overflow);
+    v->pos = hts_str2uint(p, &p, 62, &overflow);
     if (overflow) {
         hts_log_error("Position value '%s' is too large", tmp);
         goto err;
@@ -4020,7 +4020,10 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 
     kputc_('\t', s); // INFO
     if (v->n_info) {
-        uint8_t *ptr = (uint8_t *)v->shared.s + v->unpack_size[0] + v->unpack_size[1] + v->unpack_size[2];
+        uint8_t *ptr = v->shared.s
+            ? (uint8_t *)v->shared.s + v->unpack_size[0] +
+               v->unpack_size[1] + v->unpack_size[2]
+            : NULL;
         int first = 1;
         bcf_info_t *info = v->d.info;
 
@@ -4235,6 +4238,8 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     if ( fp->format.compression!=no_compression ) {
         if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
             return -1;
+        if (fp->idx && !fp->fp.bgzf->mt)
+            hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     } else {
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
@@ -4288,7 +4293,7 @@ static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
     }
     if ( !max_len ) max_len = (1LL<<31) - 1;  // In case contig line is broken.
     max_len += 256;
-    s = 1LL << (min_shift + starting_n_lvls * 3);
+    s = hts_bin_maxpos(min_shift, starting_n_lvls);
     for (n_lvls = starting_n_lvls; max_len > s; ++n_lvls, s <<= 3);
 
     if (nids_out) *nids_out = nids;

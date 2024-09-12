@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013-2014, 2016, 2018-2020, 2022 Genome Research Ltd.
+   Copyright (C) 2013-2014, 2016, 2018-2020, 2022, 2024 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -375,17 +375,63 @@ static inline int kputw(int c, kstring_t *s)
 
 static inline int kputll(long long c, kstring_t *s)
 {
-	char buf[32];
-	int i, l = 0;
-	unsigned long long x = c;
-	if (c < 0) x = -x;
-	do { buf[l++] = x%10 + '0'; x /= 10; } while (x > 0);
-	if (c < 0) buf[l++] = '-';
-	if (ks_resize(s, s->l + l + 2) < 0)
-		return EOF;
-	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
-	s->s[s->l] = 0;
-	return 0;
+    // Worst case expansion.  One check reduces function size
+    // and aids inlining chance.  Memory overhead is minimal.
+    if (ks_resize(s, s->l + 23) < 0)
+	return EOF;
+
+    unsigned long long x = c;
+    if (c < 0) {
+	x = -x;
+        s->s[s->l++] = '-';
+    }
+
+    if (x <= UINT32_MAX)
+	return kputuw(x, s);
+
+    static const char kputull_dig2r[] =
+        "00010203040506070809"
+        "10111213141516171819"
+        "20212223242526272829"
+        "30313233343536373839"
+        "40414243444546474849"
+        "50515253545556575859"
+        "60616263646566676869"
+        "70717273747576777879"
+        "80818283848586878889"
+        "90919293949596979899";
+    unsigned int l, j;
+    char *cp;
+
+    // Find out how long the number is (could consider clzll)
+    uint64_t m = 1;
+    l = 0;
+    if (sizeof(long long)==sizeof(uint64_t) && x >= 10000000000000000000ULL) {
+	// avoids overflow below
+	l = 20;
+    } else {
+	do {
+	    l++;
+	    m *= 10;
+	} while (x >= m);
+    }
+
+    // Add digits two at a time
+    j = l;
+    cp = s->s + s->l;
+    while (x >= 10) {
+        const char *d = &kputull_dig2r[2*(x%100)];
+        x /= 100;
+        memcpy(&cp[j-=2], d, 2);
+    }
+
+    // Last one (if necessary).  We know that x < 10 by now.
+    if (j == 1)
+        cp[0] = x + '0';
+
+    s->l += l;
+    s->s[s->l] = 0;
+    return 0;
 }
 
 static inline int kputl(long c, kstring_t *s) {

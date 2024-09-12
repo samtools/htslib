@@ -87,6 +87,9 @@ typedef struct hts_cram_idx_t {
     struct cram_fd *cram;
 } hts_cram_idx_t;
 
+// Determine whether the string's contents appear to be UTF-16-encoded text.
+// Returns 1 if they are, 2 if there is also a BOM, or 0 otherwise.
+int hts_is_utf16_text(const kstring_t *str);
 
 // Entry point to hFILE_multipart backend.
 struct hFILE *hopen_htsget_redirect(struct hFILE *hfile, const char *mode);
@@ -119,18 +122,6 @@ const char *hts_plugin_path(void);
  *        -1 on failure
  */
 int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped);
-
-/*
- * bgzf analogue to hts_idx_amend_last.
- *
- * This is needed when multi-threading and writing indices on the fly.
- * At the point of writing a record we know the virtual offset for start
- * and end, but that end virtual offset may be the end of the current
- * block.  In standard indexing our end virtual offset becomes the start
- * of the next block.  Thus to ensure bit for bit compatibility we
- * detect this boundary case and fix it up here.
- */
-void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset);
 
 static inline int find_file_extension(const char *fn, char ext_out[static HTS_MAX_EXT_LEN])
 {

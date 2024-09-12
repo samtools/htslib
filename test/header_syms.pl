@@ -60,6 +60,7 @@ sub extract_symbols {
 
     open(my $f, '<', $file) || die "Couldn't open $file : $!\n";
     my $text = <$f>;
+    $text =~ tr/\r//d;
     close($f) || die "Error reading $file : $!\n";
 
     # Get rid of comments

@@ -1,6 +1,6 @@
 /*  test_kstring.c -- kstring unit tests
 
-    Copyright (C) 2018, 2020 Genome Research Ltd.
+    Copyright (C) 2018, 2020, 2024 Genome Research Ltd.
 
     Author: Rob Davies <rmd@sanger.ac.uk>
 
@@ -261,6 +261,84 @@ static int test_kputw(int64_t start, int64_t end) {
     return 0;
 }
 
+static int test_kputll_from_to(kstring_t *str, long long s, long long e) {
+    long long i = s;
+
+    for (;;) {
+        str->l = 0;
+        memset(str->s, 0xff, str->m);
+        if (kputll(i, str) < 0 || !str->s) {
+            perror("kputll");
+            return -1;
+        }
+        if (str->l >= str->m || str->s[str->l] != '\0') {
+            fprintf(stderr, "No NUL termination on string from kputll\n");
+            return -1;
+        }
+        if (i != strtoll(str->s, NULL, 10)) {
+            fprintf(stderr,
+                    "kputll wrote the wrong value, expected %lld, got %s\n",
+                    i, str->s);
+            return -1;
+        }
+        if (i >= e) break;
+        i++;
+    }
+    return 0;
+}
+
+static int test_kputll(long long start, long long end) {
+    kstring_t str = { 0, 0, NULL };
+    unsigned long long val;
+
+    str.s = malloc(2);
+    if (!str.s) {
+        perror("malloc");
+        return -1;
+    }
+    str.m = 2;
+
+    for (val = 1; val < INT64_MAX-5; val *= 10) {
+        if (test_kputll_from_to(&str, val >= 5 ? val - 5 : val, val) < 0) {
+            free(ks_release(&str));
+            return -1;
+        }
+    }
+
+    for (val = 1; val < INT64_MAX-5; val *= 10) {
+        long long valm = -val;
+        if (test_kputll_from_to(&str, valm >= 5 ? valm - 5 : valm, valm) < 0) {
+            free(ks_release(&str));
+            return -1;
+        }
+    }
+
+    if (test_kputll_from_to(&str, INT64_MAX - 5, INT64_MAX) < 0) {
+        free(ks_release(&str));
+        return -1;
+    }
+
+    if (test_kputll_from_to(&str, INT64_MIN, INT64_MIN + 5) < 0) {
+        free(ks_release(&str));
+        return -1;
+    }
+
+    str.m = 1; // Force a resize
+    int64_t start2 = (int64_t)start; // no larger on our platforms
+    int64_t end2   = (int64_t)end;
+    clamp(&start2, INT64_MIN, INT64_MAX);
+    clamp(&end2,   INT64_MIN, INT64_MAX);
+
+    if (test_kputll_from_to(&str, start, end) < 0) {
+        free(ks_release(&str));
+        return -1;
+    }
+
+    free(ks_release(&str));
+
+    return 0;
+}
+
 // callback used by test_kgetline
 static char *mock_fgets(char *str, int num, void *p) {
     int *mock_state = (int*)p;
@@ -290,7 +368,7 @@ static char *mock_fgets(char *str, int num, void *p) {
     return str;
 }
 
-static int test_kgetline() {
+static int test_kgetline(void) {
     kstring_t s = KS_INITIALIZE;
     int mock_state = 0;
 
@@ -346,7 +424,7 @@ static ssize_t mock_fgets2(char *str, size_t num, void *p) {
     return strlen(str);
 }
 
-static int test_kgetline2() {
+static int test_kgetline2(void) {
     kstring_t s = KS_INITIALIZE;
     int mock_state = 0;
 
@@ -412,6 +490,9 @@ int main(int argc, char **argv) {
 
     if (!test || strcmp(test, "kputw") == 0)
         if (test_kputw(start, end) != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kputll") == 0)
+        if (test_kputll(start, end) != 0) res = EXIT_FAILURE;
 
     if (!test || strcmp(test, "kgetline") == 0)
         if (test_kgetline() != 0) res = EXIT_FAILURE;

@@ -1,7 +1,7 @@
 '\" t
-.TH annot-tsv 1 "15 April 2024" "htslib-1.20" "Bioinformatics tools"
+.TH annot-tsv 1 "12 September 2024" "htslib-1.21" "Bioinformatics tools"
 .\"
-.\" Copyright (C) 2015, 2017-2018, 2023 Genome Research Ltd.
+.\" Copyright (C) 2015, 2017-2018, 2023-2024 Genome Research Ltd.
 .\"
 .\" Author: Petr Danecek
 .\"
@@ -108,6 +108,11 @@ Target file to be extend with annotations from
 Add the same annotations multiple times if multiple overlaps are found
 .RE
 .PP
+.B \-\-help
+.RS 4
+This help message
+.RE
+.PP
 .BR \-\-max\-annots " INT"
 .RS 4
 Add at most INT annotations per column to save time when many overlaps are found with a single region
@@ -138,18 +143,42 @@ number of source base pairs in the overlap
 .RE
 .RE
 .PP
+.BR \-d ", " \-\-delim " SRC:TGT"
+.RS 4
+Column delimiter in the source and the target file. For example, if both files are comma-delimited, run with
+"--delim ,:," or simply "--delim ,". If the source file is comma-delimited and the target file is tab-delimited,
+run with "-d $',:\\t'".
+.RE
+.PP
+.BR \-h ", " \-\-headers " SRC:TGT"
+.RS 4
+Line number of the header row with column names. By default the first line is interpreted as header if it starts with the comment
+character ("#"), otherwise expects numeric indices. However, if the first line does not start with "#" but still
+contains the column names, use "--headers 1:1". To ignore existing header (skip comment lines) and use numeric indices,
+use "--headers 0:0" which is equivalent to "--ignore-headers". When negative value is given, it is interpreted as the number of
+lines from the end of the comment block. Specifically, "--headers -1" takes the column names from the last line of
+the comment block (e.g., the "#CHROM" line in the VCF format).
+.RE
+.PP
 .BR \-H ", " \-\-ignore\-headers
 .RS 4
 Ignore the headers completely and use numeric indexes even when a header exists
 .RE
 .PP
-.BR \-O ", " \-\-overlap " FLOAT"
+.BR \-I ", " \-\-no\-hdr\-idx
 .RS 4
-Minimum overlap as a fraction of region length in at least one of the overlapping regions. If also
+Suppress index numbers in the printed header. If given twice, drop the entire header.
+.RE
+.PP
+.BR \-O ", " \-\-overlap " FLOAT,[FLOAT]"
+.RS 4
+Minimum overlap as a fraction of region length in SRC and TGT, respectively (with two numbers), or in
+at least one of the overlapping regions (with a single number). If also
 .BR \-r ", " \-\-reciprocal
 is given, require at least
 .I FLOAT
-overlap with respect to both regions
+overlap with respect to both regions. Two identical numbers are equivalent to running with
+.BR \-r ", " \-\-reciprocal
 .RE
 .PP
 .BR \-r ", " \-\-reciprocal

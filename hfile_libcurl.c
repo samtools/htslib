@@ -277,7 +277,7 @@ static void free_auth(auth_token *tok) {
     free(tok);
 }
 
-static void libcurl_exit()
+static void libcurl_exit(void)
 {
     if (curl_share_cleanup(curl.share) == CURLSHE_OK)
         curl.share = NULL;

@@ -24,19 +24,21 @@ DEALINGS IN THE SOFTWARE
 
 */
 
-/* The pupose of this code is to demonstrate the library apis and need proper error handling and optimization */
+/* The purpose of this code is to demonstrate the library apis and need proper error handling and optimisation */
 
 #include <getopt.h>
 #include <unistd.h>
+#include <time.h>
 #include <htslib/sam.h>
+#include <htslib/faidx.h>
 
-/// print_usage - show flags_demo usage
-/** @param fp pointer to the file / terminal to which demo_usage to be dumped
+/// print_usage - show usage
+/** @param fp pointer to the file / terminal to which usage to be dumped
 returns nothing
 */
 static void print_usage(FILE *fp)
 {
-    fprintf(fp, "Usage: write_fast <file>\n\
+    fprintf(fp, "Usage: write_fast <file> <sequence> [<qualities]\n\
 Appends a fasta/fastq file.\n");
     return;
 }
@@ -51,15 +53,24 @@ int main(int argc, char *argv[])
     const char *outname = NULL;             //output file name
     int ret = EXIT_FAILURE;
     samFile *outfile = NULL;                //sam file
-    sam_hdr_t *out_samhdr = NULL;           //header of file
     bam1_t *bamdata = NULL;                 //to hold the read data
     char mode[4] = "a";
+    const char *data = NULL, *qual = NULL;  //ref data and quality
+    char name[256] = {0};
 
-    if (argc != 2) {
+    if (argc > 4 || argc < 3) {
         print_usage(stdout);
         goto end;
     }
     outname = argv[1];
+    data = argv[2];
+    if (argc == 4) {    //fastq data
+        qual = argv[3];
+        if (strlen(data) != strlen(qual)) {     //check for proper length of data and quality values
+            printf("Incorrect reference and quality data\n");
+            goto end;
+        }
+    }
 
     //initialize
     if (!(bamdata = bam_init1())) {
@@ -71,26 +82,30 @@ int main(int argc, char *argv[])
         goto end;
     }
     //open output file
-    if (!(outfile = sam_open(outname, mode))) {
+    if (!(outfile = sam_open(outname, mode))) {         //expects the name to have correct extension!
         printf("Could not open %s\n", outname);
         goto end;
     }
-    //dummy data
-    if (bam_set1(bamdata, sizeof("test"), "test", BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, 10, "AACTGACTGA", "1234567890", 0) < 0) {
+    /* if the file name extension is not appropriate to the content, inconsistent data will be present in output.
+    if required, htsFormat and sam_open_format can be explicitly used to ensure appropriateness of content.
+    htsFormat fmt = {sequence_data, fastq_format / fasta_format};
+    sam_open_format(outname, mode, fmt);
+    */
+
+    snprintf(name, sizeof(name), "Test_%ld", (long) time(NULL));
+    //data
+    if (bam_set1(bamdata, strlen(name), name, BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0, strlen(data), data, qual, 0) < 0) {
         printf("Failed to set data\n");
         goto end;
     }
-    if (sam_write1(outfile, out_samhdr, bamdata) < 0) {
+    //as we write only FASTA/FASTQ, we can get away without providing headers
+    if (sam_write1(outfile, NULL, bamdata) < 0) {
         printf("Failed to write data\n");
         goto end;
     }
-
     ret = EXIT_SUCCESS;
 end:
     //clean up
-    if (out_samhdr) {
-        sam_hdr_destroy(out_samhdr);
-    }
     if (outfile) {
         sam_close(outfile);
     }

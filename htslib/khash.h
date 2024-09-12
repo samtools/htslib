@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2014-2015, 2018 Genome Research Ltd.
+   Copyright (C) 2014-2015, 2018, 2024 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -356,7 +356,39 @@ static const double __ac_HASH_UPPER = 0.77;
 			__ac_set_isdel_true(h->flags, x);							\
 			--h->size;													\
 		}																\
-	}
+	}                                                                   \
+    SCOPE int kh_stats_##name(kh_##name##_t *h, khint_t *empty,         \
+                              khint_t *deleted, khint_t *hist_size,     \
+                              khint_t **hist_out)                       \
+    {                                                                   \
+        khint_t i, *hist = NULL, dist_max = 0, k, dist, step;           \
+        khint_t mask = h->n_buckets - 1;                                \
+        *empty = *deleted = *hist_size = 0;                             \
+        hist = (khint_t *) calloc(1, sizeof(*hist));                    \
+        if (!hist) { return -1; }                                       \
+        for (i = kh_begin(h); i < kh_end(h); ++i) {                     \
+            if (__ac_isempty(h->flags, i)) { (*empty)++; continue; }      \
+            if (__ac_isdel(h->flags, i)) { (*deleted)++; continue; }      \
+            k = __hash_func(h->keys[i]) & (h->n_buckets - 1);           \
+            dist = 0;                                                   \
+            step = 0;                                                   \
+            while (k != i) {                                            \
+                dist++;                                                 \
+                k = (k + (++step)) & mask;                              \
+            }                                                           \
+            if (dist_max <= dist) {                                     \
+                khint_t *new_hist = (khint_t *) realloc(hist, sizeof(*new_hist) * (dist + 1)); \
+                if (!new_hist) { free(hist); return -1; }               \
+                for (k = dist_max + 1; k <= dist; k++) new_hist[k] = 0; \
+                hist = new_hist;                                        \
+                dist_max = dist;                                        \
+            }                                                           \
+            hist[dist]++;                                               \
+        }                                                               \
+        *hist_out = hist;                                               \
+        *hist_size = dist_max + 1;                                      \
+        return 0;                                                       \
+    }
 
 #define KHASH_DECLARE(name, khkey_t, khval_t)		 					\
 	__KHASH_TYPE(name, khkey_t, khval_t) 								\
@@ -391,6 +423,7 @@ static const double __ac_HASH_UPPER = 0.77;
   @abstract     64-bit integer comparison function
  */
 #define kh_int64_hash_equal(a, b) ((a) == (b))
+
 /*! @function
   @abstract     const char* hash function
   @param  s     Pointer to a null terminated string
@@ -402,12 +435,28 @@ static kh_inline khint_t __ac_X31_hash_string(const char *s)
 	if (h) for (++s ; *s; ++s) h = (h << 5) - h + (khint_t)*s;
 	return h;
 }
+
+/*! @function
+  @abstract     const char* FNV1a hash function
+  @param  s     Pointer to a null terminated string
+  @return       The hash value
+ */
+static kh_inline khint_t __ac_FNV1a_hash_string(const char *s)
+{
+	const khint_t offset_basis = 2166136261;
+	const khint_t FNV_prime = 16777619;
+	khint_t h = offset_basis;
+	for (; *s; ++s) h = (h ^ (uint8_t) *s) * FNV_prime;
+	return h;
+}
+
 /*! @function
   @abstract     Another interface to const char* hash function
   @param  key   Pointer to a nul terminated string [const char*]
   @return       The hash value [khint_t]
  */
-#define kh_str_hash_func(key) __ac_X31_hash_string(key)
+#define kh_str_hash_func(key) __ac_FNV1a_hash_string(key)
+
 /*! @function
   @abstract     Const char* comparison function
  */
@@ -426,12 +475,29 @@ static kh_inline khint_t __ac_X31_hash_kstring(const kstring_t ks)
 		h = (h << 5) - h + (khint_t)ks.s[i];
 	return h;
 }
+
+/*! @function
+  @abstract     Kstring hash function
+  @param  s     Pointer to a kstring
+  @return       The hash value
+ */
+static kh_inline khint_t __ac_FNV1a_hash_kstring(const kstring_t ks)
+{
+	const khint_t offset_basis = 2166136261;
+	const khint_t FNV_prime = 16777619;
+	khint_t h = offset_basis;
+	size_t i;
+	for (i = 0; i < ks.l; i++)
+		h = (h ^ (uint8_t) ks.s[i]) * FNV_prime;
+	return h;
+}
+
 /*! @function
   @abstract     Interface to kstring hash function.
   @param  key   Pointer to a khash; permits hashing on non-nul terminated strings.
   @return       The hash value [khint_t]
  */
-#define kh_kstr_hash_func(key) __ac_X31_hash_kstring(key)
+#define kh_kstr_hash_func(key) __ac_FNV1a_hash_kstring(key)
 /*! @function
   @abstract     kstring comparison function
  */
@@ -603,6 +669,19 @@ static kh_inline khint_t __ac_Wang_hash(khint_t key)
 		(vvar) = kh_val(h,__i);								\
 		code;												\
 	} }
+
+/*! @function
+  @abstract  Gather hash table statistics
+  @param  name            Name of the hash table [symbol]
+  @param  h               Pointer to the hash table [khash_t(name)*]
+  @param  empty[out]      Number of empty hash bins
+  @param  deleted[out]    Number of hash bins with the deleted flag
+  @param  hist_size[out]  Size of @p hist array
+  @param  hist[out]       Probe count histogram
+  @return 0 on success; -1 on failure
+ */
+#define kh_stats(name, h, empty, deleted, hist_size, hist) \
+    kh_stats_##name(h, empty, deleted, hist_size, hist)
 
 /* More convenient interfaces */
 

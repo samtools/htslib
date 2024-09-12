@@ -81,7 +81,7 @@ KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 HTSLIB_EXPORT
 int hts_verbose = HTS_LOG_WARNING;
 
-const char *hts_version()
+const char *hts_version(void)
 {
     return HTS_VERSION_TEXT;
 }
@@ -429,6 +429,27 @@ static int is_text_only(const unsigned char *u, const unsigned char *ulim)
             return 0;
 
     return 1;
+}
+
+static inline int
+alternate_zeros(const unsigned char *u, const unsigned char *ulim)
+{
+    for (; u < ulim; u += 2)
+        if (*u != '\0') return 0;
+    return 1;
+}
+
+static int is_utf16_text(const unsigned char *u, const unsigned char *ulim)
+{
+    if (ulim - u >= 6 &&
+        ((u[0] == 0xfe && u[1] == 0xff && alternate_zeros(u+2, ulim)) ||
+         (u[0] == 0xff && u[1] == 0xfe && alternate_zeros(u+3, ulim))))
+        return 2;
+    else if (ulim - u >= 8 &&
+             (alternate_zeros(u, ulim) || alternate_zeros(u+1, ulim)))
+        return 1;
+    else
+        return 0;
 }
 
 static int is_fastaq(const unsigned char *u, const unsigned char *ulim)
@@ -1301,7 +1322,7 @@ int hts_parse_opt_list(htsFormat *fmt, const char *str) {
  *        -1 on failure.
  */
 int hts_parse_format(htsFormat *format, const char *str) {
-    char fmt[8];
+    char fmt[9];
     const char *cp = scan_keyword(str, ',', fmt, sizeof fmt);
 
     format->version.minor = 0; // unknown
@@ -1743,7 +1764,7 @@ static hFILE *hts_hfile(htsFile *fp) {
     case bcf:          // fall through
     case bam:          return bgzf_hfile(fp->fp.bgzf);
     case cram:         return cram_hfile(fp->fp.cram);
-    case text_format:  return fp->fp.hfile;
+    case text_format:  // fall through
     case vcf:          // fall through
     case fastq_format: // fall through
     case fasta_format: // fall through
@@ -1961,6 +1982,12 @@ hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname)
     return fp;
 }
 
+int hts_is_utf16_text(const kstring_t *str)
+{
+    const unsigned char *u = (const unsigned char *) (str->s);
+    return (str->l > 0 && str->s)? is_utf16_text(u, u + str->l) : 0;
+}
+
 // For VCF/BCF backward sweeper. Not exposing these functions because their
 // future is uncertain. Things will probably have to change with hFILE...
 BGZF *hts_get_bgzfp(htsFile *fp)
@@ -2030,6 +2057,8 @@ char **hts_readlist(const char *string, int is_file, int *_n)
         while ((ret = bgzf_getline(fp, '\n', &str)) >= 0)
         {
             if (str.l == 0) continue;
+            if (n == 0 && hts_is_utf16_text(&str))
+                hts_log_warning("'%s' appears to be encoded as UTF-16", string);
             if (hts_resize(char*, n + 1, &m, &s, 0) < 0)
                 goto err;
             s[n] = strdup(str.s);
@@ -2089,6 +2118,8 @@ char **hts_readlines(const char *fn, int *_n)
         str.s = 0; str.l = str.m = 0;
         while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
             if (str.l == 0) continue;
+            if (n == 0 && hts_is_utf16_text(&str))
+                hts_log_warning("'%s' appears to be encoded as UTF-16", fn);
             if (hts_resize(char *, n + 1, &m, &s, 0) < 0)
                 goto err;
             s[n] = strdup(str.s);
@@ -2446,9 +2477,14 @@ int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
     return ret;
 }
 
+static inline hts_pos_t hts_idx_maxpos(const hts_idx_t *idx)
+{
+    return hts_bin_maxpos(idx->min_shift, idx->n_lvls);
+}
+
 int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end)
 {
-    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
+    hts_pos_t maxpos = hts_idx_maxpos(idx);
     if (tid < 0 || (beg <= maxpos && end <= maxpos))
         return 0;
 
@@ -3222,7 +3258,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
     size_t reg_bin_count = 0, hash_bin_count;
     int res;
 
-    if (!iter || !idx || (bidx = idx->bidx[tid]) == NULL || beg >= end)
+    if (!iter || !idx || (bidx = idx->bidx[tid]) == NULL || beg > end)
         return -1;
 
     hash_bin_count = kh_n_buckets(bidx);
@@ -3341,6 +3377,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
+    hts_pos_t idx_maxpos;
     hts_itr_t *iter;
     uint32_t unmapped = 0, rel_off;
 
@@ -3385,6 +3422,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
 
             if ( !kh_size(bidx) ) { iter->finished = 1; return iter; }
 
+            idx_maxpos = hts_idx_maxpos(idx);
+            if (beg >= idx_maxpos) { iter->finished = 1; return iter; }
+
             rel_off = beg>>idx->min_shift;
             // compute min_off
             bin = hts_bin_first(idx->n_lvls) + rel_off;
@@ -3427,7 +3467,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             // compute max_off: a virtual offset from a bin to the right of end
             // First check if end lies within the range of the index (it won't
             // if it's HTS_POS_MAX)
-            if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+            if (end <= idx_maxpos) {
                 bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
                 if (bin >= idx->n_bins) bin = 0;
                 while (1) {
@@ -3513,7 +3553,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
     bidx_t *bidx;
     uint64_t min_off, max_off, t_off = (uint64_t)-1;
     int tid;
-    hts_pos_t beg, end;
+    hts_pos_t beg, end, idx_maxpos;
     hts_reglist_t *curr_reg;
     uint32_t unmapped = 0, rel_off;
 
@@ -3555,6 +3595,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
             else
                 unmapped = 1;
 
+            idx_maxpos = hts_idx_maxpos(idx);
+
             for(j=0; j<curr_reg->count; j++) {
                 hts_pair32_t *curr_intv = &curr_reg->intervals[j];
                 if (curr_intv->end < curr_intv->beg)
@@ -3562,6 +3604,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 
                 beg = curr_intv->beg;
                 end = curr_intv->end;
+                if (beg >= idx_maxpos)
+                    continue;
                 rel_off = beg>>idx->min_shift;
 
                 /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
@@ -3606,7 +3650,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 // compute max_off: a virtual offset from a bin to the right of end
                 // First check if end lies within the range of the index (it
                 // won't if it's HTS_POS_MAX)
-                if (end < 1LL << (idx->min_shift + 3 * idx->n_lvls)) {
+                if (end <= idx_maxpos) {
                     bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
                     if (bin >= idx->n_bins) bin = 0;
                     while (1) {
@@ -3782,7 +3826,7 @@ void hts_itr_destroy(hts_itr_t *iter)
     }
 }
 
-static inline long long push_digit(long long i, char c)
+static inline unsigned long long push_digit(unsigned long long i, char c)
 {
     // ensure subtraction occurs first, avoiding overflow for >= MAX-48 or so
     int digit = c - '0';
@@ -3791,7 +3835,7 @@ static inline long long push_digit(long long i, char c)
 
 long long hts_parse_decimal(const char *str, char **strend, int flags)
 {
-    long long n = 0;
+    unsigned long long n = 0;
     int digits = 0, decimals = 0, e = 0, lost = 0;
     char sign = '+', esign = '+';
     const char *s, *str_orig = str;
@@ -4405,11 +4449,12 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                                     break;
 
                                 uint64_t max = iter->off[j].max;
-                                if ((max>>32) != tid)
+                                if ((max>>32) != tid) {
                                     tid = HTS_IDX_START; // => no range limit
-
-                                if (end < rl->intervals[max & 0xffffffff].end)
-                                    end = rl->intervals[max & 0xffffffff].end;
+                                } else {
+                                    if (end < rl->intervals[max & 0xffffffff].end)
+                                        end = rl->intervals[max & 0xffffffff].end;
+                                }
                                 if (v < iter->off[j].v)
                                     v = iter->off[j].v;
                                 j++;
@@ -5050,7 +5095,7 @@ int hts_resize_array_(size_t item_size, size_t num, size_t size_sz,
     return 0;
 }
 
-void hts_lib_shutdown()
+void hts_lib_shutdown(void)
 {
     hfile_shutdown(1);
 }
@@ -5064,7 +5109,7 @@ void hts_set_log_level(enum htsLogLevel level)
     hts_verbose = level;
 }
 
-enum htsLogLevel hts_get_log_level()
+enum htsLogLevel hts_get_log_level(void)
 {
     return hts_verbose;
 }
