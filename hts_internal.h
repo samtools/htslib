@@ -129,7 +129,7 @@ static inline int find_file_extension(const char *fn, char ext_out[static HTS_MA
     if (!fn) return -1;
     if (!delim) delim = fn + strlen(fn);
     for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext == '.' &&
+    if (*ext == '.' && ext > fn &&
         ((delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') || // permit .sam.gz as a valid file extension
         (delim - ext == 4 && ext[1] == 'b' && ext[2] == 'g' && ext[3] == 'z'))) // permit .vcf.bgz as a valid file extension
     {
