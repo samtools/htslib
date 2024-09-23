@@ -42,6 +42,18 @@ DEALINGS IN THE SOFTWARE.  */
 
 #if defined __arm__ || defined __aarch64__
 
+#ifdef HAVE_OPENBSD
+/*
+ * Extra check for elf_aux_info() on configure-less OpenBSD builds.  Once
+ * version 7.5 has dropped off support, this can be changed to an assumption
+ * that the function exists in the Makefile-generated config.h.
+ */
+#include <sys/param.h>
+#if OpenBSD >= 202409
+#define HAVE_ELF_AUX_INFO
+#endif
+#endif
+
 #if defined HAVE_GETAUXVAL || defined HAVE_ELF_AUX_INFO
 #include <sys/auxv.h>
 #elif defined __APPLE__
