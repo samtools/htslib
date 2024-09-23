@@ -312,6 +312,14 @@ config.h:
 	echo '#define HAVE_ATTRIBUTE_TARGET 1' >> $@
 	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
 	echo '#endif' >> $@
+	echo '#if defined __linux__' >> $@
+	echo '#define HAVE_GETAUXVAL' >> $@
+	echo '#elif defined __FreeBSD__' >> $@
+	echo '#define HAVE_ELF_AUX_INFO' >> $@
+	echo '#elif defined __OpenBSD__' >> $@
+	echo '// Enable extra OpenBSD checks (see simd.c)' >> $@
+	echo '#define HAVE_OPENBSD' >> $@
+	echo '#endif' >> $@
 
 # And similarly for htslib.pc.tmp ("pkg-config template").  No dependency
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate
