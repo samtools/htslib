@@ -4856,8 +4856,8 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
     switch (size) {
     case 'Z':
     case 'H':
-        while (s < end && *s) ++s;
-        return s < end ? s + 1 : end;
+        s = memchr(s, 0, end-s);
+        return s ? s+1 : end;
     case 'B':
         if (end - s < 5) return NULL;
         size = aux_type2size(*s); ++s;
