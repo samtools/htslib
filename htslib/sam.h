@@ -44,6 +44,9 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+struct hts_filter_t;
+struct sam_hrec_type_s;
+
 /// Highest SAM format version supported by this library
 #define SAM_FORMAT_VERSION "1.6"
 
@@ -466,6 +469,22 @@ int sam_hdr_nref(const sam_hdr_t *h);
 
 /* ==== Line level methods ==== */
 
+/*! @typedef
+ * @abstract Opaque type used as an iterator over header lines.
+ */
+typedef struct sam_hrec_type_s sam_hdr_line_t;
+
+/// Return an iterator pointing to the first header line
+HTSLIB_EXPORT
+sam_hdr_line_t *sam_hdr_first_line(sam_hdr_t *h);
+
+/// Return an iterator pointing to the next header line
+/*!
+ * @return  An iterator pointing to the next line, or NULL if there is none.
+ */
+HTSLIB_EXPORT
+sam_hdr_line_t *sam_hdr_next_line(sam_hdr_t *h, sam_hdr_line_t *line);
+
 /// Add formatted lines to an existing header.
 /*!
  * @param lines  Full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
@@ -497,6 +516,36 @@ int sam_hdr_add_lines(sam_hdr_t *h, const char *lines, size_t len);
  */
 HTSLIB_EXPORT
 int sam_hdr_add_line(sam_hdr_t *h, const char *type, ...);
+
+/// Returns a complete line of formatted text for the line pointed to.
+/*!
+ * @param line      Iterator pointing to a header line
+ * @param ks        kstring to which to append the result
+ * @return          0 on success;
+ *                 -1 if @p line does not point to a header line
+ *                 -2 on other failures
+ *
+ * Puts a complete line of formatted text for a specific line into @p ks.
+ * Appends the text to the existing content in @p ks, if any.
+ */
+HTSLIB_EXPORT
+int sam_hdr_format_line_append(const sam_hdr_line_t *line, kstring_t *ks);
+
+/// Returns a complete line of formatted text for the line pointed to.
+/*!
+ * @param line      Iterator pointing to a header line
+ * @param ks        kstring to hold the result
+ * @return          0 on success;
+ *                 -1 if @p line does not point to a header line
+ *                 -2 on other failures
+ *
+ * Puts a complete line of formatted text for a specific line into @p ks.
+ * Any existing content in @p ks will be overwritten.
+ */
+static inline int sam_hdr_format_line(const sam_hdr_line_t *line, kstring_t *ks)
+{
+    return sam_hdr_format_line_append(line, ks_clear(ks));
+}
 
 /// Returns a complete line of formatted text for a given type and ID.
 /*!
@@ -535,6 +584,14 @@ int sam_hdr_find_line_id(sam_hdr_t *h, const char *type,
 HTSLIB_EXPORT
 int sam_hdr_find_line_pos(sam_hdr_t *h, const char *type,
                           int pos, kstring_t *ks);
+
+/// Remove line pointed to by iterator from a header
+/*!
+ * @param line     Iterator pointing to a header line
+ * @return         An iterator pointing to the following line, or NULL on error FIXME or if it was the last line
+ */
+HTSLIB_EXPORT
+sam_hdr_line_t *sam_hdr_remove_line(sam_hdr_t *h, sam_hdr_line_t *line);
 
 /// Remove a line with given type / id from a header
 /*!
@@ -687,6 +744,21 @@ const char *sam_hdr_line_name(sam_hdr_t *bh, const char *type, int pos);
 
 /* ==== Key:val level methods ==== */
 
+/// Return the value associated with a key for a header line identified by iterator
+/*!
+ * @param line      Iterator pointing to a header line
+ * @param key       Key of the searched tag. Eg. "LN"
+ * @param ks        kstring where the value will be written
+ * @return          0 on success
+ *                 -1 if the requested tag does not exist
+ *                 -2 on other errors
+ *
+ * Looks for a specific key in the SAM header line pointed to by @p line and writes the
+ * associated value into @p ks.  Any pre-existing content in @p ks will be overwritten.
+ */
+HTSLIB_EXPORT
+int sam_hdr_find_tag(const sam_hdr_line_t *line, const char *key, kstring_t *ks);
+
 /// Return the value associated with a key for a header line identified by ID_key:ID_val
 /*!
  * @param type      Type of the line to which the tag belongs. Eg. "SQ"
@@ -723,6 +795,15 @@ int sam_hdr_find_tag_id(sam_hdr_t *h, const char *type, const char *ID_key, cons
  */
 HTSLIB_EXPORT
 int sam_hdr_find_tag_pos(sam_hdr_t *h, const char *type, int pos, const char *key, kstring_t *ks);
+
+/// Remove the key from the line pointed to by the iterator.
+/*!
+ * @param line      Iterator pointing to a header line
+ * @param key       Key of the targeted tag. Eg. "M5"
+ * @return          1 if the key was removed; 0 if it was not present; -1 on error
+ */
+HTSLIB_EXPORT
+int sam_hdr_remove_tag(sam_hdr_t *h, sam_hdr_line_t *line, const char *key);
 
 /// Remove the key from the line identified by type, ID_key and ID_value.
 /*!
@@ -778,6 +859,15 @@ hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid);
  *             -2 if the header could not be parsed
  */
 static inline int bam_name2id(sam_hdr_t *h, const char *ref) { return sam_hdr_name2tid(h, ref); }
+
+/// Check whether a header line passes an hts_filter
+/** @param h      Pointer to the header structure previously read
+ *  @param line   Iterator pointing to a header line
+ *  @param filt   Pointer to the filter, created from hts_filter_init
+ *  @return       1 if it passes, 0 if not, and <0 on error
+ */
+HTSLIB_EXPORT
+int sam_hdr_passes_filter(sam_hdr_t *h, sam_hdr_line_t *line, struct hts_filter_t *filt);
 
 /// Generate a unique \@PG ID: value
 /*!
@@ -1424,9 +1514,6 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
  */
     HTSLIB_EXPORT
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
-
-// Forward declaration, see hts_expr.h for full.
-struct hts_filter_t;
 
 /// sam_passes_filter - Checks whether a record passes an hts_filter.
 /** @param h      Pointer to the header structure previously read
