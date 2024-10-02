@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2017-2021 Genome Research Ltd.
+    Copyright (C) 2017-2024 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -32,6 +32,7 @@
 #include "htslib/khash_str2int.h"
 #include "htslib/kbitset.h"
 
+// Variant types and pair-wise compatibility of their combinations, see bcf_sr_init_scores()
 #define SR_REF   1
 #define SR_SNP   2
 #define SR_INDEL 4
@@ -366,7 +367,7 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
     // group VCFs into groups, each with a unique combination of variants in the duplicate lines
     int ireader,ivar,irec,igrp,ivset,iact;
     for (ireader=0; ireader<readers->nreaders; ireader++) srt->vcf_buf[ireader].nrec = 0;
-    for (iact=0; iact<srt->nactive; iact++)
+    for (iact=0; iact<srt->nactive; iact++) // process each of the active readers, ie which still have a record to process
     {
         ireader = srt->active[iact];
         bcf_sr_t *reader = &readers->readers[ireader];
@@ -384,6 +385,11 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
             srt->off[srt->noff++] = srt->str.l;
             size_t beg  = srt->str.l;
             int end_pos = -1;
+            if ( srt->pair & BCF_SR_PAIR_ID )
+            {
+                kputs(line->d.id,&srt->str);
+                kputc(':',&srt->str);
+            }
             for (ivar=1; ivar<line->n_allele; ivar++)
             {
                 if ( ivar>1 ) kputc(',',&srt->str);
@@ -417,7 +423,8 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
             }
 
             // Create new variant or attach to existing one. But careful, there can be duplicate
-            // records with the same POS,REF,ALT (e.g. in dbSNP-b142)
+            // records with the same POS,REF,ALT (e.g. in dbSNP-b142). In such case, append a
+            // numeric index (var_idx)
             char *var_str = beg + srt->str.s;
             int ret, var_idx = 0, var_end = srt->str.l;
             while ( 1 )
@@ -435,6 +442,7 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
             }
             if ( ret==-1 )
             {
+                // the variant is not present, insert
                 ivar = srt->nvar++;
                 hts_expand0(var_t,srt->nvar,srt->mvar,srt->var);
                 srt->var[ivar].nvcf = 0;
