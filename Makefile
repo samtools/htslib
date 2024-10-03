@@ -1050,11 +1050,11 @@ tags TAGS:
 # code with your program, this hook enables Automake-style "make dist"
 # for this subdirectory.  If you do bundle an htslib snapshot, please
 # add identifying information to $(PACKAGE_VERSION) as appropriate.
-# (The wildcards attempt to omit non-exported files (.git*, README.md,
+# (The wildcards attempt to omit non-exported files (.git, .gitignore,
 # etc) and other detritus that might be in the top-level directory.)
-distdir:
+distdir: htscodecs/htscodecs/version.h
 	@if [ -z "$(distdir)" ]; then echo "Please supply a distdir=DIR argument."; false; fi
-	tar -c *.[ch15] [ILMNRchtv]*[ELSbcekmnth] | (cd $(distdir) && tar -x)
+	tar -c *.[ch157] [I-R]*[ELSde] [cmors]*[bcemns4] [bhtv]*[bhknpt] htscodecs/*.md htscodecs/[ht]*/*[chp-t0-9] | (cd $(distdir) && tar -x)
 	+cd $(distdir) && $(MAKE) distclean
 
 force:
