@@ -1396,7 +1396,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
             }
 
             // tabix index absent, reading the whole file
-            ret = hts_getline(reg->file, KS_SEP_LINE, &reg->line);
+            ret = reg->file ? hts_getline(reg->file, KS_SEP_LINE, &reg->line) : -1;
             if ( ret<0 ) { reg->iseq = -1; return -1; }
         }
         ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&chr_end,&from,&to);
