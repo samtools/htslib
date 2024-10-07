@@ -2254,7 +2254,7 @@ static void test_bam_set1_write_and_read_back(void)
     w_bam = bam_init1();
     VERIFY(w_bam != NULL, "failed to initialize BAM struct.");
     r = bam_set1(w_bam, strlen(qname), qname,
-                 BAM_FREVERSE, 0, 1000, 42,
+                 BAM_FPAIRED | BAM_FREVERSE, 0, 1000, 42,
                  sizeof(cigar) / 4, cigar, 0, 2000, 3000,
                  strlen(seq), seq, qual, 64);
     VERIFY(r >= 0, "call to bam_set1() failed.");
