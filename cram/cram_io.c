@@ -2787,10 +2787,12 @@ static int refs_from_header(cram_fd *fd) {
 
         /* Initialise likely filename if known */
         if ((ty = sam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
-            if ((tag = sam_hrecs_find_key(ty, "M5", NULL))) {
+            if ((tag = sam_hrecs_find_key(ty, "M5", NULL)))
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
-                //fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
-            }
+
+            if ((tag = sam_hrecs_find_key(ty, "LN", NULL)))
+                // LN tag used when constructing consensus reference
+                r->ref_id[j]->LN_length = strtoll(tag->str+3, NULL, 0);
         }
 
         k = kh_put(refs, r->h_meta, r->ref_id[j]->name, &n);

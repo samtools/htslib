@@ -1761,7 +1761,6 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     c->ref_start = ref_start+1;
     c->ref_end   = ref_end+1;
     c->ref_free  = 1;
-
     return 0;
 
  err:
@@ -1997,6 +1996,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 fd->no_ref_counter -= (fd->no_ref_counter > 0);
                 pthread_mutex_unlock(&fd->ref_lock);
             }
+
+            if (c->ref_end > fd->refs->ref_id[c->ref_id]->LN_length)
+                c->ref_end = fd->refs->ref_id[c->ref_id]->LN_length;
         }
 
         // Iterate through records creating the cram blocks for some
