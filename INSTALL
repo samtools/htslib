@@ -289,7 +289,7 @@ FreeBSD
 -------
 
 As root:
-pkg install autoconf automake bash curl gmake libdeflate perl
+pkg install autoconf automake bash curl gmake libdeflate perl5
 
 Build as a normal user.  When building, compiler flags need to be set so that
 the packages installed above are found.  It is also necessary to use "gmake":
