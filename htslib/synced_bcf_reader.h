@@ -1,7 +1,7 @@
 /// @file htslib/synced_bcf_reader.h
 /// Stream through multiple VCF files.
 /*
-    Copyright (C) 2012-2017, 2019-2023 Genome Research Ltd.
+    Copyright (C) 2012-2017, 2019-2024 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -89,6 +89,7 @@ extern "C" {
 #define BCF_SR_PAIR_SNP_REF    (1<<4)  // allow REF-only records with SNPs
 #define BCF_SR_PAIR_INDEL_REF  (1<<5)  // allow REF-only records with indels
 #define BCF_SR_PAIR_EXACT      (1<<6)  // require the exact same set of alleles in all files
+#define BCF_SR_PAIR_ID         (1<<7)  // require matching IDs (overlap)
 #define BCF_SR_PAIR_BOTH       (BCF_SR_PAIR_SNPS|BCF_SR_PAIR_INDELS)
 #define BCF_SR_PAIR_BOTH_REF   (BCF_SR_PAIR_SNPS|BCF_SR_PAIR_INDELS|BCF_SR_PAIR_SNP_REF|BCF_SR_PAIR_INDEL_REF)
 
