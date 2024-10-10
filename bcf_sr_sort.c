@@ -423,8 +423,10 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
             }
 
             // Create new variant or attach to existing one. But careful, there can be duplicate
-            // records with the same POS,REF,ALT (e.g. in dbSNP-b142). In such case, append a
-            // numeric index (var_idx)
+            // records with the same POS,REF,ALT (e.g. in dbSNP-b142). In such case, use a
+            // hash table (srt->var_str2int) and a counter (var_idx) to ensure they are
+            // treated as separate variants, while still allowing them to be matched
+            // between readers.
             char *var_str = beg + srt->str.s;
             int ret, var_idx = 0, var_end = srt->str.l;
             while ( 1 )
