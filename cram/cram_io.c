@@ -4954,6 +4954,8 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                         hts_log_warning("NOTE: the CRAM file will be bigger "
                                         "than using an external reference");
                         pthread_mutex_lock(&fd->ref_lock);
+                        // Best guess.  It may be unmapped data with broken
+                        // headers, in which case this will get ignored.
                         fd->embed_ref = 2;
                         pthread_mutex_unlock(&fd->ref_lock);
                         break;
