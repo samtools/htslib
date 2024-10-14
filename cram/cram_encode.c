@@ -1842,7 +1842,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     // Don't try embed ref if we repeatedly fail
     pthread_mutex_lock(&fd->ref_lock);
     int failed_embed = (fd->no_ref_counter >= 5); // maximum 5 tries
-    if (!failed_embed && c->embed_ref == -2) {
+    if (!failed_embed && c->embed_ref == -2 && c->ref_id >= 0) {
         hts_log_warning("Retrying embed_ref=2 mode for #%d/5", fd->no_ref_counter);
         fd->no_ref = c->no_ref = 0;
         fd->embed_ref = c->embed_ref = 2;
@@ -1921,6 +1921,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 // Do not confuse with fd->ref_free which is a pointer to a
                 // reference string to free.
                 c->ref_free = 1;
+            } else {
+                // Double check for broken input.  We shouldn't have
+                // embedded references enabled for unmapped data, but our
+                // data could be broken.
+                embed_ref = 0;
+                no_ref = c->no_ref = 1;
             }
         }
         c->ref_seq_id = c->ref_id;
@@ -1967,7 +1973,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
         // Embed consensus / MD-generated ref
         if (embed_ref == 2) {
-            if (cram_generate_reference(c, s, r1) < 0) {
+            if (c->ref_id < 0 || cram_generate_reference(c, s, r1) < 0) {
                 // Should this be a permanent thing via fd->no_ref?
                 // Doing so means we cannot easily switch back again should
                 // things fix themselves later on.  This is likely not a
