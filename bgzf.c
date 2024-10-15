@@ -548,6 +548,10 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 }
 
 #ifdef HAVE_LIBDEFLATE
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return libdeflate_crc32(crc, buf, len);
+}
+
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
     if (slen == 0) {
@@ -606,6 +610,10 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
 }
 
 #else
+
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return crc32(crc, buf, len);
+}
 
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
@@ -1350,13 +1358,7 @@ static void *bgzf_encode_level0_func(void *arg) {
     u16_to_le(~j->uncomp_len, j->comp_data + BLOCK_HEADER_LENGTH + 3);
 
     // Trailer (CRC, uncompressed length)
-#ifdef HAVE_LIBDEFLATE
-    crc = libdeflate_crc32(0, j->comp_data + BLOCK_HEADER_LENGTH + 5,
-                           j->uncomp_len);
-#else
-    crc = crc32(crc32(0L, NULL, 0L),
-                (Bytef*)j->comp_data + BLOCK_HEADER_LENGTH + 5, j->uncomp_len);
-#endif
+    crc = hts_crc32(0, j->comp_data + BLOCK_HEADER_LENGTH + 5, j->uncomp_len);
     u32_to_le(crc, j->comp_data +  j->comp_len - 8);
     u32_to_le(j->uncomp_len, j->comp_data + j->comp_len - 4);
 
