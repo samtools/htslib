@@ -1517,6 +1517,14 @@ static inline int hts_bin_level(int bin) {
     return l;
 }
 
+/**************************************
+ * Exposing the CRC32 implementation  *
+ * Either from zlib or libdeflate.    *
+ *************************************/
+HTSLIB_EXPORT
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len);
+
+
 //! Compute the corresponding entry into the linear index of a given bin from
 //! a binning index
 /*!

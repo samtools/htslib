@@ -548,6 +548,10 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 }
 
 #ifdef HAVE_LIBDEFLATE
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return libdeflate_crc32(crc, buf, len);
+}
+
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
     if (slen == 0) {
@@ -606,6 +610,10 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
 }
 
 #else
+
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return crc32(crc, buf, len);
+}
 
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
