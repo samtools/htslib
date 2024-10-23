@@ -1450,7 +1450,7 @@ int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, 
 
 int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
     sam_hrecs_t *hrecs;
-    if (!bh || !type || position <= 0)
+    if (!bh || !type || position < 0)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
