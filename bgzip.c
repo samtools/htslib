@@ -39,6 +39,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "htslib/hfile.h"
+#include "hfile_internal.h" // for hfile_set_blksize
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -336,6 +337,9 @@ int main(int argc, char **argv)
                 fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), isstdin ? "stdin" : argv[optind]);
                 return 1;
             }
+
+            // Increase block size to improve throughput on fast filesystems
+            hfile_set_blksize(f_src, 256*1024);
 
             if (write_fname) {
                 if (!exp_out_open) {  // only open this file once for writing, close at the end
