@@ -163,6 +163,9 @@ while ($ln1 && $ln2) {
     $ln1[9] = uc($ln1[9]);
     $ln2[9] = uc($ln2[9]);
 
+    # RNA U to T is an expected change
+    $ln1[9] =~ s/U/T/g;
+
     # Cram will populate a sequence string that starts as "*"
     $ln2[9] = "*" if ($ln1[9] eq "*");
 

@@ -455,6 +455,7 @@ int hts_parse_opt_list(htsFormat *opt, const char *str);
 The input character may be either an IUPAC ambiguity code, '=' for 0, or
 '0'/'1'/'2'/'3' for a result of 1/2/4/8.  The result is encoded as 1/2/4/8
 for A/C/G/T or combinations of these bits for ambiguous bases.
+Additionally RNA U is treated as a T (8).
 */
 HTSLIB_EXPORT
 extern const unsigned char seq_nt16_table[256];
