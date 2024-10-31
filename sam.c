@@ -3216,6 +3216,7 @@ enum sam_cmd {
     SAM_NONE = 0,
     SAM_CLOSE,
     SAM_CLOSE_DONE,
+    SAM_AT_EOF,
 };
 
 typedef struct SAM_state {
@@ -3651,6 +3652,7 @@ static void *sam_dispatcher_read(void *vp) {
         pthread_mutex_unlock(&fd->command_m);
     }
 
+    // Submit a NULL sp_bams entry to act as an EOF marker
     if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0)
         goto err;
 
@@ -4308,14 +4310,25 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
                 errno = fd->errcode;
                 return -2;
             }
+
+            pthread_mutex_lock(&fd->command_m);
+            int cmd = fd->command;
+            pthread_mutex_unlock(&fd->command_m);
+            if (cmd == SAM_AT_EOF)
+                return -1;
+
             hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
             if (!r)
                 return -2;
             fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
         }
-        if (!gb)
+        if (!gb) {
+            pthread_mutex_lock(&fd->command_m);
+            fd->command = SAM_AT_EOF;
+            pthread_mutex_unlock(&fd->command_m);
             return fd->errcode ? -2 : -1;
+        }
         bam1_t *b_array = (bam1_t *)gb->bams;
         if (fd->curr_idx < gb->nbams)
             if (!bam_copy1(b, &b_array[fd->curr_idx++]))
