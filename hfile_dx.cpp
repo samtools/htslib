@@ -1,8 +1,8 @@
 /*  hfile_dx.cpp -- DNA Nexus low-level file streams.
 
-    Copyright (C) 2015-2017, 2019-2020 Genome Research Ltd.
-
     Author: Pierre Lindenbaum
+            Institut-du-Thorax. U1097. Nantes. France
+            https://github.com/lindenb
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
