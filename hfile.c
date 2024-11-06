@@ -1126,6 +1126,11 @@ static int load_hfile_plugins(void)
     init_add_plugin(NULL, hfile_plugin_init_s3_write, "s3w");
 #endif
 
+#ifdef ENABLE_DX
+   init_add_plugin(NULL, hfile_plugin_init_dx, "dx");
+#endif
+
+
 #endif
 
     // In the unlikely event atexit() fails, it's better to succeed here and

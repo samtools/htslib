@@ -23,6 +23,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 CC     = gcc
+CPP    = g++
 AR     = ar
 RANLIB = ranlib
 
@@ -36,7 +37,7 @@ CPPFLAGS =
 # For testing strict C99 support add -std=c99 -D_XOPEN_SOURCE=600
 #CFLAGS   = -g -Wall -O2 -pedantic -std=c99 -D_XOPEN_SOURCE=600
 CFLAGS   = -g -Wall -O2 -fvisibility=hidden
-EXTRA_CFLAGS_PIC = -fpic
+EXTRA_CFLAGS_PIC = -fpic -I../dx-toolkit/share/dnanexus/src/cpp
 TARGET_CFLAGS =
 LDFLAGS  = -fvisibility=hidden
 VERSION_SCRIPT_LDFLAGS = -Wl,-version-script,$(srcprefix)htslib.map
@@ -195,6 +196,8 @@ config_vars.h:
 
 .c.pico:
 	$(CC) $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
+.cpp.pico:
+	$(CPP) $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
 LIBHTS_OBJS = \
@@ -236,6 +239,7 @@ LIBHTS_OBJS = \
 	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
 	cram/string_alloc.o \
+	hfile_dx.o \
 	$(HTSCODECS_OBJS) \
 	$(NONCONFIGURE_OBJS)
 
@@ -473,6 +477,7 @@ hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstrin
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(hts_time_funcs_h)
+hfile_dx.o hfile_dx.pico: hfile_dx.cpp config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(hts_time_funcs_h)
 hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_log_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c

@@ -183,6 +183,7 @@ extern int hfile_plugin_init_gcs(struct hFILE_plugin *self);
 extern int hfile_plugin_init_libcurl(struct hFILE_plugin *self);
 extern int hfile_plugin_init_s3(struct hFILE_plugin *self);
 extern int hfile_plugin_init_s3_write(struct hFILE_plugin *self);
+extern int hfile_plugin_init_dx(struct hFILE_plugin *self);
 #endif
 
 // Callback to allow headers to be set in http connections.  Currently used

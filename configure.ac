@@ -672,4 +672,18 @@ case "$srcdir" in
 esac
 AC_SUBST([HTSDIRslash_if_relsrcdir])
 
+## DNA NEXUS API
+AC_ARG_ENABLE([dx],
+    [AS_HELP_STRING([--enable-dx], [Enable DNANexus support])],
+    [if test "x$enable_dx" = "xyes"; then
+         AC_DEFINE([ENABLE_DX], [1], [Define to 1 if you want to enable DNANexus DX API])
+    fi],
+    [enable_dx=no])
+
+AC_ARG_WITH([dx-include],
+    [AS_HELP_STRING([--with-dx-include=PATH], [Specify the path DX/DNA Nexus header files])],
+    [dx_include_path="$withval"],
+    [dx_include_path=""])
+
+
 AC_OUTPUT
