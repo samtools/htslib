@@ -113,8 +113,14 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
     // FIXME For now, clamp input buffer sizes so mpileup doesn't eat memory
     if (strchr(mode, 'r') && capacity > maxcap) capacity = maxcap;
 
+#ifdef HAVE_POSIX_MEMALIGN
+    fp->buffer = NULL;
+    if (posix_memalign((void **)&fp->buffer, 256, capacity) < 0)
+        goto error;
+#else
     fp->buffer = (char *) malloc(capacity);
     if (fp->buffer == NULL) goto error;
+#endif
 
     fp->begin = fp->end = fp->buffer;
     fp->limit = &fp->buffer[capacity];

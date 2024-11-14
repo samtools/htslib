@@ -326,7 +326,7 @@ HTS_HIDE_DYNAMIC_SYMBOLS
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic getauxval elf_aux_info])
+AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic getauxval elf_aux_info posix_memalign])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
