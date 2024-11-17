@@ -91,6 +91,19 @@ static void test_bcf_set_variant_type(void)
     {
         error("[16:33625444[N was not detected as a breakend");
     }
+
+    bcf_set_variant_type("T", "]chrB:123]AGTNNNNNCAT", &var3d);
+    if ( var3d.type != VCF_BND)
+    {
+        error("]chrB:123]AGTNNNNNCAT was not detected as a breakend");
+    }
+    bcf_set_variant_type("C", "CAGTNNNNNCA[chrA:321[", &var3d);
+    if ( var3d.type != VCF_BND)
+    {
+        error("CAGTNNNNNCA[chrA:321[ was not detected as a breakend");
+    }
+
+
     // Test special reference alleles
     bcf_variant_t var4a;
     bcf_set_variant_type("A", "<NON_REF>", &var4a);
