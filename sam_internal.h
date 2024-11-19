@@ -70,7 +70,7 @@ static inline int possibly_expand_bam_data(bam1_t *b, size_t bytes) {
  *    seq[i] = seq_nt16_str[bam_seqi(nib, i)];
  */
 static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
-    static const char code2base[512] =
+    static const char code2base[513] = /* 512 + 1 for end-of-string */
         "===A=C=M=G=R=S=V=T=W=Y=H=K=D=B=N"
         "A=AAACAMAGARASAVATAWAYAHAKADABAN"
         "C=CACCCMCGCRCSCVCTCWCYCHCKCDCBCN"
