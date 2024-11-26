@@ -53,6 +53,7 @@ run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep
 run_test('test_bcf2vcf',$opts);
 run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
 run_test('test_vcf_various',$opts);
+run_test('test_vcf_44', $opts);
 run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
 run_test('test_bcf_sr_range', $opts);
@@ -1157,6 +1158,15 @@ sub test_vcf_various
     # See htslib issue 1534
     test_cmd($opts, %args, out => "modhdr.expected.vcf",
         cmd => "$$opts{path}/test_view $$opts{path}/modhdr.vcf.gz chr22:1-2");
+}
+
+sub test_vcf_44
+{
+    my ($opts, %args) = @_;
+
+    # vcf4.4 with implicit and explicit phasing info combinations
+    test_cmd($opts, %args, out => "vcf44_1.expected",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf44_1.vcf");
 }
 
 sub write_multiblock_bgzf {

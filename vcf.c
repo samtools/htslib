@@ -3061,8 +3061,14 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     const char *t = q + 1;
     int m = 0;   // m: sample id
     const int nsamples = bcf_hdr_nsamples(h);
-
+    bcf_version ver = v42;
     const char *end = s->s + s->l;
+
+    if (bcf_get_version(h, &ver)) {
+        hts_log_error("Failed to get version information");
+        return -1;
+    }
+
     while ( t<end )
     {
         // can we skip some samples?
@@ -3099,13 +3105,25 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 int l;
                 if (z->is_gt) {
                     // Genotypes.
-                    // <val>([|/]<val>)+... where <val> is [0-9]+ or ".".
+                    //([/|])?<val>)([|/]<val>)+... where <val> is [0-9]+ or ".".
                     int32_t is_phased = 0;
                     uint32_t *x = (uint32_t*)(z->buf + z->size * (size_t)m);
                     uint32_t unreadable = 0;
                     uint32_t max = 0;
-                    int overflow = 0;
+                    int overflow = 0, ploidy = 0, anyunphased = 0, \
+                        phasingprfx = 0;
+
+                    /* with prefixed phasing, it is explicitly given for 1st one
+                    with non-prefixed, set based on ploidy and phasing of other
+                    alleles. */
+                    if (ver >= v44 && (*t == '|' || *t == '/')) {
+                        // cache prefix and phasing status
+                        is_phased = *t++ == '|';
+                        phasingprfx = 1;
+                    }
+
                     for (l = 0;; ++t) {
+                        ploidy++;
                         if (*t == '.') {
                             ++t, x[l++] = is_phased;
                         } else {
@@ -3125,8 +3143,18 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                             if (max < val) max = val;
                             x[l++] = (val + 1) << 1 | is_phased;
                         }
+                        anyunphased |= (ploidy != 1) && !is_phased;
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
+                    }
+                    if (ver >= v44 && !phasingprfx) {
+                        /* no explicit phasing for 1st allele, set based on
+                         other alleles and ploidy */
+                        if (ploidy == 1) {  //implicitly phased
+                            x[0]|= 1;
+                        } else {            //set by other unphased alleles
+                            x[0] |= anyunphased ? 0 : 1;
+                        }
                     }
                     // Possibly check max against v->n_allele instead?
                     if (overflow || max > (INT32_MAX >> 1) - 1) {
@@ -4187,7 +4215,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     if (!first) kputc_(':', s);
                     first = 0;
                     if (gt_i == i) {
-                        bcf_format_gt(f,j,s);
+                        bcf_format_gt1(h, f,j,s);
                         break;
                     }
                     else if (f->n == 1)
