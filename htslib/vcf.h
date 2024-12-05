@@ -1617,12 +1617,14 @@ static inline int bcf_format_gt1(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isamp
              need to specify explicitly */
             e |= (ploidy > 1 && anyunphased) ?
                     (kputc('|', &tmp2) < 0) :
-                    0;
+                        (ploidy <= 1 && !((val0 >> 1)) ? //|. needs explicit o/p
+                            (kputc('|', &tmp2) < 0) :
+                            0);
         } else {
             /* 1st allele is unphased, if ploidy is = 1 or allele is '.' or
              ploidy > 1 and no other unphased allele exist, need to specify
              explicitly */
-            e |= ((ploidy <= 1) || (ploidy > 1 && !anyunphased)) ?
+            e |= ((ploidy <= 1 && val0 != 0) || (ploidy > 1 && !anyunphased)) ?
                     (kputc('/', &tmp2) < 0) :
                     0;
         }

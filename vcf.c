@@ -3111,7 +3111,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                     uint32_t unreadable = 0;
                     uint32_t max = 0;
                     int overflow = 0, ploidy = 0, anyunphased = 0, \
-                        phasingprfx = 0;
+                        phasingprfx = 0, unknown1 = 0;
 
                     /* with prefixed phasing, it is explicitly given for 1st one
                     with non-prefixed, set based on ploidy and phasing of other
@@ -3126,6 +3126,9 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                         ploidy++;
                         if (*t == '.') {
                             ++t, x[l++] = is_phased;
+                            if (l==1) {   //for 1st allele only
+                                unknown1 = 1;
+                            }
                         } else {
                             const char *tt = t;
                             uint32_t val;
@@ -3151,9 +3154,11 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                         /* no explicit phasing for 1st allele, set based on
                          other alleles and ploidy */
                         if (ploidy == 1) {  //implicitly phased
-                            x[0]|= 1;
+                            if (!unknown1) {
+                                x[0] |= 1;
+                            }
                         } else {            //set by other unphased alleles
-                            x[0] |= anyunphased ? 0 : 1;
+                            x[0] |= (anyunphased)? 0 : 1;
                         }
                     }
                     // Possibly check max against v->n_allele instead?
