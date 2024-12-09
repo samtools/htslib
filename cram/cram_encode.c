@@ -3691,7 +3691,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             return -1;
         }
         fake_qual = spos;
-        cr->aend = no_ref ? apos : MIN(apos, c->ref_end);
+        // Protect against negative length refs (fuzz 382922241)
+        cr->aend = no_ref ? apos : MIN(apos, MAX(0, c->ref_end));
         if (cram_stats_add(c->stats[DS_FN], cr->nfeature) < 0)
             goto block_err;
 

@@ -3247,6 +3247,10 @@ cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                 if (fd->ooc)
                     break;
 
+//                printf("%p %d:%ld-%ld vs %d:%ld-%ld\n", fd,
+//                       c_next->ref_seq_id, c_next->ref_seq_start, c_next->ref_seq_start+c_next->ref_seq_span-1,
+//                       fd->range.refid, fd->range.start, fd->range.end);
+
                 /* Skip containers not yet spanning our range */
                 if (fd->range.refid != -2 && c_next->ref_seq_id != -2) {
                     // ref_id beyond end of range; bail out

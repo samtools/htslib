@@ -2790,9 +2790,13 @@ static int refs_from_header(cram_fd *fd) {
             if ((tag = sam_hrecs_find_key(ty, "M5", NULL)))
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
 
-            if ((tag = sam_hrecs_find_key(ty, "LN", NULL)))
+            if ((tag = sam_hrecs_find_key(ty, "LN", NULL))) {
                 // LN tag used when constructing consensus reference
                 r->ref_id[j]->LN_length = strtoll(tag->str+3, NULL, 0);
+                // See fuzz 382922241
+                if (r->ref_id[j]->LN_length < 0)
+                    r->ref_id[j]->LN_length = 0;
+            }
         }
 
         k = kh_put(refs, r->h_meta, r->ref_id[j]->name, &n);
@@ -5818,6 +5822,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_RANGE: {
         int r = cram_seek_to_refpos(fd, va_arg(args, cram_range *));
         pthread_mutex_lock(&fd->range_lock);
+//        printf("opt range noseek to %p %d:%ld-%ld\n",
+//               fd, fd->range.refid, fd->range.start, fd->range.end);
         if (fd->range.refid != -2)
             fd->required_fields |= SAM_POS;
         pthread_mutex_unlock(&fd->range_lock);
