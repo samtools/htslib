@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2024 Genome Research Ltd.
+    Copyright (C) 2012-2025 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -116,12 +116,76 @@ typedef struct
     vdict_t dict;   // bcf_hdr_t.dict[0] vdict_t dictionary which keeps bcf_idinfo_t for BCF_HL_FLT,BCF_HL_INFO,BCF_HL_FMT
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
     size_t *key_len;// length of h->id[BCF_DT_ID] strings
+    int version;    //cached version
 }
 bcf_hdr_aux_t;
 
 static inline bcf_hdr_aux_t *get_hdr_aux(const bcf_hdr_t *hdr)
 {
     return (bcf_hdr_aux_t *)hdr->dict[0];
+}
+
+//version macros
+#define VCF_DEF 4002000
+#define VCF44   4004000
+
+#define VCF_MAJOR_VER(x) ( (x) / 10000 / 100 )
+#define VCF_MINOR_VER(x) ( ((x) % 1000000) / 1000 )
+
+/**
+ *  bcf_get_version - get the version as int
+ *  @param hdr   - bcf header, to get version
+ *  @param verstr- version string, which is already available
+ *  Returns version on success and default version on failure
+ *  version = major * 100 * 10000 + minor * 1000
+ */
+static int bcf_get_version(const bcf_hdr_t *hdr, const char *verstr)
+{
+    const char *version = NULL, vcf[] = "VCFv";
+    char *major = NULL, *minor = NULL;
+    int ver = -1;
+    long tmp = 0;
+    bcf_hdr_aux_t *aux = NULL;
+
+    if (!hdr && !verstr) {  //invalid input
+        goto fail;
+    }
+
+    if (hdr) {
+        if ((aux = get_hdr_aux(hdr)) && aux->version != 0) {    //use cached version
+            return aux->version;
+        }
+        //get from header
+        version = bcf_hdr_get_version(hdr);
+    } else {
+        //get from version string
+        version = verstr;
+    }
+    if (!(major = strstr(version, vcf))) {  //bad format
+        goto fail;
+    }
+    major += sizeof(vcf) - 1;
+    if (!(minor = strchr(major, '.'))) {    //bad format
+        goto fail;
+    }
+    tmp = strtol(major, NULL, 10);
+    if ((!tmp && errno == EINVAL) ||
+        ((tmp == LONG_MIN || tmp == LONG_MAX) && errno == ERANGE)) {    //failed
+        goto fail;
+    }
+    ver = tmp * 100 * 10000;
+    tmp = strtol(++minor, NULL, 10);
+    if ((!tmp && errno == EINVAL) ||
+        ((tmp == LONG_MIN || tmp == LONG_MAX) && errno == ERANGE)) {    //failed
+        goto fail;
+    }
+    ver += tmp * 1000;
+    return ver;
+
+fail:
+    hts_log_warning("Couldn't get VCF version, considering as %d.%d",
+        VCF_MAJOR_VER(VCF_DEF), VCF_MINOR_VER(VCF_DEF));
+    return VCF_DEF;
 }
 
 static char *find_chrom_header_line(char *s)
@@ -985,7 +1049,6 @@ static void bcf_hdr_remove_from_hdict(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
 int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
 {
-    // currently only for bcf_hdr_set_version
     assert( hrec->type==BCF_HL_GEN );
     int ret;
     khint_t k;
@@ -1014,6 +1077,11 @@ int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
     free(hrec->value);
     hrec->value = strdup(tmp->value);
     if ( !hrec->value ) return -1;
+
+    if (!strcmp(hrec->key,"fileformat")) {
+        //update version
+        get_hdr_aux(hdr)->version = bcf_get_version(NULL, hrec->value);
+    }
     return 0;
 }
 
@@ -1037,7 +1105,6 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             bcf_hrec_destroy(hrec);
             return 0;
         }
-
         // Is one of the generic fields and already present?
         if ( ksprintf(&str, "##%s=%s", hrec->key,hrec->value) < 0 )
         {
@@ -1051,6 +1118,9 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             bcf_hrec_destroy(hrec);
             free(str.s);
             return 0;
+        }
+        if (!strcmp(hrec->key, "fileformat")) {
+            aux->version = bcf_get_version(NULL, hrec->value);
         }
     }
 
@@ -1387,6 +1457,8 @@ int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
         if ( ksprintf(&str,"##fileformat=%s", version) < 0 ) return -1;
         hrec = bcf_hdr_parse_line(hdr, str.s, &len);
         free(str.s);
+
+        get_hdr_aux(hdr)->version = bcf_get_version(NULL, hrec->value);
     }
     else
     {
@@ -1420,6 +1492,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     if ( (aux->gen = kh_init(hdict))==NULL ) { free(aux); goto fail; }
     aux->key_len = NULL;
     aux->dict = *((vdict_t*)h->dict[0]);
+    aux->version = 0;
     free(h->dict[0]);
     h->dict[0] = aux;
 
@@ -1428,6 +1501,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
         bcf_hdr_append(h, "##fileformat=VCFv4.2");
         // The filter PASS must appear first in the dictionary
         bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">");
+        aux->version = VCF_DEF;
     }
     return h;
 
@@ -3061,13 +3135,9 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     const char *t = q + 1;
     int m = 0;   // m: sample id
     const int nsamples = bcf_hdr_nsamples(h);
-    bcf_version ver = v42;
     const char *end = s->s + s->l;
 
-    if (bcf_get_version(h, &ver)) {
-        hts_log_error("Failed to get version information");
-        return -1;
-    }
+    int ver = bcf_get_version(h, NULL);
 
     while ( t<end )
     {
@@ -3116,7 +3186,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                     /* with prefixed phasing, it is explicitly given for 1st one
                     with non-prefixed, set based on ploidy and phasing of other
                     alleles. */
-                    if (ver >= v44 && (*t == '|' || *t == '/')) {
+                    if (ver >= VCF44 && (*t == '|' || *t == '/')) {
                         // cache prefix and phasing status
                         is_phased = *t++ == '|';
                         phasingprfx = 1;
@@ -3150,7 +3220,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
                     }
-                    if (ver >= v44 && !phasingprfx) {
+                    if (ver >= VCF44 && !phasingprfx) {
                         /* no explicit phasing for 1st allele, set based on
                          other alleles and ploidy */
                         if (ploidy == 1) {  //implicitly phased
@@ -4162,7 +4232,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             uint8_t *ptr = (uint8_t *)v->indiv.s;
             int gt_i = -1;
             bcf_fmt_t *fmt = v->d.fmt;
-            int first = 1;
+            int first = 1, ret = 0;
             int fmt_packed = !(v->unpacked & BCF_UN_FMT);
 
             if (fmt_packed) {
@@ -4198,6 +4268,8 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                 if (!id || !id->key) {
                     hts_log_error("Invalid BCF, the FORMAT tag id=%d at %s:%"PRIhts_pos" not present in the header", z->id, bcf_seqname_safe(h, v), v->pos+1);
                     errno = EINVAL;
+                    if (fmt_packed)
+                        free(fmt);
                     return -1;
                 }
 
@@ -4220,7 +4292,13 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     if (!first) kputc_(':', s);
                     first = 0;
                     if (gt_i == i) {
-                        bcf_format_gt1(h, f,j,s);
+                        if ((ret = bcf_format_gt_v2(h, f,j,s)) < 0) {
+                            hts_log_error("Failed to format GT value for sample %d, returned %d", i, ret);
+                            errno = EINVAL;
+                            if (fmt_packed)
+                                free(fmt);
+                            return -1;
+                        }
                         break;
                     }
                     else if (f->n == 1)
@@ -5983,3 +6061,77 @@ const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer) {
     return buffer;
 }
 
+/**
+ *  bcf_format_gt_v2 - formats GT information on a string
+ *  @param hdr - bcf header, to get version
+ *  @param fmt - pointer to bcf format data
+ *  @param isample - position of interested sample in data
+ *  @param str - pointer to output string
+ *  Returns 0 on success and -1 on failure
+ *  This method is preferred over bcf_format_gt as this supports vcf4.4 and
+ *  prefixed phasing. Explicit / prefixed phasing for 1st allele is used only
+ *  when it is a must to correctly express phasing.
+ * correctly express phasing.
+ */
+int bcf_format_gt_v2(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample, kstring_t *str)
+{
+    uint32_t e = 0;
+    int ploidy = 1, anyunphased = 0;
+    int32_t val0 = 0;
+    size_t pos = str ? str->l : 0;
+
+    #define BRANCH(type_t, convert, missing, vector_end) { \
+        uint8_t *ptr = fmt->p + isample*fmt->size; \
+        int i; \
+        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
+        { \
+            type_t val = convert(ptr); \
+            if ( val == vector_end ) break; \
+            if (!i) { val0 = val; } \
+            if (i) { \
+                e |= kputc("/|"[val & 1], str) < 0; \
+                anyunphased |= !(val & 1); \
+            } \
+            if (!(val >> 1)) e |= kputc('.', str) < 0; \
+            else e |= kputw((val >> 1) - 1, str) < 0; \
+        } \
+        if (i == 0) e |= kputc('.', str) < 0; \
+        ploidy = i; \
+    }
+    switch (fmt->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing,
+            bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing,
+            bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing,
+            bcf_int32_vector_end); break;
+        case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
+        default: hts_log_error("Unexpected type %d", fmt->type); return -2;
+    }
+    #undef BRANCH
+
+    if (hdr && get_hdr_aux(hdr)->version >= VCF44) {
+        //output which supports prefixed phasing
+
+        /* update 1st allele's phasing if required and append rest to it.
+        use prefixed phasing only when it is a must. i.e. without which the
+        inferred value will be incorrect */
+        if (val0 & 1) {
+            /* 1st one is phased, if ploidy is > 1 and an unphased allele exists
+             need to specify explicitly */
+            e |= (ploidy > 1 && anyunphased) ?
+                    (kinsert_char('|', pos, str) < 0) :
+                        (ploidy <= 1 && !((val0 >> 1)) ? //|. needs explicit o/p
+                            (kinsert_char('|', pos, str) < 0) :
+                            0);
+        } else {
+            /* 1st allele is unphased, if ploidy is = 1 or allele is '.' or
+             ploidy > 1 and no other unphased allele exist, need to specify
+             explicitly */
+            e |= ((ploidy <= 1 && val0 != 0) || (ploidy > 1 && !anyunphased)) ?
+                    (kinsert_char('/', pos, str) < 0) :
+                    0;
+        }
+    }
+    return e == 0 ? 0 : -1;
+}

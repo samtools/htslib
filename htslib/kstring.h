@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013-2014, 2016, 2018-2020, 2022, 2024 Genome Research Ltd.
+   Copyright (C) 2013-2014, 2016, 2018-2020, 2022, 2024-2025 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -447,6 +447,57 @@ static inline int *ksplit(kstring_t *s, int delimiter, int *n)
 	int max = 0, *offsets = 0;
 	*n = ksplit_core(s->s, delimiter, &max, &offsets);
 	return offsets;
+}
+
+/**
+ *  kinsert_char - inserts a char to kstring
+ *  @param c   - char to insert
+ *  @param pos - position at which to insert, starting from 0
+ *  @param s   - pointer to output string
+ *  Returns 0 on success and -1 on failure
+ *  0 for pos inserts at start and length of current string as pos appends at
+ *  the end.
+ */
+static inline int kinsert_char(char c, size_t pos, kstring_t *s)
+{
+    if (!s || pos > s->l)  {
+        return EOF;
+    }
+    if (ks_resize(s, s->l + 2) < 0) {
+        return EOF;
+    }
+    memmove(s->s + pos + 1, s->s + pos, s->l - pos);
+    s->s[pos] = c;
+    s->s[++s->l] = 0;
+    return 0;
+}
+
+/**
+ *  kinsert_str - inserts a null terminated string to kstring
+ *  @param str - string to insert
+ *  @param pos - position at which to insert, starting from 0
+ *  @param s   - pointer to output string
+ *  Returns 0 on success and -1 on failure
+ *  0 for pos inserts at start and length of current string as pos appends at
+ *  the end. empty string makes no update.
+ */
+static inline int kinsert_str(const char *str, size_t pos, kstring_t *s)
+{
+    size_t len = 0;
+    if (!s || pos > s->l || !str)  {
+        return EOF;
+    }
+    if (!(len = strlen(str))) {
+        return 0;
+    }
+    if (ks_resize(s, s->l + len + 1) < 0) {
+        return EOF;
+    }
+    memmove(s->s + pos + len, s->s + pos, s->l - pos);
+    memcpy(s->s + pos, str, len);
+    s->l += len;
+    s->s[s->l] = '\0';
+    return 0;
 }
 
 #ifdef HTSLIB_SSIZE_T

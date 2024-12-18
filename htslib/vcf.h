@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022-2023 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2025 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -1501,141 +1501,25 @@ static inline int bcf_float_is_vector_end(float f)
     return u.i==bcf_float_vector_end ? 1 : 0;
 }
 
-typedef enum bcf_version {v41 = 1, v42, v43, v44} bcf_version;
-/**
- *  bcf_get_version - get the version as bcf_version enumeration
- *  @param hdr   - bcf header, to get version
- *  @param ipver - pointer to return version
- *  Returns 0 on success and -1 on failure
- */
-static inline int bcf_get_version(const bcf_hdr_t *hdr, bcf_version *ver)
-{
-    const char *version = NULL;
-
-    if (!hdr || !ver) {
-        return -1;
-    }
-
-    version = bcf_hdr_get_version(hdr);
-    if (!strcmp("VCFv4.1", version)) {
-        *ver = v41;
-    } else if (!strcmp("VCFv4.2", version)) {
-        *ver = v42;
-    } else if (!strcmp("VCFv4.3", version)) {
-        *ver = v43;
-    } else {
-        *ver = v44;
-    }
-    return 0;
-}
-
-static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
-{
-    uint32_t e = 0;
-    #define BRANCH(type_t, convert, missing, vector_end) { \
-        uint8_t *ptr = fmt->p + isample*fmt->size; \
-        int i; \
-        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
-        { \
-            type_t val = convert(ptr); \
-            if ( val == vector_end ) break; \
-            if ( i ) e |= kputc("/|"[val&1], str) < 0; \
-            if ( !(val>>1) ) e |= kputc('.', str) < 0; \
-            else e |= kputw((val>>1) - 1, str) < 0; \
-        } \
-        if (i == 0) e |= kputc('.', str) < 0; \
-    }
-    switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing, bcf_int32_vector_end); break;
-        case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
-        default: hts_log_error("Unexpected type %d", fmt->type); return -2;
-    }
-    #undef BRANCH
-    return e == 0 ? 0 : -1;
-}
 
 /**
- *  bcf_format_gt1 - formats GT information on a string
+ *  bcf_format_gt_v2 - formats GT information on a string
  *  @param hdr - bcf header, to get version
  *  @param fmt - pointer to bcf format data
  *  @param isample - position of interested sample in data
  *  @param str - pointer to output string
  *  Returns 0 on success and -1 on failure
- *  This method is extended from bcf_format_gt to output phasing information
- * in accordance with v4.4 format, which supports explicit / prefixed phasing
- * for 1st allele.
- * Explicit / prefixed phasing for 1st allele is used only when it is a must to
- * correctly express phasing.
+ *  This method is preferred over bcf_format_gt as this supports vcf4.4 and
+ *  prefixed phasing. Explicit / prefixed phasing for 1st allele is used only
+ *  when it is a must to correctly express phasing.
  */
-static inline int bcf_format_gt1(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample, kstring_t *str)
+HTSLIB_EXPORT
+int bcf_format_gt_v2(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample,
+    kstring_t *str) HTS_RESULT_USED;
+
+static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
-    uint32_t e = 0;
-    bcf_version ver = v42;
-    int ploidy = 1, anyunphased = 0;
-    int32_t val0 = 0;
-    kstring_t tmp1 = KS_INITIALIZE, tmp2 = KS_INITIALIZE;
-
-    if (bcf_get_version(hdr, &ver)) {
-        hts_log_error("Failed to get version information");
-        return -1;
-    }
-    #define BRANCH(type_t, convert, missing, vector_end) { \
-        uint8_t *ptr = fmt->p + isample*fmt->size; \
-        int i; \
-        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
-        { \
-            type_t val = convert(ptr); \
-            if ( val == vector_end ) break; \
-            if (!i) { val0 = val; } \
-            if (i) { \
-                e |= kputc("/|"[val & 1], &tmp1) < 0; \
-                anyunphased |= !(val & 1); \
-            } \
-            if (!(val >> 1)) e |= kputc('.', &tmp1) < 0; \
-            else e |= kputw((val >> 1) - 1, &tmp1) < 0; \
-        } \
-        if (i == 0) e |= kputc('.', &tmp1) < 0; \
-        ploidy = i; \
-    }
-    switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing, bcf_int32_vector_end); break;
-        case BCF_BT_NULL:  e |= kputc('.', &tmp1) < 0; break;
-        default: hts_log_error("Unexpected type %d", fmt->type); return -2;
-    }
-    #undef BRANCH
-
-    if (ver >= v44) { //output which supports prefixed phasing
-        /* update 1st allele's phasing if required and append rest to it.
-        use prefixed phasing only when it is a must. i.e. without which the
-        inferred value will be incorrect */
-        if (val0 & 1) {
-            /* 1st one is phased, if ploidy is > 1 and an unphased allele exists
-             need to specify explicitly */
-            e |= (ploidy > 1 && anyunphased) ?
-                    (kputc('|', &tmp2) < 0) :
-                        (ploidy <= 1 && !((val0 >> 1)) ? //|. needs explicit o/p
-                            (kputc('|', &tmp2) < 0) :
-                            0);
-        } else {
-            /* 1st allele is unphased, if ploidy is = 1 or allele is '.' or
-             ploidy > 1 and no other unphased allele exist, need to specify
-             explicitly */
-            e |= ((ploidy <= 1 && val0 != 0) || (ploidy > 1 && !anyunphased)) ?
-                    (kputc('/', &tmp2) < 0) :
-                    0;
-        }
-        e |= kputsn(tmp1.s, tmp1.l, &tmp2) < 0; //append rest with updated one
-        ks_free(&tmp1);
-        tmp1 = tmp2;
-    }
-    //updated v44 string or <v44 without any update
-    e |= kputsn(tmp1.s, tmp1.l, str) < 0;
-    ks_free(&tmp1);
-    return e == 0 ? 0 : -1;
+    return bcf_format_gt_v2(NULL, fmt, isample, str);
 }
 
 static inline int bcf_enc_size(kstring_t *s, int size, int type)

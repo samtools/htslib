@@ -1,6 +1,6 @@
 /*  test_kstring.c -- kstring unit tests
 
-    Copyright (C) 2018, 2020, 2024 Genome Research Ltd.
+    Copyright (C) 2018, 2020, 2024-2025 Genome Research Ltd.
 
     Author: Rob Davies <rmd@sanger.ac.uk>
 
@@ -451,6 +451,134 @@ static int test_kgetline2(void) {
     return EXIT_SUCCESS;
 }
 
+static int test_kinsertchar(void) {
+    kstring_t t = KS_INITIALIZE, res = KS_INITIALIZE;
+    int i = 0;
+    struct data {
+        int pos;
+        const char *val;
+    };
+
+    struct data tdata[] = { { -1, ""}, {0, "X0123"}, {1, "0X123"}, {2, "01X23"},
+     {3, "012X3"}, {4, "0123X"}, {5, ""} };
+
+    for (i = -1; i < 6; ++i) {
+        kstring_t s = KS_INITIALIZE;
+        kputs("0123", &s);
+        if (kinsert_char('X', i, &s) < 0) {
+            if ( i < 0 || i > 4) { ks_free(&s); continue; }  //expected failures
+            fprintf(stderr, "kinsert_char failed\n");
+            ks_free(&s);
+            return -1;
+        }
+        if (s.s[s.l] != '\0') {
+            fprintf(stderr, "No NUL termination on string from kinsert_char\n");
+            ks_free(&s);
+            return -1;
+        }
+        if (memcmp(s.s, tdata[i + 1].val, s.l + 1)) {
+            fprintf(stderr, "kinsert_char comparison failed\n");
+            ks_free(&s);
+            return -1;
+        }
+        ks_free(&s);
+    }
+    //realloc checks
+    for (i = 0; i < 7; ++i) {
+        kputc('A' + i, &res);
+        if (kinsert_char('A' + i, t.l, &t) < 0) {
+            fprintf(stderr, "kinsert_char failed in realloc\n");
+            ks_free(&res); ks_free(&t);
+            return -1;
+        }
+        if (t.s[t.l] != '\0') {
+            fprintf(stderr, "No NUL termination on string from kinsert_char in realloc\n");
+            ks_free(&res); ks_free(&t);
+            return -1;
+        }
+        if (memcmp(t.s, res.s, res.l+1)) {
+            fprintf(stderr, "kinsert_char realloc comparison failed in realloc\n");
+            ks_free(&res); ks_free(&t);
+            return -1;
+        }
+    }
+    ks_free(&t);
+    ks_free(&res);
+    return 0;
+}
+
+static int test_kinsertstr(void) {
+    kstring_t t = KS_INITIALIZE, res = KS_INITIALIZE;
+    int i = 0;
+    struct data {
+        int pos;
+        const char *val;
+    };
+
+    struct data tdata[] = { { -1, ""}, {0, "XYZ0123"}, {1, "0XYZ123"},
+     {2, "01XYZ23"}, {3, "012XYZ3"}, {4, "0123XYZ"}, {5, ""} };
+
+    for (i = -1; i < 6; ++i) {
+        kstring_t s = KS_INITIALIZE;
+        kputs("0123", &s);
+        if (kinsert_str("XYZ", i, &s) < 0) {
+            if ( i < 0 || i > 4) { ks_free(&s); continue; }  //expected failures
+            fprintf(stderr, "kinsert_str failed\n");
+            return -1;
+        }
+        if (s.s[s.l] != '\0') {
+            fprintf(stderr, "No NUL termination on string from kinsert_str\n");
+            return -1;
+        }
+        if (memcmp(s.s, tdata[i + 1].val, s.l + 1)) {
+            fprintf(stderr, "kinsert_str comparison failed\n");
+            return -1;
+        }
+        ks_free(&s);
+    }
+    //realloc checks
+    for (i = 0; i < 15; ++i) {
+        kstring_t val = KS_INITIALIZE;
+        ksprintf(&val, "%c", 'A' + i);
+        kputs(val.s, &res);
+        if (kinsert_str(val.s, t.l, &t) < 0) {
+            ks_free(&val);
+            fprintf(stderr, "kinsert_str failed in realloc\n");
+            return -1;
+        }
+        if (t.s[t.l] != '\0') {
+            ks_free(&val); ks_free(&res);
+            fprintf(stderr, "No NUL termination on string from kinsert_str in realloc\n");
+            return -1;
+        }
+        if (memcmp(t.s, res.s, res.l+1)) {
+            ks_free(&val); ks_free(&res);
+            fprintf(stderr, "kinsert_str realloc comparison failed in realloc\n");
+            return -1;
+        }
+        ks_free(&val);
+    }
+    //empty strings
+    ks_free(&t);
+    if (kinsert_str("", 1, &t)) { //expected
+        if (kinsert_str("", 0, &t) || t.l != 0) {
+            fprintf(stderr, "kinsert_str empty insertion failed\n");
+            return -1;
+        }
+    } else {
+        fprintf(stderr, "kinsert_str empty ins to invalid pos succeeded\n");
+        return -1;
+    }
+    i = res.l;
+    if (kinsert_str("", 1, &res) || i != res.l) {
+        fprintf(stderr, "kinsert_str empty ins to valid pos failed\n");
+        ks_free(&res);
+        return -1;
+    }
+    ks_free(&res);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     int opt, res = EXIT_SUCCESS;
     int64_t start = 0;
@@ -499,6 +627,12 @@ int main(int argc, char **argv) {
 
     if (!test || strcmp(test, "kgetline2") == 0)
         if (test_kgetline2() != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kinsertchar") == 0)
+        if (test_kinsertchar() != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kinsertstr") == 0)
+        if (test_kinsertstr() != 0) res = EXIT_FAILURE;
 
     return res;
 }
