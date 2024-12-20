@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2023 Genome Research Ltd.
+    Copyright (C) 2012-2023, 2025 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -69,6 +69,7 @@ typedef struct
 {
     sr_sort_t sort;
     int regions_overlap, targets_overlap;
+    int *closefile;             // close htsfile with sync reader close or not
 }
 aux_t;
 
@@ -251,9 +252,28 @@ void bcf_sr_destroy_threads(bcf_srs_t *files) {
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
     char fmode[5];
+    int ret = 0;
+    const char *idxname = NULL;
+
     strcpy(fmode, "r");
     vcf_open_mode(fmode+1, fname, NULL);
     htsFile* file_ptr = hts_open(fname, fmode);
+    if ( ! file_ptr ) {
+        files->errnum = open_failed;
+        return 0;
+    }
+    //get idx name and pass to add_hreader
+    idxname = strstr(fname, HTS_IDX_DELIM);
+    idxname += idxname ? sizeof(HTS_IDX_DELIM) - 1 : 0;
+    if (!(ret = bcf_sr_add_hreader(files, file_ptr, 1, idxname))) {
+        hts_close(file_ptr);    //failed, close the file
+    }
+    return ret;
+}
+
+int bcf_sr_add_hreader(bcf_srs_t *files, htsFile *file_ptr, int autoclose, const char *idxname)
+{
+    aux_t *auxdata = NULL;
     if ( ! file_ptr ) {
         files->errnum = open_failed;
         return 0;
@@ -274,7 +294,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         BGZF *bgzf = hts_get_bgzfp(reader->file);
         if ( bgzf && bgzf_check_EOF(bgzf) == 0 ) {
             files->errnum = no_eof;
-            hts_log_warning("No BGZF EOF marker; file '%s' may be truncated", fname);
+            hts_log_warning("No BGZF EOF marker; file '%s' may be truncated", file_ptr->fn);
         }
         if (files->p)
             bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
@@ -290,7 +310,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
                 return 0;
             }
 
-            reader->tbx_idx = tbx_index_load(fname);
+            reader->tbx_idx = tbx_index_load2(file_ptr->fn, idxname);
             if ( !reader->tbx_idx )
             {
                 files->errnum = idx_load_failed;
@@ -309,7 +329,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 
             reader->header = bcf_hdr_read(reader->file);
 
-            reader->bcf_idx = bcf_index_load(fname);
+            reader->bcf_idx = bcf_index_load2(file_ptr->fn, idxname);
             if ( !reader->bcf_idx )
             {
                 files->errnum = idx_load_failed;
@@ -362,7 +382,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         return 0;
     }
 
-    reader->fname = strdup(fname);
+    reader->fname = strdup(file_ptr->fn);
     if ( files->apply_filters )
         reader->filter_ids = init_filters(reader->header, files->apply_filters, &reader->nfilter_ids);
 
@@ -413,6 +433,18 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         }
     }
 
+    if ((auxdata = BCF_SR_AUX(files))) {
+        //store closure status for htsfile
+        int *tmp = realloc(auxdata->closefile, sizeof(int) * files->nreaders);
+        if (!tmp) {
+            hts_log_error("Failed to allocate memory");
+            return 0;
+        }
+        tmp[files->nreaders - 1] = autoclose;
+        auxdata->closefile = tmp;
+    }
+
+
     return 1;
 }
 
@@ -426,13 +458,15 @@ bcf_srs_t *bcf_sr_init(void)
     return files;
 }
 
-static void bcf_sr_destroy1(bcf_sr_t *reader)
+static void bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
 {
     free(reader->fname);
     if ( reader->tbx_idx ) tbx_destroy(reader->tbx_idx);
     if ( reader->bcf_idx ) hts_idx_destroy(reader->bcf_idx);
     bcf_hdr_destroy(reader->header);
-    hts_close(reader->file);
+    if (closefile) {
+        hts_close(reader->file);
+    }
     if ( reader->itr ) tbx_itr_destroy(reader->itr);
     int j;
     for (j=0; j<reader->mbuffer; j++)
@@ -445,8 +479,10 @@ static void bcf_sr_destroy1(bcf_sr_t *reader)
 void bcf_sr_destroy(bcf_srs_t *files)
 {
     int i;
+    int *autoclose = BCF_SR_AUX(files)->closefile;
+
     for (i=0; i<files->nreaders; i++)
-        bcf_sr_destroy1(&files->readers[i]);
+        bcf_sr_destroy1(&files->readers[i], autoclose[i]);
     free(files->has_line);
     free(files->readers);
     for (i=0; i<files->n_smpl; i++) free(files->samples[i]);
@@ -456,6 +492,7 @@ void bcf_sr_destroy(bcf_srs_t *files)
     if (files->tmps.m) free(files->tmps.s);
     if (files->n_threads) bcf_sr_destroy_threads(files);
     bcf_sr_sort_destroy(&BCF_SR_AUX(files)->sort);
+    free(autoclose);
     free(files->aux);
     free(files);
 }
@@ -463,12 +500,15 @@ void bcf_sr_destroy(bcf_srs_t *files)
 void bcf_sr_remove_reader(bcf_srs_t *files, int i)
 {
     assert( !files->samples );  // not ready for this yet
+    int *autoclose = BCF_SR_AUX(files)->closefile;
+
     bcf_sr_sort_remove_reader(files, &BCF_SR_AUX(files)->sort, i);
-    bcf_sr_destroy1(&files->readers[i]);
+    bcf_sr_destroy1(&files->readers[i], autoclose[i]);
     if ( i+1 < files->nreaders )
     {
         memmove(&files->readers[i], &files->readers[i+1], (files->nreaders-i-1)*sizeof(bcf_sr_t));
         memmove(&files->has_line[i], &files->has_line[i+1], (files->nreaders-i-1)*sizeof(int));
+        memmove(&autoclose[i], &autoclose[i+1], (files->nreaders-i-1)*sizeof(int));
     }
     files->nreaders--;
 }
