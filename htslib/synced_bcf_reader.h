@@ -1,7 +1,7 @@
 /// @file htslib/synced_bcf_reader.h
 /// Stream through multiple VCF files.
 /*
-    Copyright (C) 2012-2017, 2019-2024 Genome Research Ltd.
+    Copyright (C) 2012-2017, 2019-2025 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -233,9 +233,29 @@ void bcf_sr_destroy_threads(bcf_srs_t *files);
  *
  *  See also the bcf_srs_t data structure for parameters controlling
  *  the reader's logic.
+ *  Invokes bcf_sr_add_hreader with opened file
  */
 HTSLIB_EXPORT
 int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
+
+/**
+ *  bcf_sr_add_hreader() - open new reader using htsfile
+ *  @readers: holder of the open readers
+ *  @file_ptr: htsfile already opened
+ *  @autoclose: close file along with reader or not, 1 - close, 0 - do not close
+ *  @idxname: index file name for file in @file_ptr
+ *
+ *  Returns 1 if the call succeeded, or 0 on error.
+ *
+ *  See also the bcf_srs_t data structure for parameters controlling
+ *  the reader's logic.
+ *  If idxname is NULL, uses file_ptr->fn to find index file.
+ *  With idxname as NULL, index file must be present along with the file with
+ *  default name
+ */
+HTSLIB_EXPORT
+int bcf_sr_add_hreader(bcf_srs_t *readers, htsFile *file_ptr, int autoclose,
+    const char *idxname);
 
 HTSLIB_EXPORT
 void bcf_sr_remove_reader(bcf_srs_t *files, int i);

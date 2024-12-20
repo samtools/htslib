@@ -56,6 +56,7 @@ run_test('test_vcf_various',$opts);
 run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
 run_test('test_bcf_sr_range', $opts);
+run_test('test_bcf_sr_hreader', $opts);
 run_test('test_command',$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 run_test('test_convert_padded_header',$opts);
 run_test('test_rebgzip',$opts);
@@ -1343,6 +1344,34 @@ sub test_bcf_sr_range {
             }
         }
     }
+}
+
+sub test_bcf_sr_hreader {
+    #uses input file from test_bcf_sr_sort / test-bcf-sr.pl
+    #invokes bcf sync reader with hread method
+    my ($opts, %args) = @_;
+    my $test = "test_bcf_sr_hreader";
+    my $fail = 0;
+    my $cmd = "$$opts{path}/test-bcf-sr -p all $$opts{tmp}/list.txt -o $$opts{tmp}/file.out";
+    my $cmd_header = "$$opts{path}/test-bcf-sr -p all $$opts{tmp}/list.txt -o $$opts{tmp}/filenew.out -u";
+    my $cmd_diff = "diff $$opts{tmp}/filenew.out $$opts{tmp}/file.out";
+
+    my ($ret, $out) = _cmd($cmd);
+    if ($ret != 0) {
+        failed($opts, $test, "Failed to create reference output\n");
+        return;
+    }
+    ($ret, $out) = _cmd($cmd_header);
+    if ($ret != 0) {
+        failed($opts, $test, "Failed to create output\n");
+        return;
+    }
+    ($ret, $out) = _cmd($cmd_diff);
+    if ($ret != 0) {
+        failed($opts, $test, "Output differs to reference output\n");
+        return;
+    }
+    passed($opts, $test);
 }
 
 sub test_command
