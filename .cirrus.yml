@@ -35,21 +35,22 @@ compile_template: &COMPILE
     if test "$USE_CONFIG" = "yes"; then
       MAKE_OPTS=
       autoreconf -i
-      eval ./configure --enable-plugins --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
+      eval ./configure --enable-plugins --enable-werror $CONFIG_OPTS CFLAGS=\"$CFLAGS\" || \
         ( cat config.log; false )
     else
       MAKE_OPTS=-e
     fi
+    make cc-version $MAKE_OPTS
     if test "x$DO_MAINTAINER_CHECKS" = "xyes"; then
-      make maintainer-check
+      make maintainer-check $MAKE_OPTS
     fi
     make -j 4 $MAKE_OPTS
 
 test_template: &TEST
   test_script: |
-    make test-shlib-exports
-    make test
-    if test "x$DO_UNTRACKED_FILE_CHECK" = "xyes"; then make check-untracked ; fi
+    make test-shlib-exports $MAKE_OPTS
+    make test $MAKE_OPTS
+    if test "x$DO_UNTRACKED_FILE_CHECK" = "xyes"; then make check-untracked $MAKE_OPTS ; fi
 
 #--------------------------------------------------
 # Task: linux builds.
@@ -71,10 +72,14 @@ gcc_task:
        DO_MAINTAINER_CHECKS: yes
        DO_UNTRACKED_FILE_CHECK: yes
        USE_CONFIG: no
+       CFLAGS: -g -O2 -Wall -Werror -fvisibility=hidden
     - environment:
        USE_CONFIG: yes
-       CFLAGS: -std=c99 -pedantic -Wformat=2
+       # ubsan is incompatible with some -Wformat opts so we do that on clang.
+       CFLAGS: -g -O3 -fsanitize=address,undefined -DHTS_ALLOW_UNALIGNED=0 -Wno-format-truncation -Wno-format-overflow
+       LDFLAGS: -fsanitize=address,undefined
        USE_LIBDEFLATE: yes
+       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
   install_script: |
     apt-get update
@@ -105,11 +110,12 @@ ubuntu_task:
   matrix:
     - environment:
        USE_CONFIG: yes
+       CFLAGS: -g -O3
        DO_UNTRACKED_FILE_CHECK: yes
     - environment:
+       # Cirrus-CI's clang isn't installed with ubsan, so we do that in gcc
        USE_CONFIG: yes
-       CFLAGS: -g -Wall -O3 -fsanitize=address
-       LDFLAGS: -fsanitize=address
+       CFLAGS: -g -O3 -std=c99 -pedantic -Wall -Wformat -Wformat=2
        USE_LIBDEFLATE: yes
 
   # NB: we could consider building a docker image with these
@@ -137,7 +143,7 @@ rocky_task:
     LC_ALL: C
     CIRRUS_CLONE_DEPTH: 1
     USE_CONFIG: yes
-    CFLAGS: -std=gnu90
+    CFLAGS: -g -O3 -std=gnu90 -Wall -Wformat -Wformat=2 -Wextra -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers
 
   # NB: we could consider building a docker image with these
   # preinstalled and specifying that instead, to speed up testing.
@@ -182,11 +188,10 @@ arm_ubuntu_task:
 macosx_task:
   name: macosx + clang
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-ventura-base:latest
+    image: ghcr.io/cirruslabs/macos-runner:sonoma
 
   environment:
     CC: clang
-    CFLAGS: "-Wall -arch arm64 -arch x86_64"
     LDFLAGS: "-arch arm64 -arch x86_64"
     LIBDEFLATE_CFLAGS: "-arch arm64 -arch x86_64"
     LC_ALL: C
@@ -195,9 +200,11 @@ macosx_task:
   matrix:
     - environment:
        USE_CONFIG: no
+       CFLAGS: "-g -O3 -Wall -Werror -arch arm64 -arch x86_64"
     - environment:
        USE_CONFIG: yes
        USE_LIBDEFLATE: yes
+       CFLAGS: "-g -O3 -Wall -arch arm64 -arch x86_64"
 
   package_install_script: |
     HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool xz git \

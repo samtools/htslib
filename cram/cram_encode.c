@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2020, 2022-2023 Genome Research Ltd.
+Copyright (c) 2012-2020, 2022-2024 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -528,6 +528,12 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
         cp += fd->vv.varint_put64(cp, NULL, s->hdr->ref_seq_start);
         cp += fd->vv.varint_put64(cp, NULL, s->hdr->ref_seq_span);
     } else {
+        if (s->hdr->ref_seq_start < 0 || s->hdr->ref_seq_start > INT_MAX) {
+            hts_log_error("Reference position too large for CRAM 3");
+            cram_free_block(b);
+            free(buf);
+            return NULL;
+        }
         cp += fd->vv.varint_put32(cp, NULL, s->hdr->ref_seq_start);
         cp += fd->vv.varint_put32(cp, NULL, s->hdr->ref_seq_span);
     }
@@ -947,14 +953,14 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
      */
     {
         int i;
-        for (i = 0; i < s->naux_block; i++) {
-            if (!s->aux_block[i] || s->aux_block[i] == s->block[0])
+        for (i = DS_END /*num_blk - naux_blk*/; i < s->hdr->num_blocks; i++) {
+            if (!s->block[i] || s->block[i] == s->block[0])
                 continue;
 
-            if (s->aux_block[i]->method != RAW)
+            if (s->block[i]->method != RAW)
                 continue;
 
-            if (cram_compress_block2(fd, s, s->aux_block[i], s->aux_block[i]->m,
+            if (cram_compress_block2(fd, s, s->block[i], s->block[i]->m,
                                      method, level))
                 return -1;
         }
@@ -1157,8 +1163,10 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     if (c->tags_used) {
         int n;
         s->hdr->num_blocks = DS_END;
-        for (n = 0; n < s->naux_block; n++)
+        for (n = 0; n < s->naux_block; n++) {
             s->block[s->hdr->num_blocks++] = s->aux_block[n];
+            s->aux_block[n] = NULL;
+        }
     }
 
     /* Encode reads */
@@ -1235,6 +1243,58 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     return -1;
 }
 
+static inline const char *bam_data_end(bam1_t *b) {
+    return (const char *)b->data + b->l_data;
+}
+
+/*
+ * A bounds checking version of bam_aux2i.
+ */
+static inline int bam_aux2i_end(const uint8_t *aux, const uint8_t *aux_end) {
+    int type = *aux++;
+    switch (type) {
+        case 'c':
+            if (aux_end - aux < 1) {
+                errno = EINVAL;
+                return 0;
+            }
+            return *(int8_t *)aux;
+        case 'C':
+            if (aux_end - aux < 1) {
+                errno = EINVAL;
+                return 0;
+            }
+            return *aux;
+        case 's':
+            if (aux_end - aux < 2) {
+                errno = EINVAL;
+                return 0;
+            }
+            return le_to_i16(aux);
+        case 'S':
+            if (aux_end - aux < 2) {
+                errno = EINVAL;
+                return 0;
+            }
+            return le_to_u16(aux);
+        case 'i':
+            if (aux_end - aux < 4) {
+                errno = EINVAL;
+                return 0;
+            }
+            return le_to_i32(aux);
+        case 'I':
+            if (aux_end - aux < 4) {
+                errno = EINVAL;
+                return 0;
+            }
+            return le_to_u32(aux);
+        default:
+            errno = EINVAL;
+    }
+    return 0;
+}
+
 /*
  * Returns the number of expected read names for this record.
  */
@@ -1243,7 +1303,7 @@ static int expected_template_count(bam_seq_t *b) {
 
     uint8_t *TC = (uint8_t *)bam_aux_get(b, "TC");
     if (TC) {
-        int n = bam_aux2i(TC);
+        int n = bam_aux2i_end(TC, (uint8_t *)bam_data_end(b));
         if (expected < n)
             expected = n;
     }
@@ -1449,16 +1509,25 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
         return 0;
 
     // realloc
-    hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
-    hts_pos_t new_end = *ref_end = ref_start + 1000 + (pos-ref_start)*1.5;
+    if (pos - ref_start > UINT_MAX)
+        return -2; // protect overflow in new_end calculation
 
-    char *tmp = realloc(*ref, *ref_end-ref_start);
+    hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
+    hts_pos_t new_end = ref_start + 1000 + (pos-ref_start)*1.5;
+
+    // Refuse to work on excessively large blocks.
+    // We'll just switch to referenceless encoding, which is probably better
+    // here as this must be very sparse data anyway.
+    if (new_end - ref_start > UINT_MAX/sizeof(**hist)/2)
+        return -2;
+
+    char *tmp = realloc(*ref, new_end-ref_start+1);
     if (!tmp)
         return -1;
     *ref = tmp;
 
     uint32_t (*tmp5)[5] = realloc(**hist,
-                                  (*ref_end - ref_start)*sizeof(**hist));
+                                  (new_end - ref_start)*sizeof(**hist));
     if (!tmp5)
         return -1;
     *hist = tmp5;
@@ -1474,6 +1543,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
 }
 
 // Walk through MD + seq to generate ref
+// Returns 1 on success, <0 on failure
 static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                               hts_pos_t ref_start, hts_pos_t *ref_end,
                               const uint8_t *MD) {
@@ -1648,6 +1718,8 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     char *ref = NULL;
     uint32_t (*hist)[5] = NULL;
     hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0;
+    if (ref_start < 0)
+        return -1; // cannot build consensus from unmapped data
 
     // initial allocation
     if (extend_ref(&ref, &hist,
@@ -1688,7 +1760,7 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     c->ref       = ref;
     c->ref_start = ref_start+1;
     c->ref_end   = ref_end+1;
-
+    c->ref_free  = 1;
     return 0;
 
  err:
@@ -1758,11 +1830,28 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     int r1, r2, sn, nref, embed_ref, no_ref;
     spare_bams *spares;
 
+    if (!c->bams)
+        goto err;
+
     if (CRAM_MAJOR_VERS(fd->version) == 1)
         goto err;
 
 //#define goto_err {fprintf(stderr, "ERR at %s:%d\n", __FILE__, __LINE__);goto err;}
 #define goto_err goto err
+
+    // Don't try embed ref if we repeatedly fail
+    pthread_mutex_lock(&fd->ref_lock);
+    int failed_embed = (fd->no_ref_counter >= 5); // maximum 5 tries
+    if (!failed_embed && c->embed_ref == -2 && c->ref_id >= 0) {
+        hts_log_warning("Retrying embed_ref=2 mode for #%d/5", fd->no_ref_counter);
+        fd->no_ref = c->no_ref = 0;
+        fd->embed_ref = c->embed_ref = 2;
+    } else if (failed_embed && c->embed_ref == -2) {
+        // We've tried several times, so this time give up for good
+        hts_log_warning("Keeping non-ref mode from now on");
+        fd->embed_ref = c->embed_ref = 0;
+    }
+    pthread_mutex_unlock(&fd->ref_lock);
 
  restart:
     /* Cache references up-front if we have unsorted access patterns */
@@ -1775,7 +1864,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* To create M5 strings */
     /* Fetch reference sequence */
     if (!no_ref) {
-        if (!c->bams || !c->bams[0])
+        if (!c->bams || !c->curr_c_rec || !c->bams[0])
             goto_err;
         bam_seq_t *b = c->bams[0];
 
@@ -1825,8 +1914,19 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             // This starts as 'N' and is amended on-the-fly as we go
             // based on MD:Z tags.
             if ((c->ref_id = bam_ref(b)) >= 0) {
-                c->ref_free = 1;
                 c->ref = NULL;
+                // c->ref_free is boolean; whether to free c->ref.  In this
+                // case c->ref will be our auto-embedded sequence instead of
+                // a "global" portion of reference from fd->refs.
+                // Do not confuse with fd->ref_free which is a pointer to a
+                // reference string to free.
+                c->ref_free = 1;
+            } else {
+                // Double check for broken input.  We shouldn't have
+                // embedded references enabled for unmapped data, but our
+                // data could be broken.
+                embed_ref = 0;
+                no_ref = c->no_ref = 1;
             }
         }
         c->ref_seq_id = c->ref_id;
@@ -1873,7 +1973,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
         // Embed consensus / MD-generated ref
         if (embed_ref == 2) {
-            if (cram_generate_reference(c, s, r1) < 0) {
+            if (c->ref_id < 0 || cram_generate_reference(c, s, r1) < 0) {
                 // Should this be a permanent thing via fd->no_ref?
                 // Doing so means we cannot easily switch back again should
                 // things fix themselves later on.  This is likely not a
@@ -1891,11 +1991,20 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                                     "switching to non-ref mode");
                 }
                 pthread_mutex_lock(&fd->ref_lock);
-                c->embed_ref = fd->embed_ref = 0;
+                c->embed_ref = fd->embed_ref = -2; // was previously embed_ref
                 c->no_ref = fd->no_ref = 1;
+                fd->no_ref_counter++; // more likely to keep permanent action
                 pthread_mutex_unlock(&fd->ref_lock);
+                failed_embed = 1;
                 goto restart;
+            } else {
+                pthread_mutex_lock(&fd->ref_lock);
+                fd->no_ref_counter -= (fd->no_ref_counter > 0);
+                pthread_mutex_unlock(&fd->ref_lock);
             }
+
+            if (c->ref_end > fd->refs->ref_id[c->ref_id]->LN_length)
+                c->ref_end = fd->refs->ref_id[c->ref_id]->LN_length;
         }
 
         // Iterate through records creating the cram blocks for some
@@ -2087,7 +2196,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     } else {
         // Removed BETA in v4.0.
         // Should we consider dropping use of it for 3.0 too?
-        int p[2] = {0, c->max_apos};
+        hts_pos_t p[2] = {0, c->max_apos};
         h->codecs[DS_AP] = cram_encoder_init(E_BETA, NULL,
                                              is_v4 ? E_LONG : E_INT,
                                              p, fd->version, &fd->vv);
@@ -2407,7 +2516,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     c->comp_hdr_block = c_hdr;
 
     if (c->ref_seq_id >= 0) {
-        cram_ref_decr(fd->refs, c->ref_seq_id);
+        if (c->ref_free) {
+            free(c->ref);
+            c->ref = NULL;
+        } else {
+            cram_ref_decr(fd->refs, c->ref_seq_id);
+        }
     }
 
     /* Cache references up-front if we have unsorted access patterns */
@@ -2653,6 +2767,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
     char *aux, *orig;
     sam_hrec_rg_t *brg = NULL;
     int aux_size = bam_get_l_aux(b);
+    const char *aux_end = bam_data_end(b);
     cram_block *td_b = c->comp_hdr->TD_blk;
     int TD_blk_size = BLOCK_SIZE(td_b), new;
     char *key;
@@ -2678,24 +2793,36 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         aux[aux_size++] = 'C';
         aux[aux_size++] = cf_tag;
         orig = aux;
+        aux_end = aux + aux_size;
     }
 
     // Copy aux keys to td_b and aux values to slice aux blocks
-    while (aux - orig < aux_size && aux[0] != 0) {
+    while (aux_end - aux >= 1 && aux[0] != 0) {
         int r;
+
+        // Room for code + type + at least 1 byte of data
+        if (aux - orig >= aux_size - 3)
+            goto err;
 
         // RG:Z
         if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
             char *rg = &aux[3];
+            aux = rg;
+            while (aux < aux_end && *aux++);
+            if (aux == aux_end && aux[-1] != '\0') {
+                hts_log_error("Unterminated RG:Z tag for read \"%s\"",
+                              bam_get_qname(b));
+                goto err;
+            }
             brg = sam_hrecs_find_rg(fd->header->hrecs, rg);
             if (brg) {
-                while (*aux++);
                 if (CRAM_MAJOR_VERS(fd->version) >= 4)
                     BLOCK_APPEND(td_b, "RG*", 3);
                 continue;
             } else {
                 // RG:Z tag will be stored verbatim
                 hts_log_warning("Missing @RG header for RG \"%s\"", rg);
+                aux = rg - 3;
             }
         }
 
@@ -2703,7 +2830,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         if (aux[0] == 'M' && aux[1] == 'D' && aux[2] == 'Z') {
             if (cr->len && !no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_MD) {
                 if (MD && MD->s && strncasecmp(MD->s, aux+3, orig + aux_size - (aux+3)) == 0) {
-                    while (*aux++);
+                    while (aux < aux_end && *aux++);
+                    if (aux == aux_end && aux[-1] != '\0') {
+                        hts_log_error("Unterminated MD:Z tag for read \"%s\"",
+                                      bam_get_qname(b));
+                        goto err;
+                    }
                     if (CRAM_MAJOR_VERS(fd->version) >= 4)
                         BLOCK_APPEND(td_b, "MD*", 3);
                     continue;
@@ -2714,7 +2846,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         // NM:i
         if (aux[0] == 'N' && aux[1] == 'M') {
             if (cr->len && !no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_NM) {
-                int NM_ = bam_aux2i((uint8_t *)aux+2);
+                int NM_ = bam_aux2i_end((uint8_t *)aux+2, (uint8_t *)aux_end);
                 if (NM_ == NM) {
                     switch(aux[2]) {
                     case 'A': case 'C': case 'c': aux+=4; break;
@@ -2722,7 +2854,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                     case 'I': case 'i': case 'f': aux+=7; break;
                     default:
                         hts_log_error("Unhandled type code for NM tag");
-                        return NULL;
+                        goto err;
                     }
                     if (CRAM_MAJOR_VERS(fd->version) >= 4)
                         BLOCK_APPEND(td_b, "NM*", 3);
@@ -2735,10 +2867,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
         // Container level tags_used, for TD series
         // Maps integer key ('X0i') to cram_tag_map struct.
-        int key = (aux[0]<<16)|(aux[1]<<8)|aux[2];
+        int key = (((unsigned char *) aux)[0]<<16 |
+                   ((unsigned char *) aux)[1]<<8  |
+                   ((unsigned char *) aux)[2]);
         k = kh_put(m_tagmap, c->tags_used, key, &r);
         if (-1 == r)
-            return NULL;
+            goto err;
         else if (r != 0)
             kh_val(c->tags_used, k) = NULL;
 
@@ -2750,7 +2884,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             k_global = kh_put(m_metrics, fd->tags_used, key, &r);
             if (-1 == r) {
                 pthread_mutex_unlock(&fd->metrics_lock);
-                return NULL;
+                goto err;
             }
             if (r >= 1) {
                 kh_val(fd->tags_used, k_global) = cram_new_metrics();
@@ -2901,9 +3035,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
         switch(aux[2]) {
         case 'A': case 'C': case 'c':
+            if (aux_end - aux < 3+1)
+                goto err;
+
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
-                    return NULL;
+                    goto err;
                 codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
@@ -2915,9 +3052,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             break;
 
         case 'S': case 's':
+            if (aux_end - aux < 3+2)
+                goto err;
+
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
-                    return NULL;
+                    goto err;
                 codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
@@ -2928,9 +3068,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             break;
 
         case 'I': case 'i': case 'f':
+            if (aux_end - aux < 3+4)
+                goto err;
+
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
-                    return NULL;
+                    goto err;
                 codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
@@ -2941,9 +3084,12 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             break;
 
         case 'd':
+            if (aux_end - aux < 3+8)
+                goto err;
+
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
-                    return NULL;
+                    goto err;
                 codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
@@ -2953,35 +3099,47 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
             aux+=8;
             break;
 
-        case 'Z': case 'H':
-            {
-                if (!tm->blk) {
-                    if (!(tm->blk = cram_new_block(EXTERNAL, key)))
-                        return NULL;
-                    codec->out = tm->blk;
-                }
+        case 'Z': case 'H': {
+            if (aux_end - aux < 3)
+                goto err;
 
-                char *aux_s;
-                aux += 3;
-                aux_s = aux;
-                while (*aux++);
-                if (codec->encode(s, codec, aux_s, aux - aux_s) < 0)
-                    return NULL;
-            }
-            break;
-
-        case 'B': {
-            int type = aux[3], blen;
-            uint32_t count = (uint32_t)((((unsigned char *)aux)[4]<< 0) +
-                                        (((unsigned char *)aux)[5]<< 8) +
-                                        (((unsigned char *)aux)[6]<<16) +
-                                        (((unsigned char *)aux)[7]<<24));
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
-                    return NULL;
+                    goto err;
+                codec->out = tm->blk;
+            }
+
+            char *aux_s;
+            aux += 3;
+            aux_s = aux;
+            while (aux < aux_end && *aux++);
+            if (aux == aux_end && aux[-1] != '\0') {
+                hts_log_error("Unterminated %c%c:%c tag for read \"%s\"",
+                              aux_s[-3], aux_s[-2], aux_s[-1],
+                              bam_get_qname(b));
+                goto err;
+            }
+            if (codec->encode(s, codec, aux_s, aux - aux_s) < 0)
+                goto err;
+            break;
+        }
+
+        case 'B': {
+            if (aux_end - aux < 4+4)
+                goto err;
+
+            int type = aux[3];
+            uint64_t count = (((uint64_t)((unsigned char *)aux)[4]) << 0 |
+                              ((uint64_t)((unsigned char *)aux)[5]) << 8 |
+                              ((uint64_t)((unsigned char *)aux)[6]) <<16 |
+                              ((uint64_t)((unsigned char *)aux)[7]) <<24);
+            uint64_t blen;
+            if (!tm->blk) {
+                if (!(tm->blk = cram_new_block(EXTERNAL, key)))
+                    goto err;
                 if (codec->u.e_byte_array_len.val_codec->codec == E_XDELTA) {
                     if (!(tm->blk2 = cram_new_block(EXTERNAL, key+128)))
-                        return NULL;
+                        goto err;
                     codec->u.e_byte_array_len.len_codec->out = tm->blk2;
                     codec->u.e_byte_array_len.val_codec->u.e_xdelta.sub_codec->out = tm->blk;
                 } else {
@@ -3006,19 +3164,21 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                 break;
             default:
                 hts_log_error("Unknown sub-type '%c' for aux type 'B'", type);
-                return NULL;
+                goto err;
             }
 
             blen += 5; // sub-type & length
+            if (aux_end - aux < blen || blen > INT_MAX)
+                goto err;
 
-            if (codec->encode(s, codec, aux, blen) < 0)
-                return NULL;
+            if (codec->encode(s, codec, aux, (int) blen) < 0)
+                goto err;
             aux += blen;
             break;
         }
         default:
-            hts_log_error("Unknown aux type '%c'", aux[2]);
-            return NULL;
+            hts_log_error("Unknown aux type '%c'", aux_end - aux < 2 ? '?' : aux[2]);
+            goto err;
         }
         tm->blk->m = tm->m;
     }
@@ -3036,7 +3196,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
         goto block_err;
     k = kh_put(m_s2i, c->comp_hdr->TD_hash, key, &new);
     if (new < 0) {
-        return NULL;
+        goto err;
     } else if (new == 0) {
         BLOCK_SIZE(td_b) = TD_blk_size;
     } else {
@@ -3249,6 +3409,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     c->num_bases   += cr->len;
     cr->apos        = bam_pos(b)+1;
+    if (cr->apos < 0 || cr->apos > INT64_MAX/2)
+        goto err;
     if (c->pos_sorted) {
         if (cr->apos < s->last_apos && !fd->ap_delta) {
             c->pos_sorted = 0;
@@ -3286,6 +3448,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         uint32_t *cig_to, *cig_from;
         int64_t apos = cr->apos-1, spos = 0;
         int64_t MD_last = apos; // last position of edit in MD tag
+
+        if (apos < 0) {
+            hts_log_error("Mapped read with position <= 0 is disallowed");
+            return -1;
+        }
 
         cr->cigar       = s->ncigar;
         cr->ncigar      = bam_cigar_len(b);
@@ -3524,7 +3691,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             return -1;
         }
         fake_qual = spos;
-        cr->aend = no_ref ? apos : MIN(apos, c->ref_end);
+        // Protect against negative length refs (fuzz 382922241)
+        cr->aend = no_ref ? apos : MIN(apos, MAX(0, c->ref_end));
         if (cram_stats_add(c->stats[DS_FN], cr->nfeature) < 0)
             goto block_err;
 
@@ -3536,7 +3704,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->cigar  = 0;
         cr->ncigar = 0;
         cr->nfeature = 0;
-        cr->aend = cr->apos;
+        cr->aend = MIN(cr->apos, c->ref_end);
         for (i = 0; i < cr->len; i++)
             if (cram_stats_add(c->stats[DS_BA], seq[i]) < 0)
                 goto block_err;
@@ -3852,7 +4020,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
     if (!c->slice || c->curr_rec == c->max_rec ||
         (bam_ref(b) != c->curr_ref && c->curr_ref >= -1) ||
-        (c->s_num_bases >= fd->bases_per_slice)) {
+        (c->s_num_bases + c->s_aux_bytes >= fd->bases_per_slice)) {
         int slice_rec, curr_rec, multi_seq = fd->multi_seq == 1;
         int curr_ref = c->slice ? c->curr_ref : bam_ref(b);
 
@@ -3885,7 +4053,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
         if (CRAM_MAJOR_VERS(fd->version) == 1 ||
             c->curr_rec == c->max_rec || fd->multi_seq != 1 || !c->slice ||
-            c->s_num_bases >= fd->bases_per_slice) {
+            c->s_num_bases + c->s_aux_bytes >= fd->bases_per_slice) {
             if (NULL == (c = cram_next_container(fd, b))) {
                 if (fd->ctr) {
                     // prevent cram_close attempting to flush
@@ -3994,9 +4162,26 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         if (c->bams[c->curr_c_rec] == NULL)
             return -1;
     }
+    if (bam_seq_len(b)) {
+        c->s_num_bases += bam_seq_len(b);
+    } else {
+        // No sequence in BAM record.  CRAM doesn't directly support this
+        // case, it ends up being stored as a string of N's for each query
+        // consuming CIGAR operation.  As this can become very inefficient
+        // in time and memory, data where the query length is excessively
+        // long are rejected.
+        hts_pos_t qlen = bam_cigar2qlen(b->core.n_cigar, bam_get_cigar(b));
+        if (qlen > 100000000) {
+            hts_log_error("CIGAR query length %"PRIhts_pos
+                          " for read \"%s\" is too long",
+                          qlen, bam_get_qname(b));
+            return -1;
+        }
+        c->s_num_bases += qlen;
+    }
     c->curr_rec++;
     c->curr_c_rec++;
-    c->s_num_bases += bam_seq_len(b);
+    c->s_aux_bytes += bam_get_l_aux(b);
     c->n_mapped += (bam_flag(b) & BAM_FUNMAP) ? 0 : 1;
     fd->record_counter++;
 

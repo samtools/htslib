@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014-2020 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2020, 2024 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -44,11 +44,16 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/regidx.h"
 #include "htslib/hts_defs.h"
 #include "htslib/hts_log.h"
+#include "htslib/thread_pool.h"
+
+//for easy coding
+#define RELEASE_TPOOL(X) { hts_tpool *ptr = (hts_tpool*)(X); if (ptr) { hts_tpool_destroy(ptr); } }
+#define bam_index_build3(fn, min_shift, nthreads) (sam_index_build3((fn), NULL, (min_shift), (nthreads)))
 
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only, cache_megs, download_index, separate_regs;
+    int print_header, header_only, cache_megs, download_index, separate_regs, threads;
 }
 args_t;
 
@@ -92,6 +97,7 @@ error_errno(const char *format, ...)
 #define IS_BCF  (1<<4)
 #define IS_BAM  (1<<5)
 #define IS_CRAM (1<<6)
+#define IS_GAF  (1<<7)
 #define IS_TXT  (IS_GFF|IS_BED|IS_SAM|IS_VCF)
 
 int file_type(const char *fname)
@@ -104,6 +110,7 @@ int file_type(const char *fname)
     else if (l>=4 && strcasecmp(fname+l-4, ".bcf") == 0) return IS_BCF;
     else if (l>=4 && strcasecmp(fname+l-4, ".bam") == 0) return IS_BAM;
     else if (l>=4 && strcasecmp(fname+l-5, ".cram") == 0) return IS_CRAM;
+    else if (l>=7 && strcasecmp(fname+l-7, ".gaf.gz") == 0) return IS_GAF;
 
     htsFile *fp = hts_open(fname,"r");
     if (!fp) {
@@ -199,41 +206,70 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
 static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **regs, int nregs)
 {
     int i;
+    htsThreadPool tpool = {NULL, 0};
     htsFile *fp = hts_open(fname,"r");
     if ( !fp ) error_errno("Could not open \"%s\"", fname);
     enum htsExactFormat format = hts_get_format(fp)->format;
-
     if (args->cache_megs)
         hts_set_cache_size(fp, args->cache_megs * 1048576);
+
+    //set threads if needed, errors are logged and ignored
+    if (args->threads >= 1) {
+        if (!(tpool.pool = hts_tpool_init(args->threads))) {
+            hts_log_info("Could not initialize thread pool!");
+        }
+        if (hts_set_thread_pool(fp, &tpool) < 0) {
+            hts_log_info("Could not set thread pool!");
+        }
+    }
 
     regidx_t *reg_idx = NULL;
     if ( args->targets_fname )
     {
         reg_idx = regidx_init(args->targets_fname, NULL, NULL, 0, NULL);
-        if (!reg_idx)
+        if (!reg_idx) {
+            RELEASE_TPOOL(tpool.pool);
             error_errno("Could not build region list for \"%s\"",
                         args->targets_fname);
+        }
     }
 
     if ( format == bcf )
     {
         htsFile *out = hts_open("-","w");
-        if ( !out ) error_errno("Could not open stdout");
+        if ( !out ) {
+            RELEASE_TPOOL(tpool.pool);
+            error_errno("Could not open stdout");
+        }
+        if (hts_set_thread_pool(out, &tpool) < 0) {
+            hts_log_info("Could not set thread pool to output file!");
+        }
         hts_idx_t *idx = bcf_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
-        if ( !idx ) error_errno("Could not load .csi index of \"%s\"", fname);
+        if ( !idx ) {
+            RELEASE_TPOOL(tpool.pool);
+            error_errno("Could not load .csi index of \"%s\"", fname);
+        }
 
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
-        if ( !hdr ) error_errno("Could not read the header from \"%s\"", fname);
+        if ( !hdr ) {
+            RELEASE_TPOOL(tpool.pool);
+            error_errno("Could not read the header from \"%s\"", fname);
+        }
 
         if ( args->print_header ) {
-            if ( bcf_hdr_write(out,hdr)!=0 )
+            if ( bcf_hdr_write(out,hdr)!=0 ) {
+                RELEASE_TPOOL(tpool.pool);
                 error_errno("Failed to write to stdout");
+            }
         }
         if ( !args->header_only )
         {
             assert(regs != NULL);
             bcf1_t *rec = bcf_init();
-            if (!rec) error_errno(NULL);
+            if (!rec) {
+                RELEASE_TPOOL(tpool.pool);
+                error_errno(NULL);
+            }
             for (i=0; i<nregs; i++)
             {
                 int ret, found = 0;
@@ -245,6 +281,7 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                     {
                         const char *chr = bcf_seqname(hdr,rec);
                         if (!chr) {
+                            RELEASE_TPOOL(tpool.pool);
                             error("Bad BCF record in \"%s\" : "
                                   "Invalid CONTIG id %d\n",
                                   fname, rec->rid);
@@ -256,19 +293,23 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                         found = 1;
                     }
                     if ( bcf_write(out,hdr,rec)!=0 ) {
+                        RELEASE_TPOOL(tpool.pool);
                         error_errno("Failed to write to stdout");
                     }
                 }
 
                 if (ret < -1) {
+                    RELEASE_TPOOL(tpool.pool);
                     error_errno("Reading \"%s\" failed", fname);
                 }
                 bcf_itr_destroy(itr);
             }
             bcf_destroy(rec);
         }
-        if ( hts_close(out) )
+        if ( hts_close(out) ) {
+            RELEASE_TPOOL(tpool.pool);
             error_errno("hts_close returned non-zero status for stdout");
+        }
 
         bcf_hdr_destroy(hdr);
         hts_idx_destroy(idx);
@@ -276,7 +317,10 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
     else if ( format==vcf || format==sam || format==bed || format==text_format || format==unknown_format )
     {
         tbx_t *tbx = tbx_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
-        if ( !tbx ) error_errno("Could not load .tbi/.csi index of %s", fname);
+        if ( !tbx ) {
+            RELEASE_TPOOL(tpool.pool);
+            error_errno("Could not load .tbi/.csi index of %s", fname);
+        }
         kstring_t str = {0,0,0};
         if ( args->print_header )
         {
@@ -284,10 +328,15 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
             while ((ret = hts_getline(fp, KS_SEP_LINE, &str)) >= 0)
             {
                 if ( !str.l || str.s[0]!=tbx->conf.meta_char ) break;
-                if (puts(str.s) < 0)
+                if (puts(str.s) < 0) {
+                    RELEASE_TPOOL(tpool.pool);
                     error_errno("Error writing to stdout");
+                }
             }
-            if (ret < -1) error_errno("Reading \"%s\" failed", fname);
+            if (ret < -1) {
+                RELEASE_TPOOL(tpool.pool);
+                error_errno("Reading \"%s\" failed", fname);
+            }
         }
         if ( !args->header_only )
         {
@@ -295,7 +344,10 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
             const char **seq = NULL;
             if ( reg_idx ) {
                 seq = tbx_seqnames(tbx, &nseq);
-                if (!seq) error_errno("Failed to get sequence names list");
+                if (!seq) {
+                    RELEASE_TPOOL(tpool.pool);
+                    error_errno("Failed to get sequence names list");
+                }
             }
             for (i=0; i<nregs; i++)
             {
@@ -309,10 +361,15 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                         if (args->separate_regs) printf("%c%s\n", conf->meta_char, regs[i]);
                         found = 1;
                     }
-                    if (puts(str.s) < 0)
+                    if (puts(str.s) < 0) {
+                        RELEASE_TPOOL(tpool.pool);
                         error_errno("Failed to write to stdout");
+                    }
                 }
-                if (ret < -1) error_errno("Reading \"%s\" failed", fname);
+                if (ret < -1) {
+                    RELEASE_TPOOL(tpool.pool);
+                    error_errno("Reading \"%s\" failed", fname);
+                }
                 tbx_itr_destroy(itr);
             }
             free(seq);
@@ -320,15 +377,20 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
         free(str.s);
         tbx_destroy(tbx);
     }
-    else if ( format==bam )
+    else if ( format==bam ) {
+        RELEASE_TPOOL(tpool.pool);
         error("Please use \"samtools view\" for querying BAM files.\n");
+    }
 
     if ( reg_idx ) regidx_destroy(reg_idx);
-    if ( hts_close(fp) )
+    if ( hts_close(fp) ) {
+        RELEASE_TPOOL(tpool.pool);
         error_errno("hts_close returned non-zero status: %s", fname);
+    }
 
     for (i=0; i<nregs; i++) free(regs[i]);
     free(regs);
+    RELEASE_TPOOL(tpool.pool);
     return 0;
 }
 static int query_chroms(char *fname, int download)
@@ -372,12 +434,28 @@ static int query_chroms(char *fname, int download)
     return 0;
 }
 
-int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *conf)
+int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *conf, int threads)
 {
+    hts_tpool *tpool = NULL;
+    if (threads >= 1) {
+        if (!(tpool = hts_tpool_init(threads))) {
+            hts_log_info("Could not initialize thread pool!");
+        }
+    }
     if ( ftype & IS_TXT || !ftype )
     {
         BGZF *fp = bgzf_open(fname,"r");
-        if ( !fp || bgzf_read_block(fp) != 0 || !fp->block_length ) return -1;
+        if (!fp) {
+            RELEASE_TPOOL(tpool);
+            return -1;
+        }
+        if (bgzf_thread_pool(fp, tpool, 0) < 0) {
+            hts_log_info("Could not set thread pool!");
+        }
+        if (bgzf_read_block(fp) != 0 || !fp->block_length ) {
+            RELEASE_TPOOL(tpool);
+            return -1;
+        }
 
         char *buffer = fp->uncompressed_block;
         int skip_until = 0;
@@ -393,7 +471,10 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
                     skip_until++;
                     if ( skip_until>=fp->block_length )
                     {
-                        if ( bgzf_read_block(fp) != 0 || !fp->block_length ) error("FIXME: No body in the file: %s\n", fname);
+                        if ( bgzf_read_block(fp) != 0 || !fp->block_length ) {
+                            RELEASE_TPOOL(tpool);
+                            error("FIXME: No body in the file: %s\n", fname);
+                        }
                         skip_until = 0;
                     }
                     // The header has finished
@@ -402,7 +483,10 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
                 skip_until++;
                 if ( skip_until>=fp->block_length )
                 {
-                    if (bgzf_read_block(fp) != 0 || !fp->block_length) error("FIXME: No body in the file: %s\n", fname);
+                    if (bgzf_read_block(fp) != 0 || !fp->block_length) {
+                        RELEASE_TPOOL(tpool);
+                        error("FIXME: No body in the file: %s\n", fname);
+                    }
                     skip_until = 0;
                 }
             }
@@ -410,31 +494,55 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
 
         // Output the new header
         FILE *hdr  = fopen(header,"r");
-        if ( !hdr ) error("%s: %s", header,strerror(errno));
+        if ( !hdr ) {
+            RELEASE_TPOOL(tpool);
+            error("%s: %s", header,strerror(errno));
+        }
         const size_t page_size = 32768;
         char *buf = malloc(page_size);
         BGZF *bgzf_out = bgzf_open("-", "w");
         ssize_t nread;
 
-        if (!buf) error("%s\n", strerror(errno));
-        if (!bgzf_out)
+        if (!buf) {
+            RELEASE_TPOOL(tpool);
+            error("%s\n", strerror(errno));
+        }
+        if (!bgzf_out) {
+            RELEASE_TPOOL(tpool);
             error_errno("Couldn't open output stream");
+        }
+        if (bgzf_thread_pool(bgzf_out, tpool, 0) < 0) {
+            hts_log_info("Could not set thread pool to output file!");
+        }
         while ( (nread=fread(buf,1,page_size-1,hdr))>0 )
         {
             if ( nread<page_size-1 && buf[nread-1]!='\n' ) buf[nread++] = '\n';
-            if (bgzf_write(bgzf_out, buf, nread) < 0)
+            if (bgzf_write(bgzf_out, buf, nread) < 0) {
+                RELEASE_TPOOL(tpool);
                 error_errno("Write error %d", bgzf_out->errcode);
+            }
         }
-        if ( ferror(hdr) ) error_errno("Failed to read \"%s\"", header);
-        if ( fclose(hdr) ) error_errno("Closing \"%s\" failed", header);
+        if ( ferror(hdr) ) {
+            RELEASE_TPOOL(tpool);
+            error_errno("Failed to read \"%s\"", header);
+        }
+        if ( fclose(hdr) ) {
+            RELEASE_TPOOL(tpool);
+            error_errno("Closing \"%s\" failed", header);
+        }
 
         // Output all remaining data read with the header block
         if ( fp->block_length - skip_until > 0 )
         {
-            if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) error_errno("Write error %d",fp->errcode);
+            if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) {
+                RELEASE_TPOOL(tpool);
+                error_errno("Write error %d",fp->errcode);
+            }
         }
-        if (bgzf_flush(bgzf_out) < 0)
+        if (bgzf_flush(bgzf_out) < 0) {
+            RELEASE_TPOOL(tpool);
             error_errno("Write error %d", bgzf_out->errcode);
+        }
 
         while (1)
         {
@@ -442,17 +550,30 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
             if ( nread<=0 ) break;
 
             int count = bgzf_raw_write(bgzf_out, buf, nread);
-            if (count != nread) error_errno("Write failed, wrote %d instead of %d bytes", count,(int)nread);
+            if (count != nread) {
+                RELEASE_TPOOL(tpool);
+                error_errno("Write failed, wrote %d instead of %d bytes", count,(int)nread);
+            }
         }
-        if (nread < 0) error_errno("Error reading \"%s\"", fname);
-        if (bgzf_close(bgzf_out) < 0)
+        if (nread < 0) {
+            RELEASE_TPOOL(tpool);
+            error_errno("Error reading \"%s\"", fname);
+        }
+        if (bgzf_close(bgzf_out) < 0) {
+            RELEASE_TPOOL(tpool);
             error_errno("Error %d closing output", bgzf_out->errcode);
-        if (bgzf_close(fp) < 0)
+        }
+        if (bgzf_close(fp) < 0) {
+            RELEASE_TPOOL(tpool);
             error_errno("Error %d closing \"%s\"", bgzf_out->errcode, fname);
+        }
         free(buf);
     }
-    else
+    else {
+        RELEASE_TPOOL(tpool);
         error("todo: reheader BCF, BAM\n");  // BCF is difficult, records contain pointers to the header.
+    }
+    RELEASE_TPOOL(tpool);
     return 0;
 }
 
@@ -470,7 +591,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
     fprintf(fp, "   -f, --force                overwrite existing index without asking\n");
     fprintf(fp, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
-    fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf\n");
+    fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf, gaf\n");
     fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
     fprintf(fp, "   -S, --skip-lines INT       skip first INT lines [0]\n");
     fprintf(fp, "\n");
@@ -485,6 +606,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
     fprintf(fp, "       --separate-regions     separate the output by corresponding regions\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
+    fprintf(fp, "   -@, --threads INT          number of additional threads to use [0]\n");
     fprintf(fp, "\n");
     return status;
 }
@@ -523,11 +645,12 @@ int main(int argc, char *argv[])
         {"verbosity", required_argument, NULL, 3},
         {"cache", required_argument, NULL, 4},
         {"separate-regions", no_argument, NULL, 5},
+        {"threads", required_argument, NULL, '@'},
         {NULL, 0, NULL, 0}
     };
 
     char *tmp;
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D@:", loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -561,6 +684,7 @@ int main(int argc, char *argv[])
                 else if (strcmp(optarg, "bed") == 0) conf = tbx_conf_bed;
                 else if (strcmp(optarg, "sam") == 0) conf = tbx_conf_sam;
                 else if (strcmp(optarg, "vcf") == 0) conf = tbx_conf_vcf;
+                else if (strcmp(optarg, "gaf") == 0) conf = tbx_conf_gaf;
                 else if (strcmp(optarg, "bcf") == 0) detect = 1; // bcf is autodetected, preset is not needed
                 else if (strcmp(optarg, "bam") == 0) detect = 1; // same as bcf
                 else error("The preset string not recognised: '%s'\n", optarg);
@@ -581,7 +705,7 @@ int main(int argc, char *argv[])
             case 1:
                 printf(
 "tabix (htslib) %s\n"
-"Copyright (C) 2023 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2024 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
             case 2:
                 return usage(stdout, EXIT_SUCCESS);
@@ -602,6 +726,9 @@ int main(int argc, char *argv[])
             case 5:
                 args.separate_regs = 1;
                 break;
+            case '@':   //thread count
+                args.threads = atoi(optarg);
+                break;
             default: return usage(stderr, EXIT_FAILURE);
         }
     }
@@ -620,6 +747,7 @@ int main(int argc, char *argv[])
     {
         if ( ftype==IS_GFF ) conf = tbx_conf_gff;
         else if ( ftype==IS_BED ) conf = tbx_conf_bed;
+        else if ( ftype==IS_GAF ) conf = tbx_conf_gaf;
         else if ( ftype==IS_SAM ) conf = tbx_conf_sam;
         else if ( ftype==IS_VCF )
         {
@@ -651,7 +779,7 @@ int main(int argc, char *argv[])
     if ( min_shift!=0 && !do_csi ) do_csi = 1;
 
     if ( reheader )
-        return reheader_file(fname, reheader, ftype, &conf);
+        return reheader_file(fname, reheader, ftype, &conf, args.threads);
 
     char *suffix = ".tbi";
     if ( do_csi ) suffix = ".csi";
@@ -677,42 +805,42 @@ int main(int argc, char *argv[])
     int ret;
     if ( ftype==IS_CRAM )
     {
-        if ( bam_index_build(fname, min_shift)!=0 ) error("bam_index_build failed: %s\n", fname);
+        if ( bam_index_build3(fname, min_shift, args.threads)!=0 ) error("bam_index_build failed: %s\n", fname);
         return 0;
     }
     else if ( do_csi )
     {
         if ( ftype==IS_BCF )
         {
-            if ( bcf_index_build(fname, min_shift)!=0 ) error("bcf_index_build failed: %s\n", fname);
+            if ( bcf_index_build3(fname, NULL, min_shift, args.threads)!=0 ) error("bcf_index_build failed: %s\n", fname);
             return 0;
         }
         if ( ftype==IS_BAM )
         {
-            if ( bam_index_build(fname, min_shift)!=0 ) error("bam_index_build failed: %s\n", fname);
+            if ( bam_index_build3(fname, min_shift, args.threads)!=0 ) error("bam_index_build failed: %s\n", fname);
             return 0;
         }
 
-        switch (ret = tbx_index_build(fname, min_shift, &conf))
+        switch (ret = tbx_index_build3(fname, NULL, min_shift, args.threads, &conf))
         {
             case 0:
                 return 0;
             case -2:
                 error("[tabix] the compression of '%s' is not BGZF\n", fname);
             default:
-                error("tbx_index_build failed: %s\n", fname);
+                error("tbx_index_build3 failed: %s\n", fname);
         }
     }
     else    // TBI index
     {
-        switch (ret = tbx_index_build(fname, min_shift, &conf))
+        switch (ret = tbx_index_build3(fname, NULL, min_shift, args.threads, &conf))
         {
             case 0:
                 return 0;
             case -2:
                 error("[tabix] the compression of '%s' is not BGZF\n", fname);
             default:
-                error("tbx_index_build failed: %s\n", fname);
+                error("tbx_index_build3 failed: %s\n", fname);
         }
     }
 

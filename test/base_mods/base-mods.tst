@@ -1,4 +1,4 @@
-#    Copyright (C) 2020 Genome Research Ltd.
+#    Copyright (C) 2020, 2023 Genome Research Ltd.
 #
 #    Author: James Bonfield <jkb@sanger.ac.uk>
 #
@@ -23,6 +23,7 @@
 # First field:
 #   INIT = initialisation, not counted in testing
 #   P = expected to pass
+#   N = expected to return non-zero
 #   F = expected to fail
 
 # Second field:
@@ -39,6 +40,24 @@ P MM-multi.out       $test_mod    MM-multi.sam
 P MM-explicit.out    $test_mod    MM-explicit.sam
 P MM-explicit-x.out  $test_mod -x MM-explicit.sam
 
+# Report bases outside the explicitly called ranges, so we could exclude
+# these in any depth based consensus analysis and only gather statistics 
+# for sites known to be have been scanned.
+P MM-explicit-f.out  $test_mod -f 1 MM-explicit.sam
+
+# Ensure state gets reset correctly between reads
+P MM-not-all-modded.out	$test_mod MM-not-all-modded.sam
+
 # Pileup testing
 P MM-pileup.out $pileup_mod < MM-pileup.sam
 P MM-pileup2.out $pileup_mod < MM-pileup2.sam
+
+# Validation testing.  We just care about exit status here, but the
+# test data is a copy of MM-pileup.sam so that suffices too.
+P MM-pileup.out $pileup_mod < MM-MNp.sam
+N MM-pileup.out $pileup_mod < MM-MNf1.sam
+N MM-pileup.out $pileup_mod < MM-MNf2.sam
+N MM-pileup.out $test_mod < MM-MNf1.sam
+N MM-pileup.out $test_mod < MM-MNf2.sam
+N MM-pileup.out $test_mod < MM-bounds+.sam
+N MM-pileup.out $test_mod < MM-bounds-.sam

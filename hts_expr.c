@@ -1,6 +1,6 @@
 /*  hts_expr.c -- filter expression parsing and processing.
 
-    Copyright (C) 2020-2022 Genome Research Ltd.
+    Copyright (C) 2020-2022, 2024 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -527,8 +527,10 @@ static int bitand_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val);
                 return -1;
+            } else {
+                res->is_true =
+                    (res->d = ((int64_t)res->d & (int64_t)val.d)) != 0;
             }
-            res->is_true = (res->d = ((int64_t)res->d & (int64_t)val.d)) != 0;
         } else {
             break;
         }
@@ -560,8 +562,10 @@ static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val);
                 return -1;
+            } else {
+                res->is_true =
+                    (res->d = ((int64_t)res->d ^ (int64_t)val.d)) != 0;
             }
-            res->is_true = (res->d = ((int64_t)res->d ^ (int64_t)val.d)) != 0;
         } else {
             break;
         }
@@ -593,8 +597,10 @@ static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val);
                 return -1;
+            } else {
+                res->is_true =
+                    (res->d = ((int64_t)res->d | (int64_t)val.d)) != 0;
             }
-            res->is_true = (res->d = ((int64_t)res->d | (int64_t)val.d)) != 0;
         } else {
             break;
         }

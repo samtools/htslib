@@ -29,7 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "../htslib/hts.h"
 #include "../vcf.c"
 
-void error(const char *format, ...)
+void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -39,7 +39,7 @@ void error(const char *format, ...)
     exit(-1);
 }
 
-static void test_bcf_set_variant_type()
+static void test_bcf_set_variant_type(void)
 {
     // Test SNVs
     bcf_variant_t var1;
@@ -91,6 +91,19 @@ static void test_bcf_set_variant_type()
     {
         error("[16:33625444[N was not detected as a breakend");
     }
+
+    bcf_set_variant_type("T", "]chrB:123]AGTNNNNNCAT", &var3d);
+    if ( var3d.type != VCF_BND)
+    {
+        error("]chrB:123]AGTNNNNNCAT was not detected as a breakend");
+    }
+    bcf_set_variant_type("C", "CAGTNNNNNCA[chrA:321[", &var3d);
+    if ( var3d.type != VCF_BND)
+    {
+        error("CAGTNNNNNCA[chrA:321[ was not detected as a breakend");
+    }
+
+
     // Test special reference alleles
     bcf_variant_t var4a;
     bcf_set_variant_type("A", "<NON_REF>", &var4a);

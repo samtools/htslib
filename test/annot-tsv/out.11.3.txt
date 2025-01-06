@@ -1,0 +1,4 @@
+#chr	beg	end	smpl	src_smpl
+1	10	20	A	A
+1	30	40	A	B
+1	50	60	A	.

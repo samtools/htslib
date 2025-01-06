@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3lh3@live.co.uk>
-   Copyright (C) 2016-2017, 2020 Genome Research Ltd.
+   Copyright (C) 2016-2017, 2020, 2023 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -140,6 +140,13 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
     bM = (1 - c->d) / l_ref; // (bM+bI)*l_ref==1
     bI = c->d / l_ref;
 
+    // f[] and b[] are 2-d arrays of three scores, with rows along the
+    // query and columns across the band.  The first query base and
+    // first band position appear at index 1 allowing edge conditions
+    // to be stored in index 0.  Hence the loops below appear to use
+    // 1-based indexing instead of 0-based as you'd normally expect in C,
+    // and the sequences are accessed using query[i - 1] and ref[k - 1].
+
     /*** forward ***/
     // f[0]
     set_u(k, bw, 0, 0);
@@ -245,10 +252,23 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
     { // f[l_query+1]
         double sum;
         double M = 1./s[l_query];
+        // Note that this goes from 1 to l_ref inclusive, but as the
+        // alignment is banded not all of the values will have been
+        // calculated (the rest are taken as 0), so the summation
+        // actually goes over the values set in the last iteration of
+        // the previous loop (when i = l_query).  For some reason lost to
+        // time this is done by looking for valid values of 'u' instead of
+        // working out 'beg' and 'end'.
+
+        // From HTSlib 1.8 to 1.17, the endpoint was incorrectly set
+        // to i_dim - 3.  When l_query <= bandwidth, this caused the last
+        // column to be missed, and if l_ref == l_query then a match at the end
+        // could incorrectly be reported as an insertion.  See #1605.
+
         for (k = 1, sum = 0.; k <= l_ref; ++k) {
             int u;
             set_u(u, bw, l_query, k);
-            if (u < 3 || u >= i_dim - 3) continue;
+            if (u < 3 || u >= i_dim) continue;
             sum += M*f[l_query*i_dim + u+0] * sM + M*f[l_query*i_dim + u+1] * sI;
         }
         s[l_query+1] = sum; // the last scaling factor
@@ -272,7 +292,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
         int u;
         double *bi = &b[l_query*i_dim];
         set_u(u, bw, l_query, k);
-        if (u < 3 || u >= i_dim - 3) continue;
+        if (u < 3 || u >= i_dim) continue;
         bi[u+0] = sM / s[l_query] / s[l_query+1]; bi[u+1] = sI / s[l_query] / s[l_query+1];
     }
     // b[l_query-1..1]
@@ -350,7 +370,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
             int u;
             double e = (ref[k - 1] > 3 || query[0] > 3)? 1. : ref[k - 1] == query[0]? 1. - qual[0] : qual[0] * EM;
             set_u(u, bw, 1, k);
-            if (u < 3 || u >= i_dim - 3) continue;
+            if (u < 3 || u >= i_dim) continue;
             sum += e * b[1*i_dim + u+0] * bM + EI * b[1*i_dim + u+1] * bI;
         }
         set_u(k, bw, 0, 0);

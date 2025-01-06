@@ -1,6 +1,6 @@
 /*  faidx.c -- FASTA and FASTQ random access.
 
-    Copyright (C) 2008, 2009, 2013-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2020, 2022, 2024 Genome Research Ltd.
     Portions copyright (C) 2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -42,6 +42,29 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 #include "hts_internal.h"
+
+// Faster isgraph; assumes ASCII
+static inline int isgraph_(unsigned char c) {
+    return c > ' ' && c <= '~';
+}
+
+#ifdef isgraph
+#  undef isgraph
+#endif
+#define isgraph isgraph_
+
+// An optimised bgzf_getc.
+// We could consider moving this to bgzf.h, but our own code uses it here only.
+static inline int bgzf_getc_(BGZF *fp) {
+    if (fp->block_offset+1 < fp->block_length) {
+        int c = ((unsigned char*)fp->uncompressed_block)[fp->block_offset++];
+        fp->uncompressed_address++;
+        return c;
+    }
+
+    return bgzf_getc(fp);
+}
+#define bgzf_getc bgzf_getc_
 
 typedef struct {
     int id; // faidx_t->name[id] is for this struct.
@@ -190,7 +213,7 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
                 kputsn("", 0, &name);
 
                 if (c < 0) {
-                    hts_log_error("The last entry '%s' has no sequence", name.s);
+                    hts_log_error("The last entry '%s' has no sequence at line %d", name.s, line_num);
                     goto fail;
                 }
 
@@ -247,7 +270,7 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
                         state = SEQ_END;
 
                 } else if (line_len < ll) {
-                    hts_log_error("Different line length in sequence '%s'", name.s);
+                    hts_log_error("Different line length in sequence '%s' at line %d", name.s, line_num);
                     goto fail;
                 }
 
@@ -269,7 +292,7 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
             case IN_QUAL:
                 if (c == '\n') {
                     if (!read_done) {
-                        hts_log_error("Inlined empty line is not allowed in quality of sequence '%s'", name.s);
+                        hts_log_error("Inlined empty line is not allowed in quality of sequence '%s' at line %d", name.s, line_num);
                         goto fail;
                     }
 
@@ -312,6 +335,7 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
         if (fai_insert_index(idx, name.s, seq_len, line_len, char_len, seq_offset, qual_offset) != 0)
             goto fail;
     } else {
+        hts_log_error("File truncated at line %d", line_num);
         goto fail;
     }
 
@@ -446,7 +470,7 @@ static int fai_build3_core(const char *fn, const char *fnfai, const char *fngzi)
     bgzf = bgzf_open(fn, "r");
 
     if ( !bgzf ) {
-        hts_log_error("Failed to open the file %s", fn);
+        hts_log_error("Failed to open the file %s : %s", fn, strerror(errno));
         goto fail;
     }
 
@@ -691,9 +715,8 @@ faidx_t *fai_load_format(const char *fn, enum fai_format_options format) {
 
 static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
                           uint64_t offset, hts_pos_t beg, hts_pos_t end, hts_pos_t *len) {
-    char *s;
-    size_t l;
-    int c = 0;
+    char *buffer, *s;
+    ssize_t nread, remaining, firstline_len, firstline_blen;
     int ret;
 
     if ((uint64_t) end - (uint64_t) beg >= SIZE_MAX - 2) {
@@ -719,26 +742,57 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
         return NULL;
     }
 
-    l = 0;
-    s = (char*)malloc((size_t) end - beg + 2);
-    if (!s) {
+    // Over-allocate so there is extra space for one end-of-line sequence
+    buffer = (char*)malloc((size_t) end - beg + val->line_len - val->line_blen + 1);
+    if (!buffer) {
         *len = -1;
         return NULL;
     }
 
-    while ( l < end - beg && (c=bgzf_getc(fai->bgzf))>=0 )
-        if (isgraph(c)) s[l++] = c;
-    if (c < 0) {
-        hts_log_error("Failed to retrieve block: %s",
-            c == -1 ? "unexpected end of file" : "error reading file");
-        free(s);
-        *len = -1;
-        return NULL;
+    remaining = *len = end - beg;
+    firstline_blen = val->line_blen - beg % val->line_blen;
+
+    // Special case when the entire interval requested is within a single FASTA/Q line
+    if (remaining <= firstline_blen) {
+        nread = bgzf_read_small(fai->bgzf, buffer, remaining);
+        if (nread < remaining) goto error;
+        buffer[nread] = '\0';
+        return buffer;
     }
 
-    s[l] = '\0';
-    *len = l;
-    return s;
+    s = buffer;
+    firstline_len = val->line_len - beg % val->line_blen;
+
+    // Read the (partial) first line and its line terminator, but increment  s  past the
+    // line contents only, so the terminator characters will be overwritten by the next line.
+    nread = bgzf_read_small(fai->bgzf, s, firstline_len);
+    if (nread < firstline_len) goto error;
+    s += firstline_blen;
+    remaining -= firstline_blen;
+
+    // Similarly read complete lines and their line terminator characters, but overwrite the latter.
+    while (remaining > val->line_blen) {
+        nread = bgzf_read_small(fai->bgzf, s, val->line_len);
+        if (nread < (ssize_t) val->line_len) goto error;
+        s += val->line_blen;
+        remaining -= val->line_blen;
+    }
+
+    if (remaining > 0) {
+        nread = bgzf_read_small(fai->bgzf, s, remaining);
+        if (nread < remaining) goto error;
+        s += remaining;
+    }
+
+    *s = '\0';
+    return buffer;
+
+error:
+    hts_log_error("Failed to retrieve block: %s",
+                  (nread == 0)? "unexpected end of file" : "error reading file");
+    free(buffer);
+    *len = -1;
+    return NULL;
 }
 
 static int fai_get_val(const faidx_t *fai, const char *str,
@@ -973,6 +1027,11 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
 
 void fai_set_cache_size(faidx_t *fai, int cache_size) {
     bgzf_set_cache_size(fai->bgzf, cache_size);
+}
+
+// Adds a thread pool to the underlying BGZF layer.
+int fai_thread_pool(faidx_t *fai, struct hts_tpool *pool, int qsize) {
+    return bgzf_thread_pool(fai->bgzf, pool, qsize);
 }
 
 char *fai_path(const char *fa) {

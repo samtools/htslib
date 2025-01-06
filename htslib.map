@@ -630,3 +630,23 @@ HTSLIB_1.17 {
     fai_line_length;
     faidx_seq_len64;
 } HTSLIB_1.16;
+
+HTSLIB_1.18 {
+    bam_mods_queryi;
+    bam_parse_basemod2;
+    fai_thread_pool;
+} HTSLIB_1.17;
+
+HTSLIB_1.20 {
+    tbx_conf_gaf;
+} HTSLIB_1.18;
+
+HTSLIB_1.21 {
+    cram_container_get_coords;
+    cram_container_num2offset;
+    cram_container_offset2num;
+    cram_filter_container;
+    cram_index_extents;
+    cram_num_containers;
+    cram_num_containers_between;
+} HTSLIB_1.20;

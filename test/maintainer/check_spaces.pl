@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # check_spaces.pl : Check source files for tabs and trailing spaces
 #
 #     Author : Rob Davies <rmd@sanger.ac.uk>

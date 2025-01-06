@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2020, 2022 Genome Research Ltd.
+Copyright (c) 2012-2020, 2022-2024 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -1000,9 +1000,9 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->num_blocks      = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     hdr->num_content_ids = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     if (hdr->num_content_ids < 1 ||
-        hdr->num_content_ids >= SIZE_MAX / sizeof(int32_t)) {
-        /* Slice must have at least one data block,
-           and malloc'd size shouldn't wrap. */
+        hdr->num_content_ids >= 10000) {
+        // Slice must have at least one data block, and there is no need
+        // for more than 2 per possible aux-tag plus ancillary.
         free(hdr);
         return NULL;
     }
@@ -2059,6 +2059,13 @@ static int cram_decode_aux(cram_fd *fd,
                     *has_NM = 1;
             }
         }
+
+        // We could go to 2^32 fine, but we shouldn't be hitting this anyway,
+        // and it's protecting against memory hogs too.
+        if (BLOCK_SIZE(s->aux_blk) > (1u<<31)) {
+            hts_log_error("CRAM->BAM aux block size overflow");
+            goto block_err;
+        }
     }
 
     return r;
@@ -2344,7 +2351,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             s->ref_start = s->hdr->ref_seq_start;
             s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
             if (s->hdr->ref_seq_span > b->uncomp_size) {
-                hts_log_error("Embedded reference is too small at #%d:%d-%d",
+                hts_log_error("Embedded reference is too small at #%d:%"PRIhts_pos"-%"PRIhts_pos,
                               ref_id, s->ref_start, s->ref_end);
                 return -1;
             }
@@ -2403,7 +2410,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (s->hdr->ref_seq_start >= s->ref_start) {
                 start = s->hdr->ref_seq_start - s->ref_start;
             } else {
-                hts_log_warning("Slice starts before base 1 at #%d:%d-%d",
+                hts_log_warning("Slice starts before base 1 at #%d:%"PRIhts_pos"-%"PRIhts_pos,
                                 ref_id, s->ref_start, s->ref_end);
                 start = 0;
             }
@@ -2411,7 +2418,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (s->hdr->ref_seq_span <= s->ref_end - s->ref_start + 1) {
                 len = s->hdr->ref_seq_span;
             } else {
-                hts_log_warning("Slice ends beyond reference end at #%d:%d-%d",
+                hts_log_warning("Slice ends beyond reference end at #%d:%"PRIhts_pos"-%"PRIhts_pos,
                                 ref_id, s->ref_start, s->ref_end);
                 len = s->ref_end - s->ref_start + 1;
             }
@@ -2441,7 +2448,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             char M[33];
             const char *rname = sam_hdr_tid2name(sh, ref_id);
             if (!rname) rname="?"; // cannot happen normally
-            hts_log_error("MD5 checksum reference mismatch at %s:%d-%d",
+            hts_log_error("MD5 checksum reference mismatch at %s:%"PRIhts_pos"-%"PRIhts_pos,
                           rname, s->ref_start, s->ref_end);
             hts_log_error("CRAM  : %s", md5_print(s->hdr->md5, M));
             hts_log_error("Ref   : %s", md5_print(digest, M));
@@ -2997,8 +3004,8 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
  * Returns the used size of the bam record on success
  *         -1 on failure.
  */
-static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
-                       cram_record *cr, int rec, bam_seq_t **bam) {
+int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
+                cram_record *cr, int rec, bam_seq_t **bam) {
     int ret, rg_len;
     char name_a[1024], *name;
     int name_len;
@@ -3165,7 +3172,7 @@ static cram_container *cram_first_slice(cram_fd *fd) {
     return c;
 }
 
-static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
+cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
     cram_container *c_curr;  // container being consumed via cram_get_seq()
     cram_slice *s_curr = NULL;
 
@@ -3239,6 +3246,10 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                 }
                 if (fd->ooc)
                     break;
+
+//                printf("%p %d:%ld-%ld vs %d:%ld-%ld\n", fd,
+//                       c_next->ref_seq_id, c_next->ref_seq_start, c_next->ref_seq_start+c_next->ref_seq_span-1,
+//                       fd->range.refid, fd->range.start, fd->range.end);
 
                 /* Skip containers not yet spanning our range */
                 if (fd->range.refid != -2 && c_next->ref_seq_id != -2) {

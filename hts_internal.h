@@ -67,6 +67,11 @@ void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset);
 
 int hts_idx_fmt(hts_idx_t *idx);
 
+// Internal interface to save on-the-fly indexes.  The index file handle
+// is kept open so hts_close() can close if after writing out the EOF
+// block for its own file.
+int hts_idx_save_but_not_close(hts_idx_t *idx, const char *fnidx, int fmt);
+
 // Construct a unique filename based on fname and open it.
 struct hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname);
 
@@ -82,6 +87,9 @@ typedef struct hts_cram_idx_t {
     struct cram_fd *cram;
 } hts_cram_idx_t;
 
+// Determine whether the string's contents appear to be UTF-16-encoded text.
+// Returns 1 if they are, 2 if there is also a BOM, or 0 otherwise.
+int hts_is_utf16_text(const kstring_t *str);
 
 // Entry point to hFILE_multipart backend.
 struct hFILE *hopen_htsget_redirect(struct hFILE *hfile, const char *mode);
@@ -115,25 +123,13 @@ const char *hts_plugin_path(void);
  */
 int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped);
 
-/*
- * bgzf analogue to hts_idx_amend_last.
- *
- * This is needed when multi-threading and writing indices on the fly.
- * At the point of writing a record we know the virtual offset for start
- * and end, but that end virtual offset may be the end of the current
- * block.  In standard indexing our end virtual offset becomes the start
- * of the next block.  Thus to ensure bit for bit compatibility we
- * detect this boundary case and fix it up here.
- */
-void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset);
-
 static inline int find_file_extension(const char *fn, char ext_out[static HTS_MAX_EXT_LEN])
 {
     const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;
     if (!fn) return -1;
     if (!delim) delim = fn + strlen(fn);
     for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext == '.' &&
+    if (*ext == '.' && ext > fn &&
         ((delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') || // permit .sam.gz as a valid file extension
         (delim - ext == 4 && ext[1] == 'b' && ext[2] == 'g' && ext[3] == 'z'))) // permit .vcf.bgz as a valid file extension
     {

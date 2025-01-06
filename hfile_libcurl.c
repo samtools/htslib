@@ -277,7 +277,7 @@ static void free_auth(auth_token *tok) {
     free(tok);
 }
 
-static void libcurl_exit()
+static void libcurl_exit(void)
 {
     if (curl_share_cleanup(curl.share) == CURLSHE_OK)
         curl.share = NULL;
@@ -837,7 +837,7 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
         got = fp->buffer.ptr.rd - buffer;
 
         if (to_skip >= 0) { // Skipping over a small seek
-            if (got < to_skip) { // Need to skip more data
+            if (got <= to_skip) { // Need to skip more data
                 to_skip -= got;
             } else {
                 got -= to_skip;

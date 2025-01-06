@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2023 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -596,7 +596,8 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
 
     HTSLIB_EXPORT
-    int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
+    int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...)
+    HTS_FORMAT(HTS_PRINTF_FMT, 2, 3);
 
     /** VCF version, e.g. VCFv4.2 */
     HTSLIB_EXPORT
@@ -690,6 +691,22 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      */
     HTSLIB_EXPORT
     int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
+
+    /// Add a header record into a header
+    /**
+     *  @param hdr  Destination header
+     *  @param hrec Header record
+     *  @return 0 on success, -1 on failure
+     *
+     *  If this function returns success, ownership of @p hrec will have
+     *  been transferred to the header structure.  It may also have been
+     *  freed if it was a duplicate of a record already in the header.
+     *  Therefore the @p hrec pointer should not be used after a successful
+     *  return from this function.
+     *
+     *  If this function returns failure, ownership will not have been taken
+     *  and the caller is responsible for cleaning up @p hrec.
+     */
 
     HTSLIB_EXPORT
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
@@ -1440,7 +1457,14 @@ which works for both BCF and VCF.
 #define bcf_int16_missing    (-32767-1)      /* INT16_MIN */
 #define bcf_int32_missing    (-2147483647-1) /* INT32_MIN */
 #define bcf_int64_missing    (-9223372036854775807LL - 1LL)  /* INT64_MIN */
-#define bcf_str_missing      0x07
+
+// All of the above are values, which may occur multiple times in lists of
+// integers or lists of floating point.  Strings in VCF don't have
+// lists - a list of strings is just another (comma-separated) string.
+//
+// Hence bcf_str_missing is the whole string being missing rather than
+// an element of a list.  Ie a string of length zero: (0<<4)|BCF_BT_CHAR.
+#define bcf_str_missing      BCF_BT_CHAR
 
 // Limits on BCF values stored in given types.  Max values are the same
 // as for the underlying type.  Min values are slightly different as
@@ -1506,26 +1530,37 @@ static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 
 static inline int bcf_enc_size(kstring_t *s, int size, int type)
 {
-    uint32_t e = 0;
-    uint8_t x[4];
-    if (size >= 15) {
-        e |= kputc(15<<4|type, s) < 0;
-        if (size >= 128) {
-            if (size >= 32768) {
-                i32_to_le(size, x);
-                e |= kputc(1<<4|BCF_BT_INT32, s) < 0;
-                e |= kputsn((char*)&x, 4, s) < 0;
-            } else {
-                i16_to_le(size, x);
-                e |= kputc(1<<4|BCF_BT_INT16, s) < 0;
-                e |= kputsn((char*)&x, 2, s) < 0;
-            }
+    // Most common case is first
+    if (size < 15) {
+        if (ks_resize(s, s->l + 1) < 0)
+            return -1;
+        uint8_t *p = (uint8_t *)s->s + s->l;
+        *p++ = (size<<4) | type;
+        s->l++;
+        return 0;
+    }
+
+    if (ks_resize(s, s->l + 6) < 0)
+        return -1;
+    uint8_t *p = (uint8_t *)s->s + s->l;
+    *p++ = 15<<4|type;
+
+    if (size < 128) {
+        *p++ = 1<<4|BCF_BT_INT8;
+        *p++ = size;
+        s->l += 3;
+    } else {
+        if (size < 32768) {
+            *p++ = 1<<4|BCF_BT_INT16;
+            i16_to_le(size, p);
+            s->l += 4;
         } else {
-            e |= kputc(1<<4|BCF_BT_INT8, s) < 0;
-            e |= kputc(size, s) < 0;
+            *p++ = 1<<4|BCF_BT_INT32;
+            i32_to_le(size, p);
+            s->l += 6;
         }
-    } else e |= kputc(size<<4|type, s) < 0;
-    return e == 0 ? 0 : -1;
+    }
+    return 0;
 }
 
 static inline int bcf_enc_inttype(long x)
@@ -1537,27 +1572,35 @@ static inline int bcf_enc_inttype(long x)
 
 static inline int bcf_enc_int1(kstring_t *s, int32_t x)
 {
-    uint32_t e = 0;
-    uint8_t z[4];
+    if (ks_resize(s, s->l + 5) < 0)
+        return -1;
+    uint8_t *p = (uint8_t *)s->s + s->l;
+
     if (x == bcf_int32_vector_end) {
-        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
-        e |= kputc(bcf_int8_vector_end, s) < 0;
+        // An inline implementation of bcf_enc_size with size==1 and
+        // memory allocation already accounted for.
+        *p = (1<<4) | BCF_BT_INT8;
+        p[1] = bcf_int8_vector_end;
+        s->l+=2;
     } else if (x == bcf_int32_missing) {
-        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
-        e |= kputc(bcf_int8_missing, s) < 0;
+        *p = (1<<4) | BCF_BT_INT8;
+        p[1] = bcf_int8_missing;
+        s->l+=2;
     } else if (x <= BCF_MAX_BT_INT8 && x >= BCF_MIN_BT_INT8) {
-        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
-        e |= kputc(x, s) < 0;
+        *p = (1<<4) | BCF_BT_INT8;
+        p[1] = x;
+        s->l+=2;
     } else if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) {
-        i16_to_le(x, z);
-        e |= bcf_enc_size(s, 1, BCF_BT_INT16);
-        e |= kputsn((char*)&z, 2, s) < 0;
+        *p = (1<<4) | BCF_BT_INT16;
+        i16_to_le(x, p+1);
+        s->l+=3;
     } else {
-        i32_to_le(x, z);
-        e |= bcf_enc_size(s, 1, BCF_BT_INT32);
-        e |= kputsn((char*)&z, 4, s) < 0;
+        *p = (1<<4) | BCF_BT_INT32;
+        i32_to_le(x, p+1);
+        s->l+=5;
     }
-    return e == 0 ? 0 : -1;
+
+    return 0;
 }
 
 /// Return the value of a single typed integer.

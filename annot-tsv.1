@@ -1,0 +1,259 @@
+'\" t
+.TH annot-tsv 1 "12 September 2024" "htslib-1.21" "Bioinformatics tools"
+.\"
+.\" Copyright (C) 2015, 2017-2018, 2023-2024 Genome Research Ltd.
+.\"
+.\" Author: Petr Danecek
+.\"
+.\" Permission is hereby granted, free of charge, to any person obtaining a
+.\" copy of this software and associated documentation files (the "Software"),
+.\" to deal in the Software without restriction, including without limitation
+.\" the rights to use, copy, modify, merge, publish, distribute, sublicense,
+.\" and/or sell copies of the Software, and to permit persons to whom the
+.\" Software is furnished to do so, subject to the following conditions:
+.\"
+.\" The above copyright notice and this permission notice shall be included in
+.\" all copies or substantial portions of the Software.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+.\" IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+.\" FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+.\" THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+.\" LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+.\" FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+.\" DEALINGS IN THE SOFTWARE.
+.\"
+.
+.\" For code blocks and examples (cf groff's Ultrix-specific man macros)
+.de EX
+
+.  in +\\$1
+.  nf
+.  ft CR
+..
+.de EE
+.  ft
+.  fi
+.  in
+
+..
+.SH NAME
+annot\-tsv \- transfer annotations from one TSV (tab\-separated values) file into another
+.SH SYNOPSIS
+.PP
+.B annot-tsv
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+The program finds overlaps in two sets of genomic regions (for example two CNV call sets) and annotates regions of the target file
+.RB ( \-t ", " \-\-target\-file )
+with information from overlapping regions of the source file
+.RB ( \-s ", " \-\-source\-file ).
+
+It can transfer one or multiple columns
+.RB ( \-f ", " \-\-transfer )
+and the transfer can be conditioned on requiring matching values in one or more columns
+.RB ( \-m ", " \-\-match ).
+In addition to column transfer
+.RB ( \-f )
+and special annotations
+.RB ( \-a ", " \-\-annotate ),
+the program can operate in a simple grep-like mode and print matching lines (when neither
+.B \-f
+nor
+.B \-a
+are given) or drop matching lines
+.RB ( \-x ", " \-\-drop-overlaps ).
+
+All indexes and coordinates are 1-based and inclusive.
+.SH OPTIONS
+.SS "Common Options"
+.PP
+.BR \-c ", " \-\-core " SRC:TGT"
+.RS 4
+List of names of the core columns, in the order of chromosome, start and end positions, irrespective of the header name and order in which they appear in source or target files (for example "chr,beg,end:CHROM,START,END").
+If both files use the same header names, the TGT names can be omitted (for example "chr,beg,end").
+If SRC or TGT file has no header, 1-based indexes can be given instead (for example "chr,beg,end:3,1,2").
+Note that regions are not required, the program can work with a list of positions (for example "chr,beg,end:CHROM,POS,POS").
+.RE
+.PP
+.BR \-f ", " \-\-transfer " SRC:TGT"
+.RS 4
+Comma-separated list of columns to transfer. If the SRC column does not exist, interpret it as the default value to fill in when a match is found or a dot (".") when a match is not found. If the TGT column does not exist, a new column is created. If the TGT column already exists, its values will be overwritten when overlap is found and left as is otherwise.
+.RE
+.PP
+.BR \-m ", " \-\-match " SRC:TGT"
+.RS 4
+The columns required to be identical
+.RE
+.PP
+.BR \-o ", " \-\-output " FILE"
+.RS 4
+Output file name, by default the result is printed on standard output
+.RE
+.PP
+.BR \-s ", " \-\-source\-file " FILE"
+.RS 4
+Source file with annotations to transfer
+.RE
+.PP
+.BR \-t ", " \-\-target\-file " FILE"
+.RS 4
+Target file to be extend with annotations from
+.BR \-s ", " \-\-source\-file
+.RE
+.SS "Other options"
+.PP
+.B \-\-allow\-dups
+.RS 4
+Add the same annotations multiple times if multiple overlaps are found
+.RE
+.PP
+.B \-\-help
+.RS 4
+This help message
+.RE
+.PP
+.BR \-\-max\-annots " INT"
+.RS 4
+Add at most INT annotations per column to save time when many overlaps are found with a single region
+.RE
+.PP
+.B \-\-version
+.RS 4
+Print version string and exit
+.RE
+.PP
+.BR \-a ", " \-\-annotate " LIST"
+.RS 4
+Add one or more special annotation and its target name separated by ':'. If no target name is given, the special annotation's name will be used in output header.
+.PP
+.I cnt
+.RS 4
+number of overlapping regions
+.RE
+.PP
+.I frac
+.RS 4
+fraction of the target region with an overlap
+.RE
+.PP
+.I nbp
+.RS 4
+number of source base pairs in the overlap
+.RE
+.RE
+.PP
+.BR \-d ", " \-\-delim " SRC:TGT"
+.RS 4
+Column delimiter in the source and the target file. For example, if both files are comma-delimited, run with
+"--delim ,:," or simply "--delim ,". If the source file is comma-delimited and the target file is tab-delimited,
+run with "-d $',:\\t'".
+.RE
+.PP
+.BR \-h ", " \-\-headers " SRC:TGT"
+.RS 4
+Line number of the header row with column names. By default the first line is interpreted as header if it starts with the comment
+character ("#"), otherwise expects numeric indices. However, if the first line does not start with "#" but still
+contains the column names, use "--headers 1:1". To ignore existing header (skip comment lines) and use numeric indices,
+use "--headers 0:0" which is equivalent to "--ignore-headers". When negative value is given, it is interpreted as the number of
+lines from the end of the comment block. Specifically, "--headers -1" takes the column names from the last line of
+the comment block (e.g., the "#CHROM" line in the VCF format).
+.RE
+.PP
+.BR \-H ", " \-\-ignore\-headers
+.RS 4
+Ignore the headers completely and use numeric indexes even when a header exists
+.RE
+.PP
+.BR \-I ", " \-\-no\-hdr\-idx
+.RS 4
+Suppress index numbers in the printed header. If given twice, drop the entire header.
+.RE
+.PP
+.BR \-O ", " \-\-overlap " FLOAT,[FLOAT]"
+.RS 4
+Minimum overlap as a fraction of region length in SRC and TGT, respectively (with two numbers), or in
+at least one of the overlapping regions (with a single number). If also
+.BR \-r ", " \-\-reciprocal
+is given, require at least
+.I FLOAT
+overlap with respect to both regions. Two identical numbers are equivalent to running with
+.BR \-r ", " \-\-reciprocal
+.RE
+.PP
+.BR \-r ", " \-\-reciprocal
+.RS 4
+Require the
+.BR \-O ", " \-\-overlap
+with respect to both overlapping regions
+.RE
+.PP
+.BR \-x ", " \-\-drop-overlaps
+.RS 4
+Drop overlapping regions (cannot be combined with
+.BR \-f ", " \-\-transfer )
+.RE
+.SH EXAMPLE
+
+Both SRC and TGT input files must be tab-delimited files with or without a header, their columns can be named differently, can appear in arbitrary order. For example consider the source file
+
+.EX
+#chr   beg   end   sample   type   qual
+chr1   100   200   smpl1    DEL    10
+chr1   300   400   smpl2    DUP    30
+.EE
+and the target file
+.EX
+150   200   chr1   smpl1
+150   200   chr1   smpl2
+350   400   chr1   smpl1
+350   400   chr1   smpl2
+.EE
+In the first example we transfer type and quality but only for regions with matching sample. Notice that the header is present in SRC but not in TGT, therefore we use column indexes for the latter
+.EX
+annot-tsv -s src.txt.gz -t tgt.txt.gz -c chr,beg,end:3,1,2 -m sample:4 -f type,qual
+150   200   chr1   smpl1   DEL   10
+150   200   chr1   smpl2   .     .
+350   400   chr1   smpl1   .     .
+350   400   chr1   smpl2   DUP   30
+.EE
+The next example demonstrates the special annotations nbp and cnt,
+with target name as pair,count.
+In this case we use a target file with headers so that column names will
+be copied to the output:
+.EX
+#from	to	chrom	sample
+150	200	chr1	smpl1
+150	200	chr1	smpl2
+350	400	chr1	smpl1
+350	400	chr1	smpl2
+.EE
+
+.EX
+annot-tsv -s src.txt.gz -t tgt_hdr.txt.gz -c chr,beg,end:chrom,from,to -m sample -f type,qual -a nbp,cnt:pair,count
+#[1]from	[2]to	[3]chrom	[4]sample	[5]type	[6]qual	[7]pair	[8]count
+150	200	chr1	smpl1	DEL	10	51	1
+150	200	chr1	smpl2	.	.	0	0
+350	400	chr1	smpl1	.	.	0	0
+350	400	chr1	smpl2	DUP	30	51	1
+.EE
+One of the SRC or TGT file can be streamed from stdin
+.EX
+cat src.txt | annot\-tsv \-t tgt.txt \-c chr,beg,end:3,2,1 \-m sample:4 \-f type,qual \-o output.txt
+cat tgt.txt | annot\-tsv \-s src.txt \-c chr,beg,end:3,2,1 \-m sample:4 \-f type,qual \-o output.txt
+.EE
+
+The program can be used in a grep-like mode to print only matching regions of the target file without modifying the records
+
+.EX
+annot\-tsv \-s src.txt \-t tgt.txt \-c chr,beg,end:3,2,1 \-m sample:4
+150   200   chr1   smpl1
+350   400   chr1   smpl2
+.EE
+
+.SH AUTHORS
+The program was written by Petr Danecek and was originally published on github as annot\-regs
+.SH COPYING
+The MIT/Expat License, see the LICENSE document for details.
+.br
+Copyright (c) Genome Research Ltd.

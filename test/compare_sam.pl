@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 #
 #    Copyright (C) 2013-2018 Genome Research Ltd.
 #
@@ -26,6 +26,7 @@
 # Optionally can skip header or ignore specific types of diff.
 
 use strict;
+use warnings;
 use Getopt::Long;
 
 my %opts;
@@ -161,6 +162,9 @@ while ($ln1 && $ln2) {
     # Cram doesn't uppercase the reference
     $ln1[9] = uc($ln1[9]);
     $ln2[9] = uc($ln2[9]);
+
+    # RNA U to T is an expected change
+    $ln1[9] =~ s/U/T/g;
 
     # Cram will populate a sequence string that starts as "*"
     $ln2[9] = "*" if ($ln1[9] eq "*");

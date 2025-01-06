@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2021 Genome Research Ltd.
+    Copyright (C) 2012-2023 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
+#include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -71,11 +72,13 @@ typedef struct
 }
 aux_t;
 
+static bcf_sr_regions_t *bcf_sr_regions_alloc(void);
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end);
 static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
 static void _regions_sort_and_merge(bcf_sr_regions_t *reg);
 static int _bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end, int missed_reg_handler);
+static void bcf_sr_seek_start(bcf_srs_t *readers);
 
 char *bcf_sr_strerror(int errnum)
 {
@@ -187,8 +190,10 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 {
     if ( readers->nreaders || readers->regions )
     {
-        hts_log_error("Must call bcf_sr_set_regions() before bcf_sr_add_reader()");
-        return -1;
+        if ( readers->regions ) bcf_sr_regions_destroy(readers->regions);
+        readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
+        bcf_sr_seek_start(readers);
+        return 0;
     }
 
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
@@ -365,13 +370,22 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     if ( !files->explicit_regs && !files->streaming )
     {
         int n = 0, i;
-        const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
+        const char **names;
+
+        if ( !files->regions )
+        {
+            files->regions = bcf_sr_regions_alloc();
+            if ( !files->regions )
+            {
+                hts_log_error("Cannot allocate regions data structure");
+                return 0;
+            }
+        }
+
+        names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {
-            if ( !files->regions )
-                files->regions = _regions_init_string(names[i]);
-            else
-                _regions_add(files->regions, names[i], -1, -1);
+            _regions_add(files->regions, names[i], -1, -1);
         }
         free(names);
         _regions_sort_and_merge(files->regions);
@@ -529,7 +543,7 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, hts_pos_t start, hts_
     }
     if (!reader->itr) {
         hts_log_error("Could not seek: %s:%"PRIhts_pos"-%"PRIhts_pos, seq, start + 1, end + 1);
-        assert(0);
+        abort();
     }
     return 0;
 }
@@ -676,7 +690,6 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
                 hts_log_error("This should never happen, just to keep clang compiler happy: %d",BCF_SR_AUX(files)->targets_overlap);
                 exit(1);
             }
-
             if ( beg <= files->regions->prev_end || end < files->regions->start || beg > files->regions->end ) continue;
         }
 
@@ -843,7 +856,11 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
     for (i=0; i<reg->nseqs; i++)
         reg->regs[i].creg = -1;
     reg->iseq = 0;
+    reg->start = -1;
+    reg->end   = -1;
     reg->prev_seq = -1;
+    reg->prev_start = -1;
+    reg->prev_end   = -1;
 }
 
 
@@ -950,6 +967,17 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     return 1;
 }
 
+// Allocate a new region list structure.
+static bcf_sr_regions_t *bcf_sr_regions_alloc(void)
+{
+    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
+    if ( !reg ) return NULL;
+
+    reg->start = reg->end = -1;
+    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    return reg;
+}
+
 // Add a new region into a list. On input the coordinates are 1-based, inclusive, then stored 0-based,
 // inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and merge_regions().
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end)
@@ -1026,20 +1054,36 @@ void _regions_sort_and_merge(bcf_sr_regions_t *reg)
 }
 
 // File name or a list of genomic locations. If file name, NULL is returned.
+// Recognises regions in the form chr, chr:pos, chr:beg-end, chr:beg-, {weird-chr-name}:pos.
+// Cannot use hts_parse_region() as that requires the header and if header is not present,
+// wouldn't learn the chromosome name.
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
-    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-    reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    bcf_sr_regions_t *reg = bcf_sr_regions_alloc();
+    if ( !reg ) return NULL;
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
     hts_pos_t from, to;
     while ( 1 )
     {
-        while ( *ep && *ep!=',' && *ep!=':' ) ep++;
         tmp.l = 0;
-        kputsn(sp,ep-sp,&tmp);
+        if ( *ep=='{' )
+        {
+            while ( *ep && *ep!='}' ) ep++;
+            if ( !*ep )
+            {
+                hts_log_error("Could not parse the region, mismatching braces in: \"%s\"", str);
+                goto exit_nicely;
+            }
+            ep++;
+            kputsn(sp+1,ep-sp-2,&tmp);
+        }
+        else
+        {
+            while ( *ep && *ep!=',' && *ep!=':' ) ep++;
+            kputsn(sp,ep-sp,&tmp);
+        }
         if ( *ep==':' )
         {
             sp = ep+1;
@@ -1047,7 +1091,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( sp==ep )
             {
                 hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                goto exit_nicely;
             }
             if ( !*ep || *ep==',' )
             {
@@ -1058,7 +1102,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( *ep!='-' )
             {
                 hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                goto exit_nicely;
             }
             ep++;
             sp = ep;
@@ -1066,22 +1110,32 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             if ( *ep && *ep!=',' )
             {
                 hts_log_error("Could not parse the region(s): %s", str);
-                free(reg); free(tmp.s); return NULL;
+                goto exit_nicely;
             }
             if ( sp==ep ) to = MAX_CSI_COOR-1;
             _regions_add(reg, tmp.s, from, to);
             if ( !*ep ) break;
             sp = ep;
         }
-        else
+        else if ( !*ep || *ep==',' )
         {
             if ( tmp.l ) _regions_add(reg, tmp.s, -1, -1);
             if ( !*ep ) break;
             sp = ++ep;
         }
+        else
+        {
+            hts_log_error("Could not parse the region(s): %s", str);
+            goto exit_nicely;
+        }
     }
     free(tmp.s);
     return reg;
+
+exit_nicely:
+    bcf_sr_regions_destroy(reg);
+    free(tmp.s);
+    return NULL;
 }
 
 // ichr,ifrom,ito are 0-based;
@@ -1156,9 +1210,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         return reg;
     }
 
-    reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-    reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
+    reg = bcf_sr_regions_alloc();
+    if ( !reg ) return NULL;
 
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
@@ -1343,7 +1396,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
             }
 
             // tabix index absent, reading the whole file
-            ret = hts_getline(reg->file, KS_SEP_LINE, &reg->line);
+            ret = reg->file ? hts_getline(reg->file, KS_SEP_LINE, &reg->line) : -1;
             if ( ret<0 ) { reg->iseq = -1; return -1; }
         }
         ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&chr_end,&from,&to);

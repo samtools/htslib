@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2023 Genome Research Ltd.
+#    Copyright (C) 2015-2024 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -35,7 +35,7 @@ m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2020-2021 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2020-2024 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
@@ -70,67 +70,57 @@ dnl Flags to treat warnings as errors.  These need to be applied to CFLAGS
 dnl later as they can interfere with some of the tests (notably AC_SEARCH_LIBS)
 HTS_PROG_CC_WERROR(hts_late_cflags)
 
-dnl Check for various compiler flags to enable SIMD features
-dnl Options for rANS32x16 sse4.1 version - ssse3
-hts_cflags_sse4=""
-HTS_CHECK_COMPILE_FLAGS_NEEDED([ssse3], [-mssse3], [AC_LANG_PROGRAM([[
-    #ifdef __x86_64__
-    #include "x86intrin.h"
-    #endif
-  ]],[[
-    #ifdef __x86_64__
-    __m128i a = _mm_set_epi32(1, 2, 3, 4), b = _mm_set_epi32(4, 3, 2, 1);
-    __m128i c = _mm_shuffle_epi8(a, b);
-    return *((char *) &c);
-    #endif
-  ]])], [
-  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
-  AC_DEFINE([HAVE_SSSE3],1,[Defined to 1 if rANS source using SSSE3 can be compiled.])
-])
+# HTSlib uses X/Open-only facilities (M_SQRT2 etc, drand48() etc), and
+# various POSIX functions that are provided by various _POSIX_C_SOURCE values
+# or by _XOPEN_SOURCE >= 500. It also uses usleep(), which is removed when
+# _XOPEN_SOURCE >= 700. Additionally, some definitions may require
+# _XOPEN_SOURCE >= 600 on some platforms (snprintf on MinGW,
+# PTHREAD_MUTEX_RECURSIVE on some Linux distributions). Hence we set it to 600.
 
-dnl Options for rANS32x16 sse4.1 version - popcnt
-HTS_CHECK_COMPILE_FLAGS_NEEDED([popcnt], [-mpopcnt], [AC_LANG_PROGRAM([[
-    #ifdef __x86_64__
-    #include "x86intrin.h"
-    #endif
-  ]],[[
-    #ifdef __x86_64__
-    unsigned int i = _mm_popcnt_u32(1);
-    return i != 1;
-    #endif
-  ]])], [
-  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
-  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
-])
+# Define _XOPEN_SOURCE unless the user has already done so via $CPPFLAGS etc.
+AC_CHECK_DECL([_XOPEN_SOURCE], [],
+  [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
+  [])
 
+dnl Check that we have cpuid, and if so run the x86 SIMD checks
+AC_CHECK_DECLS([__get_cpuid_max, __cpuid_count], [
+   hts_have_cpuid=yes
+], [
+   hts_have_cpuid=no
+], [[#include <cpuid.h>]])
+
+AS_IF(test "x$hts_have_cpuid" = "xyes", [
 dnl Options for rANS32x16 sse4.1 version - sse4.1
-HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
+ [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     #include "x86intrin.h"
     #endif
   ]],[[
     #ifdef __x86_64__
     __m128i a = _mm_set_epi32(1, 2, 3, 4), b = _mm_set_epi32(4, 3, 2, 1);
-    __m128i c = _mm_max_epu32(a, b);
-    return *((char *) &c);
+    __m128i c = _mm_shuffle_epi8(_mm_max_epu32(a, b), b);
+    return _mm_popcnt_u32(*((char *) &c));
     #endif
   ]])], [
-  hts_cflags_sse4="$flags_needed $hts_cflags_sse4"
+  hts_cflags_sse4="$flags_needed"
+  AC_DEFINE([HAVE_SSSE3],1,[Defined to 1 if rANS source using SSSE3 can be compiled.])
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_SSE4_1],1,[Defined to 1 if rANS source using SSE4.1 can be compiled.
 ])
+
 dnl Propagate HTSlib's unaligned access preference to htscodecs
   AH_VERBATIM([UBSAN],[
 /* Prevent unaligned access in htscodecs SSE4 rANS codec */
 #if defined(HTS_ALLOW_UNALIGNED) && HTS_ALLOW_UNALIGNED == 0
 #undef UBSAN
-#endif
-  ])
+#endif])
   AC_DEFINE([UBSAN],1,[])
 ])
 AC_SUBST([hts_cflags_sse4])
 
 dnl Options for rANS32x16 avx2 version
-HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2 -mpopcnt], [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     #include "x86intrin.h"
     #endif
@@ -139,16 +129,18 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx2], [-mavx2], [AC_LANG_PROGRAM([[
     __m256i a = _mm256_set_epi32(1, 2, 3, 4, 5, 6, 7, 8);
     __m256i b = _mm256_add_epi32(a, a);
     long long c = _mm256_extract_epi64(b, 0);
-    return (int) c;
+    return _mm_popcnt_u32((int) c);
     #endif
   ]])], [
   hts_cflags_avx2="$flags_needed"
   AC_SUBST([hts_cflags_avx2])
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX2],1,[Defined to 1 if rANS source using AVX2 can be compiled.])
 ])
 
 dnl Options for rANS32x16 avx512 version
-HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f], [AC_LANG_PROGRAM([[
+HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
+ [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     #include "x86intrin.h"
     #endif
@@ -156,13 +148,47 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f], [AC_LANG_PROGRAM([[
     #ifdef __x86_64__
     __m512i a = _mm512_set1_epi32(1);
     __m512i b = _mm512_add_epi32(a, a);
-    return *((char *) &b);
+    __m256i c = _mm512_castsi512_si256(b);
+    __m256i d = _mm512_extracti64x4_epi64(a, 1);
+    return _mm_popcnt_u32(*((char *) &c)) + (*(char *) &d);
     #endif
   ]])], [
   hts_cflags_avx512="$flags_needed"
   AC_SUBST([hts_cflags_avx512])
+  AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
 ])
+
+dnl Check for working __builtin_cpu_supports (ssse3 is broken on some clangs)
+AC_MSG_CHECKING([for working __builtin_cpu_supports("ssse3")])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+  if (__builtin_cpu_supports("ssse3")) {
+    return 0;
+  }
+])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_BUILTIN_CPU_SUPPORT_SSSE3], 1,
+            [Defined to 1 if __builtin_cpu_supports("ssse3") works])
+], [
+  AC_MSG_RESULT([no])
+])
+
+dnl Check for function attribute used in conjunction with __builtin_cpu_supports
+AC_MSG_CHECKING([for __attribute__((target))])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  __attribute__((target("ssse3")))
+  int zero(void) {
+    return 0;
+  }
+]], [[zero();]])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_ATTRIBUTE_TARGET], 1,
+            [Define if __attribute__((target(...))) is available.])
+], [
+  AC_MSG_RESULT([no])
+])
+
+]) dnl End of AS_IF(hts_have_cpuid)
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
@@ -263,7 +289,9 @@ case $basic_host in
     # This also sets __USE_MINGW_ANSI_STDIO which in turn makes PRId64,
     # %lld and %z printf formats work.  It also enforces the snprintf to
     # be C99 compliant so it returns the correct values (in kstring.c).
-    CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE=600"
+
+    # Now set by default, so no need to do it here.
+    # CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE=600"
     ;;
   *)
     host_result="plain .so"
@@ -298,10 +326,29 @@ HTS_HIDE_DYNAMIC_SYMBOLS
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic])
+AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic getauxval elf_aux_info posix_memalign])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
+
+AC_MSG_CHECKING([for __attribute__((constructor))])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+  static __attribute__((constructor)) void noop(void) {}
+]], [])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_ATTRIBUTE_CONSTRUCTOR], 1,
+            [Define if __attribute__((constructor)) is available.])
+], [AC_MSG_RESULT([no])])
+
+AC_MSG_CHECKING([for clock_gettime with CLOCK_PROCESS_CPUTIME_ID])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <time.h>]], [[
+  struct timespec ts;
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+]])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE_CLOCK_GETTIME_CPUTIME], 1,
+            [Define if clock_gettime exists and accepts CLOCK_PROCESS_CPUTIME_ID.])
+], [AC_MSG_RESULT([no])])
 
 if test $enable_plugins != no; then
   AC_SEARCH_LIBS([dlsym], [dl], [],
@@ -583,7 +630,8 @@ AC_SEARCH_LIBS(regcomp, regex, [libregex=needed], [])
 
 dnl Look for PTHREAD_MUTEX_RECURSIVE.
 dnl This is normally in pthread.h except on some broken glibc implementations.
-AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Needed for PTHREAD_MUTEX_RECURSIVE])], [[#include <pthread.h>]])
+dnl Now set by default
+dnl AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Needed for PTHREAD_MUTEX_RECURSIVE])], [[#include <pthread.h>]])
 
 if test "$s3" = enabled ; then
    AC_DEFINE([ENABLE_S3], 1, [Define if HTSlib should enable S3 support.])

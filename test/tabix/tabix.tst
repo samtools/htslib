@@ -1,4 +1,4 @@
-#    Copyright (C) 2017 Genome Research Ltd.
+#    Copyright (C) 2017, 2024 Genome Research Ltd.
 #
 #    Author: Robert Davies <rmd@sanger.ac.uk>
 #
@@ -66,3 +66,7 @@ P gff_file.X.2934832.2935190.out $tabix gff_file.tbi.tmp.gff.gz X:2934832-293519
 
 # tabix with --separate-regions
 P bed_file.separate.out $tabix --separate-regions bed_file.tbi.tmp.bed.gz X:1100-1400 Y:100000-100550 Z:100000-100005
+
+# Using threads with tabix
+P . $tabix -f -p bed bed_file.tbi.tmp.bed.gz -@ 2
+P vcf_file.1.3000151.out $tabix vcf_file.tbi.tmp.vcf.gz 1:3000151-3000151 --threads 2

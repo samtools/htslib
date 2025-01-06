@@ -1,0 +1,5 @@
+#ignore me
+#chr1,beg1,end1,smpl1
+#chr2,beg2,end2,smpl2
+1,10,20,A
+1,30,40,B

@@ -1,6 +1,6 @@
 /*  hts_defs.h -- Miscellaneous definitions.
 
-    Copyright (C) 2013-2015,2017, 2019-2020 Genome Research Ltd.
+    Copyright (C) 2013-2015,2017, 2019-2020, 2024 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -56,6 +56,21 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_NORETURN __attribute__ ((__noreturn__))
 #else
 #define HTS_NORETURN
+#endif
+
+// Enable optimisation level 3, especially for gcc.  To be used
+// where we want to force vectorisation in hot loops and the default -O2
+// just doesn't cut it.
+#if HTS_COMPILER_HAS(optimize) || HTS_GCC_AT_LEAST(4,4)
+#define HTS_OPT3 __attribute__((optimize("O3")))
+#else
+#define HTS_OPT3
+#endif
+
+#if HTS_COMPILER_HAS(aligned) || HTS_GCC_AT_LEAST(4,3)
+#define HTS_ALIGN32 __attribute__((aligned(32)))
+#else
+#define HTS_ALIGN32
 #endif
 
 // GCC introduced warn_unused_result in 3.4 but added -Wno-unused-result later

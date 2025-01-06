@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2020, 2022 Genome Research Ltd.
+    Copyright (C) 2014-2020, 2022-2024 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -1004,6 +1004,86 @@ static void test_header_pg_lines(void) {
     return;
 }
 
+// Test handling of @PG PP loops
+static void test_header_pg_loops(void) {
+    static const char *header_texts[2] = {
+        // Loop to self
+        "data:,"
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop1\n",
+
+        // circuit
+        "data:,"
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop2\n"
+        "@PG\tID:loop2\tPN:prog2\tPP:loop1\n"
+    };
+
+    static const char *expected[2] = {
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop1\n"
+        "@PG\tID:new_prog\tPN:new_prog\tPP:loop1\n",
+
+        "@HD\tVN:1.5\n"
+        "@PG\tID:loop1\tPN:prog1\tPP:loop2\n"
+        "@PG\tID:loop2\tPN:prog2\tPP:loop1\n"
+        "@PG\tID:new_prog\tPN:new_prog\n"
+    };
+
+    int i, r;
+    samFile *in = NULL;
+    sam_hdr_t *header = NULL;
+    const char *text = NULL;
+    enum htsLogLevel old_log_level = hts_get_log_level();
+
+    // Silence header loop warning
+    hts_set_log_level(HTS_LOG_OFF);
+
+    for (i = 0; i < 2; i++) {
+        in = sam_open(header_texts[i], "r");
+        if (!in) {
+            fail("couldn't open file for PG loop test %d", i);
+            goto err;
+        }
+
+        header = sam_hdr_read(in);
+        if (!header) {
+            fail("reading header for PG loop test %d", i);
+            goto err;
+        }
+
+        r = sam_hdr_add_pg(header, "new_prog", NULL);
+        if (r != 0) {
+            fail("sam_hdr_add_pg new_prog for PG loop test %d", i);
+            goto err;
+        }
+
+        text = sam_hdr_str(header);
+        if (!text || strcmp(text, expected[i]) != 0) {
+            fail("edited header does not match expected version for PG loop test %d", i);
+            fprintf(stderr,
+                    "---------- Expected:\n%s\n"
+                    "++++++++++ Got:\n%s\n"
+                    "====================\n",
+                    expected[i], text);
+            goto err;
+        }
+        sam_hdr_destroy(header);
+        header = NULL;
+        if (in) sam_close(in);
+        in = NULL;
+    }
+    hts_set_log_level(old_log_level);
+    return;
+
+ err:
+    sam_hdr_destroy(header);
+    header = NULL;
+    if (in) sam_close(in);
+    hts_set_log_level(old_log_level);
+    return;
+}
+
 static void test_header_updates(void) {
     static const char header_text[] =
         "@HD\tVN:1.4\n"
@@ -1328,16 +1408,16 @@ static void check_big_ref(int parse_header)
         "@HD\tVN:1.4\n"
         "@SQ\tSN:large#1\tLN:5000000000\n"
         "@SQ\tSN:small#1\tLN:100\n"
-        "@SQ\tSN:large#2\tLN:9223372034707292158\n"
+        "@SQ\tSN:large#2\tLN:4611686018427387904\n"
         "@SQ\tSN:small#2\tLN:1\n"
         "r1\t0\tlarge#1\t4999999000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
         "r2\t0\tsmall#1\t1\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
-        "r3\t0\tlarge#2\t9223372034707292000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
-        "p1\t99\tlarge#2\t1\t50\t8M\t=\t9223372034707292150\t9223372034707292158\tACGTACGT\tabcdefgh\n"
-        "p1\t147\tlarge#2\t9223372034707292150\t50\t8M\t=\t1\t-9223372034707292158\tACGTACGT\tabcdefgh\n"
+        "r3\t0\tlarge#2\t4611686018427387000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
+        "p1\t99\tlarge#2\t1\t50\t8M\t=\t4611686018427387895\t4611686018427387903\tACGTACGT\tabcdefgh\n"
+        "p1\t147\tlarge#2\t4611686018427387895\t50\t8M\t=\t1\t-4611686018427387903\tACGTACGT\tabcdefgh\n"
         "r4\t0\tsmall#2\t2\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n";
     const hts_pos_t expected_lengths[] = {
-        5000000000LL, 100LL, 9223372034707292158LL, 1LL
+        5000000000LL, 100LL, 4611686018427387904LL, 1LL
     };
     const int expected_tids[] = {
         0, 1, 2, 2, 2, 3
@@ -1346,11 +1426,11 @@ static void check_big_ref(int parse_header)
         -1, -1, -1, 2, 2, -1
     };
     const hts_pos_t expected_positions[] = {
-        4999999000LL - 1, 1LL - 1, 9223372034707292000LL - 1, 1LL - 1,
-        9223372034707292150LL - 1, 2LL - 1
+        4999999000LL - 1, 1LL - 1, 4611686018427387000LL - 1, 1LL - 1,
+        4611686018427387895LL - 1, 2LL - 1
     };
     const hts_pos_t expected_mpos[] = {
-        -1, -1, -1, 9223372034707292150LL - 1, 1LL - 1, -1
+        -1, -1, -1, 4611686018427387895LL - 1, 1LL - 1, -1
     };
     samFile *in = NULL, *out = NULL;
     sam_hdr_t *header = NULL, *dup_header = NULL;
@@ -1917,7 +1997,7 @@ static void test_mempolicy(void)
     }
 }
 
-static void test_bam_set1_minimal()
+static void test_bam_set1_minimal(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -1948,7 +2028,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_full()
+static void test_bam_set1_full(void)
 {
     const char *qname = "!??AAA~~~~";
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
@@ -1995,7 +2075,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_even_and_odd_seq_len()
+static void test_bam_set1_even_and_odd_seq_len(void)
 {
     const char *seq_even = "TGGACTACGA";
     const char *seq_odd  = "TGGACTACGAC";
@@ -2025,7 +2105,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_with_seq_but_no_qual()
+static void test_bam_set1_with_seq_but_no_qual(void)
 {
     const char *seq = "TGGACTACGA";
 
@@ -2049,7 +2129,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_qname()
+static void test_bam_set1_validate_qname(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2066,7 +2146,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_seq()
+static void test_bam_set1_validate_seq(void)
 {
     int r;
     bam1_t *bam = NULL;
@@ -2083,7 +2163,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_cigar()
+static void test_bam_set1_validate_cigar(void)
 {
     const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
@@ -2112,7 +2192,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_validate_size_limits()
+static void test_bam_set1_validate_size_limits(void)
 {
     const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
@@ -2144,7 +2224,7 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
-static void test_bam_set1_write_and_read_back()
+static void test_bam_set1_write_and_read_back(void)
 {
     const char *qname = "q1";
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
@@ -2174,7 +2254,7 @@ static void test_bam_set1_write_and_read_back()
     w_bam = bam_init1();
     VERIFY(w_bam != NULL, "failed to initialize BAM struct.");
     r = bam_set1(w_bam, strlen(qname), qname,
-                 BAM_FREVERSE, 0, 1000, 42,
+                 BAM_FPAIRED | BAM_FREVERSE, 0, 1000, 42,
                  sizeof(cigar) / 4, cigar, 0, 2000, 3000,
                  strlen(seq), seq, qual, 64);
     VERIFY(r >= 0, "call to bam_set1() failed.");
@@ -2256,6 +2336,7 @@ int main(int argc, char **argv)
     samrecord_layout();
     use_header_api();
     test_header_pg_lines();
+    test_header_pg_loops();
     test_header_updates();
     test_header_remove_lines();
     test_header_ref_altnames();

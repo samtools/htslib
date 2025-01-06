@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013, 2018, 2020 Genome Research Ltd.
+   Copyright (C) 2013, 2018, 2020, 2023 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -110,11 +110,11 @@
 				} else break; \
 			} \
 			if (delimiter == KS_SEP_LINE) {  \
-				for (i = ks->begin; i < ks->end; ++i)  \
-					if (ks->buf[i] == '\n') break; \
+				unsigned char *sep = (unsigned char *)memchr(ks->buf + ks->begin, '\n', ks->end - ks->begin); \
+				i = sep != NULL ? sep - ks->buf : ks->end; \
 			} else if (delimiter > KS_SEP_MAX) { \
-				for (i = ks->begin; i < ks->end; ++i) \
-					if (ks->buf[i] == delimiter) break; \
+				unsigned char *sep = (unsigned char *)memchr(ks->buf + ks->begin, delimiter, ks->end - ks->begin); \
+				i = sep != NULL ? sep - ks->buf : ks->end; \
 			} else if (delimiter == KS_SEP_SPACE) { \
 				for (i = ks->begin; i < ks->end; ++i) \
 					if (isspace(ks->buf[i])) break; \

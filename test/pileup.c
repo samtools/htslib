@@ -1,6 +1,6 @@
 /*  test/pileup.c -- simple pileup tester
 
-    Copyright (C) 2014,2018-2019 Genome Research Ltd.
+    Copyright (C) 2014,2018-2019, 2024 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -119,6 +119,19 @@ static int print_pileup_seq(const bam_pileup1_t *p, int n) {
     return -1;
 }
 
+static void print_pileup_qual(const bam_pileup1_t *p, int n) {
+    int i;
+
+    for (i = 0; i < n; i++, p++) {
+        uint8_t *qual = bam_get_qual(p->b);
+        uint8_t q = '~';
+        if (p->qpos < p->b->core.l_qseq &&
+            qual[p->qpos]+33 < '~')
+            q = qual[p->qpos]+33;
+        putchar(q);
+    }
+}
+
 static int test_pileup(ptest_t *input) {
     bam_plp_t plp = NULL;
     const bam_pileup1_t *p;
@@ -142,6 +155,9 @@ static int test_pileup(ptest_t *input) {
 
         if (print_pileup_seq(p, n) < 0)
             goto fail;
+
+        putchar('\t');
+        print_pileup_qual(p, n);
 
         putchar('\n');
     }
@@ -187,6 +203,9 @@ static int test_mpileup(ptest_t *input) {
 
         if (print_pileup_seq(pileups[0], n_plp[0]) < 0)
             goto fail;
+
+        putchar('\t');
+        print_pileup_qual(pileups[0], n_plp[0]);
 
         putchar('\n');
     }

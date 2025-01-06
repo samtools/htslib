@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2022 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2023 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -485,7 +485,7 @@ int sam_hdr_add_lines(sam_hdr_t *h, const char *lines, size_t len);
 /// Adds a single line to an existing header.
 /*!
  * Specify type and one or more key,value pairs, ending with the NULL key.
- * Eg. sam_hdr_add_line(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ * Eg. sam_hdr_add_line(h, "SQ", "SN", "foo", "LN", "100", NULL).
  *
  * @param type  Type of the added line. Eg. "SQ"
  * @return      0 on success, -1 on failure
@@ -1133,6 +1133,12 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *
                        can be NULL
  @param  b       [in/out]  address of the destination bam1_t struct
  @return         number of processed CIGAR operators; -1 on error
+
+ @discussion The BAM record may be partial and empty of existing cigar, seq
+ and quality, as is the case during SAM parsing, or it may be an existing
+ BAM record in which case this function replaces the existing CIGAR field
+ and shuffles data accordingly.  A CIGAR of "*" will remove the CIGAR,
+ returning zero.
  */
 HTSLIB_EXPORT
 ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
@@ -1414,7 +1420,7 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
 /** @param fp    Pointer to the destination file
  *  @param h     Pointer to the header structure previously read
  *  @param b     Pointer to the record to be written
- *  @return >= 0 on successfully writing the record, -1 on error
+ *  @return >= 0 on successfully writing the record, -ve on error
  */
     HTSLIB_EXPORT
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
@@ -1519,6 +1525,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         r |= kputc_(type, ks) < 0;
         r |= kputc_(':', ks) < 0;
         while (s < end && *s) r |= kputc_(*s++, ks) < 0;
+        r |= kputsn("", 0, ks) < 0;     //ensures NUL termination
         if (s >= end)
             goto bad_aux;
         ++s;
@@ -1706,11 +1713,11 @@ static inline int bam_aux_get_str(const bam1_t *b,
 HTSLIB_EXPORT
 int64_t bam_aux2i(const uint8_t *s);
 
-/// Get an integer aux value
+/// Get a float aux value
 /** @param s Pointer to the tag data, as returned by bam_aux_get()
-    @return The value, or 0 if the tag was not an integer type
+    @return The value, or 0 if the tag was not a float type
     If the tag is not an numeric type, errno is set to EINVAL.  The value of
-    integer flags will be returned cast to a double.
+    the float will be returned cast to a double.
 */
 HTSLIB_EXPORT
 double bam_aux2f(const uint8_t *s);
@@ -2209,7 +2216,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag);
  @field canonical_base    The canonical base referred to in the MM tag.
                           One of A, C, G, T or N.  Note this may not be the
                           explicit base recorded in the SEQ column (esp. if N).
- @field stran             0 or 1, indicating + or - strand from MM tag.
+ @field strand            0 or 1, indicating + or - strand from MM tag.
  @field qual              Quality code (256*probability), or -1 if unknown
 
  @discussion
@@ -2222,6 +2229,12 @@ typedef struct hts_base_mod {
     int strand;
     int qual;
 } hts_base_mod;
+
+#define HTS_MOD_UNKNOWN   -1  // In MM but not ML
+#define HTS_MOD_UNCHECKED -2  // Not in MM and in explicit mode
+
+// Flags for bam_parse_basemod2
+#define HTS_MOD_REPORT_UNCHECKED 1
 
 /// Allocates an hts_base_mode_state.
 /**
@@ -2246,7 +2259,7 @@ hts_base_mod_state *hts_base_mod_state_alloc(void);
 HTSLIB_EXPORT
 void hts_base_mod_state_free(hts_base_mod_state *state);
 
-/// Parses the Mm and Ml tags out of a bam record.
+/// Parses the MM and ML tags out of a bam record.
 /**
  * @param b        BAM alignment record
  * @param state    The base modification state pointer.
@@ -2255,9 +2268,27 @@ void hts_base_mod_state_free(hts_base_mod_state *state);
  *
  * This fills out the contents of the modification state, resetting the
  * iterator location to the first sequence base.
+ * (Parses the draft Mm/Ml tags instead if MM and/or ML are not present.)
  */
 HTSLIB_EXPORT
 int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state);
+
+/// Parses the MM and ML tags out of a bam record.
+/**
+ * @param b        BAM alignment record
+ * @param state    The base modification state pointer.
+ * @param flags    A bit-field controlling base modification processing
+ *
+ * @return 0 on success,
+ *         -1 on failure.
+ *
+ * This fills out the contents of the modification state, resetting the
+ * iterator location to the first sequence base.
+ * (Parses the draft Mm/Ml tags instead if MM and/or ML are not present.)
+ */
+HTSLIB_EXPORT
+int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
+                       uint32_t flags);
 
 /// Returns modification status for the next base position in the query seq.
 /**
@@ -2286,6 +2317,7 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
  * @param state    The base modification state pointer.
  * @param mods     A supplied array for returning base modifications
  * @param n_mods   The size of the mods array
+ * @param pos      Pointer holding position of modification in sequence
  * @return The number of modifications found on success,
  *         0 if no more modifications are present,
  *         -1 on failure.
@@ -2346,6 +2378,26 @@ int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
 HTSLIB_EXPORT
 int bam_mods_query_type(hts_base_mod_state *state, int code,
                         int *strand, int *implicit, char *canonical);
+
+/// Returns data about the i^th modification type for the alignment record.
+/**
+ * @param b          BAM alignment record
+ * @param state      The base modification state pointer.
+ * @param i          Modification index, from 0 to ntype-1
+ * @param strand     Boolean for top (0) or bottom (1) strand
+ * @param implicit   Boolean for whether unlisted positions should be
+ *                   implicitly assumed to be unmodified, or require an
+ *                   explicit score and should be considered as unknown.
+ *                   Returned.
+ * @param canonical  Canonical base type associated with this modification
+ *                   Returned.
+ *
+ * @return 0 on success or -1 if not found.  The strand, implicit and canonical
+ * fields are filled out if passed in as non-NULL pointers.
+ */
+HTSLIB_EXPORT
+int bam_mods_queryi(hts_base_mod_state *state, int i,
+                    int *strand, int *implicit, char *canonical);
 
 /// Returns the list of base modification codes provided for this
 /// alignment record as an array of character codes (+ve) or ChEBI numbers

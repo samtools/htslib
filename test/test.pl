@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2022 Genome Research Ltd.
+#    Copyright (C) 2012-2024 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -34,33 +34,36 @@ use IO::Handle;
 my $opts = parse_params();
 srand($$opts{seed});
 
-test_bgzip($opts, 0);
-test_bgzip($opts, 4);
+run_test('test_bgzip',$opts, 0);
+run_test('test_bgzip',$opts, 4);
 
-ce_fa_to_md5_cache($opts);
-test_index($opts, 0);
-test_index($opts, 4);
+run_test('ce_fa_to_md5_cache',$opts,needed_by=>'test_index');
+run_test('test_index',$opts, 0);
+run_test('test_index',$opts, 4);
 
-test_multi_ref($opts,0);
-test_multi_ref($opts,4);
+run_test('test_multi_ref',$opts,0);
+run_test('test_multi_ref',$opts,4);
 
-test_view($opts,0);
-test_view($opts,4);
+run_test('test_view',$opts,0);
+run_test('test_view',$opts,4);
 
-test_MD($opts);
+run_test('test_MD',$opts);
 
-test_vcf_api($opts,out=>'test-vcf-api.out');
-test_bcf2vcf($opts);
-test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
-test_vcf_various($opts);
-test_bcf_sr_sort($opts);
-test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
-test_convert_padded_header($opts);
-test_rebgzip($opts);
-test_logging($opts);
-test_plugin_loading($opts);
-test_realn($opts);
-test_bcf_set_variant_type($opts);
+run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep');
+run_test('test_bcf2vcf',$opts);
+run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
+run_test('test_vcf_various',$opts);
+run_test('test_bcf_sr_sort',$opts);
+run_test('test_bcf_sr_no_index',$opts);
+run_test('test_bcf_sr_range', $opts);
+run_test('test_command',$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
+run_test('test_convert_padded_header',$opts);
+run_test('test_rebgzip',$opts);
+run_test('test_logging',$opts);
+run_test('test_plugin_loading',$opts);
+run_test('test_realn',$opts);
+run_test('test_bcf_set_variant_type',$opts);
+run_test('test_annot_tsv',$opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -80,10 +83,11 @@ sub error
         "About: samtools/htslib consistency test script\n",
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
+        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
+        "   -F, --function LIST             Run only the listed tests (e.g. 'annot_tsv')\n",
         "   -r, --redo-outputs              Recreate expected output files.\n",
         "   -s, --random-seed <int>         Initialise rand() with a different seed.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
-        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
     exit 1;
@@ -115,6 +119,7 @@ sub parse_params
             'r|redo-outputs' => \$$opts{redo_outputs},
             's|random-seed=i' => \$$opts{seed},
             'f|fail-fast' => \$$opts{fail_fast},
+            'F|function:s' => \$$opts{function},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -127,20 +132,55 @@ sub parse_params
         $$opts{path} = cygpath($$opts{path});
         $$opts{bin}  = cygpath($$opts{bin});
     }
+    if ($$opts{function}) {
+        $$opts{run_function} = { map {$_=>1} split(/,/,$$opts{function}) };
+    }
 
     return $opts;
+}
+sub run_test
+{
+    my ($name,$opts,@args) = @_;
+    if ( $$opts{run_function} )
+    {
+        my $run  = 0;
+        if ( exists($$opts{run_function}{$name}) ) { $run = 1; }
+        if ( !$run )
+        {
+            my %args;
+            if (!(scalar @args % 2)) # check that a hash was passed
+            {
+                %args = @args;
+            }
+            for my $func (keys %{$$opts{run_function}})
+            {
+                if ((exists($args{cmd}) && $args{cmd}=~/$func/) ||
+                    (exists($args{needed_by}) && $args{needed_by}=~/$func/)) {
+                    $run = 1;
+                } elsif ( $name=~/$func/ ) {
+                    $$opts{run_function}{$name} = 1;
+                    $run = 1;
+                }
+                last if ($run);
+            }
+        }
+        if ( !$run ) { return; }
+    }
+    my $sym = ${main::}{$name}; # Symbol table look-up, works with "use strict"
+    &$sym($opts,@args);
 }
 sub _cmd
 {
     my ($cmd) = @_;
     my $kid_io;
-    my @out;
+    my $out;
     my $pid = open($kid_io, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
     if ($pid)
     {
         # parent
-        @out = <$kid_io>;
+        local $/; # Read entire input
+        $out = <$kid_io>;
         close($kid_io);
     }
     else
@@ -152,7 +192,35 @@ sub _cmd
         # child
         exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
-    return ($? >> 8, join('',@out));
+    return ($? >> 8, $out);
+}
+sub _cmd3
+{
+    my ($cmd) = @_;
+
+    $cmd = "$ENV{TEST_PRECMD} $cmd" if exists $ENV{TEST_PRECMD};
+
+    my $tmp = "$$opts{tmp}/tmp";
+    system('bash', '-o','pipefail','-c', "($cmd) 2>$tmp.e >$tmp.o");
+
+    my $status  = $? >> 8;
+
+    my ($out,$err);
+    local $/; # Read entire input
+    if ( open(my $fh,'<',"$tmp.o") )
+    {
+        $out = <$fh>;
+        close($fh) or error("Failed to close $tmp.o");
+    }
+    if ( open(my $fh,'<',"$tmp.e") )
+    {
+        $err = <$fh>;
+        close($fh) or error("Failed to close $tmp.e");
+    }
+    unlink("$tmp.o");
+    unlink("$tmp.e");
+
+    return ($status,$out,$err);
 }
 sub cmd
 {
@@ -175,8 +243,9 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd("$args{cmd}");
-    if ( $ret ) { failed($opts,$test); return; }
+    my ($ret,$out,$err) = _cmd3("$args{cmd}");
+    if ( $err ) { $err =~ s/^/\t\t/mg; $err .= '\n'; }
+    if ( $ret ) { failed($opts,$test,"Non-zero status $ret\n$err"); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
         rename("$$opts{path}/$args{out}","$$opts{path}/$args{out}.old");
@@ -195,8 +264,8 @@ sub test_cmd
     my $exp = '';
     if ( open(my $fh,'<',"$$opts{path}/$args{out}") )
     {
-        my @exp = <$fh>;
-        $exp = join('',@exp);
+        local $/; # Read entire file
+        $exp = <$fh>;
         $exp =~ s/\015?\012/\n/g;
         close($fh);
     }
@@ -216,7 +285,10 @@ sub test_cmd
         }
         else
         {
-            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
+            my $diff = `diff $$opts{path}/$args{out} $$opts{path}/$args{out}.new`;
+            $diff =~ s/^/\t\t/mg;
+            chomp($diff);
+            failed($opts,$test,"${err}The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new\n$diff\n");
         }
         return;
     }
@@ -375,6 +447,8 @@ sub test_bgzip {
     my $index = "${compressed}.gzi";
     my $test = sprintf('%s %2s threads', 'bgzip round-trip',
                        $threads ? $threads : 'no');
+    my $uncompressed1 = "$$opts{tmp}/ce.fa.$threads";
+    my $uncompressed1_copy = "$$opts{tmp}/ce.fa.$threads.copy";
 
     # Round-trip test
     print "$test: ";
@@ -468,6 +542,80 @@ sub test_bgzip {
     if ($ret) {
         failed($opts, $test,
                $out ? $out : "'$expected_part' '$uncompressed_part2' differ");
+        return;
+    }
+    passed($opts,$test);
+
+    # multi file test, expects compressed files from previous tests
+    # bgzip should return failure if both inputs not present
+    $test = sprintf('%s %2s threads', 'bgzip multifile',
+                    $threads ? $threads : 'no');
+    print "$test: ";
+
+    #decompress and remove
+    $c = "$$opts{bin}/bgzip $at -d '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    #check both files present and matches or not
+    $c = "cmp '$data' '$uncompressed1'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test,
+               $out ? $out : "'$data' '$uncompressed1' differ");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed1_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test,
+               $out ? $out : "'$data' '$uncompressed1_copy' differ");
+        return;
+    }
+    #compress and remove
+    $c = "$$opts{bin}/bgzip $at '$uncompressed1' '$uncompressed1_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    #decompress again to ensure successful compression
+    $c = "$$opts{bin}/bgzip $at -d '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    passed($opts,$test);
+
+    # try writing to an explicit file name, round trip test
+    $test = sprintf('%s %2s threads', 'bgzip --output',
+                    $threads ? $threads : 'no');
+    print "$test: ";
+
+    my $compressed_op = "$$opts{tmp}/arbitrary.$threads.gz";
+    my $uncompressed_op = "$$opts{tmp}/arbitrary.$threads.txt";
+
+    $c = "$$opts{bin}/bgzip $at '$data' -o '$compressed_op'";
+
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "$$opts{bin}/bgzip $at -d $compressed_op --output '$uncompressed_op'";
+
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, "non-zero exit from $c");
+        return;
+    }
+    $c = "cmp '$data' '$uncompressed_op'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+        failed($opts, $test, $out ? $out : "'$data' '$uncompressed_op' differ");
         return;
     }
     passed($opts,$test);
@@ -671,6 +819,43 @@ sub test_view
         }
     }
 
+    # BAM files with alignment records that span BGZF blocks
+    # HTSlib starts a new block if an alignment is likely to overflow the
+    # current one, so for its own data this will only happen for records
+    # longer than 64kbytes.  As other implementations may not do this,
+    # check that reading works correctly on some BAM files where records
+    # have been deliberately split between BGZF blocks.
+    print "test_view testing BAM records in multiple BGZF blocks:\n";
+    $test_view_failures = 0;
+    my $src_sam = "ce#1.sam";
+    foreach my $test_bam (qw(bgzf_boundaries/bgzf_boundaries1.bam
+                          bgzf_boundaries/bgzf_boundaries2.bam
+                          bgzf_boundaries/bgzf_boundaries3.bam)) {
+        testv $opts, "./test_view $tv_args -p $test_bam.tmp.sam $test_bam";
+        testv $opts, "./compare_sam.pl $test_bam.tmp.sam $src_sam";
+    }
+
+    # Test a file with a long alignment record.  Boundaries hit in the middle of
+    # the CIGAR data, and in the sequence.  Generate the test file here as it's
+    # big, but with fairly simple contents.
+    $src_sam = "bgzf_boundaries/large_rec.tmp.sam";
+    open(my $test_sam, '>', $src_sam) || die "Couldn't open $src_sam : $!\n";
+    print $test_sam "\@HD\tVN:1.6\tSO:coordinate\n";
+    print $test_sam "\@SQ\tSN:ref\tLN:100000\n";
+    print $test_sam "read\t0\tref\t1\t60\t", "1M1I" x 16000, "\t*\t0\t0\t", "A" x 32000, "\t", "Q" x 32000, "\n";
+    close($test_sam) || die "Error on closing $src_sam : $!\n";
+
+    testv $opts, "./test_view $tv_args -b -l 0 -p $src_sam.bam $src_sam";
+    testv $opts, "./test_view $tv_args -p $src_sam.bam.sam $src_sam.bam";
+    testv $opts, "./compare_sam.pl $src_sam $src_sam.bam.sam";
+
+    if ($test_view_failures == 0) {
+        passed($opts, "BAM records spanning multiple BGZF block tests");
+    } else {
+        failed($opts, "BAM records spanning multiple BGZF block tests",
+               "$test_view_failures subtests failed");
+    }
+
     # embed_ref=2 mode
     print "test_view testing embed_ref=2:\n";
     $test_view_failures = 0;
@@ -680,6 +865,14 @@ sub test_view
     testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
+
+    $ersam = "c1#bounds.sam";
+    $ercram = "c1#bounds_er.tmp.cram";
+    $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+
     if ($test_view_failures == 0) {
         passed($opts, "embed_ref=2 tests");
     } else {
@@ -701,6 +894,18 @@ sub test_view
 
     testv $opts, "./test_view $tv_args range.bam $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
+
+    # Regression check for out-of-bounds read on regions list (see
+    # samtools#2063).  As reg_insert() allocates at least four slots
+    # for chromosome regions, we need more than that many in the second
+    # chr. requested to ensure it has a bigger array.
+
+    $regions = "CHROMOSOME_I:1122-1122 CHROMOSOME_II:1136-1136 CHROMOSOME_II:1241-1241 CHROMOSOME_II:1267-1267 CHROMOSOME_II:1326-1326 CHROMOSOME_II:1345-1345 CHROMOSOME_II:1353-1353 CHROMOSOME_II:1366-1366 CHROMOSOME_II:1416-1416 CHROMOSOME_II:1459-1459 CHROMOSOME_II:1536-1536";
+    testv $opts, "./test_view $tv_args -i reference=ce.fa -M range.cram $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out2";
+
+    testv $opts, "./test_view $tv_args -M range.bam $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out2";
 
     if ($test_view_failures == 0) {
         passed($opts, "range.cram tests");
@@ -1033,6 +1238,113 @@ sub test_bcf_sr_sort
     }
 }
 
+sub test_bcf_sr_no_index {
+    my ($opts) = @_;
+
+    my $test = "test_bcf_sr_no_index";
+
+    my $vcfdir = "$$opts{path}/bcf-sr";
+
+    # Positive test
+    test_cmd($opts, out => "bcf-sr/merge.noidx.abc.expected.out",
+             cmd => "$$opts{path}/test-bcf-sr --no-index -p all --args $vcfdir/merge.noidx.a.vcf $vcfdir/merge.noidx.b.vcf $vcfdir/merge.noidx.c.vcf 2> $$opts{tmp}/no_index_1.err");
+
+    # Check bad input detection
+
+    my @bad_file_tests = (["out-of-order header",
+                           ["merge.noidx.a.vcf", "merge.noidx.hdr_order.vcf"]],
+                          ["out-of-order records",
+                           ["merge.noidx.a.vcf", "merge.noidx.rec_order.vcf"]],
+                          ["out-of-order records",
+                           ["merge.noidx.rec_order.vcf", "merge.noidx.a.vcf"]]);
+    my $count = 2;
+    foreach my $test_params (@bad_file_tests) {
+        my ($badness, $inputs) = @$test_params;
+        my @ins = map { "$vcfdir/$_" } @$inputs;
+
+        my $cmd = "$$opts{path}/test-bcf-sr --no-index -p all --args @ins > $$opts{tmp}/no_index_$count.out 2> $$opts{tmp}/no_index_$count.err";
+        print "$test:\n\t$cmd (expected fail)\n";
+        my ($ret) = _cmd($cmd);
+        if ($ret == 0) {
+            failed($opts, $test, "Failed to detect $badness: $cmd\n");
+        } else {
+            passed($opts, $test);
+        }
+        $count++;
+    }
+}
+
+sub test_bcf_sr_range {
+    my ($opts) = @_;
+
+    my $test = "test_bcf_sr_range";
+
+    my $vcfdir = "$$opts{path}/bcf-sr";
+
+    my @tests = (['r', '1', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['r', '1:1-2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['r', '1:1,1:2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['r', '1:1-1', 'weird-chr-names.vcf', 'weird-chr-names.2.out'],
+                 ['r', '{1:1}', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['r', '{1:1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['r', '{1:1}:1,{1:1}:2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['r', '{1:1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.4.out'],
+                 ['r', '{1:1-1}', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['r', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['r', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['r', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
+                 ['r', '{1:1-1}-2', 'weird-chr-names.vcf', undef], # Expected failure
+                 ['t', '1', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['t', '1:1-2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['t', '1:1,1:2', 'weird-chr-names.vcf', 'weird-chr-names.1.out'],
+                 ['t', '1:1-1', 'weird-chr-names.vcf', 'weird-chr-names.2.out'],
+                 ['t', '{1:1}', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['t', '{1:1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['t', '{1:1}:1,{1:1}:2', 'weird-chr-names.vcf', 'weird-chr-names.3.out'],
+                 ['t', '{1:1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.4.out'],
+                 ['t', '{1:1-1}', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['t', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['t', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
+                 ['t', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
+                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef] # Expected failure
+        );
+
+    my $count = 0;
+    my %converted;
+    foreach my $tst (@tests) {
+        my ($option, $range, $in, $exp_out) = @$tst;
+        $count++;
+        if (!$converted{$in}) {
+            my $cmd = "$$opts{path}/test_view -b -p $$opts{tmp}/$in.bcf -x $$opts{tmp}/$in.bcf.csi $vcfdir/$in";
+            print "$test:\n\t$cmd\n";
+            my ($ret) = _cmd($cmd);
+            if ($ret) {
+                failed($opts, $test);
+                $converted{$in} = 'fail';
+                next;
+            } else {
+                passed($opts, $test);
+                $converted{$in} = "$$opts{tmp}/$in.bcf";
+            }
+        }
+        next if ($converted{$in} eq 'fail');
+        my $cmd = "$$opts{path}/test-bcf-sr -O vcf -o $$opts{tmp}/range_test_$count.out.vcf -$option '$range' --args $converted{$in}";
+        if ($exp_out) {
+            test_compare($opts, $cmd, "$vcfdir/$exp_out",
+                         "$$opts{tmp}/range_test_$count.out.vcf",
+                         fix_newlines => 1);
+        } else {
+            print "$test:\n\t$cmd (expected fail)\n";
+            my ($ret) = _cmd($cmd);
+            if ($ret) {
+                passed($opts, $test);
+            } else {
+                failed($opts, $test);
+            }
+        }
+    }
+}
+
 sub test_command
 {
     my ($opts, %args) = @_;
@@ -1099,6 +1411,9 @@ sub test_realn {
 
     # Revert quality values (using data in ZQ tags)
     test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn02.fa -i $$opts{path}/realn02_exp-a.sam -o -", out => "realn02_exp.sam");
+
+    # Make sure multiple matches are treated the same way as a single match of the same length.
+    test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn03.fa -e -i $$opts{path}/realn03.sam -o -", out => "realn03_exp.sam");
 }
 
 sub test_bcf_set_variant_type
@@ -1113,4 +1428,62 @@ sub test_bcf_set_variant_type
         print $out;
         failed($opts,$test);
     } else { passed($opts,$test); }
+}
+
+sub run_annot_tsv
+{
+    my ($opts,%args) = @_;
+    my $exe = "$$opts{bin}/annot-tsv";
+    my $dat = "$$opts{path}/annot-tsv";
+    my $args = exists($args{args}) ? $args{args} : '';
+    $args{out} = "annot-tsv/$args{out}";
+    test_cmd($opts,%args,cmd=>"$exe $args -s $dat/$args{src} -t $dat/$args{dst}");
+    test_cmd($opts,%args,cmd=>"cat $dat/$args{dst} | $exe $args -s $dat/$args{src}");
+    test_cmd($opts,%args,cmd=>"cat $dat/$args{src} | $exe $args -t $dat/$args{dst}");
+}
+
+sub test_annot_tsv
+{
+    my ($opts) = @_;
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.1.txt',args=>'-f smpl:overlap --allow-dups');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.2.txt',args=>'-f smpl:overlap -c chr,beg,end');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.3.txt',args=>'-f smpl,value:overlap,value');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.4.txt',args=>'-f smpl:overlap -O 0.5');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.5.txt',args=>'-f smpl:overlap -rO 0.5');
+    run_annot_tsv($opts,src=>'src.1.txt',dst=>'dst.1.txt',out=>'out.1.6.txt',args=>'-f smpl:overlap --allow-dups --max-annots 2');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.2.txt',args=>'-c 1,2,3:1,2,3 -f 4:5');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.3.txt',args=>'-c 1,2,3:1,2,3 -f 4,value:5,value');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.4.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.5.txt',args=>'-c 1,2,3:1,2,3 -f value,4:value,5 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.2.txt',dst=>'dst.2.txt',out=>'out.2.6.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 --allow-dups --max-annots 2');
+    run_annot_tsv($opts,src=>'src.3.txt',dst=>'dst.3.txt',out=>'out.3.1.txt',args=>'-f smpl:overlap -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.4.txt',dst=>'dst.4.txt',out=>'out.4.1.txt',args=>'-c 2,3,4:2,3,4 -m 1:1 -f 1:1 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.5.txt',dst=>'dst.5.txt',out=>'out.5.1.txt',args=>'-c 2,3,4:2,3,4 -a nbp,frac');
+    run_annot_tsv($opts,src=>'src.6.txt',dst=>'dst.6.txt',out=>'out.6.1.txt',args=>'-c 1,2,2:1,2,2 -a nbp');
+    run_annot_tsv($opts,src=>'src.7.txt',dst=>'dst.7.txt',out=>'out.7.1.txt',args=>'-c 1,2,2:1,2,2 -f overlap -H');
+    run_annot_tsv($opts,src=>'src.8.txt',dst=>'dst.8.txt',out=>'out.8.1.txt',args=>'-c chr,beg,end:chr,start,end -m sample -f is_tp');
+    run_annot_tsv($opts,src=>'src.9.txt',dst=>'dst.9.txt',out=>'out.9.1.txt',args=>'-c 1,2,3:chr,beg,end -a nbp,frac,cnt');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.1.txt',args=>'-f smpl');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.2.txt',args=>'');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.3.txt',args=>'-x');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.4.txt',args=>'-m smpl -f smpl');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.5.txt',args=>'-m smpl ');
+    run_annot_tsv($opts,src=>'src.10.txt',dst=>'dst.10.txt',out=>'out.10.6.txt',args=>'-m smpl -x');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 -h 0:0');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2 -II');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:-1 -II');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.2.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.2.txt',args=>'-c chr2,beg2,end2:chr,beg,end -f smpl2:src_smpl -h 3:2');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.3.txt',args=>'-c chr1,beg1,end1:chr,beg,end -f smpl1:src_smpl -h 2:2 -I');
+    run_annot_tsv($opts,src=>'src.11.txt',dst=>'dst.11.txt',out=>'out.11.3.txt',args=>'-c chr2,beg2,end2:chr,beg,end -f smpl2:src_smpl -h 3:2 -I');
+    run_annot_tsv($opts,src=>'src.12.txt',dst=>'dst.12.txt',out=>'out.12.1.txt',args=>'-c 1,2,3:1,2,3 -f 4:5 -h 0:0 -d ,');
+    run_annot_tsv($opts,src=>'src.12.txt',dst=>'dst.11.txt',out=>'out.11.1.txt',args=>q[-c 1,2,3:1,2,3 -f 4:5 -h 0:0 -d $',:\t']);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.1.txt',args=>q[-c 1,2,3 -f 4:5]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.1.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.2.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5 -r]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.2.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5,0.5]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.3.txt',args=>q[-c 1,2,3 -f 4:5 -O 0,1]);
+    run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.4.txt',args=>q[-c 1,2,3 -f 4:5 -O 1,0]);
 }

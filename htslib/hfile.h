@@ -57,7 +57,7 @@ typedef struct hFILE {
     char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
     off_t offset;
-    unsigned at_eof:1, mobile:1, readonly:1;
+    unsigned at_eof:1, mobile:1, readonly:1, preserve:1;
     int has_errno;
     // @endcond
 } hFILE;
@@ -79,6 +79,10 @@ hFILE *hopen(const char *filename, const char *mode, ...) HTS_RESULT_USED;
 Note that the file must be opened in binary mode, or else
 there will be problems on platforms that make a difference
 between text and binary mode.
+
+By default, the returned hFILE "takes ownership" of the file descriptor
+and _fd_ will be closed by hclose(). When _mode_ contains `S` (shared fd),
+hclose() will destroy the hFILE but not close the underlying _fd_.
 
 For socket descriptors (on Windows), _mode_ should contain `s`.
 */
