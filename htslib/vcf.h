@@ -1006,7 +1006,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
     #define bcf_gt_missing          0
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
-    #define bcf_gt_is_phased(idx)   ((idx)&1)
+    #define bcf_gt_is_phased(val)   ((val)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
 
     /** Conversion between alleles indexes to Number=G genotype index (assuming diploid, all 0-based) */
