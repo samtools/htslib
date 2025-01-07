@@ -1698,8 +1698,7 @@ int cram_uncompress_block(cram_block *b) {
             free(uncomp);
             return -1;
         }
-        b->orig_method = RANS_PR0 + (b->data[0]&1)
-            + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
+        b->orig_method = RANSPR;
         free(b->data);
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
@@ -1718,8 +1717,7 @@ int cram_uncompress_block(cram_block *b) {
             free(uncomp);
             return -1;
         }
-        b->orig_method = ARITH_PR0 + (b->data[0]&1)
-            + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
+        b->orig_method = ARITH;
         free(b->data);
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
