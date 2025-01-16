@@ -910,14 +910,20 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         }
         else if ( !strcmp(hrec->keys[i], "Number") )
         {
+            int is_fmt = hrec->type == BCF_HL_FMT;
             if ( !strcmp(hrec->vals[i],"A") ) var = BCF_VL_A;
             else if ( !strcmp(hrec->vals[i],"R") ) var = BCF_VL_R;
             else if ( !strcmp(hrec->vals[i],"G") ) var = BCF_VL_G;
             else if ( !strcmp(hrec->vals[i],".") ) var = BCF_VL_VAR;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"P") )  var = BCF_VL_P;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"LA") ) var = BCF_VL_LA;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"LR") ) var = BCF_VL_LR;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"LG") ) var = BCF_VL_LG;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"M") )  var = BCF_VL_M;
             else
             {
-                sscanf(hrec->vals[i],"%d",&num);
-                var = BCF_VL_FIXED;
+                if (sscanf(hrec->vals[i],"%d",&num) == 1)
+                    var = BCF_VL_FIXED;
             }
             if (var != BCF_VL_FIXED) num = 0xfffff;
         }
@@ -928,7 +934,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
                 *hrec->key == 'I' ? "An" : "A", hrec->key);
             type = BCF_HT_STR;
         }
-        if (var == -1) {
+        if (var == UINT32_MAX) {
             hts_log_warning("%s %s field has no Number defined. Assuming '.'",
                 *hrec->key == 'I' ? "An" : "A", hrec->key);
             var = BCF_VL_VAR;

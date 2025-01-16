@@ -65,11 +65,21 @@ extern "C" {
 #define BCF_HT_STR  3
 #define BCF_HT_LONG (BCF_HT_INT | 0x100) // BCF_HT_INT, but for int64_t values; VCF only!
 
-#define BCF_VL_FIXED 0 // variable length
-#define BCF_VL_VAR   1
-#define BCF_VL_A     2
-#define BCF_VL_G     3
-#define BCF_VL_R     4
+// Values for INFO / FORMAT "Number=" fields
+#define BCF_VL_FIXED 0 ///< Integer defining a fixed number of items
+#define BCF_VL_VAR   1 ///< Generic variable length ("Number=.")
+#define BCF_VL_A     2 ///< One value per alternate allele
+#define BCF_VL_G     3 ///< One value for each possible genotype
+#define BCF_VL_R     4 ///< One value for each allele, including the reference
+
+// The following was introduced in VCFv4.4 and is only valid for FORMAT header lines
+#define BCF_VL_P     5 ///< One value for each allele value defined in GT
+
+// The following were introduced in VCFv4.5 and are only valid for FORMAT header lines
+#define BCF_VL_LA    6 ///< As BCF_VL_A, but only alt alleles listed in LAA are considered present
+#define BCF_VL_LG    7 ///< As BCF_VL_G, but only alt alleles listed in LAA are considered present
+#define BCF_VL_LR    8 ///< As BCF_VL_R, but only alt alleles listed in LAA are considered present
+#define BCF_VL_M     9 ///< One value for each possible base modification for the corresponding ChEBI ID
 
 /* === Dictionary ===
 
