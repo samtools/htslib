@@ -115,6 +115,14 @@ HTSLIB_EXPORT
 int hts_tpool_size(hts_tpool *p);
 
 
+/// Return the worker ID index, from 0 to nthreads-1.
+/**
+ * @param p         Thread pool
+ * @return          The worker index (0..ntheads-1) or -1 if not found
+ */
+HTSLIB_EXPORT
+int hts_tpool_worker_id(hts_tpool *pool);
+
 /// Add an item to the work pool.
 /**
  * @param p     Thread pool
