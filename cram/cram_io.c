@@ -5440,28 +5440,11 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
  *        -1 on failure
  */
 int cram_seek(cram_fd *fd, off_t offset, int whence) {
-    char buf[65536];
-
     fd->ooc = 0;
 
     cram_drain_rqueue(fd);
 
-    if (hseek(fd->fp, offset, whence) >= 0) {
-        return 0;
-    }
-
-    if (!(whence == SEEK_CUR && offset >= 0))
-        return -1;
-
-    /* Couldn't fseek, but we're in SEEK_CUR mode so read instead */
-    while (offset > 0) {
-        int len = MIN(65536, offset);
-        if (len != hread(fd->fp, buf, len))
-            return -1;
-        offset -= len;
-    }
-
-    return 0;
+    return hseek(fd->fp, offset, whence) >= 0 ? 0 : -1;
 }
 
 /*
