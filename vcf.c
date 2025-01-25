@@ -5161,6 +5161,7 @@ int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask,
         else return bitmask & type;
     }
     // mode == bcf_match_exact
+    if ( bitmask==VCF_REF ) return type==bitmask ? 1 : 0;
     return type==bitmask ? type : 0;
 }
 
