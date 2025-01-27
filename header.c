@@ -145,7 +145,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         const char *name = NULL;
         const char *altnames = NULL;
         hts_pos_t len = -1;
-        int r;
+        int r, dup = 0;
         khint_t k;
 
         while (tag) {
@@ -154,7 +154,12 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 name = tag->str+3;
             } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
+                hts_pos_t tmp = len;
                 len = strtoll(tag->str+3, NULL, 10);
+                if (tmp != -1 && tmp != len) {
+                    //LN again with different value, discard
+                    dup = 1;
+                }
             } else if (tag->str[0] == 'A' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
                 altnames = tag->str+3;
@@ -171,6 +176,12 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             hts_log_error("Header includes @SQ line \"%s\" with no LN: tag",
                           name);
             return -1; // LN should be present, according to spec.
+        }
+
+        if (dup) {
+            hts_log_error("Header includes @SQ line \"%s\" with duplicate LN: tag", \
+                          name);
+            return -1;
         }
 
         // Seen already?

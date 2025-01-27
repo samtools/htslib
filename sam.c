@@ -1911,6 +1911,12 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
         cp[h->l_text] = '\0';
     }
 
+     if (sam_hdr_fill_hrecs(h) < 0) {
+        //failed in parsing / validation
+        sam_hdr_destroy(h);
+        return NULL;
+    }
+
     return h;
 }
 
@@ -1964,8 +1970,16 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     strncpy(sn, q, r - q);
                     q = r;
                 } else {
-                    if (strncmp(q, "LN:", 3) == 0)
-                        ln = strtoll(q + 3, (char**)&q, 10);
+                    if (strncmp(q, "LN:", 3) == 0) {
+                        hts_pos_t tmp = strtoll(q + 3, (char**)&q, 10);
+                        if (ln != -1 && tmp != ln) {
+                            //duplicate LN tag with different value
+                            hts_log_error("111Header includes @SQ line \"%s\" with \
+duplicate LN: tag", sn);
+                            goto error;
+                        }
+                        ln = tmp;
+                    }
                 }
 
                 while (*q != '\t' && *q != '\n' && *q != '\0')
