@@ -5495,6 +5495,7 @@ int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter)
 static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nals)
 {
     line->d.shared_dirty |= BCF1_DIRTY_ALS;
+    line->d.var_type = -1;
 
     line->n_allele = nals;
     hts_expand(char*, line->n_allele, line->d.m_allele, line->d.allele);
