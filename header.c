@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018-2020, 2023 Genome Research Ltd.
+Copyright (c) 2018-2020, 2023, 2025 Genome Research Ltd.
 Authors: James Bonfield <jkb@sanger.ac.uk>, Valeriu Ohan <vo2@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -145,7 +145,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         const char *name = NULL;
         const char *altnames = NULL;
         hts_pos_t len = -1;
-        int r, dup = 0;
+        int r, invLN = 0;
         khint_t k;
 
         while (tag) {
@@ -156,9 +156,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 assert(tag->len >= 3);
                 hts_pos_t tmp = len;
                 len = strtoll(tag->str+3, NULL, 10);
-                if (tmp != -1 && tmp != len) {
-                    //LN again with different value, discard
-                    dup = 1;
+                if (tmp != -1 && tmp != len) {  //duplicate and different LN
+                    invLN = 1;
                 }
             } else if (tag->str[0] == 'A' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
@@ -178,10 +177,10 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             return -1; // LN should be present, according to spec.
         }
 
-        if (dup) {
-            hts_log_error("Header includes @SQ line \"%s\" with duplicate LN: tag", \
-                          name);
-            return -1;
+        if (invLN) {
+            hts_log_error("Header includes @SQ line \"%s\" with multiple LN:"
+            " tag with different values.", name);
+            return -1; // LN should not be duplicated or be same
         }
 
         // Seen already?

@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2024 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2025 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1911,12 +1911,6 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
         cp[h->l_text] = '\0';
     }
 
-     if (sam_hdr_fill_hrecs(h) < 0) {
-        //failed in parsing / validation
-        sam_hdr_destroy(h);
-        return NULL;
-    }
-
     return h;
 }
 
@@ -1972,13 +1966,13 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                 } else {
                     if (strncmp(q, "LN:", 3) == 0) {
                         hts_pos_t tmp = strtoll(q + 3, (char**)&q, 10);
-                        if (ln != -1 && tmp != ln) {
-                            //duplicate LN tag with different value
-                            hts_log_error("111Header includes @SQ line \"%s\" with \
-duplicate LN: tag", sn);
+                        if (ln != -1 && ln != tmp) { //duplicate & different LN
+                            hts_log_error("Header includes @SQ line \"%s\" with"
+                                " multiple LN: tag with different values.", sn);
                             goto error;
+                        } else {
+                            ln = tmp;
                         }
-                        ln = tmp;
                     }
                 }
 
