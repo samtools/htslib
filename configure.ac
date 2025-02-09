@@ -174,16 +174,25 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
 ])
 
 dnl Check for function attribute used in conjunction with __builtin_cpu_supports
-AC_MSG_CHECKING([for __attribute__((target))])
+dnl and that it does enable the corresponding intrinsics (which is broken on ancient GCCs)
+AC_MSG_CHECKING([for working __attribute__((target("ssse3")))])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  #ifdef __x86_64__
+  #include "x86intrin.h"
+
   __attribute__((target("ssse3")))
-  int zero(void) {
-    return 0;
+  void shuffle(char *aptr, char *bptr) {
+    __m128i a = _mm_lddqu_si128((__m128i *)aptr);
+    __m128i b = _mm_shuffle_epi8(a, a);
+    _mm_storeu_si128((__m128i *)bptr, b);
   }
-]], [[zero();]])], [
+  #else
+  void shuffle(char *aptr, char *bptr) { }
+  #endif
+]], [[shuffle(0, 0);]])], [
   AC_MSG_RESULT([yes])
-  AC_DEFINE([HAVE_ATTRIBUTE_TARGET], 1,
-            [Define if __attribute__((target(...))) is available.])
+  AC_DEFINE([HAVE_ATTRIBUTE_TARGET_SSSE3], 1,
+            [Define if __attribute__((target("ssse3"))) works.])
 ], [
   AC_MSG_RESULT([no])
 ])
