@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023, 2025 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -373,8 +373,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
             first = 1;
         }
         ret = get_intv(tbx, &str, &intv, 1);
-        if (ret < -1) goto fail;  // Out of memory
-        if (ret < 0) continue; // Skip unparsable lines
+        if (ret < 0) goto fail;  // Out of memory or unparsable lines
         if (hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end,
                          bgzf_tell(fp), 1) < 0) {
             goto fail;
