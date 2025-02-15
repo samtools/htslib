@@ -331,7 +331,7 @@ ssize_t bgzf_write_small(BGZF *fp, const void *data, size_t length) {
     /**
      * Read one byte from a BGZF file. It is faster than bgzf_read()
      * @param fp     BGZF file handler
-     * @return       byte read; -1 on end-of-file or error
+     * @return       byte read; -1 on end-of-file; <= -2 on error
      */
     HTSLIB_EXPORT
     int bgzf_getc(BGZF *fp);
