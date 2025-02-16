@@ -3765,7 +3765,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     // parsing.  Eg to do memcmp(key, "END", 4) in vcf_parse_info over
     // the more straight forward looking strcmp, giving a speed advantage.
     if (ks_resize(s, s->l+4) < 0)
-        return -1;
+        return -2;
 
     // Force our memory to be initialised so we avoid the technicality of
     // undefined behaviour in using a 4-byte memcmp.  (The reality is this
