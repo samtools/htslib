@@ -4291,7 +4291,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
         if (iter->curr_off) { // seek to the start
             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                 hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
-                return -1;
+                return -2;
             }
             iter->curr_off = 0; // only seek once
         }
@@ -4369,7 +4369,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                     next_range = 0;
                     if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
                         hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
-                        return -1;
+                        return -2;
                     }
                     if (iter->is_cram) {
                         cram_range r = { HTS_IDX_NOCOOR };
@@ -4421,7 +4421,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                                 hts_log_error("Seek at offset %" PRIu64
                                         " failed.", iter->curr_off);
-                                return -1;
+                                return -2;
                             }
 
                             // Find the genomic range matching this interval.
@@ -4479,7 +4479,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                         if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                             hts_log_error("Seek at offset %" PRIu64 " failed.",
                                           iter->curr_off);
-                            return -1;
+                            return -2;
                         }
                     }
                 }

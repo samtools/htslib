@@ -4190,6 +4190,7 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
                    -1, -1, 0,    // mate
                    x->seq.l, x->seq.s, x->qual.s,
                    0);
+    if (ret < 0) return -2;
 
     // Identify Illumina CASAVA strings.
     // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
@@ -4286,7 +4287,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
                 return -2;
             }
             if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
-                return -1;
+                return -2;
             fp->fp.bgzf->seeked = 0;
             goto err_recover;
         }
@@ -4308,7 +4309,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 
         if (fd->h != h) {
             hts_log_error("SAM multi-threaded decoding does not support changing header");
-            return -1;
+            return -2;
         }
 
         sp_bams *gb = fd->curr_bam;
