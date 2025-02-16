@@ -62,6 +62,11 @@
 #define ssize_t intptr_t
 #endif
 
+#ifndef EOVERFLOW
+#define HTSLIB_EOVERFLOW
+#define EOVERFLOW ERANGE
+#endif
+
 /* kstring_t is a simple non-opaque type whose fields are likely to be
  * used directly by user code (but see also ks_str() and ks_len() below).
  * A kstring_t object is initialised by either of
@@ -171,8 +176,7 @@ static inline int ks_expand(kstring_t *s, size_t expansion)
 {
     size_t new_size = s->l + expansion;
 
-    if (new_size < s->l) // Overflow check
-        return -1;
+    if (new_size < s->l) { errno = EOVERFLOW; return -1; }
     return ks_resize(s, new_size);
 }
 
@@ -234,8 +238,8 @@ static inline void ks_free(kstring_t *s)
 static inline int kputsn(const char *p, size_t l, kstring_t *s)
 {
 	size_t new_sz = s->l + l + 2;
-	if (new_sz <= s->l || ks_resize(s, new_sz) < 0)
-		return EOF;
+	if (new_sz <= s->l) { errno = EOVERFLOW; return EOF; }
+	if (ks_resize(s, new_sz) < 0) return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
 	s->s[s->l] = 0;
@@ -268,8 +272,8 @@ static inline int kputc_(int c, kstring_t *s)
 static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 {
 	size_t new_sz = s->l + l;
-	if (new_sz < s->l || ks_resize(s, new_sz ? new_sz : 1) < 0)
-		return EOF;
+	if (new_sz < s->l) { errno = EOVERFLOW; return EOF; }
+	if (ks_resize(s, new_sz ? new_sz : 1) < 0) return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
 	return l;
@@ -452,6 +456,11 @@ static inline int *ksplit(kstring_t *s, int delimiter, int *n)
 #ifdef HTSLIB_SSIZE_T
 #undef HTSLIB_SSIZE_T
 #undef ssize_t
+#endif
+
+#ifdef HTSLIB_EOVERFLOW
+#undef HTSLIB_EOVERFLOW
+#undef EOVERFLOW
 #endif
 
 #endif
