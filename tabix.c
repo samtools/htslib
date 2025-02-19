@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014-2020, 2024 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2020, 2024-2025 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -607,6 +607,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "       --separate-regions     separate the output by corresponding regions\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "   -@, --threads INT          number of additional threads to use [0]\n");
+    fprintf(fp, "   -y, --easyparse            avoid strict parsing of data\n");
     fprintf(fp, "\n");
     return status;
 }
@@ -621,6 +622,7 @@ int main(int argc, char *argv[])
     args.cache_megs = 10;
     args.download_index = 1;
     int32_t new_line_skip = -1;
+    settings extra = {1};   //strict parsing
 
     static const struct option loptions[] =
     {
@@ -646,11 +648,12 @@ int main(int argc, char *argv[])
         {"cache", required_argument, NULL, 4},
         {"separate-regions", no_argument, NULL, 5},
         {"threads", required_argument, NULL, '@'},
+        {"easyparse", no_argument, NULL, 'y'},
         {NULL, 0, NULL, 0}
     };
 
     char *tmp;
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D@:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D@:y", loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -728,6 +731,9 @@ int main(int argc, char *argv[])
                 break;
             case '@':   //thread count
                 args.threads = atoi(optarg);
+                break;
+            case 'y':   //loose parsing
+                extra.strict = 0;
                 break;
             default: return usage(stderr, EXIT_FAILURE);
         }
@@ -821,26 +827,26 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        switch (ret = tbx_index_build3(fname, NULL, min_shift, args.threads, &conf))
+        switch (ret = tbx_index_build4(fname, NULL, min_shift, args.threads, &conf, &extra))
         {
             case 0:
                 return 0;
             case -2:
                 error("[tabix] the compression of '%s' is not BGZF\n", fname);
             default:
-                error("tbx_index_build3 failed: %s\n", fname);
+                error("tbx_index_build4 failed: %s\n", fname);
         }
     }
     else    // TBI index
     {
-        switch (ret = tbx_index_build3(fname, NULL, min_shift, args.threads, &conf))
+        switch (ret = tbx_index_build4(fname, NULL, min_shift, args.threads, &conf, &extra))
         {
             case 0:
                 return 0;
             case -2:
                 error("[tabix] the compression of '%s' is not BGZF\n", fname);
             default:
-                error("tbx_index_build3 failed: %s\n", fname);
+                error("tbx_index_build4 failed: %s\n", fname);
         }
     }
 

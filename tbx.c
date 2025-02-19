@@ -206,7 +206,8 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
     return 0;
 }
 
-static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_add)
+static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_add,
+ int strict)
 {
     if (tbx_parse1(&tbx->conf, str->l, str->s, intv) == 0) {
         int c = *intv->se;
@@ -230,9 +231,11 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
             default: type = "TBX_GENERIC"; break;
         }
         if (hts_is_utf16_text(str))
-            hts_log_error("Failed to parse %s: offending line appears to be encoded as UTF-16", type);
+            hts_log( strict ? HTS_LOG_ERROR : HTS_LOG_WARNING, __func__,
+            "Failed to parse %s: offending line appears to be encoded as UTF-16", type);
         else
-            hts_log_error("Failed to parse %s: was wrong -p [type] used?\nThe offending line was: \"%s\"",
+            hts_log( strict ? HTS_LOG_ERROR : HTS_LOG_WARNING, __func__,
+            "Failed to parse %s: was wrong -p [type] used?\nThe offending line was: \"%s\"",
                 type, str->s);
         return -1;
     }
@@ -251,7 +254,7 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_po
     int ret;
     if ((ret = bgzf_getline(fp, '\n', s)) >= 0) {
         tbx_intv_t intv;
-        if (get_intv(tbx, s, &intv, 0) < 0)
+        if (get_intv(tbx, s, &intv, 0, 0) < 0)
             return -2;
         *tid = intv.tid; *beg = intv.beg; *end = intv.end;
     }
@@ -330,7 +333,8 @@ static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
     return n_lvls;
 }
 
-tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
+static tbx_t *tbx_index2(BGZF *fp, int min_shift, const tbx_conf_t *conf,
+ const settings *extra)
 {
     tbx_t *tbx;
     kstring_t str;
@@ -372,8 +376,13 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
             if (!tbx->idx) goto fail;
             first = 1;
         }
-        ret = get_intv(tbx, &str, &intv, 1);
-        if (ret < 0) goto fail;  // Out of memory or unparsable lines
+        ret = get_intv(tbx, &str, &intv, 1, extra->strict);
+
+        if (ret < 0) {
+            if (extra->strict) goto fail;   //fail on any
+            else if (ret < -1) goto fail;   //fail on out of memory
+            continue;                       //skip unparasable lines
+        }
         if (hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end,
                          bgzf_tell(fp), 1) < 0) {
             goto fail;
@@ -395,6 +404,12 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     return NULL;
 }
 
+tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
+{
+    struct settings extra = {0}; //lenient validation
+    return tbx_index2(fp, min_shift, conf, &extra);
+}
+
 void tbx_destroy(tbx_t *tbx)
 {
     khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
@@ -411,13 +426,20 @@ void tbx_destroy(tbx_t *tbx)
 
 int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf)
 {
+    struct settings extra = {0};    //relaxed parsing
+    return tbx_index_build4(fn, fnidx, min_shift, n_threads, conf, &extra);
+}
+
+int tbx_index_build4(const char *fn, const char *fnidx, int min_shift,
+ int n_threads, const tbx_conf_t *conf, const settings *extra)
+{
     tbx_t *tbx;
     BGZF *fp;
     int ret;
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( n_threads ) bgzf_mt(fp, n_threads, 256);
     if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -2; }
-    tbx = tbx_index(fp, min_shift, conf);
+    tbx = tbx_index2(fp, min_shift, conf, extra);
     bgzf_close(fp);
     if ( !tbx ) return -1;
     ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);

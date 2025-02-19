@@ -1,7 +1,7 @@
 /// @file htslib/tbx.h
 /// Tabix API functions.
 /*
-    Copyright (C) 2009, 2012-2015, 2019 Genome Research Ltd.
+    Copyright (C) 2009, 2012-2015, 2019, 2025 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -53,6 +53,10 @@ typedef struct tbx_t {
     void *dict;
 } tbx_t;
 
+typedef struct settings {
+    int strict; //parsing strict (1) or not (0)
+} settings;
+
 HTSLIB_EXPORT
 extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf, tbx_conf_gaf;
 
@@ -89,6 +93,10 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
 
     HTSLIB_EXPORT
     int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf);
+
+    HTSLIB_EXPORT
+    int tbx_index_build4(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf,
+    const settings *extra);
 
 
 /// Load or stream a .tbi or .csi index
