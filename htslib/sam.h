@@ -1031,7 +1031,7 @@ bam1_t *bam_dup1(const bam1_t *bsrc);
    @param isize    Observed template length ("insert size") (a.k.a. TLEN).
    @param l_seq    Length of the query sequence (read) and sequence quality string.
    @param seq      Sequence, may be NULL if l_seq = 0.
-   @param qual     Sequence quality, may be NULL.
+   @param qual     Sequence quality, may be NULL. Should be provided without ASCII 33 offset.
    @param l_aux    Length to be reserved for auxiliary field data, may be 0.
 
    @return >= 0 on success (number of bytes written to bam->data), negative (with errno set) on failure.
