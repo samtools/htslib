@@ -71,7 +71,7 @@ sub parse_params
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     $$opts{tmp} = exists($$opts{keep_files}) ? $$opts{keep_files} : tempdir(CLEANUP=>1);
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $$opts{tmp} = cygpath($$opts{tmp});
     }
     if ( $$opts{keep_files} ) { cmd("mkdir -p $$opts{keep_files}"); }
