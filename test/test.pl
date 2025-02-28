@@ -104,7 +104,7 @@ sub cygpath {
 sub safe_tempdir
 {
     my $dir = tempdir(CLEANUP=>1);
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $dir = cygpath($dir);
     }
     return $dir;
@@ -129,7 +129,7 @@ sub parse_params
     $$opts{path} = $FindBin::RealBin;
     $$opts{bin}  = $FindBin::RealBin;
     $$opts{bin}  =~ s{/test/?$}{};
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $$opts{path} = cygpath($$opts{path});
         $$opts{bin}  = cygpath($$opts{bin});
     }
@@ -1085,7 +1085,7 @@ sub test_index
     # Tabix and custom index names
     _cmd("$$opts{bin}/tabix -fp vcf $$opts{tmp}/index.vcf.gz");
     my $wtmp = $$opts{tmp};
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $wtmp =~ s/\//\\\\/g;
     }
     test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $wtmp/index.vcf.gz##idx##$wtmp/index.vcf.gz.tbi 1:10000060-10000060");
