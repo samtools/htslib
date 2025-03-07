@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2024 Genome Research Ltd.
+#    Copyright (C) 2012-2025 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -1515,4 +1515,6 @@ sub test_annot_tsv
     run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.2.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5,0.5]);
     run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.3.txt',args=>q[-c 1,2,3 -f 4:5 -O 0,1]);
     run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.4.txt',args=>q[-c 1,2,3 -f 4:5 -O 1,0]);
+    run_annot_tsv($opts,src=>'src.14.txt',dst=>'dst.14.txt',out=>'out.14.1.txt',args=>q[-c 1,2,3 -C 11:11]);        # 1-based coordinates
+    run_annot_tsv($opts,src=>'src.14.txt',dst=>'dst.14.txt',out=>'out.14.2.txt',args=>q[-c 1,2,3 -C 01:01]);        # interpret as bed coordinates
 }
