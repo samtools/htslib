@@ -2205,6 +2205,10 @@ static inline int64_t bgzf_seek_common(BGZF* fp,
                 abort();  // Should not get to any other state
             }
         } while (fp->mt->command != SEEK_DONE);
+
+        if (fp->mt->errcode)
+            return -1;
+
         fp->mt->command = NONE;
 
         fp->block_length = 0;  // indicates current block has not been loaded
