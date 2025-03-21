@@ -1,6 +1,126 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Updates
+-------
+
+* Add support for matching VCF lines by ID.
+  (PR #1844, addresses issue bcftools#1739 reported by Han Cao)
+
+* Convert U to T instead of U to N when sam_parsing.  Though SAM format itself
+  can contain U the BAM format cannot.
+  (PR #1854, fixes samtools#2131 reported by James Furguson)
+
+* Add an hts_crc32 function to use zlib or libdeflate.  The libdeflate crc32
+  function is faster than native zlib and should be used when available.
+  (PR #1850)
+
+* Increase the input block size for bgzip. This deals with a slow down
+  introduced in PR #1493 when reading from a pipe.
+  (PR #1768, fixes #1767.  Reported by Konstantin Riege)
+
+* Allow BYTE_ARRAY_STOP to work on non-zero STOP code with TOK3.  Although the
+  htscodec name tokeniser uses a nul between names there is no reason why
+  another value could be used.  This change lets CRAM recognise other separator
+  values.
+  (PR #1871)
+
+* Remove cram seek ability to do range queries via SEEK_CUR.  A probable
+  misfeature from the original implementation.
+  (PR #1878, fixes #1877.  Reported by Rick Wertenbroek)
+
+* Make it possible to test for VCF_REF as declared in the documentation.
+  (PR #1879)
+
+* Add hts_tpool_worker_id() API.  This may be used to associate data with a
+  thread rather than to a job.
+  (PR #1875)
+
+* Update bcf_synced_reader to use htsFile.
+  (PR #1868, implements #1862.  Requested by Brent Pedersen)
+
+* Exits with return value 1 on tabix parse error.  Previously returned a 0.
+  (PR #1887, fixes #1885.  Reported by Fan-iX)
+
+* Automatically recognise BED vs TSV files and add the option -C, --coords to
+  set index positions (1 or 0 based coordinates) in annot-tsv.
+  (PR #1894)
+
+* Reading SQ lines with multiple differing LN will now fail.  Such lines are
+  invalid (by the spec) and previous handling was inconsistent.
+  (PR #1882, fixes #1866)
+
+Build Changes
+-------------
+
+* Detect the presence of getauxval() and elf_aux_info() for *BSD variants.
+  (PR #1835, thanks to Brad Smith)
+
+* Make HAVE_ATTRIBUTE_TARGET check also check that SSSE3 intrinsics work.
+  Mainly for use with old compilers.
+  (PR #1886, fixes #1838 and pysam-developers/pysam#1327.  Thanks to
+  John Marshall)
+
+* Fix broken tests due to MSYS2 changes. Due to changes in how MSYS2 perl
+  reported the identity of the OS it was built for, our tests were failing to
+  adapt to the Windows style file locations.
+  (PR #1892)
+
+Bug fixes
+---------
+
+* Fix possible 1 byte underflow in find_file_extension().
+  Fixes an issue reported by OSS-Fuzz.
+  (PR #1840)
+
+* Replace home-brew string end searching with memchr() to speed up looking at
+  long aux tags.
+  (PR #1842)
+
+* Prevent segfault on empty tbi index.  This could happen when a VCF file has a
+  header but no data lines.
+  (PR #1845, fixes bcftools#2286.  Reported by Devon Ryan)
+
+* Fix CRAM embed_ref=2 with seqs overlapping ref end.
+  (PR #1848 and PR #1849 which fixed an issue found by OSS-Fuzz)
+
+* Fix sam_hdr_remove_line_pos() not dealing with the 0 index position properly.
+  (PR #1853.  Thanks to Julian Regalado Perez)
+
+* Fix threaded sam_read1() after EOF.  Prevents sam_read1() getting stuck when
+  trying to read after EOF and waiting forever for data that is never going to
+  arrive.
+  (PR #1856, fixes #1855.  Reported by Yan Gao)
+
+* Fix a bug in breakend detection. It was incorrectly assuming that the ALT
+  allele is of equal length to REF allele, but the VCF specification allows
+  breakend insertions.
+  (PR #1858, fixes bcftools#2317.  Reported by Nicolai von Kügelgen).
+
+* Fix cram_encode fuzzer issue caused by negative reference lengths.  Reported
+  by OSS-Fuzz.
+  (PR #1863)
+
+* Fixed a typo in vcf.h.
+  (PR #1870, thanks to Yu Wang)
+
+* Reset variant types after updating alleles with bcf_update_alleles() or
+  bcf_update_alleles_str().  Prevents an out-of-bounds access by
+  bcftools consensus.
+  (PR #1883)
+
+Documentation updates
+---------------------
+
+* Add instructions to INSTALL for FreeBSD, NetBSD and OpenBSD.
+  (PR #1843)
+
+* Clarify bam_set1() parameter documentation to note that quality values do not
+  have the ASCII 33 offset.
+  (PR #1891.  Thanks to Chris Wright)
+
+
+
 Noteworthy changes in release 1.21 (12th September 2024)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -661,7 +781,7 @@ Bug fixes
 * CRAM improvements. Fixed crash with multi-threaded CRAM.  Fixed a bug in the
   codec parameter learning for CRAM 3.1 name tokeniser. Fixed Cram compression
   container substitution matrix generation,
-  (PR#1558, PR#1559 and PR#1562) 
+  (PR#1558, PR#1559 and PR#1562)
 
 Noteworthy changes in release 1.16 (18th August 2022)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
