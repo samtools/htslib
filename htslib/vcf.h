@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022-2023 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2025 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -1501,31 +1501,25 @@ static inline int bcf_float_is_vector_end(float f)
     return u.i==bcf_float_vector_end ? 1 : 0;
 }
 
+
+/**
+ *  bcf_format_gt_v2 - formats GT information on a string
+ *  @param hdr - bcf header, to get version
+ *  @param fmt - pointer to bcf format data
+ *  @param isample - position of interested sample in data
+ *  @param str - pointer to output string
+ *  Returns 0 on success and -1 on failure
+ *  This method is preferred over bcf_format_gt as this supports vcf4.4 and
+ *  prefixed phasing. Explicit / prefixed phasing for 1st allele is used only
+ *  when it is a must to correctly express phasing.
+ */
+HTSLIB_EXPORT
+int bcf_format_gt_v2(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample,
+    kstring_t *str) HTS_RESULT_USED;
+
 static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
-    uint32_t e = 0;
-    #define BRANCH(type_t, convert, missing, vector_end) { \
-        uint8_t *ptr = fmt->p + isample*fmt->size; \
-        int i; \
-        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
-        { \
-            type_t val = convert(ptr); \
-            if ( val == vector_end ) break; \
-            if ( i ) e |= kputc("/|"[val&1], str) < 0; \
-            if ( !(val>>1) ) e |= kputc('.', str) < 0; \
-            else e |= kputw((val>>1) - 1, str) < 0; \
-        } \
-        if (i == 0) e |= kputc('.', str) < 0; \
-    }
-    switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing, bcf_int32_vector_end); break;
-        case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
-        default: hts_log_error("Unexpected type %d", fmt->type); return -2;
-    }
-    #undef BRANCH
-    return e == 0 ? 0 : -1;
+    return bcf_format_gt_v2(NULL, fmt, isample, str);
 }
 
 static inline int bcf_enc_size(kstring_t *s, int size, int type)
