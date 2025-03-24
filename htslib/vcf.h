@@ -950,14 +950,13 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  The @p string in bcf_update_info_flag() is optional,
      *  @p n indicates whether the flag is set or removed.
      *
-     *  Note that updating an END info tag will cause line->rlen to be
-     *  updated as a side-effect (removing the tag will set it to the
-     *  string length of the REF allele). If line->pos is being changed as
+     *  Note that updating / removing END,SVLEN info tags will cause line->rlen
+     *  to be recalculated as a side-effect. If line->pos is being changed as
      *  well, it is important that this is done before calling
-     *  bcf_update_info_int32() to update the END tag, otherwise rlen will be
+     *  bcf_update_info_int32() to update the END/SVLEN tag, otherwise rlen will be
      *  set incorrectly.  If the new END value is less than or equal to
      *  line->pos, a warning will be printed and line->rlen will be set to
-     *  the length of the REF allele.
+     *  the length of the REF allele for versions upto 4.3.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
@@ -1002,6 +1001,8 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  of fixed-length strings. In case of strings with variable length, shorter strings
      *  can be \0-padded. Note that the collapsed strings passed to bcf_update_format_char()
      *  are not \0-terminated.
+     *  With vcf4.5, rlen depends on format field LEN and rlen calculation uses v->pos as well.
+     *  So any change to pos be done before updating LEN that rlen calculated is correct.
      *
      *  Returns 0 on success or negative value on error.
      */

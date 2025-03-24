@@ -1,6 +1,6 @@
 /*  test/test-vcf-api.c -- VCF test harness.
 
-    Copyright (C) 2013, 2014, 2017-2021, 2023 Genome Research Ltd.
+    Copyright (C) 2013, 2014, 2017-2021, 2023, 2025 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -658,6 +658,135 @@ void test_open_format(void) {
         error("Expected failure for wrong extension 'vcf.bvcf.bgz'");
 }
 
+//tests on rlen calculation
+void test_rlen_values(void)
+{
+    bcf_hdr_t *hdr;
+    bcf1_t *rec, *rec2;
+    int i, j;
+    int32_t tmpi;
+    //data common for all versions, interpreted differently based on version
+#define data "##reference=file://tmp\n" \
+    "##FILTER=<ID=PASS,Description=\"All filters passed\">\n" \
+    "##INFO=<ID=END,Number=1,Type=Integer,Description=\"end\">\n" \
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"gt\">\n" \
+    "##INFO=<ID=SVLEN,Number=A,Type=Integer,Description=\"svlen\">\n" \
+    "##INFO=<ID=SVCLAIM,Number=A,Type=String,Description=\"svclaim\">\n" \
+    "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"fmt len\">\n" \
+    "##contig=<ID=1,Length=40>\n" \
+    "##ALT=<ID=INS,Description=\"INS\">\n" \
+    "##ALT=<ID=DEL,Description=\"DEL\">\n" \
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSample1\tSample2\n" \
+    "1\t4310\t.\tG\tA\t.\t.\t.\tGT\t0/0\t0|1\n" \
+    "1\t4311\t.\tC\tCT\t.\t.\t.\tGT\t0/0\t1/0\n" \
+    "1\t4312\t.\tTC\tT\t213.73\t.\t.\tGT\t0/1\t0|0\n" \
+    "1\t4314\t.\tG\t<INS>\t213.73\t.\tSVLEN=10;SVCLAIM=J\tGT\t0/1\t0|0\n" \
+    "1\t4315\t.\tG\t<DEL>\t213.73\t.\tSVLEN=-10;SVCLAIM=D\tGT\t0/1\t0|0\n" \
+    "1\t4326\t.\tG\t<INS>\t213.73\t.\tEND=4326;SVLEN=10;SVCLAIM=J\tGT\t0/1\t0|0\n" \
+    "1\t4327\t.\tG\t<DEL>\t213.73\t.\tEND=4337;SVLEN=-10;SVCLAIM=J\tGT\t0/1\t0|0\n" \
+    "1\t4338\t.\tG\t<*>\t213.73\t.\tEND=4342;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:8\n" \
+    "1\t4353\t.\tG\t<*>\t213.73\t.\tEND=4357;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
+    "1\t4363\t.\tG\t<*>\t213.73\t.\tEND=4367;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
+    "1\t4373\t.\tG\tT\t213.73\t.\tEND=4375;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
+    //this last one is invalid one, to showcase how SVLEN/LEN are considered even when ALT is no SV/gvcf
+    //this is because data are not cross checked with allele types, to make it simple
+
+    //test vcf with different versions
+    const int vcfsz = 11, testsz = 3;
+    static char d43[] = "data:,"
+    "##fileformat=VCFv4.3\n" data;
+    static char d44[] = "data:,"
+    "##fileformat=VCFv4.4\n" data;
+    static char d45[] = "data:,"
+    "##fileformat=VCFv4.5\n" data;
+    //expected rlen for tests
+    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 3};
+    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 9};
+    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 10};
+
+    char *darr[] = {&d43[0], &d44[0], &d45[0]};           //data array
+    int *rarr[] = {&rlen43[0], &rlen44[0], &rlen45[0]};   //result array
+
+    enum htsLogLevel logging = hts_get_log_level();
+
+    // Silence warning messages
+    hts_set_log_level(HTS_LOG_ERROR);
+
+    rec = bcf_init1(); rec2 = bcf_init1();
+    if (!rec || !rec2) error("Failed to allocate BCF record : %s", strerror(errno));
+    //calculating rlen with different vcf versions
+    for (i = 0; i < testsz; ++i) {
+        htsFile *fp = hts_open(darr[i], "r");
+        if (!fp) error("Failed to open vcf data with %d : %s", i + 1, strerror(errno));
+        bcf_clear1(rec);
+        hdr = bcf_hdr_read(fp);
+        if (!hdr) error("Failed to read BCF header with %d : %s", i + 1, strerror(errno));
+        for (j = 0; j < vcfsz; ++j) {
+            check0(bcf_read(fp, hdr, rec));
+            if (rec->rlen != rarr[i][j]) {
+                error("Incorrect rlen @ vcf %d on test %d - expected %d got %"PRIhts_pos"\n", j + 1, i + 1, rarr[i][j], rec->rlen);
+            }
+        }
+        bcf_hdr_destroy(hdr);
+        hts_close(fp);
+    }
+
+    //calculating rlen with update to fields
+    htsFile *fp = hts_open(d45, "r");
+    int id  = 1, val[]= { 1, 15 };
+    bcf_clear1(rec);
+    hdr = bcf_hdr_read(fp);
+    if (!hdr) error("Failed to read BCF header : %s", strerror(errno));
+    check0(bcf_read(fp, hdr, rec));
+    //"1\t4310\t.\tG\tA\t.\t.\t.\tGT\t0/0\t0|1\n"
+    if (rec->rlen != 1)
+        error("Incorrect rlen set, expected 1 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    //alt change A->AT
+    ++id; check0(bcf_update_alleles_str(hdr, rec, "G,AT"));
+    if (rec->rlen != 1)
+        error("Incorrect rlen set, expected 1 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    //ref change G->GC, alt AT -> A, "1\t4310\t.\tGC\tA\t.\t.\t.\tGT\t0/0\t0|1\n"
+    id++; check0(bcf_update_alleles_str(hdr, rec, "GC,A"));
+    if (rec->rlen != 2)
+        error("Incorrect rlen set, expected 2 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    ++id; check0(bcf_update_alleles_str(hdr, rec, "G,<*>"));
+    if (rec->rlen != 1)
+        error("Incorrect rlen set, expected 1 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    tmpi = 4323;
+    ++id; check0(bcf_update_info_int32(hdr, rec, "END", &tmpi, 1));  //SVLEN to infer from END and use
+    if (rec->rlen != 14)
+        error("Incorrect rlen set, expected 14 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    ++id; check0(bcf_update_format_int32(hdr, rec, "LEN", &val, 2));
+    if (rec->rlen != 15)
+        error("Incorrect rlen set, expected 15 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    ++id; check0(bcf_update_info_int32(hdr, rec, "END", &tmpi, 0));  //removes END
+    if (rec->rlen != 15)
+        error("Incorrect rlen set, expected 15 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    ++id; check0(bcf_update_format_int32(hdr, rec, "LEN", &tmpi, 0));  //removes LEN
+    if (rec->rlen != 1)
+        error("Incorrect rlen set, expected 1 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    //ALT -> DEL, "1\t4310\t.\tG\tT,<DEL>\t.\t.\t.\tGT\t0/0\t0|1\n"
+    ++id; check0(bcf_update_alleles_str(hdr, rec, "G,T,<DEL>"));
+    if (rec->rlen != 1)
+        error("Incorrect rlen set, expected 1 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    val[0] = 0; val[1] = -5;
+    ++id; check0(bcf_update_info_int32(hdr, rec, "SVLEN", &val, 2));  //Add svlen
+    if (rec->rlen != 6)
+        error("Incorrect rlen set, expected 6 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+    ++id; bcf_copy(rec2, rec);
+    if (rec2->rlen != 6)
+        error("Incorrect rlen set, expected 6 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
+
+    //needs update when header version change is handled
+    bcf_destroy1(rec);
+    bcf_destroy1(rec2);
+    bcf_hdr_destroy(hdr);
+
+    hts_close(fp);
+
+    hts_set_log_level(logging);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -674,5 +803,6 @@ int main(int argc, char **argv)
     test_get_info_values(fname);
     test_invalid_end_tag();
     test_open_format();
+    test_rlen_values();
     return 0;
 }
