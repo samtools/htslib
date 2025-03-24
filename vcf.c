@@ -128,6 +128,7 @@ static inline bcf_hdr_aux_t *get_hdr_aux(const bcf_hdr_t *hdr)
 //version macros
 #define VCF_DEF 4002000
 #define VCF44   4004000
+#define VCF45   4005000
 
 #define VCF_MAJOR_VER(x) ( (x) / 10000 / 100 )
 #define VCF_MINOR_VER(x) ( ((x) % 1000000) / 1000 )
@@ -195,6 +196,8 @@ static char *find_chrom_header_line(char *s)
     else if ((nl = strstr(s, "\n#CHROM\t")) != NULL) return nl+1;
     else return NULL;
 }
+
+static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v);
 
 /*************************
  *** VCF header parser ***
@@ -1471,6 +1474,7 @@ int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
         bcf_hrec_destroy(tmp);
     }
     hdr->dirty = 1;
+    //TODO rlen may change, deal with it
     return 0; // FIXME: check for errs in this function (return < 0 if so)
 }
 
@@ -1815,7 +1819,6 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     uint32_t err = 0;
     int type = 0;
     int num  = 0;
-    int reflen = 0;
     uint32_t i, reports;
     const uint32_t is_integer = ((1 << BCF_BT_INT8)  |
                                  (1 << BCF_BT_INT16) |
@@ -1864,7 +1867,6 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                 hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s type %d (%s)", bcf_seqname_safe(hdr,rec), rec->pos+1, "REF/ALT", type, get_type_name(type));
             err |= BCF_ERR_CHAR;
         }
-        if (i == 0) reflen = num;
         bytes = (size_t) num << bcf_type_shift[type];
         if (end - ptr < bytes) goto bad_shared;
         ptr += bytes;
@@ -1953,7 +1955,9 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                             bcf_seqname_safe(hdr,rec), rec->pos+1, rec->rlen);
             warned = 1;
         }
-        rec->rlen = reflen >= 0 ? reflen : 0;
+        //find rlen considering reflen, END, SVLEN, fmt LEN
+        hts_pos_t len = get_rlen(hdr, rec);
+        rec->rlen = len >= 0 ? len : 0;
     }
 
     rec->errcode |= err;
@@ -3712,8 +3716,6 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                             negative_rlen_warned = 1;
                         }
                     }
-                    else
-                        v->rlen = val1 - v->pos;
                 }
             } else if ((y>>4&0xf) == BCF_HT_REAL) {
                 float *val_f = (float *)a_val;
@@ -3895,12 +3897,13 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     if (p) {
         *(q = (char*)aux.p) = 0;
 
-        return vcf_parse_format(s, h, v, p, q) == 0 ? 0 : -2;
-    } else {
-        return 0;
+        if (vcf_parse_format(s, h, v, p, q)) {
+            goto err;
+        }
     }
 
  end:
+    v->rlen = get_rlen(h, v);    //set rlen based on version
     ret = 0;
 
  err:
@@ -5280,7 +5283,7 @@ int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask,
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     static int negative_rlen_warned = 0;
-    int is_end_tag;
+    int is_end_tag, is_svlen_tag = 0;
 
     // Is the field already present?
     int i, inf_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
@@ -5288,6 +5291,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
 
     is_end_tag = strcmp(key, "END") == 0;
+    is_svlen_tag = strcmp(key, "SVLEN") == 0;
 
     for (i=0; i<line->n_info; i++)
         if ( inf_id==line->d.info[i].key ) break;
@@ -5295,8 +5299,6 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
 
     if ( !n || (type==BCF_HT_STR && !values) )
     {
-        if ( n==0 && is_end_tag )
-            line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;
         if ( inf )
         {
             // Mark the tag for removal, free existing memory if necessary
@@ -5308,6 +5310,9 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
             line->d.shared_dirty |= BCF1_DIRTY_INF;
             inf->vptr = NULL;
             inf->vptr_off = inf->vptr_len = 0;
+        }
+        if ( n==0 && (is_end_tag || is_svlen_tag) ) {
+            line->rlen = get_rlen(hdr, line);
         }
         return 0;
     }
@@ -5404,11 +5409,11 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
                     hts_log_warning("INFO/END=%"PRIhts_pos" is smaller than POS at %s:%"PRIhts_pos,end,bcf_seqname_safe(hdr,line),line->pos+1);
                     negative_rlen_warned = 1;
                 }
-                line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;
             }
-            else
-                line->rlen = end - line->pos;
         }
+    }
+    if (is_svlen_tag || is_end_tag) {
+        line->rlen = get_rlen(hdr, line);
     }
     return 0;
 }
@@ -5443,6 +5448,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
 {
     // Is the field already present?
     int i, fmt_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
+    int is_len = 0;
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
     {
         if ( !n ) return 0;
@@ -5455,6 +5461,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
         if ( line->d.fmt[i].id==fmt_id ) break;
     bcf_fmt_t *fmt = i==line->n_fmt ? NULL : &line->d.fmt[i];
 
+    is_len = strcmp(key, "LEN") == 0;
     if ( !n )
     {
         if ( fmt )
@@ -5467,6 +5474,9 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
             }
             line->d.indiv_dirty = 1;
             fmt->p = NULL;
+        }
+        if (is_len) {
+            line->rlen = get_rlen(hdr, line);
         }
         return 0;
     }
@@ -5540,6 +5550,10 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
         }
     }
     line->unpacked |= BCF_UN_FMT;
+
+    if (is_len) {
+        line->rlen = get_rlen(hdr, line);
+    }
     return 0;
 }
 
@@ -5621,20 +5635,8 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
         als++;
         n++;
     }
-
     // Update REF length. Note that END is 1-based while line->pos 0-based
-    bcf_info_t *end_info = bcf_get_info(hdr,line,"END");
-    if ( end_info )
-    {
-        if ( end_info->type==BCF_HT_INT && end_info->v1.i==bcf_int32_missing ) end_info = NULL;
-        else if ( end_info->type==BCF_HT_LONG && end_info->v1.i==bcf_int64_missing ) end_info = NULL;
-    }
-    if ( end_info && end_info->v1.i > line->pos )
-        line->rlen = end_info->v1.i - line->pos;
-    else if ( nals > 0 )
-        line->rlen = strlen(line->d.allele[0]);
-    else
-        line->rlen = 0;
+    line->rlen = get_rlen(hdr, line);
 
     return 0;
 }
@@ -6137,4 +6139,247 @@ int bcf_format_gt_v2(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample, kstring_
         }
     }
     return e == 0 ? 0 : -1;
+}
+
+/**
+ *  get_rlen - calculates and returns rlen value
+ *  @param h - bcf header
+ *  @param v - bcf data
+ *  Returns rlen calculated on success and -1 on failure.
+ *  rlen calculation is dependent on vcf version and a few other field data.
+ *  When bcf decoded data is available, refers it. When not available, retrieves
+ *  required field data by seeking on the data stream.
+ *  pos, version has to be set appropriately before any info/format field
+ *  update to have proper rlen calculation.
+ *  TODO version change has to trigger rlen recalculation on whole data
+ */
+static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
+{
+    uint8_t *f = (uint8_t*)v->shared.s, *t = NULL, *e = (uint8_t*)v->shared.s + v->shared.l;
+    int size, type, id, lenid, endid, svlenid, i, bad;
+    char **alleles = calloc(1, sizeof(char*) * v->n_allele);
+    bcf_info_t *endinfo = NULL, *svleninfo = NULL;
+    bcf_fmt_t *lenfmt = NULL;
+    //free each allele, end info, svlen info, len format or not
+    int free_als = 0, free_end = 0, free_svlen = 0, free_len = 0;
+
+    //pos from info END, fmt LEN, info SVLEN
+    hts_pos_t end = 0, end_fmtlen = 0, end_svlen = 0;
+    int64_t len_ref = 0, len_end = 0, len_fmtlen = 0, len_svlen = 0, len = 0;
+    int64_t rlen = -1, tmp;
+    int version = bcf_get_version(h, NULL);
+
+    lenid = bcf_hdr_id2int(h, BCF_DT_ID, "LEN");
+    svlenid = bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN");
+    endid = bcf_hdr_id2int(h, BCF_DT_ID, "END");
+
+    //use decoded data where ever available and where not, get from stream
+    if (v->unpacked & BCF_UN_STR || v->d.shared_dirty & BCF1_DIRTY_ALS) {
+        for (i = 0; i < v->n_allele; ++i) {
+            alleles[i] = v->d.allele[i];
+        }
+        f += v->unpack_size[0] + v->unpack_size[1];
+    } else if (f < e) {
+        //skip ID
+        size = bcf_dec_size(f, &f, &type);
+        f += size << bcf_type_shift[type];
+        // REF, ALT
+        for (i = 0; i < v->n_allele; ++i) {
+            size = bcf_dec_size(f, &f, &type);
+            if (!(alleles[i] = malloc(sizeof(char) * (size + 1))))
+                goto fail;
+            memcpy(alleles[i], f, size);
+            alleles[i][size] = '\0';
+            f += size << bcf_type_shift[type];
+        }
+        free_als = 1;   //free at end
+    }
+    // FILTER
+    if (v->unpacked & BCF_UN_FLT) {
+        f += v->unpack_size[2];
+    } else if (f < e) {
+        size = bcf_dec_size(f, &f, &type);
+        f += size << bcf_type_shift[type];
+    }
+    // INFO
+    if (v->unpacked & BCF_UN_INFO || v->d.shared_dirty & BCF1_DIRTY_INF) {
+        endinfo = bcf_get_info(h, v, "END");
+        svleninfo = version >= VCF44 ? bcf_get_info(h, v, "SVLEN") : NULL;
+    } else if (f < e) {
+        for (i = 0; i < v->n_info; ++i) {
+            id = bcf_dec_typed_int1(f, &t);
+            if (id == endid) {  //END
+                if (!(endinfo = malloc(sizeof(bcf_info_t))))
+                    goto fail;
+                free_end = 1;
+                t = bcf_unpack_info_core1(f, endinfo);
+            } else if (id == svlenid && version >= VCF44) { //SVLEN
+                if (!(svleninfo = malloc(sizeof(bcf_info_t))))
+                    goto fail;
+                free_svlen = 1;
+                t = bcf_unpack_info_core1(f, svleninfo);
+            } else {
+                f = t;
+                size = bcf_dec_size(f, &t, &type);
+                t += size << bcf_type_shift[type];
+            }
+            f = t;
+        }
+    }
+    // FORMAT
+    if (version > VCF44) {  //v4.5 or later
+        f = (uint8_t*)v->indiv.s; t = NULL; e = (uint8_t*)v->indiv.s + v->indiv.l;
+        if (v->unpacked & BCF_UN_FMT || v->d.indiv_dirty) {
+            lenfmt = version >= VCF45 ? bcf_get_fmt(h, v, "LEN") : NULL;
+        } else if (f < e) {
+            for (i = 0; i < v->n_fmt; ++i) {
+                id = bcf_dec_typed_int1(f, &t);
+                if (id == lenid) {
+                    if (!(lenfmt = malloc(sizeof(bcf_fmt_t))))
+                        goto fail;
+                    free_len = 1;
+                    t = bcf_unpack_fmt_core1(f, v->n_sample, lenfmt);
+                    break;  //that's all needed
+                } else {
+                    f = t;
+                    size = bcf_dec_size(f, &t, &type);
+                    t += size * v->n_sample << bcf_type_shift[type];
+                }
+                f = t;
+            }
+        }
+    }
+    //got required data, find end and rlen
+    len_ref = v->n_allele ? strlen(alleles[0]) : 0;
+    if (endinfo && endinfo->vptr) { //end position given by info END
+        //end info exists, not being deleted
+        end = endinfo->v1.i;
+        switch(endinfo->type) {
+            case BCF_BT_INT8:  end = end == bcf_int8_missing ? 0 : end;  break;
+            case BCF_BT_INT16: end = end == bcf_int16_missing ? 0 : end; break;
+            case BCF_BT_INT32: end = end == bcf_int32_missing ? 0 : end; break;
+            case BCF_BT_INT64: end = end == bcf_int64_missing ? 0 : end; break;
+            default: end = 0; break; //invalid
+        }
+    }
+
+    if (svleninfo && svleninfo->vptr && version >= VCF44) { //VCF4.4 or above
+        //svlen info exists, not being deleted and version is >= 4.4
+        bad = 0;
+        //get largest svlen, except <ins>; expects to be . for non SV alleles
+        for (i = 0; i < svleninfo->len && i + 1 < v->n_allele; ++i) {
+            switch(svleninfo->type) {
+                case BCF_BT_INT8:
+                    tmp = ((int8_t*)svleninfo->vptr)[i];
+                    tmp = tmp == bcf_int8_missing ? 0 : tmp;
+                break;
+                case BCF_BT_INT16:
+                    tmp = ((int16_t*)svleninfo->vptr)[i];
+                    tmp = tmp == bcf_int16_missing ? 0 : tmp;
+                break;
+                case BCF_BT_INT32:
+                    tmp = ((int32_t*)svleninfo->vptr)[i];
+                    tmp = tmp == bcf_int32_missing ? 0 : tmp;
+                break;
+                case BCF_BT_INT64:
+                    tmp = ((int64_t*)svleninfo->vptr)[i];
+                    tmp = tmp == bcf_int64_missing ? 0 : tmp;
+                break;
+                default: //invalid
+                    tmp = 0;
+                    bad = 1;
+                break;
+            }
+            if (bad) {  //stop svlen check
+                len = 0;
+                break;
+            }
+            //expects only SV will have valid svlen and rest have '.'
+            if (!strcmp(alleles[i+1], "<INS>")) {
+                tmp = len_ref - 1;   //use reflen for insertions
+            } else {
+                tmp = tmp < 0 ? llabs(tmp) : tmp;
+            }
+            if (len < tmp) len = tmp;
+        }
+    }
+    if ((!svleninfo || !len) && end) { //no svlen, infer from end
+        len = end > v->pos ? end - v->pos - 1: 0;
+    }
+    end_svlen = v->pos + len + 1;   //end position found from SVLEN
+
+    len = 0;
+    if (lenfmt && lenfmt->p && version > VCF44) { //VCF 4.5 or above
+        //fmt len exists, not being deleted and version is >= 4.5
+        int j = 0;
+        int64_t offset = 0;
+        bad = 0;
+        for (i = 0; i < v->n_sample; ++i) {
+            for (j = 0; j < lenfmt->n; ++j) {
+                switch(lenfmt->type) {
+                case BCF_BT_INT8:
+                    tmp = (((int8_t*)lenfmt->p + offset))[j];
+                    tmp = tmp == bcf_int8_missing ? 0 : tmp;
+                break;
+                case BCF_BT_INT16:
+                    tmp = ((int16_t*)(lenfmt->p + offset))[j];
+                    tmp = tmp == bcf_int16_missing ? 0 : tmp;
+                break;
+                case BCF_BT_INT32:
+                    tmp = ((int32_t*)(lenfmt->p + offset))[j];
+                    tmp = tmp == bcf_int32_missing ? 0 : tmp;
+                break;
+                case BCF_BT_INT64:
+                    tmp = ((int64_t*)(lenfmt->p + offset))[j];
+                    tmp = tmp == bcf_int64_missing ? 0 : tmp;
+                break;
+                default: //invalid
+                    bad = 1;
+                break;
+                }
+                if (bad) {  //stop LEN check
+                    len = 0;
+                    break;
+                }
+                //assumes only gvcf have valid LEN
+                if (len < tmp) len = tmp;
+            }
+            offset += j << bcf_type_shift[lenfmt->type];
+        }
+    }
+    end_fmtlen = v->pos + len;  //end position found from LEN
+
+    //calculate len based on END, SVLEN, fmt LEN
+    len_end = end - v->pos;
+    len_svlen = end_svlen - v->pos;
+    len_fmtlen = end_fmtlen - v->pos;
+
+    if (version < VCF44) { //upto v4.3
+        //rlen from END val or reflen
+        rlen = len_end > len_ref ? len_end : len_ref;
+    } else if (version < VCF45) { //v4.4
+        //highest of reference len, from svlen and len from end
+        rlen = len_ref < len_svlen ?
+                len_svlen < len_end ? len_end : len_svlen   :
+                    len_ref < len_end ? len_end : len_ref;
+    } else { //4005000 / v4.5
+        //highest of reference len, svlen, format field LEN
+        rlen = len_ref < len_svlen ?
+                len_svlen < len_fmtlen ? len_fmtlen : len_svlen :
+                    len_ref < len_fmtlen ? len_fmtlen : len_ref;
+    }
+
+fail:
+    if (free_als) {
+        for (i = 0; i < v->n_allele; ++i)
+            free(alleles[i]);
+    }
+    free(alleles);
+    if (free_end)
+        free(endinfo);
+    if (free_svlen)
+        free(svleninfo);
+    if(free_len)
+        free(lenfmt);
+    return rlen;
 }
