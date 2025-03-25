@@ -1586,7 +1586,7 @@ static void bgzf_mt_seek(BGZF *fp) {
     mt->errcode = 0;
 
     if (hseek(fp->fp, mt->block_address, SEEK_SET) < 0)
-        mt->errcode = BGZF_ERR_IO;
+        mt->errcode = errno;
 
     pthread_mutex_unlock(&mt->job_pool_m);
     mt->command = SEEK_DONE;
@@ -2206,10 +2206,13 @@ static inline int64_t bgzf_seek_common(BGZF* fp,
             }
         } while (fp->mt->command != SEEK_DONE);
 
-        if (fp->mt->errcode)
-            return -1;
-
         fp->mt->command = NONE;
+
+        if (fp->mt->errcode) {
+            fp->errcode |= BGZF_ERR_IO;
+            pthread_mutex_unlock(&fp->mt->command_m);
+            return -1;
+        }
 
         fp->block_length = 0;  // indicates current block has not been loaded
         fp->block_address = block_address;
