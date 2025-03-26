@@ -2210,6 +2210,7 @@ static inline int64_t bgzf_seek_common(BGZF* fp,
 
         if (fp->mt->errcode) {
             fp->errcode |= BGZF_ERR_IO;
+            errno = fp->mt->errcode;
             pthread_mutex_unlock(&fp->mt->command_m);
             return -1;
         }
