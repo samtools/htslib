@@ -5263,7 +5263,7 @@ static void cram_init_tables(cram_fd *fd) {
 
 // Default version numbers for CRAM
 static int major_version = 3;
-static int minor_version = 0;
+static int minor_version = 1;
 
 /*
  * Opens a CRAM file for read (mode "rb") or write ("wb").
