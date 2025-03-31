@@ -687,25 +687,29 @@ void test_rlen_values(void)
     "1\t4338\t.\tG\t<*>\t213.73\t.\tEND=4342;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:8\n" \
     "1\t4353\t.\tG\t<*>\t213.73\t.\tEND=4357;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
     "1\t4363\t.\tG\t<*>\t213.73\t.\tEND=4367;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
-    "1\t4373\t.\tG\tT\t213.73\t.\tEND=4375;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
-    //this last one is invalid one, to showcase how SVLEN/LEN are considered even when ALT is no SV/gvcf
+    "1\t4370\t.\tG\t<INS>,<*>\t213.73\t.\tEND=4371;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
+    "1\t4378\t.\tG\t<DEL>,<INS>,<*>\t213.73\t.\tEND=4379;SVLEN=3,5,.;SVCLAIM=D,J,.\tGT:LEN\t0/1:7\t0|0:.\n" \
+    "1\t4385\t.\tG\tT\t213.73\t.\tEND=4387;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
+    //this last one is invalid one, to showcase how SVLEN is considered even when ALT is no SV
     //this is because data are not cross checked with allele types, to make it simple
 
     //test vcf with different versions
-    const int vcfsz = 11, testsz = 3;
+    const int vcfsz = 13, testsz = 3;
     static char d43[] = "data:,"
     "##fileformat=VCFv4.3\n" data;
     static char d44[] = "data:,"
     "##fileformat=VCFv4.4\n" data;
     static char d45[] = "data:,"
     "##fileformat=VCFv4.5\n" data;
-    //expected rlen for tests
-    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 3};
-    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 9};
-    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 10};
+    /* ideal expected rlen for tests
+    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 2, 2, 3};
+    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 2, 4, 9};
+    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 9};*/
+    // but we dont check version and hence resulting rlen should be
+    int rlen[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 9};
 
-    char *darr[] = {&d43[0], &d44[0], &d45[0]};           //data array
-    int *rarr[] = {&rlen43[0], &rlen44[0], &rlen45[0]};   //result array
+    char *darr[] = {&d43[0], &d44[0], &d45[0]};     //data array
+    int *rarr[] = {&rlen[0], &rlen[0], &rlen[0]};   //result array
 
     enum htsLogLevel logging = hts_get_log_level();
 
