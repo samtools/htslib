@@ -940,7 +940,7 @@ install-pkgconfig: htslib.pc.tmp installdirs
 # A pkg-config file (suitable for copying to $PKG_CONFIG_PATH) that provides
 # flags for building against the uninstalled library in this build directory.
 htslib-uninstalled.pc: htslib.pc.tmp
-	sed -e 's#@-includedir@#'`pwd`'#g;s#@-libdir@#'`pwd`'#g' htslib.pc.tmp > $@
+	sed -e "s#@-includedir@#`pwd`#g;s#@-libdir@#`pwd`#g" htslib.pc.tmp > $@
 
 
 testclean:
