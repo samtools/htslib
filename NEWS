@@ -1,6 +1,19 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Note this release changes the default output CRAM version from 3.0 to 3.1.
+HTSlib and SAMtools have been able to read CRAM 3.1 since version 1.12,
+however other tools may not yet be able to cope.  We know Noodles reads CRAM
+3.1 and htsjdk has a draft implementation, but not yet released.
+
+HTSlib has options for modifying the output formats, which are exposed in
+SAMtools.  When specifying an output format you can explicitly change the
+version via e.g. `samtools view -O cram,version=3.0 ...`.
+
+Further documentation on this change can be found at
+https://www.htslib.org/benchmarks/CRAM.html
+
+
 Updates
 -------
 
