@@ -40,8 +40,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <htslib/khash.h>
-#include <htslib/kroundup.h>
+#include "../htslib/khash.h"
+#include "../htslib/kroundup.h"
 
 #define MAX_ENTRIES 99999999
 
