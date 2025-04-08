@@ -5153,6 +5153,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     const char *re = r, *ae = a;
     while ( re[1] ) re++;
     while ( ae[1] ) ae++;
+    if ( ae[0]==']' || ae[0]=='[' ) { var->type = VCF_BND; return; }    // "joined after" breakend
     while ( re>r && ae>a && toupper_c(*re)==toupper_c(*ae) ) { re--; ae--; }
     if ( ae==a )
     {
