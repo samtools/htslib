@@ -5142,13 +5142,11 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     }
     else if ( *r && !*a )
     {
-        if ( *(a-1)==']' || *(a-1)=='[' ) { var->type = VCF_BND; return; } // "joined after" breakend
         while ( *r ) r++;
         var->n = (a-alt)-(r-ref); var->type = VCF_INDEL | VCF_DEL; return;
     }
     else if ( !*r && !*a )
     {
-        if ( *(a-1)==']' || *(a-1)=='[' ) { var->type = VCF_BND; return; } // "joined after" breakend
         var->n = 0; var->type = VCF_REF; return;
     }
 
