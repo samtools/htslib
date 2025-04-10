@@ -1904,7 +1904,7 @@ static int mt_flush_queue(BGZF *fp)
         if ((shutdown = hts_tpool_process_is_shutdown(mt->out_queue)))
             break;
         pthread_mutex_unlock(&mt->job_pool_m);
-        usleep(10000); // FIXME: replace by condition variable
+        hts_usleep(10000); // FIXME: replace by condition variable
         pthread_mutex_lock(&mt->job_pool_m);
     }
     pthread_mutex_unlock(&mt->job_pool_m);

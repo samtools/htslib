@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.
 #include <unistd.h>
 
 #include "../htslib/bgzf.h"
+#include "../hts_internal.h"
 #include "../htslib/thread_pool.h"
 
 int main(int argc, char *argv[]) {
@@ -54,11 +55,11 @@ int main(int argc, char *argv[]) {
         fpin  = bgzf_open(argv[1], "r");
         bgzf_mt(fpin, 8, 256);
         if (bgzf_seek(fpin, pos, SEEK_SET) < 0) puts("!");//abort();
-        usleep(N);
+        hts_usleep(N);
         //if (bgzf_read(fpin, buf, 65536) < 0) abort();
         //write(1, buf, 65536);
         if (bgzf_seek(fpin, 0LL, SEEK_SET) < 0) puts("!");//abort();
-        usleep(N);
+        hts_usleep(N);
         //if (bgzf_read(fpin, buf, 65536) < 0) abort();
         //write(1, buf, 65536);
         if (bgzf_close(fpin))

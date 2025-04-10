@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.
 #include <unistd.h>
 
 #include "../htslib/bgzf.h"
+#include "../htslib/hts_internal.h"
 #include "../htslib/thread_pool.h"
 
 int main(int argc, char *argv[]) {
@@ -91,7 +92,7 @@ int main(int argc, char *argv[]) {
                 break;
             }
             case 5:
-                usleep(N);
+                hts_usleep(N);
                 break;
             case 6:
                 if (!mt)

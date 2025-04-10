@@ -501,13 +501,13 @@ cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) 
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h) $(textutils_internal_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htscodecs_rANS_static4x16_h) $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(fuzz_settings_h) $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(fuzz_settings_h) $(cram_h) $(cram_os_h) $(htslib_hts_h) $(hts_internal_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(htslib_hts_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
-thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_log_h)
+thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_log_h) $(hts_internal_h)
 
 htscodecs/htscodecs/arith_dynamic.o htscodecs/htscodecs/arith_dynamic.pico: htscodecs/htscodecs/arith_dynamic.c config.h $(htscodecs_arith_dynamic_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_utils_h) $(htscodecs_c_simple_model_h)
 htscodecs/htscodecs/fqzcomp_qual.o htscodecs/htscodecs/fqzcomp_qual.pico: htscodecs/htscodecs/fqzcomp_qual.c config.h $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htscodecs_utils_h) $(htscodecs_c_simple_model_h)

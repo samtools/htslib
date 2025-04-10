@@ -1158,6 +1158,7 @@ void hts_tpool_kill(hts_tpool *p) {
 #ifdef TEST_MAIN
 
 #include <stdio.h>
+#include "hts_internal.h"
 
 #ifndef TASK_SIZE
 #define TASK_SIZE 1000
@@ -1170,7 +1171,7 @@ void hts_tpool_kill(hts_tpool *p) {
 void *doit_square_u(void *arg) {
     int job = *(int *)arg;
 
-    usleep(random() % 100000); // to coerce job completion out of order
+    hts_usleep(random() % 100000); // to coerce job completion out of order
 
     printf("RESULT: %d\n", job*job);
 
@@ -1211,7 +1212,7 @@ void *doit_square(void *arg) {
 
     // One excessively slow, to stress test output queue filling and
     // excessive out of order scenarios.
-    usleep(500000 * ((job&31)==31) + random() % 10000);
+    hts_usleep(500000 * ((job&31)==31) + random() % 10000);
 
     res = malloc(sizeof(*res));
     *res = (job<0) ? -job*job : job*job;
@@ -1257,7 +1258,7 @@ int test_square(int n) {
                 // The alternative is a separate thread for dispatching and/or
                 // consumption of results. See test_squareB.
                 putchar('.'); fflush(stdout);
-                usleep(10000);
+                hts_usleep(10000);
             }
         } while (blk == -1);
     }
@@ -1408,7 +1409,7 @@ static void *pipe_stage1(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
     j->x <<= 8;
-    usleep(random() % 10000); // fast job
+    hts_usleep(random() % 10000); // fast job
     printf("1  %08x\n", j->x);
 
     return j;
@@ -1434,7 +1435,7 @@ static void *pipe_stage2(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
     j->x <<= 8;
-    usleep(random() % 100000); // slow job
+    hts_usleep(random() % 100000); // slow job
     printf("2  %08x\n", j->x);
 
     return j;
@@ -1459,7 +1460,7 @@ static void *pipe_stage2to3(void *arg) {
 static void *pipe_stage3(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
-    usleep(random() % 10000); // fast job
+    hts_usleep(random() % 10000); // fast job
     j->x <<= 8;
     return j;
 }
