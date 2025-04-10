@@ -76,6 +76,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../hts_internal.h"
 #include "open_trace_file.h"
 
 #if defined(HAVE_EXTERNAL_LIBHTSCODECS)
@@ -4324,7 +4325,7 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
         if (!pending)
             break;
 
-        usleep(1000);
+        hts_usleep(1000);
     }
 
     return 0;

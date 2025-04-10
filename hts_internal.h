@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stddef.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "htslib/hts.h"
 #include "textutils_internal.h"
@@ -140,6 +141,12 @@ static inline int find_file_extension(const char *fn, char ext_out[static HTS_MA
     memcpy(ext_out, ext + 1, delim - ext - 1);
     ext_out[delim - ext - 1] = '\0';
     return 0;
+}
+
+static inline int hts_usleep(long long usec)
+{
+    struct timespec req = { usec / 1000000, (usec % 1000000) * 1000 };
+    return nanosleep(&req, NULL);
 }
 
 #ifdef __cplusplus

@@ -3328,7 +3328,7 @@ int sam_state_destroy(htsFile *fp) {
                         break;
                     hts_tpool_wake_dispatch(fd->q);
                     pthread_mutex_unlock(&fd->command_m);
-                    usleep(10000);
+                    hts_usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
                 }
             }
@@ -3348,7 +3348,7 @@ int sam_state_destroy(htsFile *fp) {
                 pthread_mutex_unlock(&fd->command_m);
 
                 while (!ret && fd->q && !hts_tpool_process_empty(fd->q)) {
-                    usleep(10000);
+                    hts_usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
                     ret = -fd->errcode;
                     // not empty but shutdown implies error
