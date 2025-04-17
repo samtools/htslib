@@ -44,6 +44,7 @@ shlib-exports-*.txt
 /annot-tsv
 /bgzip
 /htsfile
+/ref_cache/ref-cache
 /tabix
 /test/*/FAIL*
 /test/bgzf_boundaries/*.tmp.*
@@ -56,6 +57,7 @@ shlib-exports-*.txt
 /test/pileup_mod
 /test/plugins-dlhts
 /test/sam
+/test/ref_cache/*.tmp.*
 /test/tabix/*.tmp.*
 /test/test-bcf-sr
 /test/test-bcf-translate

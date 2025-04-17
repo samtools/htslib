@@ -50,6 +50,59 @@ AC_DEFUN([HTS_TEST_CC_C_LD_FLAG],
   AS_VAR_POPDEF([hts_cv_check_flag])dnl
 ])
 
+# SYNOPSIS
+#
+# HTS_TEST_CC_FLAG(FLAG, FOUND_VAR, REQUIRE_SILENCE)
+#
+# Test if FLAG can be used on CFLAGS.  It it works,
+# variable FOUND_VAR is set to FLAG.  If REQUIRE_SILENCE is "yes",
+# only pass if the compilation did not produce any diagnostics (needed
+# to deal with compilers that accept unknown options, generate
+# warnings about them but don't exit non-zero, thus breaking the test).
+
+AC_DEFUN([HTS_TEST_CC_FLAG],
+ [AS_VAR_PUSHDEF([hts_cv_check_flag],[hts_cv_check_$1])dnl
+  AC_CACHE_CHECK([whether the compiler accepts $1],
+   [hts_cv_check_flag],
+   [ac_check_save_cflags=$CFLAGS
+    CFLAGS="$CFLAGS $1"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM()],
+      [AS_IF([test "x$3" = "xyes" && test -s conftest.err],
+         [AS_VAR_SET([hts_cv_check_flag],[no])],
+         [AS_VAR_SET([hts_cv_check_flag],[yes])
+          AS_IF([test "x$2" != x],[eval AS_TR_SH([$2])="$1"])])],
+      [AS_VAR_SET([hts_cv_check_flag],[no])])
+    CFLAGS=$ac_check_save_cflags])
+  AS_VAR_POPDEF([hts_cv_check_flag])dnl
+])
+
+# SYNOPSIS
+#
+# HTS_TEST_CC_LD_FLAG(FLAG, FOUND_VAR, REQUIRE_SILENCE)
+#
+# Test if FLAG can be used on LDFLAGS.  It it works,
+# variable FOUND_VAR is set to FLAG.  If REQUIRE_SILENCE is "yes",
+# only pass if the compilation did not produce any diagnostics (needed
+# to deal with compilers that accept unknown options, generate
+# warnings about them but don't exit non-zero, thus breaking the test).
+
+AC_DEFUN([HTS_TEST_CC_LD_FLAG],
+ [AS_VAR_PUSHDEF([hts_cv_check_flag],[hts_cv_check_$1])dnl
+  AC_CACHE_CHECK([whether the compiler accepts $1],
+   [hts_cv_check_flag],
+   [ac_check_save_ldflags=$LDFLAGS
+    LDFLAGS="$LDFLAGS $1"
+    AC_LINK_IFELSE([AC_LANG_PROGRAM()],
+      [AS_IF([test "x$3" = "xyes" && test -s conftest.err],
+         [AS_VAR_SET([hts_cv_check_flag],[no])],
+         [AS_VAR_SET([hts_cv_check_flag],[yes])
+          AS_IF([test "x$2" != x],[eval AS_TR_SH([$2])="$1"])])],
+      [AS_VAR_SET([hts_cv_check_flag],[no])])
+    LDFLAGS=$ac_check_save_ldflags])
+  AS_VAR_POPDEF([hts_cv_check_flag])dnl
+])
+
+
 AC_DEFUN([HTS_HIDE_DYNAMIC_SYMBOLS], [
   # Test for flags to set default shared library visibility to hidden
   # -fvisibility=hidden : GCC compatible

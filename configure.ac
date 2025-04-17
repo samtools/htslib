@@ -72,14 +72,15 @@ HTS_PROG_CC_WERROR(hts_late_cflags)
 
 # HTSlib uses X/Open-only facilities (M_SQRT2 etc, drand48() etc), and
 # various POSIX functions that are provided by various _POSIX_C_SOURCE values
-# or by _XOPEN_SOURCE >= 500. It also uses usleep(), which is removed when
-# _XOPEN_SOURCE >= 700. Additionally, some definitions may require
+# or by _XOPEN_SOURCE >= 500. Additionally, some definitions may require
 # _XOPEN_SOURCE >= 600 on some platforms (snprintf on MinGW,
-# PTHREAD_MUTEX_RECURSIVE on some Linux distributions). Hence we set it to 600.
+# PTHREAD_MUTEX_RECURSIVE on some Linux distributions), and ref-cache uses
+# openat(), mkdirat() etc. which need _XOPEN_SOURCE >= 700.
+# Hence we set it to 700.
 
 # Define _XOPEN_SOURCE unless the user has already done so via $CPPFLAGS etc.
 AC_CHECK_DECL([_XOPEN_SOURCE], [],
-  [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
+  [AC_DEFINE([_XOPEN_SOURCE], [700], [Specify X/Open requirements])],
   [])
 
 dnl Check that we have cpuid, and if so run the x86 SIMD checks
@@ -272,6 +273,11 @@ AC_ARG_WITH([plugin-path],
    esac],
   [with_plugin_path=$with_plugin_dir])
 AC_SUBST([pluginpath], $with_plugin_path)
+
+AC_ARG_ENABLE([ref-cache],
+  [AS_HELP_STRING([--disable-ref-cache],
+                  [build CRAM reference caching proxy])],
+  [], [enable_ref_cache=check])
 
 AC_ARG_ENABLE([s3],
   [AS_HELP_STRING([--enable-s3],
@@ -633,6 +639,127 @@ dnl Only need to add to static_LIBS if not building as a plugin
      static_LIBS="$static_LIBS $CRYPTO_LIBS"
   fi
 fi
+
+ref_cache=disabled
+AS_IF([test "x$enable_ref_cache" != xno],
+  [AS_CASE([$PLATFORM],
+     [Darwin | default],[
+        AS_IF([test "x$libcurl" = xenabled], [ref_cache="enabled"], [
+          AS_IF([test "x$enable_ref_cache" = check], [
+            AC_MSG_WARN([ref-cache not enabled: requires libcurl])
+          ],[
+            MSG_ERROR([ref-cache not enabled
+
+The ref-cache program requires libcurl support to be enabled in HTSlib.
+Configure with --enable-libcurl in order to build ref-cache.])
+          ])
+        ])
+      ],
+     [AS_IF([test "x$enable_ref_cache" = xcheck], [
+        AC_MSG_WARN([ref-cache not enabled: unsupported platform])
+      ],[
+        MSG_ERROR([ref-cache not enabled
+
+ref-cache is not supported on this platform.  Supported platforms include
+Linux, FreeBSD, MacOS, and other BSD derivatives])
+      ])
+    ])
+  ])
+
+hts_paranoia_c_flags=""
+hts_paranoia_ld_flags=""
+AS_IF([test "$ref_cache" = enabled],[
+  AC_MSG_CHECKING([for epoll])
+  hts_have_epoll=0
+  hts_have_edge_trigger=0
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <sys/epoll.h>],[
+struct epoll_event ev;
+int fd = epoll_create(0);
+ev.events = EPOLLIN | EPOLLET;
+ev.data.fd = 0;
+if (epoll_ctl(fd, EPOLL_CTL_ADD, 0, &ev) == -1) {
+    return 1;
+}
+return 0;])],
+  [
+    hts_have_epoll=1
+    hts_have_edge_trigger=1
+    AC_MSG_RESULT([yes (edge triggered)])
+  ],
+  [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <sys/epoll.h>],[
+struct epoll_event ev;
+int fd = epoll_create(0);
+ev.events = EPOLLIN;
+ev.data.fd = 0;
+if (epoll_ctl(fd, EPOLL_CTL_ADD, 0, &ev) == -1) {
+    return 1;
+}
+return 0;])],
+    [
+        hts_have_epoll=1
+        AC_MSG_RESULT([yes])
+    ],
+    [AC_MSG_RESULT([no])])
+  ])
+  AC_DEFINE_UNQUOTED([HAVE_EPOLL], [$hts_have_epoll],
+    [Define if epoll is available])
+  AC_DEFINE_UNQUOTED([PW_HAVE_EDGE], [$hts_have_edge_trigger],
+    [Define if epoll edge triggering is available])
+
+  AC_CHECK_DECLS([EHOSTDOWN, ENONET], [], [], [[#include <errno.h>]])
+
+  # Test various compiler options, recommended by
+  # https://github.com/ossf/wg-best-practices-os-developers/blob/main/docs/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C%2B%2B.md
+  AS_IF([test "x$GCC" = "xyes"],
+    [dnl
+     dnl Annoyingly, some compilers (e.g. clang) only issue warnings
+     dnl for unrecognised warning options instead of failing.  And even
+     dnl worse, some (e.g. icc) don't fail even if you use -Werror.
+     dnl Test for the latter case, and if the compiler behaves that way
+     dnl be more strict by failing if it doesn't run silently.
+
+     tmp_cflags="$CFLAGS"
+     CFLAGS="-Werror -Wthis-is-really-not-a-vaild-option"
+
+     tmp_desire_silence=no
+     AC_COMPILE_IFELSE([AC_LANG_PROGRAM()], [tmp_desire_silence=yes])
+
+     m4_foreach([cc_opt], [[-Wextra], [-Wformat], [-Wformat=2], [-Wconversion],
+                           [-Wtrampolines], [-Wstrict-aliasing],
+                           [-fstack-clash-protection],
+                           [-fstack-protector-strong],
+                           [-fcf-protection=full],
+                           [-mbranch-protection=standard],
+                           [-fno-delete-null-pointer-checks]],[
+     tmp_flag=""
+     CFLAGS="-Werror"
+     HTS_TEST_CC_FLAG(cc_opt, [tmp_flag], [$tmp_desire_silence])
+     AS_IF([test "x$tmp_flag" != x],
+           [hts_paranoia_c_flags="$hts_paranoia_c_flags $tmp_flag"])
+    ])
+    CFLAGS="$tmp_cflags"
+
+    dnl Double quoting needed here, due to commas in the tested options
+    m4_foreach([ld_opt], [[[-Wl,-z,nodlopen]], [[-Wl,-z,noexecstack]],
+                          [[-Wl,-z,relro]], [[-Wl,-z,now]], [[-Wl,--as-needed]],
+                          [[-Wl,--no-copy-dt-needed-entries]]],[
+      tmp_flag=""
+      HTS_TEST_CC_LD_FLAG(ld_opt, [tmp_flag], tmp_desire_silence)
+      AS_IF([test "x$tmp_flag" != x],
+            [hts_paranoia_ld_flags="$hts_paranoia_ld_flags $tmp_flag"])
+    ])
+  ])
+
+  hts_ref_cache_programs="ref_cache/ref-cache"
+  hts_ref_cache_test_opts="--ref-cache-bin ../ref_cache/ref-cache"
+],[
+  hts_ref_cache_programs=""
+  hts_ref_cache_test_opts=""
+])
+AC_SUBST([hts_ref_cache_programs])
+AC_SUBST([hts_paranoia_c_flags])
+AC_SUBST([hts_paranoia_ld_flags])
+AC_SUBST([hts_ref_cache_test_opts])
 
 dnl Look for regcomp in various libraries (needed on windows/mingw).
 AC_SEARCH_LIBS(regcomp, regex, [libregex=needed], [])
