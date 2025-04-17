@@ -58,6 +58,12 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_NORETURN
 #endif
 
+#if HTS_GCC_AT_LEAST(10,1)
+#define HTS_ACCESS(access_mode, ...) __attribute__ ((access(access_mode, __VA_ARGS__)))
+#else
+#define HTS_ACCESS(access_mode, ...)
+#endif
+
 // Enable optimisation level 3, especially for gcc.  To be used
 // where we want to force vectorisation in hot loops and the default -O2
 // just doesn't cut it.
