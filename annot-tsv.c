@@ -990,7 +990,7 @@ int main(int argc, char **argv)
             case  1 :
                 printf(
 "annot-tsv (htslib) %s\n"
-"Copyright (C) 2024-2025 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2025 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
                 break;
             case  2 :
