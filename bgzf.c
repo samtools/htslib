@@ -789,7 +789,44 @@ static int deflate_block(BGZF *fp, int block_length)
     return comp_size;
 }
 
-#ifdef HAVE_LIBDEFLATE
+#ifdef HAVE_ISAL
+static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
+                           const uint8_t *src, size_t slen,
+                           uint32_t expected_crc) {
+    struct inflate_state *z = malloc(sizeof(struct inflate_state));
+    if (z == NULL) {
+        hts_log_error("Allocating isal inflate state failed");
+        return -1;
+    }
+    isal_inflate_init(z);
+    z->next_in = (uint8_t *)src;
+    z->avail_in = slen;
+    z->next_out = dst;
+    z->avail_out = *dlen;
+    z->crc_flag = ISAL_GZIP_NO_HDR;
+
+    int ret = isal_inflate(z);
+    if (ret != ISAL_DECOMP_OK) {
+        hts_log_error("Inflate operation failed: %d", ret);
+        free(z);
+        return -1;
+
+    }
+    *dlen =  z->next_out - dst;
+    uint32_t crc = z->crc;
+    free(z);
+    #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Pretend the CRC was OK so the fuzzer doesn't have to get it right
+    crc = expected_crc;
+    #endif
+    if (crc != expected_crc) {
+        hts_log_error("CRC32 checksum mismatch");
+        return -2;
+    }
+    return 0;
+}
+
+#elif HAVE_LIBDEFLATE
 
 static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
                            const uint8_t *src, size_t slen,
