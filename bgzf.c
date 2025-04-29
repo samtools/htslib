@@ -562,7 +562,7 @@ uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
 uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
     return libdeflate_crc32(crc, buf, len);
 }
-#else 
+#else
 uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
     return crc32(crc, buf, len);
 }
@@ -579,9 +579,9 @@ static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size
         return -1;
     }
     static int level_buf_sizes[] = {
-        ISAL_DEF_LVL0_DEFAULT, 
-        ISAL_DEF_LVL1_DEFAULT, 
-        ISAL_DEF_LVL2_DEFAULT, 
+        ISAL_DEF_LVL0_DEFAULT,
+        ISAL_DEF_LVL1_DEFAULT,
+        ISAL_DEF_LVL2_DEFAULT,
         ISAL_DEF_LVL3_DEFAULT
     };
     size_t level_buf_size = level_buf_sizes[level];
@@ -593,7 +593,7 @@ static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size
     z->level = level;
     z->level_buf = level_buf;
     z->level_buf_size = level_buf_size;
-    z->gzip_flag = IGZIP_GZIP_NO_HDR;  // Also calculates length and CRC 
+    z->gzip_flag = IGZIP_GZIP_NO_HDR;  // Also calculates length and CRC
     z->next_in = (uint8_t *)src;
     z->avail_in = slen;
     z->next_out = dst + BLOCK_HEADER_LENGTH;
@@ -615,7 +615,7 @@ static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size
     packInt16(&dst[16], *dlen - 1); // write the compressed length; -1 to fit 2 bytes
     return 0;
 }
-#endif 
+#endif
 
 #if HAVE_LIBDEFLATE
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
@@ -644,10 +644,10 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
 
         #if HAVE_ISAL
         if (level == 1 || level == 2) {
-            return _bgzf_compress_isal(dst, dlen, src, slen, level); 
+            return _bgzf_compress_isal(dst, dlen, src, slen, level);
         }
         #endif
-    
+
         // NB levels go up to 12 here.
         int lvl_map[] = {0,1,2,3,5,6,7,8,10,12};
         level = lvl_map[level>9 ?9 :level];
