@@ -516,7 +516,7 @@ AS_IF([test "x$with_libdeflate" != "xno"],
    AC_CHECK_LIB([deflate], [libdeflate_deflate_compress],[:],[libdeflate='missing library'])
    AS_IF([test "$libdeflate" = "ok"],
     [AC_DEFINE([HAVE_LIBDEFLATE], 1, [Define if libdeflate is available.])
-     LIBS="-ldeflate $LIBS"
+     LIBS="-ldeflate -lisal $LIBS"
      private_LIBS="$private_LIBS -ldeflate"
      static_LIBS="$static_LIBS -ldeflate"],
     [AS_IF([test "x$with_libdeflate" != "xcheck"],
