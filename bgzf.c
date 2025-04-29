@@ -609,6 +609,8 @@ static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size
         return -1;
     }
     *dlen = z->next_out - (uint8_t *)dst;
+    free(level_buf);
+    free(z);
     memcpy(dst, g_magic, BLOCK_HEADER_LENGTH); // the last two bytes are a place holder for the length of the block
     packInt16(&dst[16], *dlen - 1); // write the compressed length; -1 to fit 2 bytes
     return 0;
