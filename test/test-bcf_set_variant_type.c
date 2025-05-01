@@ -1,6 +1,6 @@
 /*  test/test-bcf_set_variant_type.c -- bcf_set_variant_type test harness.
 
-    Copyright (C) 2022 Genome Research Ltd.
+    Copyright (C) 2022, 2024 Genome Research Ltd.
 
     Author: Martin Pollard <mp15@sanger.ac.uk>
 

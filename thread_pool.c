@@ -1,6 +1,6 @@
 /*  thread_pool.c -- A pool of generic worker threads
 
-    Copyright (c) 2013-2020 Genome Research Ltd.
+    Copyright (c) 2013-2020, 2025 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
