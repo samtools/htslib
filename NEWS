@@ -122,6 +122,12 @@ Bug fixes
   bcftools consensus.
   (PR #1883)
 
+* Recognize T > A[chr15:12345[ breakend type in VCF.
+  (PR#1903, fixes bcftools#2389.  Reported by Dennis Hendriksen)
+
+* Fix possible buffer overruns in expand_path().
+  (PR#1907)
+
 Documentation updates
 ---------------------
 
