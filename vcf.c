@@ -1080,6 +1080,7 @@ int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
     free(hrec->value);
     hrec->value = strdup(tmp->value);
     if ( !hrec->value ) return -1;
+    kh_val(aux->gen,k) = hrec;
 
     if (!strcmp(hrec->key,"fileformat")) {
         //update version
@@ -4701,6 +4702,16 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
                 res = bcf_hdr_add_hrec(dst, bcf_hrec_dup(src->hrec[i]));
                 if (res < 0) return NULL;
                 need_sync += res;
+            }
+            else if ( !strcmp(src->hrec[i]->key,"fileformat") )
+            {
+                int ver_src = bcf_get_version(src,src->hrec[i]->value);
+                int ver_dst = bcf_get_version(dst,dst->hrec[j]->value);
+                if ( ver_src > ver_dst )
+                {
+                    res = bcf_hdr_set_version(dst,src->hrec[i]->value);
+                    need_sync += res;
+                }
             }
         }
         else if ( src->hrec[i]->type==BCF_HL_STR )
