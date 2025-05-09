@@ -34,6 +34,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include "types.h"
 
+#define FIRST_SD_LISTEN_FD 3
+
+typedef enum DaemonType {
+    not_a_daemon = 0,
+    sysv_daemon = 1,
+    systemd_socket_service = 2
+} DaemonType;
+
 typedef struct MatchAddr {
     sa_family_t family;
     uint8_t mask_bytes;
@@ -42,25 +50,26 @@ typedef struct MatchAddr {
 } MatchAddr;
 
 struct Options {
-    const char *cache_dir;
-    const char *log_dir;
-    const char *error_log_file;
+    const char *cache_dir;          // Directory for cached reference files
+    const char *log_dir;            // Directory for log files
+    const char *error_log_file;     // Error log file name
     FILE       *log;
-    const char *upstream_url;
-    size_t      upstream_url_len;
-    MatchAddr  *match_addrs;
-    size_t      num_match_addrs;
-    size_t      match_addrs_size;
-    size_t      first_ip6;
-    off_t       max_log_sz;
-    int         cache_fd;
-    int         log_dir_fd;
-    uint16_t    port;
-    uint16_t    nlogs;
-    uint16_t    max_kids;
-    uint8_t     verbosity;
-    uint8_t     daemon;
-    uint8_t     no_log;
+    const char *upstream_url;       // URL for upstream server
+    size_t      upstream_url_len;   // Cached length of upstream_url
+    MatchAddr  *match_addrs;        // Client CIDR network allow list
+    size_t      num_match_addrs;    // Number of items in match_addrs
+    size_t      match_addrs_size;   // match_addrs allocation
+    size_t      first_ip6;          // First ip6 range in sorted match_addrs
+    off_t       max_log_sz;         // Size limit for log files in bytes
+    int         cache_fd;           // File descriptor for cache_dir
+    int         log_dir_fd;         // File descriptor for log_dir
+    int         listen_fds;         // Number of fds passed in by systemd
+    DaemonType  daemon;             // Run as a daemon or socket service
+    uint16_t    port;               // Port to listen on
+    uint16_t    nlogs;              // Number of log files to keep
+    uint16_t    max_kids;           // Number of server processes to run
+    uint8_t     verbosity;          // Print debugging messages
+    uint8_t     no_log;             // Turn off logging
 };
 
 #endif /* OPTIONS_H_INCLUDED */

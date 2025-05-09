@@ -29,11 +29,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <assert.h>
 
 #include "listener.h"
@@ -149,6 +151,81 @@ Listeners * get_listen_sockets(int port) {
         return NULL;
     }
 
+    return lsocks;
+}
+
+static int should_adopt_socket(int fd) {
+    struct stat statbuf;
+    int sock_type = 0, accepting = 0;
+    struct sockaddr addr;
+    socklen_t len, addrlen;
+
+    // Check fd is a socket
+    if (fstat(fd, &statbuf) < 0)
+        return 0;
+    if (!S_ISSOCK(statbuf.st_mode))
+        return 0;
+
+    // Check fd is a stream socket
+    len = sizeof(sock_type);
+    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &sock_type, &len) < 0
+        || len != sizeof(sock_type) || sock_type != SOCK_STREAM)
+        return 0;
+
+    // Check fd is ip4/ip6
+    memset(&addr, 0, sizeof(addr));
+    addrlen = sizeof(addr);
+    if (getsockname(fd, &addr, &addrlen) < 0
+        || addrlen < sizeof(sa_family_t)
+        || (addr.sa_family != AF_INET && addr.sa_family != AF_INET6))
+        return 0;
+
+    // Check fd is in listening state, call listen on it of not
+    len = sizeof(accepting);
+    if (getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &accepting, &len) < 0
+        || len != sizeof(accepting))
+        return 0;
+    if (!accepting) {
+        if (listen(fd, SOMAXCONN) != 0)
+            return 0;
+    }
+
+    /* Set non-blocking so we don't get stuck in accept() */
+    if (setnonblock(fd) != 0)
+        return 0;
+
+    return 1;
+}
+
+Listeners * adopt_listen_sockets(int min_sock_fd, int num_fds) {
+    Listeners *lsocks = calloc(1, sizeof(Listeners));
+    int fd;
+
+    assert(min_sock_fd > 0 && num_fds > 0 && num_fds < INT_MAX - min_sock_fd);
+
+    if (lsocks == NULL)
+        return NULL;
+
+    lsocks->sockets = malloc((size_t) num_fds * sizeof(*lsocks->sockets));
+    if (lsocks->sockets == NULL) {
+        perror("Allocating socket list");
+        free(lsocks);
+        return NULL;
+    }
+
+    for (fd = min_sock_fd; fd < min_sock_fd + num_fds; fd++) {
+        if (should_adopt_socket(fd)) {
+            lsocks->sockets[lsocks->nsocks++] = fd;
+        } else {
+            close(fd);
+        }
+    }
+    if (lsocks->nsocks == 0) {
+        fprintf(stderr, "No suitable sockets found\n");
+        free(lsocks->sockets);
+        free(lsocks);
+        return NULL;
+    }
     return lsocks;
 }
 
