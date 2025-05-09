@@ -138,7 +138,9 @@ and store them in the cache.
 .SH OPTIONS
 .TP 10
 .B -b
-Run in the background as a System V-style daemon
+Run in the background as a System V-style daemon.
+This option must not be used with
+.BR -s .
 .TP
 .BI -d " <dir>"
 Directory where cached files will be stored
@@ -173,6 +175,15 @@ Number of request log files to keep
 .TP
 .BI -R " <num>"
 Maximum size of a request log file (MiB)
+.TP
+.B -s
+Run as a systemd-style socket service.
+As the service manager handles socket allocation,
+the
+.B -p
+option is ignored when running in this mode.
+This option must not be used with
+.BR -b .
 .TP
 .BI -u " <url>"
 URL of the upstream server.

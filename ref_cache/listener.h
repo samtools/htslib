@@ -27,8 +27,8 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "types.h"
 
-Listeners *get_listen_sockets(int port);
-
+Listeners * get_listen_sockets(int port);
+Listeners * adopt_listen_sockets(int min_sock_fd, int num_fds);
 void close_listen_sockets(Listeners *lsocks);
 Pw_item ** register_listener_pollers(Listeners *lsocks, Poll_wrap *pw);
 

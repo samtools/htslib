@@ -45,6 +45,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/prctl.h>
 #endif
 #include <time.h>
+#include <limits.h>
 
 #include "listener.h"
 #include "log_files.h"
@@ -626,6 +627,47 @@ static int daemonise(int daemon_fds[2], Options *opts) {
     return 0;
 }
 
+static int get_systemd_listen_fds(Options *opts) {
+    struct rlimit fd_limit;
+    pid_t our_pid = getpid();
+    char *env_listen_pid = getenv("LISTEN_PID");
+    char *env_listen_fds = getenv("LISTEN_FDS");
+    char *end = env_listen_pid;
+    long long listen_pid;
+    long listen_fds;
+    if (env_listen_pid == NULL) {
+        fprintf(stderr, "LISTEN_PID environment variable is not set\n");
+        return -1;
+    }
+    if (env_listen_fds == NULL) {
+        fprintf(stderr, "LISTEN_FDS environment variable is not set\n");
+        return -1;
+    }
+    if (getrlimit(RLIMIT_NOFILE, &fd_limit) != 0) {
+        perror("Getting max file descriptor count");
+        return -1;
+    }
+
+    listen_pid = strtoll(env_listen_pid, &end, 10);
+    if (*env_listen_pid == '\0' || *end != '\0'
+        || listen_pid < 0 || listen_pid != (long long) our_pid) {
+        fprintf(stderr, "LISTEN_PID is incorrect\n");
+        return -1;
+    }
+    end = env_listen_fds;
+    listen_fds = strtol(env_listen_fds, &end, 10);
+    if (*env_listen_fds == '\0' || *end != '\0'
+        || listen_fds <= 0 || listen_fds > INT_MAX
+        || listen_fds > (long) fd_limit.rlim_cur - FIRST_SD_LISTEN_FD) {
+        fprintf(stderr, "LISTEN_FDS is not valid\n");
+        return -1;
+    }
+    opts->listen_fds = (int) listen_fds;
+    unsetenv("LISTEN_PID");
+    unsetenv("LISTEN_FDS");
+    unsetenv("LISTEN_FDNAMES");
+    return 0;
+}
 
 // Append supplied IP address ranges to the list we will accept
 // connections from.
@@ -825,6 +867,7 @@ static void usage(const char *prog, int help, const Options *opts) {
                 "  -p <num>   Port number to listen on [%u]\n"
                 "  -r <num>   Number of request log files to keep [%u]\n"
                 "  -R <num>   Maximum size of a single request log file (MiB) [%lld]\n"
+                "  -s         Run as a systemd socket service\n"
                 "  -u <url>   URL for upstream server%s%s%s\n"
                 "  -U         Only serve local files, turn off upstream\n"
                 "  -v         Turn on debugging output\n",
@@ -897,13 +940,21 @@ int main(int argc, char **argv) {
     opts.error_log_file = NULL;
     opts.nlogs = 5;
     opts.max_log_sz = 10<<20;
-    opts.daemon = 0;
+    opts.daemon = not_a_daemon;
     opts.no_log = 0;
     opts.upstream_url = "https://www.ebi.ac.uk/ena/cram/md5/";
 
-    while ((c = getopt(argc, argv, "be:d:hl:Lm:n:p:r:R:u:Uv")) >= 0) {
+    while ((c = getopt(argc, argv, "be:d:hl:Lm:n:p:r:R:su:Uv")) >= 0) {
         switch (c) {
-        case 'b': opts.daemon = 1; break;
+        case 'b':
+            if (opts.daemon != not_a_daemon) {
+                fprintf(stderr,
+                        "The -b and -s options cannot be used together\n");
+                badarg = 1;
+            } else {
+                opts.daemon = sysv_daemon;
+            }
+            break;
         case 'e': opts.error_log_file = optarg; break;
         case 'd': opts.cache_dir = optarg; break;
         case 'h': show_help = 1; break;
@@ -942,6 +993,15 @@ int main(int argc, char **argv) {
             opts.max_log_sz = (off_t) get_opt_val(optarg, argv[0], "-R",
                                                   1, 1000, &badarg) * (1<<20);
             break;
+        case 's':
+            if (opts.daemon != not_a_daemon) {
+                fprintf(stderr,
+                        "The -b and -s options cannot be used together\n");
+                badarg = 1;
+            } else {
+                opts.daemon = systemd_socket_service;
+            }
+            break;
         case 'u': opts.upstream_url = optarg; break;
         case 'U': opts.upstream_url = NULL; break;
         case 'v': opts.verbosity++; break;
@@ -974,15 +1034,18 @@ int main(int argc, char **argv) {
 
     sort_match_addrs(&opts);
 
-    /* See if we're already running */
-    res = check_running(opts.port);
-    if (res != 0) {
-        retval = res < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
-        goto cleanup;
+    if (opts.daemon != systemd_socket_service) {
+        /* See if we're already running */
+        res = check_running(opts.port);
+        if (res != 0) {
+            retval = res < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+            goto cleanup;
+        }
     }
 
     /* Turn into a daemon, if requested */
-    if (opts.daemon) {
+    switch (opts.daemon) {
+    case sysv_daemon:
         if (!opts.log_dir && !opts.no_log) {
             fprintf(stderr,
                     "Warning: Running as a daemon without setting a request "
@@ -1001,6 +1064,15 @@ int main(int argc, char **argv) {
         if (daemonise(daemon_pipe, &opts) != 0) {
             goto cleanup;
         }
+        break;
+
+    case systemd_socket_service:
+        if (get_systemd_listen_fds(&opts) != 0)
+            goto cleanup;
+        break;
+
+    default: // not_a_daemon
+        break;
     }
 
     /* Log files */
@@ -1038,19 +1110,33 @@ int main(int argc, char **argv) {
 
     /* Open the socket to listen on */
 
-    lsocks = get_listen_sockets(opts.port);
+    switch (opts.daemon) {
+    case systemd_socket_service:
+        lsocks = adopt_listen_sockets(FIRST_SD_LISTEN_FD, opts.listen_fds);
+        break;
+    default:
+        lsocks = get_listen_sockets(opts.port);
+        break;
+    }
     if (lsocks == NULL) {
         fprintf(stderr, "Couldn't start up.  Sorry.\n");
         goto cleanup;
     }
 
-    if (opts.daemon) {
+    if (opts.daemon == sysv_daemon) {
         if (do_write_all(daemon_pipe[1], "ok", 2) < 0) {
             perror("Couldn't report successful start back to parent");
             goto cleanup;
         }
         close(daemon_pipe[1]);
         daemon_pipe[1] = -1;
+    } else if (opts.error_log_file) {
+        if (freopen(opts.error_log_file, "a", stderr) == NULL) {
+            /* Does it still exist? */
+            fprintf(stderr, "Couldn't redirect stderr to %s: %s\n",
+                    opts.error_log_file, strerror(errno));
+            goto cleanup;
+        }
     }
 
     /* Run the servers */
