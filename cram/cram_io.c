@@ -3440,7 +3440,9 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             hts_log_warning("Reference file given, but ref '%s' not present",
                             r->name);
         if (cram_populate_ref(fd, id, r) == -1) {
-            hts_log_warning("Failed to populate reference for id %d", id);
+            hts_log_warning("Failed to populate reference \"%s\"",
+                            r->name);
+            hts_log_warning("See https://www.htslib.org/doc/reference_seqs.html for further suggestions");
             pthread_mutex_unlock(&fd->refs->lock);
             pthread_mutex_unlock(&fd->ref_lock);
             return NULL;

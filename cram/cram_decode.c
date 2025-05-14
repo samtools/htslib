@@ -2390,8 +2390,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if ((fd->required_fields & SAM_SEQ) &&
         s->ref == NULL && s->hdr->ref_seq_id >= 0 && !c->comp_hdr->no_ref) {
-        hts_log_error("Unable to fetch reference #%d:%"PRId64"-%"PRId64"\n",
-                      ref_id, s->hdr->ref_seq_start,
+        hts_log_error("Unable to fetch reference %s:%"PRId64"-%"PRId64,
+                      fd->refs->ref_id[ref_id]->name, s->hdr->ref_seq_start,
                       s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
         return -1;
     }
