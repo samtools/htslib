@@ -2473,6 +2473,9 @@ static refs_t *refs_create(void) {
 static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
     BGZF *fp;
 
+    if (strncmp(fn, "file://", 7) == 0)
+        fn += 7;
+
     if (!is_md5 && !hisremote(fn)) {
         char fai_file[PATH_MAX];
 
@@ -2935,30 +2938,6 @@ static void mkdir_prefix(char *path, int mode) {
 }
 
 /*
- * Return the cache directory to use, based on the first of these
- * environment variables to be set to a non-empty value.
- */
-static const char *get_cache_basedir(const char **extra) {
-    char *base;
-
-    *extra = "";
-
-    base = getenv("XDG_CACHE_HOME");
-    if (base && *base) return base;
-
-    base = getenv("HOME");
-    if (base && *base) { *extra = "/.cache"; return base; }
-
-    base = getenv("TMPDIR");
-    if (base && *base) return base;
-
-    base = getenv("TEMP");
-    if (base && *base) return base;
-
-    return "/tmp";
-}
-
-/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -2971,30 +2950,11 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     sam_hrec_tag_t *tag;
     char path[PATH_MAX];
     kstring_t path_tmp = KS_INITIALIZE;
-    char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
     int local_path = 0;
 
     hts_log_info("Running cram_populate_ref on fd %p, id %d", (void *)fd, id);
-
-    cache_root[0] = '\0';
-
-    if (!ref_path || *ref_path == '\0') {
-        /*
-         * If we have no ref path, we use the EBI server.
-         * However to avoid spamming it we require a local ref cache too.
-         */
-        ref_path = "https://www.ebi.ac.uk/ena/cram/md5/%s";
-        if (!local_cache || *local_cache == '\0') {
-            const char *extra;
-            const char *base = get_cache_basedir(&extra);
-            snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
-            snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
-            local_cache = cache;
-            hts_log_info("Populating local cache: %s", local_cache);
-        }
-    }
 
     if (!r->name)
         return -1;
@@ -3009,7 +2969,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
-        if (expand_cache_path(path, local_cache, tag->str+3) == 0)
+        struct stat sb;
+        if (expand_cache_path(path, local_cache, tag->str+3) == 0 &&
+            stat(path, &sb) == 0)
+            // Found it in the local cache
             local_path = 1;
     }
 
@@ -3053,7 +3016,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
 
     /* Otherwise search full REF_PATH; slower as loads entire file */
-    if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
+    int is_local = 0;
+    if ((mf = open_path_mfile(tag->str+3, ref_path, NULL, &is_local))) {
         size_t sz;
         r->seq = mfsteal(mf, &sz);
         if (r->seq) {
@@ -3069,15 +3033,23 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     } else {
         refs_t *refs;
         const char *fn;
+        sam_hrec_tag_t *UR_tag;
 
     no_M5:
         /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */
-        if (!(tag = sam_hrecs_find_key(ty, "UR", NULL)))
+        if (!(UR_tag = sam_hrecs_find_key(ty, "UR", NULL)))
             return -1;
 
-        fn = (strncmp(tag->str+3, "file:", 5) == 0)
-            ? tag->str+8
-            : tag->str+3;
+        if (strstr(UR_tag->str+3, "://") &&
+            strncmp(UR_tag->str+3, "file:", 5) != 0) {
+            // Documented as omitted, but accidentally supported until now
+            hts_log_error("UR tags pointing to remote files are not supported");
+            return -1;
+        }
+
+        fn = (strncmp(UR_tag->str+3, "file:", 5) == 0)
+            ? UR_tag->str+8
+            : UR_tag->str+3;
 
         if (fd->refs->fp) {
             if (bgzf_close(fd->refs->fp) != 0)
@@ -3108,14 +3080,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     }
 
     /* Populate the local disk cache if required */
-    if (local_cache && *local_cache) {
+    if (!is_local && local_cache && *local_cache) {
         hFILE *fp;
-
-        if (*cache_root && !is_directory(cache_root)) {
-            hts_log_warning("Creating reference cache directory %s\n"
-                            "This may become large; see the samtools(1) manual page REF_CACHE discussion",
-                            cache_root);
-        }
 
         if (expand_cache_path(path, local_cache, tag->str+3) < 0) {
             return 0; // Not fatal - we have the data already so keep going.
@@ -3474,7 +3440,9 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             hts_log_warning("Reference file given, but ref '%s' not present",
                             r->name);
         if (cram_populate_ref(fd, id, r) == -1) {
-            hts_log_warning("Failed to populate reference for id %d", id);
+            hts_log_warning("Failed to populate reference \"%s\"",
+                            r->name);
+            hts_log_warning("See https://www.htslib.org/doc/reference_seqs.html for further suggestions");
             pthread_mutex_unlock(&fd->refs->lock);
             pthread_mutex_unlock(&fd->ref_lock);
             return NULL;

@@ -96,10 +96,14 @@ char *tokenise_search_path(const char *searchpath);
  * all of the locations listed in 'path' (which is a colon separated list).
  * If 'path' is NULL it uses the RAWDATA environment variable instead.
  *
+ * If non-NULL *local is filled out to 1 for a local file and 0 for a remote
+ * URL.
+ *
  * Returns a mFILE pointer when found.
  *           NULL otherwise.
  */
-mFILE *open_path_mfile(const char *file, char *path, char *relative_to);
+mFILE *open_path_mfile(const char *file, char *path, char *relative_to,
+                       int *local);
 
 /*
  * Returns a mFILE containing the entire contents of the url;

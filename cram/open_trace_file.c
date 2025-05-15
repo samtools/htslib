@@ -343,13 +343,20 @@ static mFILE *find_file_dir(const char *file, char *dirname) {
  * all of the locations listed in 'path' (which is a colon separated list).
  * If 'path' is NULL it uses the RAWDATA environment variable instead.
  *
+ * If non-NULL *local is filled out to 1 for a local file and 0 for a remote
+ * URL.
+ *
  * Returns a mFILE pointer when found.
  *           NULL otherwise.
  */
-mFILE *open_path_mfile(const char *file, char *path, char *relative_to) {
+mFILE *open_path_mfile(const char *file, char *path, char *relative_to,
+                       int *local) {
     char *newsearch;
     char *ele;
     mFILE *fp;
+
+    if (local)
+        *local = 1;
 
     /* Use path first */
     if (!path)
@@ -380,14 +387,16 @@ mFILE *open_path_mfile(const char *file, char *path, char *relative_to) {
 
         if (0 == strncmp(ele2, "URL=", 4)) {
             if ((fp = find_file_url(file, ele2+4))) {
+                if (local)
+                    *local = strncmp(ele2+4, "file:", 5) == 0 ? 1 : 0;
                 free(newsearch);
                 return fp;
             }
-        } else if (!strncmp(ele2, "http:", 5) ||
-                   !strncmp(ele2, "https:", 6) ||
-                   !strncmp(ele2, "ftp:", 4)) {
+        } else if (hisremote(ele2)) {
             if ((fp = find_file_url(file, ele2))) {
                 free(newsearch);
+                if (local)
+                    *local = 0;
                 return fp;
             }
         } else if ((fp = find_file_dir(file, ele2))) {
