@@ -128,7 +128,7 @@ Bug fixes
 * Fix a bug in breakend detection. It was incorrectly assuming that the ALT
   allele is of equal length to REF allele, but the VCF specification allows
   breakend insertions.
-  (PR #1858, fixes bcftools#2317.  Reported by Nicolai von Kügelgen).
+  (PR #1858, fixes bcftools#2317.  Reported by Nicolai von KÃ¼gelgen).
 
 * Fix cram_encode fuzzer issue caused by negative reference lengths.  Reported
   by OSS-Fuzz.
