@@ -17,6 +17,11 @@ https://www.htslib.org/benchmarks/CRAM.html
 Updates
 -------
 
+* NEW. Add ref-cache, a caching proxy for reference sequences.  This is a local
+  server of reference sequences, for use when encoding or decoding CRAM files
+  that use reference-based compression.
+  (PR#1911)
+
 * Add support for matching VCF lines by ID.
   (PR #1844, addresses issue bcftools#1739 reported by Han Cao)
 
@@ -62,6 +67,21 @@ Updates
 * Reading SQ lines with multiple differing LN will now fail.  Such lines are
   invalid (by the spec) and previous handling was inconsistent.
   (PR #1882, fixes #1866)
+
+* Updated VCF code  to work with VCF 4.4 prefixed phasing info.
+  (PR#1861, fixes #1847.  Reported by John Marshall)
+
+* Update rlen calculation for vcf 4.4, 4.5.
+  (PR#1897, fixes #1820.  Reported by Dave Lawrence)
+
+* Return errors instead of EOF after all I/O errors etc in
+  hts_itr_multi_next/sam_itr_next/sam_read1/vcf_parse/bcf_read.
+  (PR#1899.  Thanks to John Marshall)
+
+* Remove UR:file:// and UR:ftp:// from ref search path, plus REF_PATH to EBI.
+  Removing EBI as the default fallback when REF_PATH not set prevents the
+  unintended DDOS on EBI's servers.
+  (PR#1881)
 
 Build Changes
 -------------
