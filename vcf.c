@@ -4709,8 +4709,9 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
                 int ver_dst = bcf_get_version(dst,dst->hrec[j]->value);
                 if ( ver_src > ver_dst )
                 {
-                    res = bcf_hdr_set_version(dst,src->hrec[i]->value);
-                    need_sync += res;
+                    if (bcf_hdr_set_version(dst,src->hrec[i]->value) < 0)
+                        return NULL;
+                    need_sync = 1;
                 }
             }
         }
