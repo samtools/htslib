@@ -17,7 +17,6 @@ https://www.htslib.org/benchmarks/CRAM.html
 HTSlib no longer fetches CRAM reference data from EBI's server by default. Your
 organisation may wish to set up local infrastructure to supply reference
 sequences, e.g., using the new ref-cache tool included in this HTSlib release.
-You can use REF_PATH and/or REF_CACHE environment variables to etc etc.
 See https://www.htslib.org/doc/reference_seqs.html for details.
 
 
@@ -64,7 +63,7 @@ Updates
 * Update bcf_synced_reader to use htsFile.
   (PR #1868, implements #1862.  Requested by Brent Pedersen)
 
-* Exits with return value 1 on tabix parse error.  Previously returned a 0.
+* Exit with return value 1 on tabix parse error.  This previously returned 0.
   (PR #1887, fixes #1885.  Reported by Fan-iX)
 
 * Automatically recognise BED vs TSV files and add the option -C, --coords to
@@ -78,7 +77,7 @@ Updates
 * Updated VCF code to work with VCF 4.4 prefixed phasing info.
   (PR#1861, fixes #1847.  Reported by John Marshall)
 
-* Update rlen calculation for vcf 4.4, 4.5.
+* Update RLEN calculation for vcf 4.4, 4.5.
   (PR#1897, fixes #1820.  Reported by Dave Lawrence)
 
 * Return errors instead of EOF after all I/O errors etc in
