@@ -4,7 +4,7 @@ Noteworthy changes in release a.b
 Note this release changes the default output CRAM version from 3.0 to 3.1.
 HTSlib and SAMtools have been able to read CRAM 3.1 since version 1.12,
 however other tools may not yet be able to cope.  We know Noodles reads CRAM
-3.1 and htsjdk has a draft implementation, but not yet released.
+3.1 and htsjdk has a draft implementation that has not yet been released.
 
 HTSlib has options for modifying the output formats, which are exposed in
 SAMtools.  When specifying an output format you can explicitly change the
@@ -12,6 +12,13 @@ version via e.g. `samtools view -O cram,version=3.0 ...`.
 
 Further documentation on this change can be found at
 https://www.htslib.org/benchmarks/CRAM.html
+
+
+HTSlib no longer fetches CRAM reference data from EBI's server by default. Your
+organisation may wish to set up local infrastructure to supply reference
+sequences, e.g., using the new ref-cache tool included in this HTSlib release.
+You can use REF_PATH and/or REF_CACHE environment variables to etc etc.
+See https://www.htslib.org/doc/reference_seqs.html for details.
 
 
 Updates
@@ -38,9 +45,9 @@ Updates
   (PR #1768, fixes #1767.  Reported by Konstantin Riege)
 
 * Allow BYTE_ARRAY_STOP to work on non-zero STOP code with TOK3.  Although the
-  htscodec name tokeniser uses a nul between names there is no reason why
-  another value could be used.  This change lets CRAM recognise other separator
-  values.
+  htscodec name tokeniser uses a NUL between names there is no reason why
+  another value could not be used.  This change lets CRAM recognise other
+  separator values.
   (PR #1871)
 
 * Remove cram seek ability to do range queries via SEEK_CUR.  A probable
@@ -68,7 +75,7 @@ Updates
   invalid (by the spec) and previous handling was inconsistent.
   (PR #1882, fixes #1866)
 
-* Updated VCF code  to work with VCF 4.4 prefixed phasing info.
+* Updated VCF code to work with VCF 4.4 prefixed phasing info.
   (PR#1861, fixes #1847.  Reported by John Marshall)
 
 * Update rlen calculation for vcf 4.4, 4.5.
