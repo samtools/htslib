@@ -628,7 +628,7 @@ htscodecs/htscodecs:
 	@false
 
 # Build the htscodecs/htscodecs/version.h file if necessary
-htscodecs/htscodecs/version.h: force
+htscodecs/htscodecs/version.h: force | htscodecs/htscodecs
 	@if test -e $(srcdir)/htscodecs/.git && test -e $(srcdir)/htscodecs/configure.ac ; then \
 	  vers=`cd $(srcdir)/htscodecs && git describe --always --dirty --match 'v[0-9]\.[0-9]*'` && \
 	  case "$$vers" in \
