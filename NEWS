@@ -79,6 +79,9 @@ Updates
 * Updated VCF code to work with VCF 4.4 prefixed phasing info.
   (PR#1861, fixes #1847.  Reported by John Marshall)
 
+* Use the highest VCF version when merging headers.
+  (PR#1912, see bcftools#2395 and bcftools#2404)
+
 * Update RLEN calculation for vcf 4.4, 4.5.
   (PR#1897, fixes #1820.  Reported by Dave Lawrence)
 
@@ -155,6 +158,9 @@ Bug fixes
 
 * Fix possible buffer overruns in expand_path().
   (PR#1907)
+
+* Protect the failed reference error message. Reported by OSS-Fuzz.
+  (PR#1915, fixes oss-fuzz isue 418125747)
 
 Documentation updates
 ---------------------
