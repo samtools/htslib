@@ -113,6 +113,9 @@ Build Changes
 * Updated htscodecs submodule to version 1.6.3
   (PR #1917)
 
+* Fix the script used to build the symbol version file.
+  (PR #1918)
+
 Bug fixes
 ---------
 
