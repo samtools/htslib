@@ -946,9 +946,8 @@ $(srcprefix)htslib.map: libhts.so
 	    printf '\n%s {\n' "HTSLIB_$$curr_vers" >> $@.new.tmp && \
 	    cat $@.tmp >> $@.new.tmp && \
 	    printf '} %s;\n' "$$last_vers" >> $@.new.tmp && \
-	        rm -f $@.tmp && \
-	        mv $@.new.tmp $@ ; \
-	    fi ; \
+	    rm -f $@.tmp && \
+	    mv $@.new.tmp $@ ; \
 	else \
 	    rm -f $@.tmp ; \
 	fi
