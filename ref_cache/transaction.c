@@ -22,7 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
-#include "../config.h"
+#include <config.h>
 
 /* Work out which sendfile() variety is available, if anything. */
 #if !defined(HAVE_LINUX_SENDFILE) && !defined(HAVE_FREEBSD_SENDFILE) && !defined(HAVE_MACOSX_SENDFILE)

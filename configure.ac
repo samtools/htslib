@@ -796,6 +796,7 @@ if test "$srcdir" != .; then
     [AS_MKDIR_P([cram])
      AS_MKDIR_P([htscodecs/htscodecs])
      AS_MKDIR_P([htscodecs/tests])
+     AS_MKDIR_P([ref_cache])
      AS_MKDIR_P([test/fuzz])
      AS_MKDIR_P([test/longrefs])
      AS_MKDIR_P([test/tabix])])

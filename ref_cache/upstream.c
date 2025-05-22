@@ -22,7 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
-#include "../config.h"
+#include <config.h>
 
 #if defined(__APPLE__) && defined(__MACH__)
 // macOS headers hide CMSG_LEN() and CMSG_SPACE() definitions if these
