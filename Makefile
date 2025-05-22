@@ -596,7 +596,7 @@ ref_cache/ref_files.o: ref_cache/ref_files.c config.h $(ref_cache_ref_files_h) $
 ref_cache/request_handler.o: ref_cache/request_handler.c config.h $(ref_cache_request_handler_h) $(ref_cache_http_parser_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_ref_files_h) $(ref_cache_transaction_h) $(ref_cache_upstream_h)
 ref_cache/server.o: ref_cache/server.c config.h $(ref_cache_server_h) $(ref_cache_http_parser_h) $(ref_cache_listener_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(ref_cache_ref_files_h) $(ref_cache_request_handler_h) $(ref_cache_transaction_h) $(ref_cache_upstream_h) cram/pooled_alloc.h
 ref_cache/transaction.o: ref_cache/transaction.c config.h $(ref_cache_transaction_h) $(ref_cache_http_parser_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(ref_cache_ref_files_h) $(ref_cache_server_h) cram/pooled_alloc.h
-ref_cache/upstream.o: ref_cache/upstream.c config.h $(ref_cache_upstream_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(htslib_hts_h) $(htslib_hts_defs_h)
+ref_cache/upstream.o: ref_cache/upstream.c config.h $(ref_cache_upstream_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(htslib_hts_defs_h)
 
 # Runes to check that the htscodecs submodule is present
 ifdef HTSCODECS_SOURCES
@@ -1005,7 +1005,7 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 testclean:
 	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* \
-               test/longrefs/*.tmp.* test/tabix/*.tmp.* \
+               test/longrefs/*.tmp.* test/ref_cache/*.tmp.* test/tabix/*.tmp.* \
                test/bgzf_boundaries/*.tmp.* test/*/FAIL* \
                header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	-rm -rf htscodecs/tests/test.out
