@@ -110,7 +110,7 @@ Build Changes
   adapt to the Windows style file locations.
   (PR #1892)
 
-* Updated htscodecs submodule to version 1.6.2 (PR #1917)
+* Updated htscodecs submodule to version 1.6.3 (PR #1917)
 
 Bug fixes
 ---------
