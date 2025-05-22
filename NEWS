@@ -33,6 +33,18 @@ Updates
 * Add support for matching VCF lines by ID.
   (PR #1844, addresses issue bcftools#1739 reported by Han Cao)
 
+* Make it possible to test for VCF_REF as declared in the documentation.
+  (PR #1879)
+
+* Updated VCF code to work with VCF 4.4 prefixed phasing info.
+  (PR#1861, fixes #1847.  Reported by John Marshall)
+
+* Use the highest VCF version when merging headers.
+  (PR#1912, see bcftools#2395 and bcftools#2404)
+
+* Update RLEN calculation for vcf 4.4, 4.5.
+  (PR#1897, fixes #1820.  Reported by Dave Lawrence)
+
 * Convert U to T instead of U to N when sam_parsing.  Though SAM format itself
   can contain U the BAM format cannot.
   (PR #1854, fixes samtools#2131 reported by James Furguson)
@@ -55,9 +67,6 @@ Updates
   misfeature from the original implementation.
   (PR #1878, fixes #1877.  Reported by Rick Wertenbroek)
 
-* Make it possible to test for VCF_REF as declared in the documentation.
-  (PR #1879)
-
 * Add hts_tpool_worker_id() API.  This may be used to associate data with a
   thread rather than to a job.
   (PR #1875)
@@ -76,15 +85,6 @@ Updates
   invalid (by the spec) and previous handling was inconsistent.
   (PR #1882, fixes #1866)
 
-* Updated VCF code to work with VCF 4.4 prefixed phasing info.
-  (PR#1861, fixes #1847.  Reported by John Marshall)
-
-* Use the highest VCF version when merging headers.
-  (PR#1912, see bcftools#2395 and bcftools#2404)
-
-* Update RLEN calculation for vcf 4.4, 4.5.
-  (PR#1897, fixes #1820.  Reported by Dave Lawrence)
-
 * Return errors instead of EOF after all I/O errors etc in
   hts_itr_multi_next/sam_itr_next/sam_read1/vcf_parse/bcf_read.
   (PR#1899.  Thanks to John Marshall)
@@ -92,7 +92,7 @@ Updates
 * Remove UR:file:// and UR:ftp:// from ref search path, plus REF_PATH to EBI.
   Removing EBI as the default fallback when REF_PATH not set prevents the
   unintended DDOS on EBI's servers.
-  (PR#1881)
+  (PR#1881. PR#1915, fixes oss-fuzz issue 418125747)
 
 Build Changes
 -------------
@@ -115,7 +115,7 @@ Bug fixes
 
 * Fix possible 1 byte underflow in find_file_extension().
   Fixes an issue reported by OSS-Fuzz.
-  (PR #1840)
+  (PR #1840, fixes oss-fuzz id 71740)
 
 * Replace home-brew string end searching with memchr() to speed up looking at
   long aux tags.
@@ -126,7 +126,7 @@ Bug fixes
   (PR #1845, fixes bcftools#2286.  Reported by Devon Ryan)
 
 * Fix CRAM embed_ref=2 with seqs overlapping ref end.
-  (PR #1848 and PR #1849 which fixed an issue found by OSS-Fuzz)
+  (PR #1848 and PR #1849 which fixes oss-fuzz issue 372547397 found by OSS-Fuzz)
 
 * Fix sam_hdr_remove_line_pos() not dealing with the 0 index position properly.
   (PR #1853.  Thanks to Julian Regalado Perez)
@@ -143,7 +143,7 @@ Bug fixes
 
 * Fix cram_encode fuzzer issue caused by negative reference lengths.  Reported
   by OSS-Fuzz.
-  (PR #1863)
+  (PR #1863 fixes oss-fuzz issue 382922241)
 
 * Fixed a typo in vcf.h.
   (PR #1870, thanks to Yu Wang)
@@ -158,9 +158,6 @@ Bug fixes
 
 * Fix possible buffer overruns in expand_path().
   (PR#1907)
-
-* Protect the failed reference error message. Reported by OSS-Fuzz.
-  (PR#1915, fixes oss-fuzz isue 418125747)
 
 Documentation updates
 ---------------------
