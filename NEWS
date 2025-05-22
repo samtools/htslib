@@ -110,7 +110,8 @@ Build Changes
   adapt to the Windows style file locations.
   (PR #1892)
 
-* Updated htscodecs submodule to version 1.6.3 (PR #1917)
+* Updated htscodecs submodule to version 1.6.3
+  (PR #1917)
 
 Bug fixes
 ---------
@@ -128,7 +129,7 @@ Bug fixes
   (PR #1845, fixes bcftools#2286.  Reported by Devon Ryan)
 
 * Fix CRAM embed_ref=2 with seqs overlapping ref end.
-  (PR #1848 and PR #1849 which fixes oss-fuzz issue 372547397 found by OSS-Fuzz)
+  (PR #1848 and PR #1849 which fixed oss-fuzz issue 372547397)
 
 * Fix sam_hdr_remove_line_pos() not dealing with the 0 index position properly.
   (PR #1853.  Thanks to Julian Regalado Perez)
