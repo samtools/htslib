@@ -910,7 +910,6 @@ int main(int argc, char **argv) {
     Logfiles *logfiles = NULL;
     int c, res, badarg = 0, retval = EXIT_FAILURE, show_help = 0;
     int daemon_pipe[2] = { -1, -1 };
-    DIR *cache_dir_handle = NULL;
     const char *ip_ranges_all = "0.0.0.0/0,::/0";
     const char *ip_ranges_localhost = "127.0.0.0/8,::1/128";
     const char *ip_ranges_default = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
@@ -1077,16 +1076,9 @@ int main(int argc, char **argv) {
         goto cleanup;
 
     /* Open cache directory */
-
-    cache_dir_handle = opendir(opts.cache_dir);
-    if (cache_dir_handle == NULL) {
-        fprintf(stderr, "Couldn't open directory %s: %s\n",
-                opts.cache_dir, strerror(errno));
-        goto cleanup;
-    }
-    opts.cache_fd = dirfd(cache_dir_handle);
+    opts.cache_fd = open(opts.cache_dir, O_RDONLY|O_DIRECTORY);
     if (opts.cache_fd < 0) {
-        fprintf(stderr, "Couldn't get descriptor for directory %s: %s\n",
+        fprintf(stderr, "Couldn't open directory %s: %s\n",
                 opts.cache_dir, strerror(errno));
         goto cleanup;
     }
@@ -1149,8 +1141,8 @@ int main(int argc, char **argv) {
  cleanup:
     if (lsocks)
         close_listen_sockets(lsocks);
-    if (cache_dir_handle)
-        closedir(cache_dir_handle);
+    if (opts.cache_fd >= 0)
+        close(opts.cache_fd);
     if (logfiles)
         close_logs(logfiles);
 

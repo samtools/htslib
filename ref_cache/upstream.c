@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-#if defined(__APPLE__) && defined(__MACH__)
+#if (defined(__APPLE__) && defined(__MACH__)) || defined(__NetBSD__)
 // macOS headers hide CMSG_LEN() and CMSG_SPACE() definitions if these
 // are defined
 #  if defined(_XOPEN_SOURCE)
