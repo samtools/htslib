@@ -106,7 +106,10 @@ Listeners * get_listen_sockets(int port) {
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE|AI_NUMERICSERV|AI_ADDRCONFIG;
+    hints.ai_flags = AI_PASSIVE|AI_NUMERICSERV;
+#if defined(HAVE_DECL_AI_ADDRCONFIG) && HAVE_DECL_AI_ADDRCONFIG
+    hints.ai_flags |= AI_ADDRCONFIG;
+#endif
 
     snprintf(pnum, sizeof(pnum), "%d", port);
     res = getaddrinfo(NULL, pnum, &hints, &addr_list);
