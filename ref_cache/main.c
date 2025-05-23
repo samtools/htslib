@@ -190,9 +190,6 @@ static int set_up_child(Options *opts, int k, int is_upstream, Poll_wrap *pw) {
 
     if (pw != NULL) pw_close(pw);
 
-    if (opts->log_dir_fd != -1) {
-        close(opts->log_dir_fd);
-    }
     if (opts->log != stdout) {
         close(fileno(opts->log));
     }
@@ -932,7 +929,6 @@ int main(int argc, char **argv) {
     opts.max_kids = 1;
     opts.verbosity = 0;
     opts.log_dir = NULL;
-    opts.log_dir_fd = -1;
     opts.log = stdout;
     opts.match_addrs = NULL;
     opts.num_match_addrs = 0;
