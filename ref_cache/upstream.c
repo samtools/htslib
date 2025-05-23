@@ -130,9 +130,13 @@ static int handle_curl_socket(CURLM *multi, Multi_data *mdata,
                               int events, int fd);
 
 int upstream_send_cmd(int cmd_fd, const char hexmd5[MD5_LEN], unsigned int id) {
-    struct msghdr msg = { NULL, 0, NULL, 0, NULL, 0, 0 };
-    struct iovec   iov[2];
+    struct msghdr msg;
+    struct iovec  iov[2];
     ssize_t res;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = NULL;
+    msg.msg_control = NULL;
 
     /* The MD5 for the reference we want */
     iov[0].iov_base   = (void *) hexmd5;
@@ -151,8 +155,12 @@ int upstream_send_cmd(int cmd_fd, const char hexmd5[MD5_LEN], unsigned int id) {
 
 static ssize_t recv_cmd_data(int cmd_fd, char hexmd5[MD5_LEN], unsigned int *id) {
     ssize_t res;
-    struct msghdr msg = { NULL, 0, NULL, 0, NULL, 0, 0 };
-    struct iovec   iov[2];
+    struct msghdr msg;
+    struct iovec  iov[2];
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = NULL;
+    msg.msg_control = NULL;
 
     iov[0].iov_base   = hexmd5;
     iov[0].iov_len    = MD5_LEN;
@@ -174,10 +182,14 @@ static ssize_t recv_cmd_data(int cmd_fd, char hexmd5[MD5_LEN], unsigned int *id)
 static int upstream_send_msg(int cmd_fd, Upstream_msg *umsg, int fd) {
     ssize_t res;
     struct iovec iov[1];
-    struct msghdr msg = { NULL, 0, NULL, 0, NULL, 0, 0 };
+    struct msghdr msg;
     struct cmsghdr *cmsg;
     char   buf[CMSG_SPACE(sizeof(int))];
     int   *fdptr;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = NULL;
+    msg.msg_control = NULL;
 
     iov[0].iov_base = umsg;
     iov[0].iov_len  = sizeof(*umsg);
@@ -216,11 +228,15 @@ static int send_msg_all(Download *download,
 }
 
 int upstream_recv_msg(int cmd_fd, Upstream_msg *umsg, int *fd) {
-    struct msghdr msg = { NULL, 0, NULL, 0, NULL, 0, 0 };
+    struct msghdr msg;
     struct cmsghdr *cmsg = NULL;
     struct iovec   iov[1];
     ssize_t res;
     char   buf[16384];
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = NULL;
+    msg.msg_control = NULL;
 
     iov[0].iov_base   = umsg;
     iov[0].iov_len    = sizeof(*umsg);
