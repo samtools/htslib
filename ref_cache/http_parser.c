@@ -234,7 +234,7 @@ static Read_result parser_read_input(Http_Parser *parser, int fd) {
         }
         return READ_BLOCKED;
     } else {
-        parser->in = (unsigned int) ((parser->in + res) & BUF_MASK);
+        parser->in = ((parser->in + (unsigned int) res) & BUF_MASK);
         parser->used += (unsigned int) res;
     }
 

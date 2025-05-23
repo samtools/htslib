@@ -563,8 +563,9 @@ static inline ssize_t send_file(Transaction *transact, int out_fd, int in_fd,
                      || errno == EAGAIN || errno == EWOULDBLOCK));
         if (bytes < 0)
             return -1;
-        transact->buffer_in = (transact->buffer_in + bytes) & SEND_BUFFER_MASK;
-        buffered += bytes;
+        transact->buffer_in = ((transact->buffer_in + (unsigned int) bytes)
+                               & SEND_BUFFER_MASK);
+        buffered += (unsigned int) bytes;
         count -= bytes;
         assert(count >= 0);
 
@@ -594,7 +595,8 @@ static inline ssize_t send_file(Transaction *transact, int out_fd, int in_fd,
         if (bytes < 0)
             return -1;
         transact->fd_sent += bytes;
-        transact->buffer_out = (transact->buffer_out + bytes) & SEND_BUFFER_MASK;
+        transact->buffer_out = ((transact->buffer_out + (unsigned int) bytes)
+                                & SEND_BUFFER_MASK);
         if (bytes > 0)
             transact->flags &= ~TRANSACT_SEND_BUFFER_FULL;
 
