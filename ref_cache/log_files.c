@@ -101,7 +101,7 @@ static int rotate_logs(Logfiles *logfiles, const Options *opts) {
     assert(opts->nlogs > 0);
     assert(logfiles->sz > opts->nlogs);
     for (i = opts->nlogs - 1U; i < logfiles->nlogs; i++) {
-        if (unlinkat(opts->log_dir_fd, logfiles->logs[i].name, 0) != 0) {
+        if (unlinkat(logfiles->log_dir_fd, logfiles->logs[i].name, 0) != 0) {
             fprintf(stderr, "Warning: Couldn't remove old log file %s/%s: %s\n",
                     opts->log_dir, logfiles->logs[i].name, strerror(errno));
         }

@@ -62,7 +62,6 @@ struct Options {
     size_t      first_ip6;          // First ip6 range in sorted match_addrs
     off_t       max_log_sz;         // Size limit for log files in bytes
     int         cache_fd;           // File descriptor for cache_dir
-    int         log_dir_fd;         // File descriptor for log_dir
     int         listen_fds;         // Number of fds passed in by systemd
     DaemonType  daemon;             // Run as a daemon or socket service
     uint16_t    port;               // Port to listen on
