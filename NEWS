@@ -42,12 +42,12 @@ Updates
 * Use the highest VCF version when merging headers.
   (PR#1912, see bcftools#2395 and bcftools#2404)
 
-* Update RLEN calculation for vcf 4.4, 4.5.
+* Update RLEN calculation for VCF 4.4 and 4.5.
   (PR#1897, fixes #1820.  Reported by Dave Lawrence)
 
 * Convert U to T instead of U to N when sam_parsing.  Though SAM format itself
   can contain U the BAM format cannot.
-  (PR #1854, fixes samtools#2131 reported by James Furguson)
+  (PR #1854, fixes samtools#2131 reported by James Ferguson)
 
 * Add an hts_crc32 function to use zlib or libdeflate.  The libdeflate crc32
   function is faster than native zlib and should be used when available.
@@ -58,7 +58,7 @@ Updates
   (PR #1768, fixes #1767.  Reported by Konstantin Riege)
 
 * Allow BYTE_ARRAY_STOP to work on non-zero STOP code with TOK3.  Although the
-  htscodec name tokeniser uses a NUL between names there is no reason why
+  htscodecs name tokeniser uses a NUL between names there is no reason why
   another value could not be used.  This change lets CRAM recognise other
   separator values.
   (PR #1871)
