@@ -707,6 +707,7 @@ return 0;])],
     [Define if epoll edge triggering is available])
 
   AC_CHECK_DECLS([EHOSTDOWN, ENONET], [], [], [[#include <errno.h>]])
+  AC_CHECK_DECLS([AI_V4MAPPED, AI_ADDRCONFIG], [], [], [[#include <netdb.h>]])
 
   # Test various compiler options, recommended by
   # https://github.com/ossf/wg-best-practices-os-developers/blob/main/docs/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C%2B%2B.md

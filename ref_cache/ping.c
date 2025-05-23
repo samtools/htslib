@@ -56,8 +56,13 @@ int check_running(int port_num) {
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags    = AI_NUMERICSERV|AI_V4MAPPED|AI_ADDRCONFIG;
-
+    hints.ai_flags    = AI_NUMERICSERV;
+#if defined(HAVE_DECL_AI_V4MAPPED) && HAVE_DECL_AI_V4MAPPED
+    hints.ai_flags    |= AI_V4MAPPED;
+#endif
+#if defined(HAVE_DECL_AI_ADDRCONFIG) && HAVE_DECL_AI_ADDRCONFIG
+    hints.ai_flags    |= AI_ADDRCONFIG;
+#endif
     res = getaddrinfo(NULL, port, &hints, &addrs);
     if (res != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(res));
