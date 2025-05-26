@@ -93,7 +93,7 @@ static char * decode_uri(Http_Parser *parser) {
 
 static void handle_hello(Transaction *transact) {
     const char *resp = "Hello\r\n";
-    set_message_response(transact, text_plain, resp, sizeof(resp) - 1);
+    set_message_response(transact, text_plain, resp, strlen(resp));
 }
 
 static void handle_md5(const Options *opts, Http_Parser *parser,
