@@ -306,12 +306,12 @@ static inline void handle_incoming(const Options *opts, int listener,
             close(incoming);
             return;
         }
-#ifdef PW_HAVE_EDGE
+#if defined(PW_HAVE_EDGE) && PW_HAVE_EDGE
         client->polled = pw_register(pw, incoming, SV_CLIENT,
                                      PW_IN|PW_OUT|PW_ERR|PW_HUP|PW_EDGE, client);
 #else
         client->polled = pw_register(pw, incoming, SV_CLIENT,
-                                     PW_IN|PW_OUT|PW_ERR|PW_HUP, client);
+                                     PW_IN|PW_ERR|PW_HUP, client);
 #endif
         if (client->polled == NULL) {
             perror("Registering client with poll");
@@ -396,10 +396,6 @@ void queue_transaction_write(Transaction *transact, Client **write_stack) {
     if ((client->flags & ON_WRITE_LIST) != 0)
         return;
 
-    /* Check if blocked */
-    if ((client->flags & CAN_WRITE) == 0)
-        return;
-
     /* Check if at the head of the transaction list */
     if (transact != client->transact)
         return;
@@ -407,6 +403,14 @@ void queue_transaction_write(Transaction *transact, Client **write_stack) {
     /* See if there is any data waiting to be sent */
     if (!transaction_has_data_to_send(transact))
         return;
+
+#if defined(PW_HAVE_EDGE) && PW_HAVE_EDGE
+    /* Check if blocked.  Only if poll is edge triggered. If it isn't
+       we may need to re-enable polling on output, which will happen
+       if the attempted write blocks. */
+    if ((client->flags & CAN_WRITE) == 0)
+        return;
+#endif
 
     /* Put onto write_stack */
     write_stack_push(client, write_stack);
@@ -515,10 +519,10 @@ static void handle_client_events(Clients *clients, const Options *opts,
         close_client(clients, client, pw);
         return;
     } else if ((evts & (PW_IN|PW_ERR)) != 0) {
-#ifndef PW_HAVE_EDGE
-        int out = ((client->flags & ON_WRITE_LIST) == 0
-                   && client->transact != NULL
-                   && transaction_have_content(client->transact))
+#if !defined(PW_HAVE_EDGE) || !PW_HAVE_EDGE
+        uint32_t out = ((client->flags & ON_WRITE_LIST) == 0
+                        && client->transact != NULL
+                        && transaction_have_content(client->transact))
             ? PW_OUT : 0;
         if (pw_mod(pw, item, out|PW_ERR|PW_HUP) != 0) {
             fprintf(stderr, "Altering poll settings for fd#%d : %s\n",
@@ -536,8 +540,8 @@ static void handle_client_events(Clients *clients, const Options *opts,
     }
 
     if ((evts & PW_OUT) != 0) {
-#ifndef PW_HAVE_EDGE
-        int in = (client->flags & ON_READ_LIST) == 0 ? PW_IN : 0;
+#if !defined(PW_HAVE_EDGE) || !PW_HAVE_EDGE
+        uint32_t in = (client->flags & ON_READ_LIST) == 0 ? PW_IN : 0;
         if (pw_mod(pw, item, in|PW_ERR|PW_HUP) != 0) {
             fprintf(stderr, "Altering poll settings for fd#%d : %s\n",
                     item->fd, strerror(errno));
@@ -596,20 +600,22 @@ static void do_reads(Clients *clients, const Options *opts, Poll_wrap *pw) {
             client->flags |= READ_CLOSED;
             /* Falls through */
         case READ_BLOCKED:
-            if ((client->flags & (READ_CLOSED|READ_DRAIN)) != 0) {
-                if (client->transact == NULL) {
-                    if (opts->verbosity > 1) {
-                        fprintf(stderr, "Closing fd #%d (EOF)\n", client->polled->fd);
-                    }
-                    assert((client->flags & ON_READ_LIST) == 0);
-                    close_client(clients, client, pw);
+            if ((client->flags & (READ_CLOSED|READ_DRAIN)) != 0
+                && (client->transact == NULL
+                    || !transaction_have_content(client->transact))) {
+                if (opts->verbosity > 1) {
+                    fprintf(stderr, "Closing fd #%d (EOF)\n", client->polled->fd);
                 }
+                assert((client->flags & ON_READ_LIST) == 0);
+                close_client(clients, client, pw);
             } else {
-#ifndef PW_HAVE_EDGE
-                int out = ((client->flags & ON_WRITE_LIST) == 0
-                           && client->transact != NULL
-                           && transaction_have_content(client->transact));
-                if (pw_mod(pw, client->polled, out|PW_IN|PW_ERR|PW_HUP) != 0) {
+#if !defined(PW_HAVE_EDGE) || !PW_HAVE_EDGE
+                uint32_t out = ((client->flags & ON_WRITE_LIST) == 0
+                                && client->transact != NULL
+                                && transaction_have_content(client->transact))
+                    ? PW_OUT : 0;
+                uint32_t in = (client->flags & READ_CLOSED) == 0 ? PW_IN : 0;
+                if (pw_mod(pw, client->polled, out|in|PW_ERR|PW_HUP) != 0) {
                     fprintf(stderr, "Altering poll settings for fd#%d : %s\n",
                             client->polled->fd, strerror(errno));
                     assert((client->flags & ON_READ_LIST) == 0);
@@ -651,8 +657,8 @@ static void do_writes(Clients *clients, const Options *opts, Poll_wrap *pw,
             client->flags &= ~CAN_WRITE;
             // fall through
         case WRITE_BLOCKED_UPSTREAM: {
-#ifndef PW_HAVE_EDGE
-            int in = (client->flags & ON_READ_LIST) == 0 ? PW_IN : 0;
+#if !defined(PW_HAVE_EDGE) || !PW_HAVE_EDGE
+            uint32_t in = (client->flags & ON_READ_LIST) == 0 ? PW_IN : 0;
             if (pw_mod(pw, client->polled, in|PW_OUT|PW_ERR|PW_HUP) != 0) {
                 fprintf(stderr, "Altering poll settings for fd#%d : %s\n",
                         client->polled->fd, strerror(errno));
