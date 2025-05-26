@@ -54,6 +54,7 @@ struct Poll_wrap {
     unsigned int   idx_sz;
     unsigned int   last_out;
     int            need_compact;
+    int            debug;
 };
 
 void pw_close(Poll_wrap *pw) {
@@ -65,7 +66,7 @@ void pw_close(Poll_wrap *pw) {
     free(pw);
 }
 
-Poll_wrap *pw_init(void) {
+Poll_wrap *pw_init(int debug) {
     Poll_wrap *pw = calloc(1, sizeof(Poll_wrap));
     if (pw == NULL) return NULL;
 
@@ -83,6 +84,8 @@ Poll_wrap *pw_init(void) {
     pw->item_index = calloc(pw->idx_sz, sizeof(Pw_item *));
     if (pw->item_index == NULL) goto fail;
 
+    pw->debug = debug;
+
     return pw;
  fail:
     pw_close(pw);
@@ -92,6 +95,11 @@ Poll_wrap *pw_init(void) {
 Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
                       uint32_t init_events, void *userp) {
     Pw_item *item;
+
+    if (pw->debug) {
+        fprintf(stderr, "pw_register(%p, %d, %d, 0x%04x, %p)\n",
+                (void *) pw, fd, (int) fd_type, init_events, userp);
+    }
 
     if (fd < 0) {
         errno = EBADF;
@@ -147,6 +155,11 @@ Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
 }
 
 int pw_mod(Poll_wrap *pw, Pw_item *item, uint32_t events) {
+    if (pw->debug) {
+        fprintf(stderr, "pw_mod(%p, %d, 0x%04x)\n",
+                (void *) pw, item->fd, events);
+    }
+
     if (item->fd < 0 || (unsigned int) item->fd >= pw->idx_sz
         || pw->item_index[item->fd] == NULL) {
         errno = ENOENT;
@@ -206,6 +219,11 @@ int pw_wait(Poll_wrap *pw, Pw_events *events,
 
 int pw_remove(Poll_wrap *pw, Pw_item *item, int do_close) {
     int fd = item->fd;
+
+    if (pw->debug) {
+        fprintf(stderr, "pw_remove(%p, %d%s)\n",
+                (void *) pw, item->fd, do_close ? ", close" : "");
+    }
 
     if (item->fd < 0 || (unsigned int) item->fd >= pw->idx_sz
         || pw->item_index[item->fd] == NULL) {

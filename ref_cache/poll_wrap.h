@@ -92,7 +92,7 @@ struct Pw_item {
     void *userp;
 };
 
-Poll_wrap *pw_init(void);
+Poll_wrap *pw_init(int debug);
 void pw_close(Poll_wrap *pw);
 Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
                       uint32_t init_events, void *userp);

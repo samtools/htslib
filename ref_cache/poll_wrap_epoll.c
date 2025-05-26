@@ -41,11 +41,12 @@ DEALINGS IN THE SOFTWARE.  */
 #define INIT_EPOLL_SIZE 128
 
 struct Poll_wrap {
-  int epfd;
   pool_alloc_t *pool;
+  int epfd;
+  int debug;
 };
 
-Poll_wrap *pw_init(void) {
+Poll_wrap *pw_init(int debug) {
   Poll_wrap *pw = calloc(1, sizeof(Poll_wrap));
   if (pw == NULL) return NULL;
 
@@ -63,6 +64,8 @@ Poll_wrap *pw_init(void) {
     return NULL;
   }
 
+  pw->debug = debug;
+
   return pw;
 }
 
@@ -78,6 +81,11 @@ Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
   Pw_item *item = pool_alloc(pw->pool);
   if (item == NULL)
       return NULL;
+
+  if (pw->debug) {
+      fprintf(stderr, "pw_register(%p, %d, %d, 0x%04x, %p)\n",
+              (void *) pw, fd, (int) fd_type, init_events, userp);
+  }
 
   item->fd      = fd;
   item->fd_type = fd_type;
@@ -98,6 +106,11 @@ Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
 int pw_mod(Poll_wrap *pw, Pw_item *item, uint32_t events) {
   struct epoll_event event;
 
+  if (pw->debug) {
+      fprintf(stderr, "pw_mod(%p, %d, 0x%04x)\n",
+              (void *) pw, item->fd, events);
+  }
+
   event.events   = events;
   event.data.ptr = item;
 
@@ -113,6 +126,11 @@ int pw_wait(Poll_wrap *pw, Pw_events *events,
 int pw_remove(Poll_wrap *pw, Pw_item *item, int do_close) {
   struct epoll_event dummy;
   int res;
+
+  if (pw->debug) {
+      fprintf(stderr, "pw_remove(%p, %d%s)\n",
+              (void *) pw, item->fd, do_close ? ", close" : "");
+  }
 
   if (do_close) {
     res = close(item->fd);
