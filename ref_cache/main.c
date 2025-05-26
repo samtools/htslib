@@ -354,7 +354,7 @@ static int handle_sigchld(Options *opts, Poll_wrap *pw) {
 }
 
 static Poll_wrap * init_poller(Options *opts) {
-    Poll_wrap *pw = pw_init();
+    Poll_wrap *pw = pw_init(opts->verbosity > 2);
     size_t k;
 
     if (pw == NULL) return NULL;

@@ -733,7 +733,7 @@ int run_poll_loop(const Options *opts, Listeners *lsocks,
         return -1;
     }
 
-    pw = pw_init();
+    pw = pw_init(opts->verbosity > 2);
     if (pw == NULL) {
         perror("Initializing poller");
         return -1;
