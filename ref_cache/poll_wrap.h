@@ -58,9 +58,9 @@ typedef enum {
 #  define PW_HUP EPOLLHUP
 #  if defined(PW_HAVE_EDGE) && PW_HAVE_EDGE // Using configure
 #    define PW_EDGE EPOLLET
-#  elif defined(EPOLLET)
+#  elif !defined(PW_HAVE_EDGE) && defined(EPOLLET)
 #    define PW_EDGE EPOLLET
-#    define PW_HAVE_EDGE
+#    define PW_HAVE_EDGE 1
 #  else
 #    define PW_EDGE 0
 #  endif /* EPOLLET */
