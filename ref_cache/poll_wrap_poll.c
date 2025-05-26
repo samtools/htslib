@@ -205,6 +205,8 @@ int pw_wait(Poll_wrap *pw, Pw_events *events,
 }
 
 int pw_remove(Poll_wrap *pw, Pw_item *item, int do_close) {
+    int fd = item->fd;
+
     if (item->fd < 0 || (unsigned int) item->fd >= pw->idx_sz
         || pw->item_index[item->fd] == NULL) {
         errno = ENOENT;
@@ -215,7 +217,7 @@ int pw_remove(Poll_wrap *pw, Pw_item *item, int do_close) {
     pw->need_compact = 1;
     pool_free(pw->pool, item);
     if (!do_close) return 0;
-    return close(item->fd);
+    return close(fd);
 }
 #else
 // Prevent "empty translation unit" errors
