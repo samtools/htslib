@@ -666,6 +666,48 @@ Linux, FreeBSD, MacOS, and other BSD derivatives])
     ])
   ])
 
+# Check how to get a working cmsg interface
+AS_IF([test "$ref_cache" = enabled],[
+  AC_MSG_CHECKING([for CMSG_LEN])
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#if defined(_XOPEN_SOURCE)
+#  undef _XOPEN_SOURCE
+#endif
+#if defined(_POSIX_C_SOURCE)
+#  undef _POSIX_C_SOURCE
+#endif
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <stddef.h>
+],[[
+struct msghdr msg;
+char buf[CMSG_SPACE(sizeof(int))];
+struct cmsghdr *cmsg;
+unsigned char *fdptr;
+msg.msg_control = buf;
+msg.msg_controllen = sizeof(buf);
+cmsg = CMSG_FIRSTHDR(&msg);
+cmsg->cmsg_level = SOL_SOCKET;
+cmsg->cmsg_type  = SCM_RIGHTS;
+cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+fdptr = CMSG_DATA(cmsg);
+return fdptr != NULL && cmsg->cmsg_len > 0 && msg.msg_control != NULL;
+    ]])], [
+    AC_MSG_RESULT([yes])
+  ], [
+    AC_MSG_RESULT([no])
+    ref_cache="disabled"
+    AS_IF([test "x$enable_ref_cache" = xcheck], [
+      AC_MSG_WARN([ref-cache not enabled: missing CMSG_LEN()])
+    ],[
+      MSG_ERROR([ref-cache not enabled
+
+ref-cache is not supported on this configuration, as the CMSG_LEN() interface
+cannot be found.])
+    ])
+  ])
+])
+
 hts_paranoia_c_flags=""
 hts_paranoia_ld_flags=""
 AS_IF([test "$ref_cache" = enabled],[
@@ -705,6 +747,78 @@ return 0;])],
     [Define if epoll is available])
   AC_DEFINE_UNQUOTED([PW_HAVE_EDGE], [$hts_have_edge_trigger],
     [Define if epoll edge triggering is available])
+
+  AC_MSG_CHECKING([for sendfile])
+  hts_have_sendfile=no
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <sys/sendfile.h>],[
+#if defined(__linux__)
+off_t offset = 0;
+return sendfile(1, 0, &offset, 1000) < 0;
+#else
+deliberately fail
+#endif
+  ])], [
+    AC_MSG_RESULT([yes, Linux-style])
+    AC_DEFINE([HAVE_LINUX_SENDFILE], 1,
+              [Define if you have Linux-type sendfile])
+    hts_have_sendfile=linux
+  ])
+  AS_IF([test $hts_have_sendfile = no], [
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#if defined(_XOPEN_SOURCE)
+#  undef _XOPEN_SOURCE
+#endif
+#if defined(_POSIX_C_SOURCE)
+#  undef _POSIX_C_SOURCE
+#endif
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+#include <stddef.h>],[
+#if (defined(__FreeBSD__) && __FreeBSD__ >= 4) || defined(__DragonFly__)
+off_t sbytes = 0, offset = 0;
+struct sf_hdtr hdtr = { NULL, 0, NULL, 0 };
+return sendfile(0, 1, offset, 1000, &hdtr, &sbytes, 0) < 0;
+#else
+deliberately fail
+#endif
+    ])],[
+      AC_MSG_RESULT([yes, FreeBSD-style])
+      AC_DEFINE([HAVE_FREEBSD_SENDFILE], 1,
+                [Define if you have FreeBSD-type sendfile])
+      hts_have_sendfile=freebsd
+    ])
+  ])
+  AS_IF([test $hts_have_sendfile = no], [
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#if defined(_XOPEN_SOURCE)
+#  undef _XOPEN_SOURCE
+#endif
+#if defined(_POSIX_C_SOURCE)
+#  undef _POSIX_C_SOURCE
+#endif
+#if !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+#include <stddef.h>],[
+#if defined(__APPLE__) && defined(__MACH__)
+off_t len = 1000, offset = 0;
+struct sf_hdtr hdtr = { NULL, 0, NULL, 0 };
+return sendfile(0, 1, offset, &len, &hdtr, 0) < 0;
+#else
+deliberately fail
+#endif
+    ])],
+    [
+      AC_MSG_RESULT([yes, macOS-style])
+      AC_DEFINE([HAVE_MACOS_SENDFILE], 1,
+                [Define if you have macOS-type sendfile])
+      hts_have_sendfile=macos])
+  ])
+  AS_IF([test $hts_have_sendfile = no], [
+    AC_MSG_RESULT([no])
+  ])
 
   AC_CHECK_DECLS([EHOSTDOWN, ENONET], [], [], [[#include <errno.h>]])
   AC_CHECK_DECLS([AI_V4MAPPED, AI_ADDRCONFIG], [], [], [[#include <netdb.h>]])
