@@ -24,14 +24,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-#if defined(__NetBSD__)
-// dirfd() is hidden if these are defined
-#  if defined(_XOPEN_SOURCE)
-#    undef _XOPEN_SOURCE
-#  endif
-#  if defined(_POSIX_C_SOURCE)
-#    undef _POSIX_C_SOURCE
-#  endif
+#if defined(__NetBSD__) && !defined(_NETBSD_SOURCE)
+// Needed for dirfd()
+#define _NETBSD_SOURCE
 #endif
 
 #include <stdlib.h>
