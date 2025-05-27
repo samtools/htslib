@@ -24,17 +24,6 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-#if (defined(__APPLE__) && defined(__MACH__)) || defined(__NetBSD__)
-// macOS headers hide CMSG_LEN() and CMSG_SPACE() definitions if these
-// are defined
-#  if defined(_XOPEN_SOURCE)
-#    undef _XOPEN_SOURCE
-#  endif
-#  if defined(_POSIX_C_SOURCE)
-#    undef _POSIX_C_SOURCE
-#  endif
-#endif
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -51,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <assert.h>
 
 #include "upstream.h"
+#include "cmsg_wrap.h"
 #include "misc.h"
 #include "options.h"
 #include "poll_wrap.h"
@@ -183,13 +173,13 @@ static int upstream_send_msg(int cmd_fd, Upstream_msg *umsg, int fd) {
     ssize_t res;
     struct iovec iov[1];
     struct msghdr msg;
-    struct cmsghdr *cmsg;
-    char   buf[CMSG_SPACE(sizeof(int))];
-    int   *fdptr;
+    char   buf[256]; // Must be bigger than CMSG_SPACE(sizeof(int))
 
     memset(&msg, 0, sizeof(msg));
     msg.msg_name = NULL;
     msg.msg_control = NULL;
+
+    memset(&buf, 0, sizeof(buf));
 
     iov[0].iov_base = umsg;
     iov[0].iov_len  = sizeof(*umsg);
@@ -198,15 +188,10 @@ static int upstream_send_msg(int cmd_fd, Upstream_msg *umsg, int fd) {
 
     if (umsg->code == US_START) {
         /* Add the descriptor for the downloaded file */
-        msg.msg_control = buf;
-        msg.msg_controllen = sizeof(buf);
-        cmsg = CMSG_FIRSTHDR(&msg);
-        cmsg->cmsg_level = SOL_SOCKET;
-        cmsg->cmsg_type  = SCM_RIGHTS;
-        cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
-        fdptr = (int *) CMSG_DATA(cmsg);
-        memcpy(fdptr, &fd, sizeof(int));
-        msg.msg_controllen = cmsg->cmsg_len;
+        if (make_scm_rights_cmsg(&msg, fd, buf, sizeof(buf)) < 0) {
+            fprintf(stderr, "upstream_send_msg: cmsg buffer not big enough.\n");
+            return -1;
+        }
     }
 
     do {
@@ -229,7 +214,6 @@ static int send_msg_all(Download *download,
 
 int upstream_recv_msg(int cmd_fd, Upstream_msg *umsg, int *fd) {
     struct msghdr msg;
-    struct cmsghdr *cmsg = NULL;
     struct iovec   iov[1];
     ssize_t res;
     char   buf[16384];
@@ -254,16 +238,9 @@ int upstream_recv_msg(int cmd_fd, Upstream_msg *umsg, int *fd) {
     if (res != sizeof(*umsg)) return -1;
 
     if (umsg->code == US_START) {
-        /* Somewhere in here should be a file descriptor */
-        for (cmsg = CMSG_FIRSTHDR(&msg);
-             cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-                int *fdp = (int *) CMSG_DATA(cmsg);
-                memcpy(fd, fdp, sizeof(int));
-                break;
-            }
-        }
-        if (cmsg == NULL) {
+        /* Message should include a file descriptor */
+        *fd = get_scm_rights_fd(&msg);
+        if (*fd < 0) {
             fprintf(stderr, "Failed to get file descriptor in upstream message\n");
             return -1;
         }

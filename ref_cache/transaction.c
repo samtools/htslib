@@ -24,51 +24,13 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-/* Work out which sendfile() variety is available, if anything. */
-#if !defined(HAVE_LINUX_SENDFILE) && !defined(HAVE_FREEBSD_SENDFILE) && !defined(HAVE_MACOSX_SENDFILE)
-#  if defined(__linux__)
-// Linux-style, four arguments, out_fd first
-#    define HAVE_LINUX_SENDFILE 1
-#  elif (defined(__FreeBSD__) && __FreeBSD__ >= 4) || defined(__DragonFly__)
-// FreeBSD style, seven arguments, in_fd first
-// Other BSDs do not appear to implement sendfile().
-#    define HAVE_FREEBSD_SENDFILE 1
-#  elif defined(__APPLE__) && defined(__MACH__)
-// MacOS X style, six arguments, in_fd first
-#    define HAVE_MACOSX_SENDFILE 1
-// But only exposes it if you're not asking for POSIX
-#    if defined(_XOPEN_SOURCE)
-#      undef _XOPEN_SOURCE
-#    endif
-#    if defined(_POSIX_C_SOURCE)
-#      undef _POSIX_C_SOURCE
-#    endif
-#  endif
-#endif
-
-// This shouldn't happen, but just in case...
-#if HAVE_LINUX_SENDFILE + HAVE_FREEBSD_SENDFILE + HAVE_MACOSX_SENDFILE > 1
-#  undef HAVE_LINUX_SENDFILE
-#  undef HAVE_FREEBSD_SENDFILE
-#  undef HAVE_MACSOX_SENDFILE
-#endif
-
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#if HAVE_FREEBSD_SENDFILE || HAVE_MACOSX_SENDFILE
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <sys/uio.h>
-#endif
-#if HAVE_LINUX_SENDFILE
-#include <sys/sendfile.h>
-#else
-#include <sys/uio.h>
-#endif
 #include <time.h>
 #include <assert.h>
 
@@ -77,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "options.h"
 #include "poll_wrap.h"
 #include "ref_files.h"
+#include "sendfile_wrap.h"
 #include "server.h"
 #include "../cram/pooled_alloc.h"
 
@@ -123,15 +86,15 @@ struct Transaction {
     off_t         fd_sent;
     unsigned int  rc;
     Http_version  http_vers;
-#if !HAVE_LINUX_SENDFILE && !HAVE_FREEBSD_SENDFILE && !HAVE_MACOSX_SENDFILE
+#ifdef HAVE_SENDFILE
+#define HAVE_SEND_BUFFER 0
+#else
 #define SEND_BUFFER_SIZE 0x40000
 #define SEND_BUFFER_MASK (SEND_BUFFER_SIZE - 1)
 #define HAVE_SEND_BUFFER 1
     unsigned char *buffer;
     unsigned int   buffer_in;
     unsigned int   buffer_out;
-#else
-#define    HAVE_SEND_BUFFER 0
 #endif
 };
 
@@ -496,27 +459,11 @@ void set_message_response(Transaction *transact, const char *content_type,
 
 static inline ssize_t send_file(Transaction *transact, int out_fd, int in_fd,
                                 off_t end) {
-#if HAVE_LINUX_SENDFILE
+#ifdef HAVE_SENDFILE
     assert(end >= transact->fd_sent);
-    return sendfile(out_fd, in_fd,
-                    &transact->fd_sent, (size_t) (end - transact->fd_sent));
-
-#elif HAVE_FREEBSD_SENDFILE
-
-    off_t sbytes = 0;
-    int res = sendfile(in_fd, out_fd,
-                       transact->fd_sent, (size_t) (end - transact->fd_sent),
-                       NULL, &sbytes, 0);
-    transact->fd_sent += sbytes;
-    return res < 0 ? res : (ssize_t) sbytes;
-#elif HAVE_MACOSX_SENDFILE
-
-    off_t len = end - transact->fd_sent;
-    if (len == 0)
-      return 0; // Or the whole file gets sent
-    int res = sendfile(in_fd, out_fd, transact->fd_sent, &len, NULL, 0);
-    transact->fd_sent += len;
-    return res < 0 ? res : (ssize_t) len;
+    return sendfile_wrap(out_fd, in_fd,
+                         &transact->fd_sent,
+                         (size_t) (end - transact->fd_sent));
 #else
     struct iovec iov[2];
     int iovcnt = 1;

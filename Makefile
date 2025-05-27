@@ -241,7 +241,8 @@ LIBHTS_OBJS = \
 	$(HTSCODECS_OBJS) \
 	$(NONCONFIGURE_OBJS)
 
-REF_CACHE_OBJS = ref_cache/http_parser.o \
+REF_CACHE_OBJS = ref_cache/cmsg_wrap.o \
+        ref_cache/http_parser.o \
 	ref_cache/listener.o \
 	ref_cache/log_files.o \
 	ref_cache/main.o \
@@ -251,6 +252,7 @@ REF_CACHE_OBJS = ref_cache/http_parser.o \
 	ref_cache/poll_wrap_poll.o \
 	ref_cache/ref_files.o \
 	ref_cache/request_handler.o \
+	ref_cache/sendfile_wrap.o \
 	ref_cache/server.o \
 	ref_cache/transaction.o \
 	ref_cache/upstream.o \
@@ -571,6 +573,7 @@ htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) 
 tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h) $(htslib_thread_pool_h)
 
 # ref_cache dependencies
+ref_cache_cmsg_wrap_h = ref_cache/cmsg_wrap.h
 ref_cache_http_parser_h = ref_cache/http_parser.h $(htslib_hts_defs_h) $(ref_cache_types_h)
 ref_cache_listener_h = ref_cache/listener.h $(ref_cache_types_h)
 ref_cache_log_files_h = ref_cache/log_files.h $(htslib_hts_defs_h) $(ref_types_h)
@@ -580,11 +583,13 @@ ref_cache_ping_h = ref_cache/ping.h
 ref_cache_poll_wrap_h = ref_cache/poll_wrap.h $(ref_cache_types_h)
 ref_cache_ref_files_h = ref_cache/ref_files.h $(htslib_hts_defs_h) $(ref_cache_types_h)
 ref_cache_request_handler_h = ref_cache/request_handler.h $(htslib_hts_defs_h) $(ref_cache_types_h)
+ref_cache_sendfile_wrap_h = ref_cache/sendfile_wrap.h
 ref_cache_server_h = ref_cache/server.h $(htslib_hts_defs_h) $(ref_cache_types_h)
 ref_cache_transaction_h = ref_cache/transaction.h $(htslib_hts_defs_h) $(ref_cache_types_h)
 ref_cache_types_h = ref_cache/types.h
 ref_cache_upstream_h = ref_cache/upstream.h $(ref_cache_types_h)
 
+ref_cache/cmsg_wrap.o: ref_cache/cmsg_wrap.c config.h $(ref_cache_cmsg_wrap_h)
 ref_cache/http_parser.o: ref_cache/http_parser.c config.h $(ref_cache_http_parser_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_request_handler_h) $(ref_cache_server_h) cram/pooled_alloc.h
 ref_cache/listener.o: ref_cache/listener.c config.h $(ref_cache_listener_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h)
 ref_cache/log_files.o: ref_cache/log_files.c config.h $(ref_cache_log_files_h) $(ref_cache_options_h)
@@ -594,9 +599,10 @@ ref_cache/poll_wrap_epoll.o: ref_cache/poll_wrap_epoll.c config.h $(ref_cache_po
 ref_cache/poll_wrap_poll.o: ref_cache/poll_wrap_poll.c config.h $(ref_cache_poll_wrap_h) cram/pooled_alloc.h
 ref_cache/ref_files.o: ref_cache/ref_files.c config.h $(ref_cache_ref_files_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_upstream_h)
 ref_cache/request_handler.o: ref_cache/request_handler.c config.h $(ref_cache_request_handler_h) $(ref_cache_http_parser_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_ref_files_h) $(ref_cache_transaction_h) $(ref_cache_upstream_h)
+ref_cache/sendfile_wrap.o: ref_cache/sendfile_wrap.c config.h $(ref_cache_sendfile_wrap_h)
 ref_cache/server.o: ref_cache/server.c config.h $(ref_cache_server_h) $(ref_cache_http_parser_h) $(ref_cache_listener_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(ref_cache_ref_files_h) $(ref_cache_request_handler_h) $(ref_cache_transaction_h) $(ref_cache_upstream_h) cram/pooled_alloc.h
-ref_cache/transaction.o: ref_cache/transaction.c config.h $(ref_cache_transaction_h) $(ref_cache_http_parser_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(ref_cache_ref_files_h) $(ref_cache_server_h) cram/pooled_alloc.h
-ref_cache/upstream.o: ref_cache/upstream.c config.h $(ref_cache_upstream_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(htslib_hts_defs_h)
+ref_cache/transaction.o: ref_cache/transaction.c config.h $(ref_cache_transaction_h) $(ref_cache_http_parser_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(ref_cache_ref_files_h) $(ref_cache_sendfile_wrap_h) $(ref_cache_server_h) cram/pooled_alloc.h
+ref_cache/upstream.o: ref_cache/upstream.c config.h $(ref_cache_upstream_h) $(ref_cache_cmsg_wrap_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(htslib_hts_defs_h)
 
 # Runes to check that the htscodecs submodule is present
 ifdef HTSCODECS_SOURCES
