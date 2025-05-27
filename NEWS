@@ -28,7 +28,7 @@ Updates
 * NEW. Add ref-cache, a caching proxy for reference sequences.  This is a local
   server of reference sequences, for use when encoding or decoding CRAM files
   that use reference-based compression.
-  (PR#1911)
+  (PR #1911, PR #1921)
 
 * Add support for matching VCF lines by ID.
   (PR #1844, addresses issue bcftools#1739 reported by Han Cao)
