@@ -245,7 +245,7 @@ typedef struct bam1_core_t {
     while core.l_extranul counts the excess NULs (so 0 <= l_extranul <= 3).
  3. Cigar data is encoded 4 bytes per CIGAR operation.
     See the bam_cigar_* macros for manipulation.
- 4. seq is nibble-encoded according to bam_nt16_table.
+ 4. seq is nibble-encoded according to seq_nt16_table.
     See the bam_seqi macro for retrieving individual bases.
  5. Per base qualities are stored in the Phred scale with no +33 offset.
     Ie as per the BAM specification and not the SAM ASCII printable method.
