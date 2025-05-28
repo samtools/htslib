@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2024 Genome Research Ltd.
+#    Copyright (C) 2015-2025 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -855,7 +855,7 @@ deliberately fail
     CFLAGS="$tmp_cflags"
 
     dnl Double quoting needed here, due to commas in the tested options
-    m4_foreach([ld_opt], [[[-Wl,-z,nodlopen]], [[-Wl,-z,noexecstack]],
+    m4_foreach([ld_opt], [[[-Wl,-z,noexecstack]],
                           [[-Wl,-z,relro]], [[-Wl,-z,now]], [[-Wl,--as-needed]],
                           [[-Wl,--no-copy-dt-needed-entries]]],[
       tmp_flag=""
@@ -863,6 +863,14 @@ deliberately fail
       AS_IF([test "x$tmp_flag" != x],
             [hts_paranoia_ld_flags="$hts_paranoia_ld_flags $tmp_flag"])
     ])
+    dnl Skip this test on OpenBSD as the option leads to non-functional
+    dnl binaries
+    AS_CASE([$basic_host],
+     [*-OpenBSD*], [:],
+     [tmp_flag=""
+      HTS_TEST_CC_LD_FLAG([[-Wl,-z,nodlopen]], [tmp_flag], tmp_desire_silence)])
+      AS_IF([test "x$tmp_flag" != x],
+            [hts_paranoia_ld_flags="$hts_paranoia_ld_flags $tmp_flag"])
   ])
 
   hts_ref_cache_programs="ref_cache/ref-cache"
