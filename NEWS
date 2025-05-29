@@ -175,7 +175,8 @@ Documentation updates
   have the ASCII 33 offset.
   (PR #1891.  Thanks to Chris Wright)
 
-
+* Fixed incorrectly named table in bam1_t structure documentation.
+  (PR #1923.  Thanks to Julian Hess)
 
 Noteworthy changes in release 1.21 (12th September 2024)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
