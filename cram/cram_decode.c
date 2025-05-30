@@ -2390,8 +2390,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if ((fd->required_fields & SAM_SEQ) &&
         s->ref == NULL && s->hdr->ref_seq_id >= 0 && !c->comp_hdr->no_ref) {
-        hts_log_error("Unable to fetch reference #%d:%"PRId64"-%"PRId64"\n",
-                      ref_id, s->hdr->ref_seq_start,
+        hts_log_error("Unable to fetch reference %s:%"PRId64"-%"PRId64,
+                      fd->refs->ref_id && ref_id >= 0 && ref_id < fd->refs->nref
+                      ? fd->refs->ref_id[ref_id]->name
+                      : "unknown",
+                      s->hdr->ref_seq_start,
                       s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
         return -1;
     }
@@ -3246,6 +3249,10 @@ cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                 }
                 if (fd->ooc)
                     break;
+
+//                printf("%p %d:%ld-%ld vs %d:%ld-%ld\n", fd,
+//                       c_next->ref_seq_id, c_next->ref_seq_start, c_next->ref_seq_start+c_next->ref_seq_span-1,
+//                       fd->range.refid, fd->range.start, fd->range.end);
 
                 /* Skip containers not yet spanning our range */
                 if (fd->range.refid != -2 && c_next->ref_seq_id != -2) {

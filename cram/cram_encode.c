@@ -1761,7 +1761,6 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     c->ref_start = ref_start+1;
     c->ref_end   = ref_end+1;
     c->ref_free  = 1;
-
     return 0;
 
  err:
@@ -1843,7 +1842,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     // Don't try embed ref if we repeatedly fail
     pthread_mutex_lock(&fd->ref_lock);
     int failed_embed = (fd->no_ref_counter >= 5); // maximum 5 tries
-    if (!failed_embed && c->embed_ref == -2) {
+    if (!failed_embed && c->embed_ref == -2 && c->ref_id >= 0) {
         hts_log_warning("Retrying embed_ref=2 mode for #%d/5", fd->no_ref_counter);
         fd->no_ref = c->no_ref = 0;
         fd->embed_ref = c->embed_ref = 2;
@@ -1922,6 +1921,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 // Do not confuse with fd->ref_free which is a pointer to a
                 // reference string to free.
                 c->ref_free = 1;
+            } else {
+                // Double check for broken input.  We shouldn't have
+                // embedded references enabled for unmapped data, but our
+                // data could be broken.
+                embed_ref = 0;
+                no_ref = c->no_ref = 1;
             }
         }
         c->ref_seq_id = c->ref_id;
@@ -1968,7 +1973,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
         // Embed consensus / MD-generated ref
         if (embed_ref == 2) {
-            if (cram_generate_reference(c, s, r1) < 0) {
+            if (c->ref_id < 0 || cram_generate_reference(c, s, r1) < 0) {
                 // Should this be a permanent thing via fd->no_ref?
                 // Doing so means we cannot easily switch back again should
                 // things fix themselves later on.  This is likely not a
@@ -1997,6 +2002,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 fd->no_ref_counter -= (fd->no_ref_counter > 0);
                 pthread_mutex_unlock(&fd->ref_lock);
             }
+
+            if (c->ref_end > fd->refs->ref_id[c->ref_id]->LN_length)
+                c->ref_end = fd->refs->ref_id[c->ref_id]->LN_length;
         }
 
         // Iterate through records creating the cram blocks for some
@@ -3683,7 +3691,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             return -1;
         }
         fake_qual = spos;
-        cr->aend = no_ref ? apos : MIN(apos, c->ref_end);
+        // Protect against negative length refs (fuzz 382922241)
+        cr->aend = no_ref ? apos : MIN(apos, MAX(0, c->ref_end));
         if (cram_stats_add(c->stats[DS_FN], cr->nfeature) < 0)
             goto block_err;
 

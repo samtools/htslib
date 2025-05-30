@@ -2,7 +2,7 @@
 
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013-2023 Genome Research Ltd
+   Copyright (C) 2009, 2013-2025 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -548,6 +548,10 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 }
 
 #ifdef HAVE_LIBDEFLATE
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return libdeflate_crc32(crc, buf, len);
+}
+
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
     if (slen == 0) {
@@ -606,6 +610,10 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
 }
 
 #else
+
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return crc32(crc, buf, len);
+}
 
 int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
@@ -1350,13 +1358,7 @@ static void *bgzf_encode_level0_func(void *arg) {
     u16_to_le(~j->uncomp_len, j->comp_data + BLOCK_HEADER_LENGTH + 3);
 
     // Trailer (CRC, uncompressed length)
-#ifdef HAVE_LIBDEFLATE
-    crc = libdeflate_crc32(0, j->comp_data + BLOCK_HEADER_LENGTH + 5,
-                           j->uncomp_len);
-#else
-    crc = crc32(crc32(0L, NULL, 0L),
-                (Bytef*)j->comp_data + BLOCK_HEADER_LENGTH + 5, j->uncomp_len);
-#endif
+    crc = hts_crc32(0, j->comp_data + BLOCK_HEADER_LENGTH + 5, j->uncomp_len);
     u32_to_le(crc, j->comp_data +  j->comp_len - 8);
     u32_to_le(j->uncomp_len, j->comp_data + j->comp_len - 4);
 
@@ -1584,7 +1586,7 @@ static void bgzf_mt_seek(BGZF *fp) {
     mt->errcode = 0;
 
     if (hseek(fp->fp, mt->block_address, SEEK_SET) < 0)
-        mt->errcode = BGZF_ERR_IO;
+        mt->errcode = errno;
 
     pthread_mutex_unlock(&mt->job_pool_m);
     mt->command = SEEK_DONE;
@@ -1902,7 +1904,7 @@ static int mt_flush_queue(BGZF *fp)
         if ((shutdown = hts_tpool_process_is_shutdown(mt->out_queue)))
             break;
         pthread_mutex_unlock(&mt->job_pool_m);
-        usleep(10000); // FIXME: replace by condition variable
+        hts_usleep(10000); // FIXME: replace by condition variable
         pthread_mutex_lock(&mt->job_pool_m);
     }
     pthread_mutex_unlock(&mt->job_pool_m);
@@ -2203,7 +2205,15 @@ static inline int64_t bgzf_seek_common(BGZF* fp,
                 abort();  // Should not get to any other state
             }
         } while (fp->mt->command != SEEK_DONE);
+
         fp->mt->command = NONE;
+
+        if (fp->mt->errcode) {
+            fp->errcode |= BGZF_ERR_IO;
+            errno = fp->mt->errcode;
+            pthread_mutex_unlock(&fp->mt->command_m);
+            return -1;
+        }
 
         fp->block_length = 0;  // indicates current block has not been loaded
         fp->block_address = block_address;

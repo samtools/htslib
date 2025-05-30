@@ -38,11 +38,11 @@ DEALINGS IN THE SOFTWARE.
 #include <errno.h>
 
 #include "../htslib/thread_pool.h"
-
+#include "../hts_internal.h"
 
 void *job(void *v) {
     unsigned int *usecs = (unsigned int *) v;
-    usleep(*usecs);
+    hts_usleep(*usecs);
     return NULL;
 }
 

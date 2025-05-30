@@ -285,6 +285,48 @@ sudo zypper install autoconf automake make gcc perl zlib-devel libbz2-devel xz-d
 Also install libdeflate-devel, available on OpenSUSE Leap 15.4 onwards
 or directly via git releases above.
 
+FreeBSD
+-------
+
+As root:
+pkg install autoconf automake bash curl gmake libdeflate perl5
+
+Build as a normal user.  When building, compiler flags need to be set so that
+the packages installed above are found.  It is also necessary to use "gmake":
+
+./configure CPPFLAGS='-I/usr/local/include' LDFLAGS='-L/usr/local/lib -Wl,-R/usr/local/lib'
+gmake && gmake check
+
+NetBSD
+------
+
+Make sure you have installed the "comp" file set to get a compiler, then
+get the following packages as root:
+
+pkg_add autoconf automake bash curl gmake libdeflate perl
+
+Build as a normal user.  When building, compiler flags need to be set so that
+the packages installed above are found.  It is also necessary to use "gmake":
+
+./configure CPPFLAGS='-I/usr/pkg/include' LDFLAGS='-L/usr/pkg/lib -Wl,-R/usr/pkg/lib'
+gmake && gmake check
+
+OpenBSD
+-------
+
+Make sure you have installed the "comp" file set to get a compiler, then
+get the following packages as root:
+
+pkg_add autoconf automake bash bzip2 curl gmake libdeflate xz
+
+You should select the most recent versions of autoconf and automake if asked.
+
+Build as a normal user.  When building, compiler flags need to be set so that
+the packages installed above are found.  It is also necessary to use "gmake":
+
+./configure CPPFLAGS='-I/usr/local/include' LDFLAGS='-L/usr/local/lib -Wl,-R/usr/local/lib'
+gmake && gmake check
+
 Windows MSYS2/MINGW64
 ---------------------
 

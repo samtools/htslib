@@ -1,0 +1,264 @@
+.TH ref-cache 1 "30 May 2025" "htslib-1.22" "Bioinformatics tools"
+.SH NAME
+ref-cache \- CRAM reference caching proxy
+.\"
+.\" Copyright (C) 2025 Genome Research Ltd.
+.\"
+.\" Author: Rob Davies <rmd@sanger.ac.uk>
+.\"
+.\" Permission is hereby granted, free of charge, to any person obtaining a
+.\" copy of this software and associated documentation files (the "Software"),
+.\" to deal in the Software without restriction, including without limitation
+.\" the rights to use, copy, modify, merge, publish, distribute, sublicense,
+.\" and/or sell copies of the Software, and to permit persons to whom the
+.\" Software is furnished to do so, subject to the following conditions:
+.\"
+.\" The above copyright notice and this permission notice shall be included in
+.\" all copies or substantial portions of the Software.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+.\" IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+.\" FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+.\" THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+.\" LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+.\" FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+.\" DEALINGS IN THE SOFTWARE.
+.\"
+.
+.\" For code blocks and examples (cf groff's Ultrix-specific man macros)
+.de EX
+
+.  in +\\$1
+.  nf
+.  ft CR
+..
+.de EE
+.  ft
+.  fi
+.  in
+
+..
+.
+.SH SYNOPSIS
+.B ref-cache
+.RB [ -bLUv ]
+.RB [ -l
+.IR LOG_DIR ]
+.RB [ -u
+.IR URL ]
+.BI -d " CACHE_DIR"
+.BI -p " PORT"
+.SH DESCRIPTION
+.B ref-cache
+is a caching proxy for reference sequences,
+for use when encoding and decoding CRAM format sequence alignment files.
+
+CRAM can use reference based compression where individual bases
+in aligned records are compared against a known reference sequence,
+storing only the bases that differ.
+This gives better compression,
+but requires the reference sequence to be supplied from an external source.
+One way to get these sequences is by querying a server implementing the
+GA4GH refget standard <https://ga4gh.github.io/refget/>,
+however this can lead to excessive network traffic and server load if,
+as is often the case,
+the same reference is needed more than once.
+.B ref-cache
+makes reference handling easier by keeping copies of downloaded files,
+allowing them to be reused when they are needed again.
+
+As it has been specifically designed to serve reference sequences for
+CRAM encoders and decoders,
+.B ref-cache
+behaves rather differently to general-purpose caching web proxies:
+.IP \(bu 2
+It only makes requests to a single upstream server.
+.IP \(bu 2
+Sequences are requested using MD5 checksum identifiers,
+as stored in the M5 tag in CRAM @SQ header lines.
+.IP \(bu 2
+The requested sequence is returned as a single string in uppercase ASCII text
+with no line terminators or other formatting characters.
+.IP \(bu 2
+Downloaded sequences are checked to ensure they have the correct MD5 checksum
+before being stored in the cache.
+.IP \(bu 2
+Cached sequences are never removed.
+.IP \(bu 2
+Cached sequences are stored in a way that allows them to be accessed
+directly on the filesystem.
+This can allow the web server to be bypassed in some set-ups (for example
+where the cache is on a shared drive),
+allowing already-downloaded files to be accessed more efficiently.
+.IP \(bu 2
+When started,
+.B ref-cache
+will test to see if it's already running on the specified port,
+and exits silently if it finds that it is.
+This enables a simple way of ensuring the server is up,
+by trying to restart it every few minutes.
+.SH QUICK-START GUIDE
+Create directories for the cache and (optionally) log files.
+Then start up the server in the background,
+listening on port 8080
+and with the EBI's CRAM reference server as the upstream source.
+.EX
+mkdir cached_refs
+mkdir logs
+ref-cache -b -d cached_refs -l logs -p 8080 -u https://www.ebi.ac.uk/ena/cram/md5/
+.EE
+To make SAMtools and HTSlib use the server,
+set its URL in the
+.B REF_PATH
+environment variable (note that colons should be doubled up in the URL,
+and you should substitute the hostname of your actual server).
+.EX
+REF_PATH='http:://myserver.example.com::8080/%s'
+export REF_PATH
+.EE
+If the cache directory can be made visible to SAMtools/HTSlib processes,
+it can also be added directly to
+.B REF_PATH
+by putting it before the web server URL.
+It is necessary to use the full path to the directory,
+followed by "/%2s/%2s/%s" for the file location due to the way they are stored
+inside the cache.
+.EX
+REF_PATH='/path/to/cache/%2s/%2s/%s:http:://myserver.example.com::8080/%s'
+export REF_PATH
+.EE
+This is useful as accessing the files directly is more efficient than using http.
+Files are downloaded to a temporary name and then renamed after validation so
+processes directly using the cache will never try to use a partly downloaded file.
+By putting the URL at the end,
+the web server will pick up any requests for references not already in the cache,
+download them,
+provide them to the requester,
+and store them in the cache.
+.SH OPTIONS
+.TP 10
+.B -b
+Run in the background as a System V-style daemon.
+This option must not be used with
+.BR -s .
+.TP
+.BI -d " <dir>"
+Directory where cached files will be stored
+.TP
+.B -h
+Show help
+.TP
+.BI -l " <dir>"
+Directory for log files.
+If not set and running in the foreground, logs will be sent to stdout
+.TP
+.B -L
+Don't log
+.TP
+.BR "-m all" | default | localhost | <network-list>
+Reply to connections from the listed network(s).
+This option can be given more than once,
+with the final allow list being the union of all listed networks
+along with localhost (which is always enabled).
+See
+.B CLIENT ADDRESS CHECKING
+below.
+.TP
+.BI -n " <1-4>"
+Number of server processes to run
+.TP
+.BI -p " <port>"
+Port number to listen on
+.TP
+.BI -r " <num>"
+Number of request log files to keep
+.TP
+.BI -R " <num>"
+Maximum size of a request log file (MiB)
+.TP
+.B -s
+Run as a systemd-style socket service.
+As the service manager handles socket allocation,
+the
+.B -p
+option is ignored when running in this mode.
+This option must not be used with
+.BR -b .
+.TP
+.BI -u " <url>"
+URL of the upstream server.
+If not set or overridden using
+.BR -U ,
+the EBI's server (https://www.ebi.ac.uk/ena/cram/md5/) will be used.
+.TP
+.B -U
+Do not attempt to get files from an upstream server.
+Only files already in the local cache will be served.
+.TP
+.B -v
+Turn on debugging output
+.SH CLIENT ADDRESS CHECKING
+.B ref-cache
+is designed to serve references to local networks.
+To ensure that it only responds to the desired clients,
+it has an allow list of address ranges that it will talk to.
+If a connection attempt comes from an IP address not in the allowed set,
+it will be closed immediately.
+(N.B.: Rejected clients will see a connection open and immediately close,
+as it's necessary for connections to be opened for the server to discover
+the peer address.
+If you want to drop or reject unwanted requests without opening them,
+you will need to use your operating system's firewall.)
+
+The address ranges can be set using the
+.B -m
+option, which may be used more than once.
+Networks can be specified either as a comma-separated list of CIDR-format
+blocks (e.g.
+.IR "192.0.2.0/24, 2001:db8::/32" )
+or using one of the following synonyms:
+.RS 4
+.IP all
+Any address (not recommended)
+.IP default
+10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+(the private ranges listed in RFC 1918);
+fc00::/7 (the local IPv6 Unicast address range in RFC 4193);
+and fe80::/10 (IPv6 link-local addresses)
+.IP localhost
+127.0.0.0/8 and ::1/128 (loop-back addresses)
+.RE
+
+If no
+.B -m
+option is given,
+the "default" list will be used,
+as most organisations will be using one or more of these internally.
+This will be overridden if any
+.B -m
+option appears,
+in which case
+.B -m default
+will need to be specified explicitly if you also want to reply to
+addresses in the IPv4 and IPv6 private ranges.
+For example:
+.EX
+ref-cache -m 192.0.2.0/24 -m default ...
+.EE
+
+.B ref-cache
+will always listen to the loop-back address,
+even if this was not specified.
+Using
+.B -m localhost
+will limit it to only respond to loop-back requests.
+.SH AUTHOR
+Written by Rob Davies from the Wellcome Sanger Institute
+.SH SEE ALSO
+.IR samtools (1)
+.PP
+Samtools website: <http://www.htslib.org/>
+.PP
+CRAM specification: <https://samtools.github.io/hts-specs/CRAMv3.pdf>
+.PP
+Refget website: <https://ga4gh.github.io/refget/>

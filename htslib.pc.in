@@ -11,5 +11,5 @@ Description: C library for high-throughput sequencing data formats
 Version: @-PACKAGE_VERSION@
 Cflags: -I${includedir}
 Libs: -L${libdir} -lhts
-Libs.private: -L${libdir} @private_LIBS@ -lhts -lm -lpthread
+Libs.private: -L${libdir} @private_LIBS@ -lm -lpthread
 Requires.private: zlib @pc_requires@

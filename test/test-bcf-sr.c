@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2017, 2020, 2023 Genome Research Ltd.
+    Copyright (C) 2017, 2020, 2023, 2025 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -54,7 +54,7 @@ error(const char *format, ...)
 void HTS_NORETURN usage(int exit_code)
 {
     fprintf(stderr, "Usage: test-bcf-sr [OPTIONS] vcf-list.txt\n");
-    fprintf(stderr, "       test-bcf-sr [OPTIONS] -args file1.bcf [...]\n");
+    fprintf(stderr, "       test-bcf-sr [OPTIONS] --args file1.bcf [...]\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "       --args                   pass filenames directly in argument list\n");
     fprintf(stderr, "       --no-index               allow streaming\n");
@@ -63,6 +63,7 @@ void HTS_NORETURN usage(int exit_code)
     fprintf(stderr, "   -p, --pair <logic[+ref]>     logic: snps,indels,both,snps+ref,indels+ref,both+ref,exact,some,all\n");
     fprintf(stderr, "   -r, --regions <reg_list>     comma-separated list of regions\n");
     fprintf(stderr, "   -t, --targets <reg_list>     comma-separated list of targets\n");
+    fprintf(stderr, "   -u, --usefptr                use hfile pointer interface on reader addition\n");
     fprintf(stderr, "\n");
     exit(exit_code);
 }
@@ -133,13 +134,15 @@ int main(int argc, char *argv[])
         {"targets",required_argument,NULL,'t'},
         {"no-index",no_argument,NULL,1000},
         {"args",no_argument,NULL,1001},
+        {"usefptr",no_argument,NULL,'u'},
         {NULL,0,NULL,0}
     };
 
-    int c, pair = 0, use_index = 1, use_fofn = 1;
+    int c, pair = 0, use_index = 1, use_fofn = 1, usefptr = 0;
     enum htsExactFormat out_fmt = text_format; // for original pos + alleles
     const char *out_fn = NULL, *regions = NULL, *targets = NULL;
-    while ((c = getopt_long(argc, argv, "o:O:p:r:t:h", loptions, NULL)) >= 0)
+    htsFile **htsfp = NULL;
+    while ((c = getopt_long(argc, argv, "o:O:p:r:t:hu", loptions, NULL)) >= 0)
     {
         switch (c)
         {
@@ -178,6 +181,9 @@ int main(int argc, char *argv[])
                 break;
             case 1001:
                 use_fofn = 0;
+                break;
+            case 'u':
+                usefptr = 1;    //use htsfile interface instead of fname i/f
                 break;
             case 'h':
                 usage(EXIT_SUCCESS);
@@ -218,8 +224,32 @@ int main(int argc, char *argv[])
             error("Failed to set targets\n");
     }
 
-    for (i=0; i<nvcf; i++)
-        if ( !bcf_sr_add_reader(sr,vcfs[i]) ) error("Failed to open %s: %s\n", vcfs[i],bcf_sr_strerror(sr->errnum));
+    if (usefptr && !(htsfp = malloc(sizeof(htsFile*) * nvcf))) {
+        error("Failed to allocate memory\n");
+    }
+
+    for (i=0; i<nvcf; i++) {
+        if (!usefptr) {
+            if ( !bcf_sr_add_reader(sr,vcfs[i]) ) {
+                error("Failed to open %s: %s\n", vcfs[i],
+                    bcf_sr_strerror(sr->errnum));
+            }
+        } else {    //use htsfile i/f
+            if (!(htsfp[i] = hts_open(vcfs[i], "r"))) {
+                error("Failed to open %s: %s\n", vcfs[i],
+                    bcf_sr_strerror(sr->errnum));
+            }
+            /*with name, index can be anywhere, named as anything
+              w/o name it has to be along with file with default naming*/
+
+            const char *idxname = strstr(vcfs[i], HTS_IDX_DELIM);
+            idxname += idxname ? sizeof(HTS_IDX_DELIM) - 1 : 0;
+            if ( !bcf_sr_add_hreader(sr, htsfp[i], 1, idxname) ) {
+                error("Failed to add reader %s: %s\n", vcfs[i],
+                    bcf_sr_strerror(sr->errnum));
+            }
+        }
+    }
 
     if (!sr->readers || sr->nreaders < 1)
         error("No readers set, even though one was added\n");
@@ -263,6 +293,10 @@ int main(int argc, char *argv[])
         for (i=0; i<nvcf; i++)
             free(vcfs[i]);
         free(vcfs);
+    }
+    if (usefptr) {
+        //files are closed along with sr destroy
+        free(htsfp);
     }
 
     return 0;

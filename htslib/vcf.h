@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022-2023 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2025 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -950,14 +950,13 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  The @p string in bcf_update_info_flag() is optional,
      *  @p n indicates whether the flag is set or removed.
      *
-     *  Note that updating an END info tag will cause line->rlen to be
-     *  updated as a side-effect (removing the tag will set it to the
-     *  string length of the REF allele). If line->pos is being changed as
+     *  Note that updating / removing END,SVLEN info tags will cause line->rlen
+     *  to be recalculated as a side-effect. If line->pos is being changed as
      *  well, it is important that this is done before calling
-     *  bcf_update_info_int32() to update the END tag, otherwise rlen will be
+     *  bcf_update_info_int32() to update the END/SVLEN tag, otherwise rlen will be
      *  set incorrectly.  If the new END value is less than or equal to
      *  line->pos, a warning will be printed and line->rlen will be set to
-     *  the length of the REF allele.
+     *  the length of the REF allele for versions upto 4.3.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
@@ -1002,6 +1001,8 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  of fixed-length strings. In case of strings with variable length, shorter strings
      *  can be \0-padded. Note that the collapsed strings passed to bcf_update_format_char()
      *  are not \0-terminated.
+     *  With vcf4.5, rlen depends on format field LEN and rlen calculation uses v->pos as well.
+     *  So any change to pos be done before updating LEN that rlen calculated is correct.
      *
      *  Returns 0 on success or negative value on error.
      */
@@ -1023,7 +1024,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
     #define bcf_gt_missing          0
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
-    #define bcf_gt_is_phased(idx)   ((idx)&1)
+    #define bcf_gt_is_phased(val)   ((val)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
 
     /** Conversion between alleles indexes to Number=G genotype index (assuming diploid, all 0-based) */
@@ -1501,31 +1502,25 @@ static inline int bcf_float_is_vector_end(float f)
     return u.i==bcf_float_vector_end ? 1 : 0;
 }
 
+
+/**
+ *  bcf_format_gt_v2 - formats GT information on a string
+ *  @param hdr - bcf header, to get version
+ *  @param fmt - pointer to bcf format data
+ *  @param isample - position of interested sample in data
+ *  @param str - pointer to output string
+ *  Returns 0 on success and -1 on failure
+ *  This method is preferred over bcf_format_gt as this supports vcf4.4 and
+ *  prefixed phasing. Explicit / prefixed phasing for 1st allele is used only
+ *  when it is a must to correctly express phasing.
+ */
+HTSLIB_EXPORT
+int bcf_format_gt_v2(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample,
+    kstring_t *str) HTS_RESULT_USED;
+
 static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
-    uint32_t e = 0;
-    #define BRANCH(type_t, convert, missing, vector_end) { \
-        uint8_t *ptr = fmt->p + isample*fmt->size; \
-        int i; \
-        for (i=0; i<fmt->n; i++, ptr += sizeof(type_t)) \
-        { \
-            type_t val = convert(ptr); \
-            if ( val == vector_end ) break; \
-            if ( i ) e |= kputc("/|"[val&1], str) < 0; \
-            if ( !(val>>1) ) e |= kputc('.', str) < 0; \
-            else e |= kputw((val>>1) - 1, str) < 0; \
-        } \
-        if (i == 0) e |= kputc('.', str) < 0; \
-    }
-    switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_missing, bcf_int32_vector_end); break;
-        case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
-        default: hts_log_error("Unexpected type %d", fmt->type); return -2;
-    }
-    #undef BRANCH
-    return e == 0 ? 0 : -1;
+    return bcf_format_gt_v2(NULL, fmt, isample, str);
 }
 
 static inline int bcf_enc_size(kstring_t *s, int size, int type)

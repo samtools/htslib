@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2024 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2025 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1964,8 +1964,16 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     strncpy(sn, q, r - q);
                     q = r;
                 } else {
-                    if (strncmp(q, "LN:", 3) == 0)
-                        ln = strtoll(q + 3, (char**)&q, 10);
+                    if (strncmp(q, "LN:", 3) == 0) {
+                        hts_pos_t tmp = strtoll(q + 3, (char**)&q, 10);
+                        if (ln != -1 && ln != tmp) { //duplicate & different LN
+                            hts_log_error("Header includes @SQ line \"%s\" with"
+                                " multiple LN: tag with different values.", sn);
+                            goto error;
+                        } else {
+                            ln = tmp;
+                        }
+                    }
                 }
 
                 while (*q != '\t' && *q != '\n' && *q != '\0')
@@ -3216,6 +3224,7 @@ enum sam_cmd {
     SAM_NONE = 0,
     SAM_CLOSE,
     SAM_CLOSE_DONE,
+    SAM_AT_EOF,
 };
 
 typedef struct SAM_state {
@@ -3319,7 +3328,7 @@ int sam_state_destroy(htsFile *fp) {
                         break;
                     hts_tpool_wake_dispatch(fd->q);
                     pthread_mutex_unlock(&fd->command_m);
-                    usleep(10000);
+                    hts_usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
                 }
             }
@@ -3339,7 +3348,7 @@ int sam_state_destroy(htsFile *fp) {
                 pthread_mutex_unlock(&fd->command_m);
 
                 while (!ret && fd->q && !hts_tpool_process_empty(fd->q)) {
-                    usleep(10000);
+                    hts_usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
                     ret = -fd->errcode;
                     // not empty but shutdown implies error
@@ -3651,6 +3660,7 @@ static void *sam_dispatcher_read(void *vp) {
         pthread_mutex_unlock(&fd->command_m);
     }
 
+    // Submit a NULL sp_bams entry to act as an EOF marker
     if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0)
         goto err;
 
@@ -4180,6 +4190,7 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
                    -1, -1, 0,    // mate
                    x->seq.l, x->seq.s, x->qual.s,
                    0);
+    if (ret < 0) return -2;
 
     // Identify Illumina CASAVA strings.
     // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
@@ -4276,7 +4287,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
                 return -2;
             }
             if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
-                return -1;
+                return -2;
             fp->fp.bgzf->seeked = 0;
             goto err_recover;
         }
@@ -4298,7 +4309,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 
         if (fd->h != h) {
             hts_log_error("SAM multi-threaded decoding does not support changing header");
-            return -1;
+            return -2;
         }
 
         sp_bams *gb = fd->curr_bam;
@@ -4308,14 +4319,25 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
                 errno = fd->errcode;
                 return -2;
             }
+
+            pthread_mutex_lock(&fd->command_m);
+            int cmd = fd->command;
+            pthread_mutex_unlock(&fd->command_m);
+            if (cmd == SAM_AT_EOF)
+                return -1;
+
             hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
             if (!r)
                 return -2;
             fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
         }
-        if (!gb)
+        if (!gb) {
+            pthread_mutex_lock(&fd->command_m);
+            fd->command = SAM_AT_EOF;
+            pthread_mutex_unlock(&fd->command_m);
             return fd->errcode ? -2 : -1;
+        }
         bam1_t *b_array = (bam1_t *)gb->bams;
         if (fd->curr_idx < gb->nbams)
             if (!bam_copy1(b, &b_array[fd->curr_idx++]))
@@ -4856,8 +4878,8 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
     switch (size) {
     case 'Z':
     case 'H':
-        while (s < end && *s) ++s;
-        return s < end ? s + 1 : end;
+        s = memchr(s, 0, end-s);
+        return s ? s+1 : end;
     case 'B':
         if (end - s < 5) return NULL;
         size = aux_type2size(*s); ++s;

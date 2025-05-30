@@ -671,7 +671,8 @@ struct cram_slice {
 typedef struct ref_entry {
     char *name;
     char *fn;
-    int64_t length;
+    int64_t length;        // if 0 this indicates we haven't loaded it yet
+    int64_t LN_length;     // @SQ LN length, used to trim consensus ref
     int64_t offset;
     int bases_per_line;
     int line_length;

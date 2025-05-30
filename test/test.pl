@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-#    Copyright (C) 2012-2024 Genome Research Ltd.
+#    Copyright (C) 2012-2025 Genome Research Ltd.
 #
 #    Author: Petr Danecek <pd3@sanger.ac.uk>
 #
@@ -30,6 +30,7 @@ use lib "$FindBin::Bin";
 use Getopt::Long;
 use File::Temp qw/ tempfile tempdir /;
 use IO::Handle;
+use IO::Socket;
 
 my $opts = parse_params();
 srand($$opts{seed});
@@ -37,7 +38,7 @@ srand($$opts{seed});
 run_test('test_bgzip',$opts, 0);
 run_test('test_bgzip',$opts, 4);
 
-run_test('ce_fa_to_md5_cache',$opts,needed_by=>'test_index');
+run_test('ce_fa_to_md5_cache',$opts,needed_by=>'test_index test_ref_cache');
 run_test('test_index',$opts, 0);
 run_test('test_index',$opts, 4);
 
@@ -53,9 +54,11 @@ run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep
 run_test('test_bcf2vcf',$opts);
 run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
 run_test('test_vcf_various',$opts);
+run_test('test_vcf_44', $opts);
 run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
 run_test('test_bcf_sr_range', $opts);
+run_test('test_bcf_sr_hreader', $opts);
 run_test('test_command',$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 run_test('test_convert_padded_header',$opts);
 run_test('test_rebgzip',$opts);
@@ -64,6 +67,9 @@ run_test('test_plugin_loading',$opts);
 run_test('test_realn',$opts);
 run_test('test_bcf_set_variant_type',$opts);
 run_test('test_annot_tsv',$opts);
+if ($$opts{ref_cache}) {
+    run_test('test_ref_cache',$opts);
+}
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -103,7 +109,7 @@ sub cygpath {
 sub safe_tempdir
 {
     my $dir = tempdir(CLEANUP=>1);
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $dir = cygpath($dir);
     }
     return $dir;
@@ -120,6 +126,7 @@ sub parse_params
             's|random-seed=i' => \$$opts{seed},
             'f|fail-fast' => \$$opts{fail_fast},
             'F|function:s' => \$$opts{function},
+            'ref-cache-bin:s' => \$$opts{ref_cache},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -128,7 +135,7 @@ sub parse_params
     $$opts{path} = $FindBin::RealBin;
     $$opts{bin}  = $FindBin::RealBin;
     $$opts{bin}  =~ s{/test/?$}{};
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $$opts{path} = cygpath($$opts{path});
         $$opts{bin}  = cygpath($$opts{bin});
     }
@@ -402,6 +409,7 @@ sub ce_fa_to_md5_cache {
     open(my $fa, '<', "$$opts{path}/ce.fa")
         || die "Couldn't open $$opts{path}/ce.fa : $!\n";
     my $name = '';
+    my @p;
     while (<$fa>) {
         chomp;
         if (/^>(\S+)/) {
@@ -412,7 +420,13 @@ sub ce_fa_to_md5_cache {
             if (!exists($csums{$name})) {
                 die "Unexpected fasta entry : $name\n";
             }
-            open($out, '>', "$m5_dir/$csums{$name}")
+            @p = $csums{$name} =~ /^(..)(..)(.*)/;
+            foreach my $subdir ("$m5_dir/$p[0]", "$m5_dir/$p[0]/$p[1]") {
+                if (! -e "$subdir") {
+                    mkdir("$subdir") || die "Couldn't mkdir $subdir : $!";
+                }
+            }
+            open($out, '>', "$m5_dir/$p[0]/$p[1]/$p[2]")
         } else {
             if (!$out) {
                 die "$$opts{path}/ce.fa : Got data before fasta header\n";
@@ -423,7 +437,7 @@ sub ce_fa_to_md5_cache {
         }
     }
     if ($out) {
-        close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+        close($out) || die "Error closing $m5_dir/$p[0]/$p[1]/$p[2] : $!\n";
     }
     close($fa) || die "Error reading $$opts{path}/ce.fa : $!\n";
     $$opts{m5_dir} = $m5_dir;
@@ -865,6 +879,14 @@ sub test_view
     testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
+
+    $ersam = "c1#bounds.sam";
+    $ercram = "c1#bounds_er.tmp.cram";
+    $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+
     if ($test_view_failures == 0) {
         passed($opts, "embed_ref=2 tests");
     } else {
@@ -1055,7 +1077,7 @@ sub test_index
     test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
 
     # CRAM
-    local $ENV{REF_PATH} = $$opts{m5_dir};
+    local $ENV{REF_PATH} = "$$opts{m5_dir}/\%2s/\%2s/\%s";
     test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
     unlink("$$opts{tmp}/index.cram.crai");
     test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
@@ -1076,7 +1098,7 @@ sub test_index
     # Tabix and custom index names
     _cmd("$$opts{bin}/tabix -fp vcf $$opts{tmp}/index.vcf.gz");
     my $wtmp = $$opts{tmp};
-    if ($^O =~ /^msys/) {
+    if ($^O =~ /^(cygwin|msys)/) {
         $wtmp =~ s/\//\\\\/g;
     }
     test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $wtmp/index.vcf.gz##idx##$wtmp/index.vcf.gz.tbi 1:10000060-10000060");
@@ -1149,6 +1171,15 @@ sub test_vcf_various
     # See htslib issue 1534
     test_cmd($opts, %args, out => "modhdr.expected.vcf",
         cmd => "$$opts{path}/test_view $$opts{path}/modhdr.vcf.gz chr22:1-2");
+}
+
+sub test_vcf_44
+{
+    my ($opts, %args) = @_;
+
+    # vcf4.4 with implicit and explicit phasing info combinations
+    test_cmd($opts, %args, out => "vcf44_1.expected",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf44_1.vcf");
 }
 
 sub write_multiblock_bgzf {
@@ -1337,6 +1368,34 @@ sub test_bcf_sr_range {
     }
 }
 
+sub test_bcf_sr_hreader {
+    #uses input file from test_bcf_sr_sort / test-bcf-sr.pl
+    #invokes bcf sync reader with hread method
+    my ($opts, %args) = @_;
+    my $test = "test_bcf_sr_hreader";
+    my $fail = 0;
+    my $cmd = "$$opts{path}/test-bcf-sr -p all $$opts{tmp}/list.txt -o $$opts{tmp}/file.out";
+    my $cmd_header = "$$opts{path}/test-bcf-sr -p all $$opts{tmp}/list.txt -o $$opts{tmp}/filenew.out -u";
+    my $cmd_diff = "diff $$opts{tmp}/filenew.out $$opts{tmp}/file.out";
+
+    my ($ret, $out) = _cmd($cmd);
+    if ($ret != 0) {
+        failed($opts, $test, "Failed to create reference output\n");
+        return;
+    }
+    ($ret, $out) = _cmd($cmd_header);
+    if ($ret != 0) {
+        failed($opts, $test, "Failed to create output\n");
+        return;
+    }
+    ($ret, $out) = _cmd($cmd_diff);
+    if ($ret != 0) {
+        failed($opts, $test, "Output differs to reference output\n");
+        return;
+    }
+    passed($opts, $test);
+}
+
 sub test_command
 {
     my ($opts, %args) = @_;
@@ -1478,4 +1537,171 @@ sub test_annot_tsv
     run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.2.txt',args=>q[-c 1,2,3 -f 4:5 -O 0.5,0.5]);
     run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.3.txt',args=>q[-c 1,2,3 -f 4:5 -O 0,1]);
     run_annot_tsv($opts,src=>'src.13.txt',dst=>'src.13.txt',out=>'out.13.4.txt',args=>q[-c 1,2,3 -f 4:5 -O 1,0]);
+    run_annot_tsv($opts,src=>'src.14.txt',dst=>'dst.14.txt',out=>'out.14.1.txt',args=>q[-c 1,2,3 -C 11:11]);        # 1-based coordinates
+    run_annot_tsv($opts,src=>'src.14.txt',dst=>'dst.14.txt',out=>'out.14.2.txt',args=>q[-c 1,2,3 -C 01:01]);        # interpret as bed coordinates
+}
+#'
+
+sub get_free_ports {
+    my ($count) = @_;
+
+    my @found;
+    for (my $port = 1024; @found < $count && $port < 32768; $port++) {
+        my $sock = IO::Socket::INET->new(Proto => 'tcp', LocalHost => '0.0.0.0',
+                                         LocalPort => $port, Listen => 5,
+                                         ReusePort => 1);
+        if ($sock) {
+            push(@found, $port);
+            $sock->close();
+        }
+    }
+    return \@found;
+}
+
+sub ref_cache_running {
+    my ($pid, $port) = @_;
+    if (kill(0, $pid) < 1) {
+        return 0;
+    }
+    my $sock = IO::Socket::INET->new(Proto => 'tcp', PeerHost => 'localhost',
+                                     PeerPort => $port);
+    if (!$sock) {
+        return 0;
+    }
+    if (!defined($sock->send("GET /hello HTTP/1.0\r\n\r\n"))) {
+        $sock->close();
+        return 0;
+    }
+    my $buffer;
+    if (!defined($sock->recv($buffer, 1024))) {
+        $sock->close();
+        return 0;
+    }
+    return 1;
+}
+
+sub test_ref_cache {
+    my ($opts) = @_;
+
+    print "ref-cache:\n";
+
+    # Set up two ref-cache servers.
+    # Server 1 provides the files in $$opts{m5_dir}
+    # Server 2 starts with an empty cache and uses server 1 as its upstream
+
+    $test_view_failures = 0;
+
+    my $count = 0;
+    my $m5_dir  = $$opts{m5_dir};
+    my $m5_dir2;
+    my $pid1;
+    my $pid2;
+    my $ports;
+
+    eval {
+        do {
+            $count++;
+            $m5_dir2 = "$$opts{tmp}/md5_$count";
+        } while (-e $m5_dir2);
+        mkdir($m5_dir2)
+            || die "Couldn't make directory $m5_dir2 $!\n";
+
+        if ($m5_dir || !-d $m5_dir) {
+            ce_fa_to_md5_cache($opts);
+            $m5_dir  = $$opts{m5_dir};
+        }
+
+        $ports = get_free_ports(2);
+        if (@$ports < 2) {
+            die "Couldn't get two free ports\n";
+        }
+
+        my $pid1 = fork();
+        if (!defined($pid1)) {
+            die "Coudn't fork: $!";
+        }
+        if ($pid1 == 0) {
+            setpgrp(0, 0);
+            exec($$opts{ref_cache}, '-d', $m5_dir, '-U', '-p', $ports->[0])
+                || die "Couldn't exec $$opts{ref_cache} $!\n";
+        }
+        my $pid2 = fork();
+        if (!defined($pid2)) {
+            die "Couldn't fork: $!";
+        }
+        if ($pid2 == 0) {
+            setpgrp(0, 0);
+            exec($$opts{ref_cache}, '-d', $m5_dir2, '-p', $ports->[1],
+                 '-u', "http://localhost:$ports->[0]/")
+                || die "Couldn't exec $$opts{ref_cache} $!\n";
+        }
+
+        # Wait a bit for the servers to start
+        my $wcount = 0;
+        do {
+            select(undef, undef, undef, 0.1);
+        } while (!ref_cache_running($pid1, $ports->[0]) && ++$wcount < 100);
+        do {
+            select(undef, undef, undef, 0.1);
+        } while (!ref_cache_running($pid2, $ports->[1]) && ++$wcount < 100);
+
+        my $sam = "ref_cache/ce_m5.sam";
+        # Convert SAM to CRAM, getting refs from file
+        {
+            local $ENV{REF_PATH} = "$m5_dir/%2s/%2s/%s";
+            testv $opts, "./test_view -C -p $sam.tmp.cram $sam";
+        }
+        # Convert CRAM to SAM, getting refs from server 1
+        {
+            local $ENV{REF_PATH} = "http:://localhost::$ports->[0]/";
+            testv $opts, "./test_view -p $sam.tmp.cram.sam $sam.tmp.cram";
+        }
+        testv $opts, "./compare_sam.pl --nomd $sam $sam.tmp.cram.sam";
+
+        # Convert CRAM to SAM, getting refs from server 2
+        # The files will be copied into server 2's cache
+        {
+            local $ENV{REF_PATH} = "http:://localhost::$ports->[1]/";
+            testv $opts, "./test_view -p $sam.tmp.cram.2.sam $sam.tmp.cram";
+        }
+        testv $opts, "./compare_sam.pl --nomd $sam $sam.tmp.cram.2.sam";
+
+        # Turn off server 1
+        kill('TERM', -$pid1);
+        waitpid($pid1, 0);
+        undef($pid1);
+
+        # Convert CRAM to SAM, getting refs from server 2
+        # As the upstream has gone away, data will have to come from server 2's
+        # cache
+        {
+            local $ENV{REF_PATH} = "http:://localhost::$ports->[1]/";
+            testv $opts, "./test_view -p $sam.tmp.cram.3.sam $sam.tmp.cram";
+        }
+        testv $opts, "./compare_sam.pl --nomd $sam $sam.tmp.cram.3.sam";
+
+        # Turn off server 2
+        kill('TERM', -$pid2);
+        waitpid($pid2, 0);
+        undef($pid2);
+    };
+    if ($@) {
+        warn $@;
+        if (defined($pid1)) {
+            kill('TERM', -$pid1);
+            waitpid($pid1, 0);
+        }
+        if (defined($pid2)) {
+            kill('TERM', -$pid2);
+            waitpid($pid2, 0);
+        }
+
+        $test_view_failures++;
+    }
+
+    if ($test_view_failures == 0) {
+        passed($opts, "ref-cache server");
+    } else {
+        failed($opts, "ref-cache server");
+    }
 }

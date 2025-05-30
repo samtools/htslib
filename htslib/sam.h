@@ -245,7 +245,7 @@ typedef struct bam1_core_t {
     while core.l_extranul counts the excess NULs (so 0 <= l_extranul <= 3).
  3. Cigar data is encoded 4 bytes per CIGAR operation.
     See the bam_cigar_* macros for manipulation.
- 4. seq is nibble-encoded according to bam_nt16_table.
+ 4. seq is nibble-encoded according to seq_nt16_table.
     See the bam_seqi macro for retrieving individual bases.
  5. Per base qualities are stored in the Phred scale with no +33 offset.
     Ie as per the BAM specification and not the SAM ASCII printable method.
@@ -1031,7 +1031,7 @@ bam1_t *bam_dup1(const bam1_t *bsrc);
    @param isize    Observed template length ("insert size") (a.k.a. TLEN).
    @param l_seq    Length of the query sequence (read) and sequence quality string.
    @param seq      Sequence, may be NULL if l_seq = 0.
-   @param qual     Sequence quality, may be NULL.
+   @param qual     Sequence quality, may be NULL. Should be provided without ASCII 33 offset.
    @param l_aux    Length to be reserved for auxiliary field data, may be 0.
 
    @return >= 0 on success (number of bytes written to bam->data), negative (with errno set) on failure.

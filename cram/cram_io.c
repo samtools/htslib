@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2024 Genome Research Ltd.
+Copyright (c) 2012-2025 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -76,6 +76,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../hts_internal.h"
 #include "open_trace_file.h"
 
 #if defined(HAVE_EXTERNAL_LIBHTSCODECS)
@@ -1698,8 +1699,7 @@ int cram_uncompress_block(cram_block *b) {
             free(uncomp);
             return -1;
         }
-        b->orig_method = RANS_PR0 + (b->data[0]&1)
-            + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
+        b->orig_method = RANSPR;
         free(b->data);
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
@@ -1718,8 +1718,7 @@ int cram_uncompress_block(cram_block *b) {
             free(uncomp);
             return -1;
         }
-        b->orig_method = ARITH_PR0 + (b->data[0]&1)
-            + 2*((b->data[0]&0x40)>0) + 4*((b->data[0]&0x80)>0);
+        b->orig_method = ARITH;
         free(b->data);
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
@@ -2475,6 +2474,9 @@ static refs_t *refs_create(void) {
 static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
     BGZF *fp;
 
+    if (strncmp(fn, "file://", 7) == 0)
+        fn += 7;
+
     if (!is_md5 && !hisremote(fn)) {
         char fai_file[PATH_MAX];
 
@@ -2787,9 +2789,15 @@ static int refs_from_header(cram_fd *fd) {
 
         /* Initialise likely filename if known */
         if ((ty = sam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
-            if ((tag = sam_hrecs_find_key(ty, "M5", NULL))) {
+            if ((tag = sam_hrecs_find_key(ty, "M5", NULL)))
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
-                //fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
+
+            if ((tag = sam_hrecs_find_key(ty, "LN", NULL))) {
+                // LN tag used when constructing consensus reference
+                r->ref_id[j]->LN_length = strtoll(tag->str+3, NULL, 0);
+                // See fuzz 382922241
+                if (r->ref_id[j]->LN_length < 0)
+                    r->ref_id[j]->LN_length = 0;
             }
         }
 
@@ -2931,30 +2939,6 @@ static void mkdir_prefix(char *path, int mode) {
 }
 
 /*
- * Return the cache directory to use, based on the first of these
- * environment variables to be set to a non-empty value.
- */
-static const char *get_cache_basedir(const char **extra) {
-    char *base;
-
-    *extra = "";
-
-    base = getenv("XDG_CACHE_HOME");
-    if (base && *base) return base;
-
-    base = getenv("HOME");
-    if (base && *base) { *extra = "/.cache"; return base; }
-
-    base = getenv("TMPDIR");
-    if (base && *base) return base;
-
-    base = getenv("TEMP");
-    if (base && *base) return base;
-
-    return "/tmp";
-}
-
-/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -2967,30 +2951,11 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     sam_hrec_tag_t *tag;
     char path[PATH_MAX];
     kstring_t path_tmp = KS_INITIALIZE;
-    char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
     int local_path = 0;
 
     hts_log_info("Running cram_populate_ref on fd %p, id %d", (void *)fd, id);
-
-    cache_root[0] = '\0';
-
-    if (!ref_path || *ref_path == '\0') {
-        /*
-         * If we have no ref path, we use the EBI server.
-         * However to avoid spamming it we require a local ref cache too.
-         */
-        ref_path = "https://www.ebi.ac.uk/ena/cram/md5/%s";
-        if (!local_cache || *local_cache == '\0') {
-            const char *extra;
-            const char *base = get_cache_basedir(&extra);
-            snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
-            snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
-            local_cache = cache;
-            hts_log_info("Populating local cache: %s", local_cache);
-        }
-    }
 
     if (!r->name)
         return -1;
@@ -3005,7 +2970,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
-        if (expand_cache_path(path, local_cache, tag->str+3) == 0)
+        struct stat sb;
+        if (expand_cache_path(path, local_cache, tag->str+3) == 0 &&
+            stat(path, &sb) == 0)
+            // Found it in the local cache
             local_path = 1;
     }
 
@@ -3049,7 +3017,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
 
     /* Otherwise search full REF_PATH; slower as loads entire file */
-    if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
+    int is_local = 0;
+    if ((mf = open_path_mfile(tag->str+3, ref_path, NULL, &is_local))) {
         size_t sz;
         r->seq = mfsteal(mf, &sz);
         if (r->seq) {
@@ -3065,15 +3034,23 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     } else {
         refs_t *refs;
         const char *fn;
+        sam_hrec_tag_t *UR_tag;
 
     no_M5:
         /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */
-        if (!(tag = sam_hrecs_find_key(ty, "UR", NULL)))
+        if (!(UR_tag = sam_hrecs_find_key(ty, "UR", NULL)))
             return -1;
 
-        fn = (strncmp(tag->str+3, "file:", 5) == 0)
-            ? tag->str+8
-            : tag->str+3;
+        if (strstr(UR_tag->str+3, "://") &&
+            strncmp(UR_tag->str+3, "file:", 5) != 0) {
+            // Documented as omitted, but accidentally supported until now
+            hts_log_error("UR tags pointing to remote files are not supported");
+            return -1;
+        }
+
+        fn = (strncmp(UR_tag->str+3, "file:", 5) == 0)
+            ? UR_tag->str+8
+            : UR_tag->str+3;
 
         if (fd->refs->fp) {
             if (bgzf_close(fd->refs->fp) != 0)
@@ -3104,14 +3081,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     }
 
     /* Populate the local disk cache if required */
-    if (local_cache && *local_cache) {
+    if (!is_local && local_cache && *local_cache) {
         hFILE *fp;
-
-        if (*cache_root && !is_directory(cache_root)) {
-            hts_log_warning("Creating reference cache directory %s\n"
-                            "This may become large; see the samtools(1) manual page REF_CACHE discussion",
-                            cache_root);
-        }
 
         if (expand_cache_path(path, local_cache, tag->str+3) < 0) {
             return 0; // Not fatal - we have the data already so keep going.
@@ -3470,7 +3441,9 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             hts_log_warning("Reference file given, but ref '%s' not present",
                             r->name);
         if (cram_populate_ref(fd, id, r) == -1) {
-            hts_log_warning("Failed to populate reference for id %d", id);
+            hts_log_warning("Failed to populate reference \"%s\"",
+                            r->name);
+            hts_log_warning("See https://www.htslib.org/doc/reference_seqs.html for further suggestions");
             pthread_mutex_unlock(&fd->refs->lock);
             pthread_mutex_unlock(&fd->ref_lock);
             return NULL;
@@ -4320,7 +4293,7 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
         if (!pending)
             break;
 
-        usleep(1000);
+        hts_usleep(1000);
     }
 
     return 0;
@@ -4952,6 +4925,8 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                         hts_log_warning("NOTE: the CRAM file will be bigger "
                                         "than using an external reference");
                         pthread_mutex_lock(&fd->ref_lock);
+                        // Best guess.  It may be unmapped data with broken
+                        // headers, in which case this will get ignored.
                         fd->embed_ref = 2;
                         pthread_mutex_unlock(&fd->ref_lock);
                         break;
@@ -5257,7 +5232,7 @@ static void cram_init_tables(cram_fd *fd) {
 
 // Default version numbers for CRAM
 static int major_version = 3;
-static int minor_version = 0;
+static int minor_version = 1;
 
 /*
  * Opens a CRAM file for read (mode "rb") or write ("wb").
@@ -5434,28 +5409,11 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
  *        -1 on failure
  */
 int cram_seek(cram_fd *fd, off_t offset, int whence) {
-    char buf[65536];
-
     fd->ooc = 0;
 
     cram_drain_rqueue(fd);
 
-    if (hseek(fd->fp, offset, whence) >= 0) {
-        return 0;
-    }
-
-    if (!(whence == SEEK_CUR && offset >= 0))
-        return -1;
-
-    /* Couldn't fseek, but we're in SEEK_CUR mode so read instead */
-    while (offset > 0) {
-        int len = MIN(65536, offset);
-        if (len != hread(fd->fp, buf, len))
-            return -1;
-        offset -= len;
-    }
-
-    return 0;
+    return hseek(fd->fp, offset, whence) >= 0 ? 0 : -1;
 }
 
 /*
@@ -5814,6 +5772,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_RANGE: {
         int r = cram_seek_to_refpos(fd, va_arg(args, cram_range *));
         pthread_mutex_lock(&fd->range_lock);
+//        printf("opt range noseek to %p %d:%ld-%ld\n",
+//               fd, fd->range.refid, fd->range.start, fd->range.end);
         if (fd->range.refid != -2)
             fd->required_fields |= SAM_POS;
         pthread_mutex_unlock(&fd->range_lock);

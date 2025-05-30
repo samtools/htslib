@@ -1,6 +1,6 @@
 /*  thread_pool.c -- A pool of generic worker threads
 
-    Copyright (c) 2013-2020 Genome Research Ltd.
+    Copyright (c) 2013-2020, 2025 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -51,10 +51,13 @@ static void hts_tpool_process_detach_locked(hts_tpool *p,
 
 //#define DEBUG
 
-#ifdef DEBUG
-static int worker_id(hts_tpool *p) {
-    int i;
+// Return the worker ID index, from 0 to nthreads-1.
+// Return <0 on error, but this shouldn't be possible
+int hts_tpool_worker_id(hts_tpool *p) {
+    if (!p)
+        return -1;
     pthread_t s = pthread_self();
+    int i;
     for (i = 0; i < p->tsize; i++) {
         if (pthread_equal(s, p->t[i].tid))
             return i;
@@ -62,6 +65,7 @@ static int worker_id(hts_tpool *p) {
     return -1;
 }
 
+#ifdef DEBUG
 void DBG_OUT(FILE *fp, char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -95,7 +99,7 @@ static int hts_tpool_add_result(hts_tpool_job *j, void *data) {
     pthread_mutex_lock(&q->p->pool_m);
 
     DBG_OUT(stderr, "%d: Adding result to queue %p, serial %"PRId64", %d of %d\n",
-            worker_id(j->p), q, j->serial, q->n_output+1, q->qsize);
+            hts_tpool_worker_id(j->p), q, j->serial, q->n_output+1, q->qsize);
 
     if (--q->n_processing == 0)
         pthread_cond_signal(&q->none_processing_c);
@@ -129,9 +133,9 @@ static int hts_tpool_add_result(hts_tpool_job *j, void *data) {
            || q->next_serial == INT_MAX); // ... unless flush in progress.
     if (r->serial == q->next_serial) {
         DBG_OUT(stderr, "%d: Broadcasting result_avail (id %"PRId64")\n",
-                worker_id(j->p), r->serial);
+                hts_tpool_worker_id(j->p), r->serial);
         pthread_cond_broadcast(&q->output_avail_c);
-        DBG_OUT(stderr, "%d: Broadcast complete\n", worker_id(j->p));
+        DBG_OUT(stderr, "%d: Broadcast complete\n", hts_tpool_worker_id(j->p));
     }
 
     pthread_mutex_unlock(&q->p->pool_m);
@@ -603,7 +607,7 @@ static void *tpool_worker(void *arg) {
             pthread_mutex_unlock(&p->pool_m);
 
             DBG_OUT(stderr, "%d: Processing queue %p, serial %"PRId64"\n",
-                    worker_id(j->p), q, j->serial);
+                    hts_tpool_worker_id(j->p), q, j->serial);
 
             if (hts_tpool_add_result(j, j->func(j->arg)) < 0)
                 goto err;
@@ -625,13 +629,13 @@ static void *tpool_worker(void *arg) {
  shutdown:
     pthread_mutex_unlock(&p->pool_m);
 #ifdef DEBUG
-    fprintf(stderr, "%d: Shutting down\n", worker_id(p));
+    fprintf(stderr, "%d: Shutting down\n", hts_tpool_worker_id(p));
 #endif
     return NULL;
 
  err:
 #ifdef DEBUG
-    fprintf(stderr, "%d: Failed to add result\n", worker_id(p));
+    fprintf(stderr, "%d: Failed to add result\n", hts_tpool_worker_id(p));
 #endif
     // Hard failure, so shutdown all queues
     pthread_mutex_lock(&p->pool_m);
@@ -1154,6 +1158,7 @@ void hts_tpool_kill(hts_tpool *p) {
 #ifdef TEST_MAIN
 
 #include <stdio.h>
+#include "hts_internal.h"
 
 #ifndef TASK_SIZE
 #define TASK_SIZE 1000
@@ -1166,7 +1171,7 @@ void hts_tpool_kill(hts_tpool *p) {
 void *doit_square_u(void *arg) {
     int job = *(int *)arg;
 
-    usleep(random() % 100000); // to coerce job completion out of order
+    hts_usleep(random() % 100000); // to coerce job completion out of order
 
     printf("RESULT: %d\n", job*job);
 
@@ -1207,7 +1212,7 @@ void *doit_square(void *arg) {
 
     // One excessively slow, to stress test output queue filling and
     // excessive out of order scenarios.
-    usleep(500000 * ((job&31)==31) + random() % 10000);
+    hts_usleep(500000 * ((job&31)==31) + random() % 10000);
 
     res = malloc(sizeof(*res));
     *res = (job<0) ? -job*job : job*job;
@@ -1253,7 +1258,7 @@ int test_square(int n) {
                 // The alternative is a separate thread for dispatching and/or
                 // consumption of results. See test_squareB.
                 putchar('.'); fflush(stdout);
-                usleep(10000);
+                hts_usleep(10000);
             }
         } while (blk == -1);
     }
@@ -1404,7 +1409,7 @@ static void *pipe_stage1(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
     j->x <<= 8;
-    usleep(random() % 10000); // fast job
+    hts_usleep(random() % 10000); // fast job
     printf("1  %08x\n", j->x);
 
     return j;
@@ -1430,7 +1435,7 @@ static void *pipe_stage2(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
     j->x <<= 8;
-    usleep(random() % 100000); // slow job
+    hts_usleep(random() % 100000); // slow job
     printf("2  %08x\n", j->x);
 
     return j;
@@ -1455,7 +1460,7 @@ static void *pipe_stage2to3(void *arg) {
 static void *pipe_stage3(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
-    usleep(random() % 10000); // fast job
+    hts_usleep(random() % 10000); // fast job
     j->x <<= 8;
     return j;
 }

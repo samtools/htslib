@@ -176,7 +176,8 @@ char *tokenise_search_path(const char *searchpath) {
     return newsearch;
 }
 
-static char *expand_path(const char *file, char *dirname, int max_s_digits);
+static char *expand_path(const char *file, const char *dirname,
+                         int max_s_digits);
 
 mFILE *find_file_url(const char *file, char *url) {
     char *path = NULL, buf[8192];
@@ -226,10 +227,12 @@ mFILE *find_file_url(const char *file, char *url) {
  *
  * Returns expanded pathname or NULL for malloc failure.
  */
-static char *expand_path(const char *file, char *dirname, int max_s_digits) {
+static char *expand_path(const char *file, const char *dirname,
+                         int max_s_digits) {
     size_t len = strlen(dirname);
     size_t lenf = strlen(file);
-    char *cp, *path;
+    const char *end_dirname = dirname + len, *cp;
+    char *path;
 
     path = malloc(len+lenf+2); // worst expansion DIR/FILE
     if (!path) {
@@ -237,8 +240,11 @@ static char *expand_path(const char *file, char *dirname, int max_s_digits) {
         return NULL;
     }
 
-    if (dirname[len-1] == '/')
+    // Remove trailing '/'s, unless the path matches "/"
+    while (len > 1 && dirname[len-1] == '/') {
         len--;
+        end_dirname--;
+    }
 
     /* Special case for "./" or absolute filenames */
     if (*file == '/' || (len==1 && *dirname == '.')) {
@@ -246,41 +252,54 @@ static char *expand_path(const char *file, char *dirname, int max_s_digits) {
     } else {
         /* Handle %[0-9]*s expansions, if required */
         char *path_end = path;
-        *path = 0;
+
         while ((cp = strchr(dirname, '%'))) {
             char *endp;
+            // Get optional length
             long l = strtol(cp+1, &endp, 10);
-            if (*endp != 's' || endp - cp - 1 > max_s_digits) {
-                strncpy(path_end, dirname, (endp+1)-dirname);
-                path_end += (endp+1)-dirname;
-                dirname = endp+1;
+            if (*endp != 's' || l < 0 || endp - cp - 1 > max_s_digits) {
+                // Not %[0-9]s. Copy over directly, taking care of edge cases
+                // like the string ending with '%' or '%[0-9]*'.
+                const char *e = MIN(endp+1, end_dirname);
+                memcpy(path_end, dirname, e - dirname);
+                path_end += e - dirname;
+                dirname = e;
                 continue;
             }
 
-            strncpy(path_end, dirname, cp-dirname);
+            // Copy part up to '%'
+            memcpy(path_end, dirname, cp-dirname);
             path_end += cp-dirname;
-            if (l) {
-                strncpy(path_end, file, l);
-                path_end += MIN(strlen(file), l);
-                file     += MIN(strlen(file), l);
-            } else {
-                strcpy(path_end, file);
-                path_end += strlen(file);
-                file     += strlen(file);
-            }
-            len -= (endp+1) - dirname;
+
+            // Insert segment from file
+            size_t to_copy = l > 0 ? MIN(lenf, l) : lenf;
+            memcpy(path_end, file, to_copy);
+            path_end += to_copy;
+            file     += to_copy;
+            lenf     -= to_copy;
+
+            // Skip to part of dirname after the 's'
             dirname = endp+1;
         }
-        strncpy(path_end, dirname, len);
-        path_end += MIN(strlen(dirname), len);
-        *path_end = 0;
-        if (*file) {
-            *path_end++ = '/';
-            strcpy(path_end, file);
+
+        // Add anything left in dirname
+        if (dirname < end_dirname) {
+            memcpy(path_end, dirname, end_dirname - dirname);
+            path_end += end_dirname - dirname;
         }
+
+        if (*file) {
+            // Add remainder of file
+            if (path_end > path && *(path_end - 1) != '/')
+                *path_end++ = '/';
+            memcpy(path_end, file, lenf);
+            path_end += lenf;
+        }
+        // Terminate string
+        *path_end = '\0';
     }
 
-    //fprintf(stderr, "*PATH=\"%s\"\n", path);
+    // fprintf(stderr, "*PATH=\"%s\"\n", path);
     return path;
 }
 
@@ -324,13 +343,20 @@ static mFILE *find_file_dir(const char *file, char *dirname) {
  * all of the locations listed in 'path' (which is a colon separated list).
  * If 'path' is NULL it uses the RAWDATA environment variable instead.
  *
+ * If non-NULL *local is filled out to 1 for a local file and 0 for a remote
+ * URL.
+ *
  * Returns a mFILE pointer when found.
  *           NULL otherwise.
  */
-mFILE *open_path_mfile(const char *file, char *path, char *relative_to) {
+mFILE *open_path_mfile(const char *file, char *path, char *relative_to,
+                       int *local) {
     char *newsearch;
     char *ele;
     mFILE *fp;
+
+    if (local)
+        *local = 1;
 
     /* Use path first */
     if (!path)
@@ -361,14 +387,16 @@ mFILE *open_path_mfile(const char *file, char *path, char *relative_to) {
 
         if (0 == strncmp(ele2, "URL=", 4)) {
             if ((fp = find_file_url(file, ele2+4))) {
+                if (local)
+                    *local = strncmp(ele2+4, "file:", 5) == 0 ? 1 : 0;
                 free(newsearch);
                 return fp;
             }
-        } else if (!strncmp(ele2, "http:", 5) ||
-                   !strncmp(ele2, "https:", 6) ||
-                   !strncmp(ele2, "ftp:", 4)) {
+        } else if (hisremote(ele2)) {
             if ((fp = find_file_url(file, ele2))) {
                 free(newsearch);
+                if (local)
+                    *local = 0;
                 return fp;
             }
         } else if ((fp = find_file_dir(file, ele2))) {

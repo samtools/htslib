@@ -580,9 +580,7 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
     // Ideally use an index, so see if we have one.
     if ((e = cram_index_query(fd, r->refid, r->start, NULL))) {
         if (0 != cram_seek(fd, e->offset, SEEK_SET)) {
-            if (0 != cram_seek(fd, e->offset - fd->first_container, SEEK_CUR)) {
-                ret = -1; goto err;
-            }
+            ret = -1; goto err;
         }
     } else {
         // Absent from index, but this most likely means it simply has no data.

@@ -232,6 +232,9 @@ const char *hts_feature_string(void) {
 }
 
 
+// Converts ASCII to BAM nibble encoding.
+// Note 0123 is treated as ACGT (ABI colourspace encoding) and
+// U is treated as T.
 HTSLIB_EXPORT
 const unsigned char seq_nt16_table[256] = {
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
@@ -239,9 +242,9 @@ const unsigned char seq_nt16_table[256] = {
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
      1, 2, 4, 8, 15,15,15,15, 15,15,15,15, 15, 0 /*=*/,15,15,
     15, 1,14, 2, 13,15,15, 4, 11,15,15,12, 15, 3,15,15,
-    15,15, 5, 6,  8,15, 7, 9, 15,10,15,15, 15,15,15,15,
+    15,15, 5, 6,  8, 8, 7, 9, 15,10,15,15, 15,15,15,15,
     15, 1,14, 2, 13,15,15, 4, 11,15,15,12, 15, 3,15,15,
-    15,15, 5, 6,  8,15, 7, 9, 15,10,15,15, 15,15,15,15,
+    15,15, 5, 6,  8, 8, 7, 9, 15,10,15,15, 15,15,15,15,
 
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
@@ -4288,7 +4291,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
         if (iter->curr_off) { // seek to the start
             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                 hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
-                return -1;
+                return -2;
             }
             iter->curr_off = 0; // only seek once
         }
@@ -4366,7 +4369,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                     next_range = 0;
                     if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
                         hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
-                        return -1;
+                        return -2;
                     }
                     if (iter->is_cram) {
                         cram_range r = { HTS_IDX_NOCOOR };
@@ -4418,7 +4421,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                                 hts_log_error("Seek at offset %" PRIu64
                                         " failed.", iter->curr_off);
-                                return -1;
+                                return -2;
                             }
 
                             // Find the genomic range matching this interval.
@@ -4476,7 +4479,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                         if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                             hts_log_error("Seek at offset %" PRIu64 " failed.",
                                           iter->curr_off);
-                            return -1;
+                            return -2;
                         }
                     }
                 }

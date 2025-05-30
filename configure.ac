@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2024 Genome Research Ltd.
+#    Copyright (C) 2015-2025 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -72,14 +72,15 @@ HTS_PROG_CC_WERROR(hts_late_cflags)
 
 # HTSlib uses X/Open-only facilities (M_SQRT2 etc, drand48() etc), and
 # various POSIX functions that are provided by various _POSIX_C_SOURCE values
-# or by _XOPEN_SOURCE >= 500. It also uses usleep(), which is removed when
-# _XOPEN_SOURCE >= 700. Additionally, some definitions may require
+# or by _XOPEN_SOURCE >= 500. Additionally, some definitions may require
 # _XOPEN_SOURCE >= 600 on some platforms (snprintf on MinGW,
-# PTHREAD_MUTEX_RECURSIVE on some Linux distributions). Hence we set it to 600.
+# PTHREAD_MUTEX_RECURSIVE on some Linux distributions), and ref-cache uses
+# openat(), mkdirat() etc. which need _XOPEN_SOURCE >= 700.
+# Hence we set it to 700.
 
 # Define _XOPEN_SOURCE unless the user has already done so via $CPPFLAGS etc.
 AC_CHECK_DECL([_XOPEN_SOURCE], [],
-  [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
+  [AC_DEFINE([_XOPEN_SOURCE], [700], [Specify X/Open requirements])],
   [])
 
 dnl Check that we have cpuid, and if so run the x86 SIMD checks
@@ -174,16 +175,25 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
 ])
 
 dnl Check for function attribute used in conjunction with __builtin_cpu_supports
-AC_MSG_CHECKING([for __attribute__((target))])
+dnl and that it does enable the corresponding intrinsics (which is broken on ancient GCCs)
+AC_MSG_CHECKING([for working __attribute__((target("ssse3")))])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  #ifdef __x86_64__
+  #include "x86intrin.h"
+
   __attribute__((target("ssse3")))
-  int zero(void) {
-    return 0;
+  void shuffle(char *aptr, char *bptr) {
+    __m128i a = _mm_lddqu_si128((__m128i *)aptr);
+    __m128i b = _mm_shuffle_epi8(a, a);
+    _mm_storeu_si128((__m128i *)bptr, b);
   }
-]], [[zero();]])], [
+  #else
+  void shuffle(char *aptr, char *bptr) { }
+  #endif
+]], [[shuffle(0, 0);]])], [
   AC_MSG_RESULT([yes])
-  AC_DEFINE([HAVE_ATTRIBUTE_TARGET], 1,
-            [Define if __attribute__((target(...))) is available.])
+  AC_DEFINE([HAVE_ATTRIBUTE_TARGET_SSSE3], 1,
+            [Define if __attribute__((target("ssse3"))) works.])
 ], [
   AC_MSG_RESULT([no])
 ])
@@ -264,6 +274,11 @@ AC_ARG_WITH([plugin-path],
   [with_plugin_path=$with_plugin_dir])
 AC_SUBST([pluginpath], $with_plugin_path)
 
+AC_ARG_ENABLE([ref-cache],
+  [AS_HELP_STRING([--disable-ref-cache],
+                  [build CRAM reference caching proxy])],
+  [], [enable_ref_cache=check])
+
 AC_ARG_ENABLE([s3],
   [AS_HELP_STRING([--enable-s3],
                   [support Amazon AWS S3 URLs])],
@@ -326,7 +341,7 @@ HTS_HIDE_DYNAMIC_SYMBOLS
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic])
+AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic getauxval elf_aux_info posix_memalign])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
@@ -625,6 +640,250 @@ dnl Only need to add to static_LIBS if not building as a plugin
   fi
 fi
 
+ref_cache=disabled
+AS_IF([test "x$enable_ref_cache" != xno],
+  [AS_CASE([$PLATFORM],
+     [Darwin | default],[
+        AS_IF([test "x$libcurl" = xenabled], [ref_cache="enabled"], [
+          AS_IF([test "x$enable_ref_cache" = check], [
+            AC_MSG_WARN([ref-cache not enabled: requires libcurl])
+          ],[
+            MSG_ERROR([ref-cache not enabled
+
+The ref-cache program requires libcurl support to be enabled in HTSlib.
+Configure with --enable-libcurl in order to build ref-cache.])
+          ])
+        ])
+      ],
+     [AS_IF([test "x$enable_ref_cache" = xcheck], [
+        AC_MSG_WARN([ref-cache not enabled: unsupported platform])
+      ],[
+        MSG_ERROR([ref-cache not enabled
+
+ref-cache is not supported on this platform.  Supported platforms include
+Linux, FreeBSD, MacOS, and other BSD derivatives])
+      ])
+    ])
+  ])
+
+# Check how to get a working cmsg interface
+AS_IF([test "$ref_cache" = enabled],[
+  AC_MSG_CHECKING([for CMSG_LEN])
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#if defined(_XOPEN_SOURCE)
+#  undef _XOPEN_SOURCE
+#endif
+#if defined(_POSIX_C_SOURCE)
+#  undef _POSIX_C_SOURCE
+#endif
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <stddef.h>
+],[[
+struct msghdr msg;
+char buf[CMSG_SPACE(sizeof(int))];
+struct cmsghdr *cmsg;
+unsigned char *fdptr;
+msg.msg_control = buf;
+msg.msg_controllen = sizeof(buf);
+cmsg = CMSG_FIRSTHDR(&msg);
+cmsg->cmsg_level = SOL_SOCKET;
+cmsg->cmsg_type  = SCM_RIGHTS;
+cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+fdptr = CMSG_DATA(cmsg);
+return fdptr != NULL && cmsg->cmsg_len > 0 && msg.msg_control != NULL;
+    ]])], [
+    AC_MSG_RESULT([yes])
+  ], [
+    AC_MSG_RESULT([no])
+    ref_cache="disabled"
+    AS_IF([test "x$enable_ref_cache" = xcheck], [
+      AC_MSG_WARN([ref-cache not enabled: missing CMSG_LEN()])
+    ],[
+      MSG_ERROR([ref-cache not enabled
+
+ref-cache is not supported on this configuration, as the CMSG_LEN() interface
+cannot be found.])
+    ])
+  ])
+])
+
+hts_paranoia_c_flags=""
+hts_paranoia_ld_flags=""
+AS_IF([test "$ref_cache" = enabled],[
+  AC_MSG_CHECKING([for epoll])
+  hts_have_epoll=0
+  hts_have_edge_trigger=0
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <sys/epoll.h>],[
+struct epoll_event ev;
+int fd = epoll_create(0);
+ev.events = EPOLLIN | EPOLLET;
+ev.data.fd = 0;
+if (epoll_ctl(fd, EPOLL_CTL_ADD, 0, &ev) == -1) {
+    return 1;
+}
+return 0;])],
+  [
+    hts_have_epoll=1
+    hts_have_edge_trigger=1
+    AC_MSG_RESULT([yes (edge triggered)])
+  ],
+  [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <sys/epoll.h>],[
+struct epoll_event ev;
+int fd = epoll_create(0);
+ev.events = EPOLLIN;
+ev.data.fd = 0;
+if (epoll_ctl(fd, EPOLL_CTL_ADD, 0, &ev) == -1) {
+    return 1;
+}
+return 0;])],
+    [
+        hts_have_epoll=1
+        AC_MSG_RESULT([yes])
+    ],
+    [AC_MSG_RESULT([no])])
+  ])
+  AC_DEFINE_UNQUOTED([HAVE_EPOLL], [$hts_have_epoll],
+    [Define if epoll is available])
+  AC_DEFINE_UNQUOTED([PW_HAVE_EDGE], [$hts_have_edge_trigger],
+    [Define if epoll edge triggering is available])
+
+  AC_MSG_CHECKING([for sendfile])
+  hts_have_sendfile=no
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <sys/sendfile.h>],[
+#if defined(__linux__)
+off_t offset = 0;
+return sendfile(1, 0, &offset, 1000) < 0;
+#else
+deliberately fail
+#endif
+  ])], [
+    AC_MSG_RESULT([yes, Linux-style])
+    AC_DEFINE([HAVE_LINUX_SENDFILE], 1,
+              [Define if you have Linux-type sendfile])
+    hts_have_sendfile=linux
+  ])
+  AS_IF([test $hts_have_sendfile = no], [
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#if defined(_XOPEN_SOURCE)
+#  undef _XOPEN_SOURCE
+#endif
+#if defined(_POSIX_C_SOURCE)
+#  undef _POSIX_C_SOURCE
+#endif
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+#include <stddef.h>],[
+#if (defined(__FreeBSD__) && __FreeBSD__ >= 4) || defined(__DragonFly__)
+off_t sbytes = 0, offset = 0;
+struct sf_hdtr hdtr = { NULL, 0, NULL, 0 };
+return sendfile(0, 1, offset, 1000, &hdtr, &sbytes, 0) < 0;
+#else
+deliberately fail
+#endif
+    ])],[
+      AC_MSG_RESULT([yes, FreeBSD-style])
+      AC_DEFINE([HAVE_FREEBSD_SENDFILE], 1,
+                [Define if you have FreeBSD-type sendfile])
+      hts_have_sendfile=freebsd
+    ])
+  ])
+  AS_IF([test $hts_have_sendfile = no], [
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#if defined(_XOPEN_SOURCE)
+#  undef _XOPEN_SOURCE
+#endif
+#if defined(_POSIX_C_SOURCE)
+#  undef _POSIX_C_SOURCE
+#endif
+#if !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+#include <stddef.h>],[
+#if defined(__APPLE__) && defined(__MACH__)
+off_t len = 1000, offset = 0;
+struct sf_hdtr hdtr = { NULL, 0, NULL, 0 };
+return sendfile(0, 1, offset, &len, &hdtr, 0) < 0;
+#else
+deliberately fail
+#endif
+    ])],
+    [
+      AC_MSG_RESULT([yes, macOS-style])
+      AC_DEFINE([HAVE_MACOS_SENDFILE], 1,
+                [Define if you have macOS-type sendfile])
+      hts_have_sendfile=macos])
+  ])
+  AS_IF([test $hts_have_sendfile = no], [
+    AC_MSG_RESULT([no])
+  ])
+
+  AC_CHECK_DECLS([EHOSTDOWN, ENONET], [], [], [[#include <errno.h>]])
+  AC_CHECK_DECLS([AI_V4MAPPED, AI_ADDRCONFIG], [], [], [[#include <netdb.h>]])
+
+  # Test various compiler options, recommended by
+  # https://github.com/ossf/wg-best-practices-os-developers/blob/main/docs/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C%2B%2B.md
+  AS_IF([test "x$GCC" = "xyes"],
+    [dnl
+     dnl Annoyingly, some compilers (e.g. clang) only issue warnings
+     dnl for unrecognised warning options instead of failing.  And even
+     dnl worse, some (e.g. icc) don't fail even if you use -Werror.
+     dnl Test for the latter case, and if the compiler behaves that way
+     dnl be more strict by failing if it doesn't run silently.
+
+     tmp_cflags="$CFLAGS"
+     CFLAGS="-Werror -Wthis-is-really-not-a-vaild-option"
+
+     tmp_desire_silence=no
+     AC_COMPILE_IFELSE([AC_LANG_PROGRAM()], [tmp_desire_silence=yes])
+
+     m4_foreach([cc_opt], [[-Wextra], [-Wformat], [-Wformat=2], [-Wconversion],
+                           [-Wtrampolines], [-Wstrict-aliasing],
+                           [-fstack-clash-protection],
+                           [-fstack-protector-strong],
+                           [-fcf-protection=full],
+                           [-mbranch-protection=standard],
+                           [-fno-delete-null-pointer-checks]],[
+     tmp_flag=""
+     CFLAGS="-Werror"
+     HTS_TEST_CC_FLAG(cc_opt, [tmp_flag], [$tmp_desire_silence])
+     AS_IF([test "x$tmp_flag" != x],
+           [hts_paranoia_c_flags="$hts_paranoia_c_flags $tmp_flag"])
+    ])
+    CFLAGS="$tmp_cflags"
+
+    dnl Double quoting needed here, due to commas in the tested options
+    m4_foreach([ld_opt], [[[-Wl,-z,noexecstack]],
+                          [[-Wl,-z,relro]], [[-Wl,-z,now]], [[-Wl,--as-needed]],
+                          [[-Wl,--no-copy-dt-needed-entries]]],[
+      tmp_flag=""
+      HTS_TEST_CC_LD_FLAG(ld_opt, [tmp_flag], tmp_desire_silence)
+      AS_IF([test "x$tmp_flag" != x],
+            [hts_paranoia_ld_flags="$hts_paranoia_ld_flags $tmp_flag"])
+    ])
+    dnl Skip this test on OpenBSD as the option leads to non-functional
+    dnl binaries
+    AS_CASE([$basic_host],
+     [*-OpenBSD*], [:],
+     [tmp_flag=""
+      HTS_TEST_CC_LD_FLAG([[-Wl,-z,nodlopen]], [tmp_flag], tmp_desire_silence)])
+      AS_IF([test "x$tmp_flag" != x],
+            [hts_paranoia_ld_flags="$hts_paranoia_ld_flags $tmp_flag"])
+  ])
+
+  hts_ref_cache_programs="ref_cache/ref-cache"
+  hts_ref_cache_test_opts="--ref-cache-bin ../ref_cache/ref-cache"
+],[
+  hts_ref_cache_programs=""
+  hts_ref_cache_test_opts=""
+])
+AC_SUBST([hts_ref_cache_programs])
+AC_SUBST([hts_paranoia_c_flags])
+AC_SUBST([hts_paranoia_ld_flags])
+AC_SUBST([hts_ref_cache_test_opts])
+
 dnl Look for regcomp in various libraries (needed on windows/mingw).
 AC_SEARCH_LIBS(regcomp, regex, [libregex=needed], [])
 
@@ -660,6 +919,7 @@ if test "$srcdir" != .; then
     [AS_MKDIR_P([cram])
      AS_MKDIR_P([htscodecs/htscodecs])
      AS_MKDIR_P([htscodecs/tests])
+     AS_MKDIR_P([ref_cache])
      AS_MKDIR_P([test/fuzz])
      AS_MKDIR_P([test/longrefs])
      AS_MKDIR_P([test/tabix])])

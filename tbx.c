@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023, 2025 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -96,8 +96,11 @@ int tbx_name2id(tbx_t *tbx, const char *ss)
 int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
 {
     size_t i, b = 0;
-    int id = 1;
-    char *s;
+    int id = 1, getlen = 0, alcnt = 0, haveins = 0, lenpos = -1;
+    char *s, *t;
+    uint8_t insals[8192];
+    int64_t reflen = 0, svlen = 0, fmtlen = 0, tmp = 0;
+
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
     for (i = 0; i <= len; ++i) {
         if (line[i] == '\t' || line[i] == 0) {
@@ -165,10 +168,42 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                         intv->end = intv->beg + l;
                     }
                 } else if ((conf->preset&0xffff) == TBX_VCF) {
-                    if (id == 4) {
+                    if (id == 4) { //ref allele
                         if (b < i) intv->end = intv->beg + (i - b);
-                    } else if (id == 8) { // look for "END="
-                        int c = line[i];
+                        ++alcnt;
+                        reflen = i - b;
+                    } if (id == 5) {    //alt allele
+                        int lastbyte = 0, c = line[i];
+                        insals[lastbyte] = 0;
+                        line[i] = 0;
+                        s = line + b;
+                        do {
+                            t = strchr(s, ',');
+                            if (alcnt >> 3 != lastbyte) {   //initialize insals
+                                lastbyte = alcnt >> 3;
+                                insals[lastbyte] = 0;
+                            }
+                            ++alcnt;
+                            if (t) {
+                                *t = 0;
+                            }
+                            if (s[0] == '<') {
+                                if (!strcmp("<INS>", s)) {  //note inserts
+                                    insals[lastbyte] |= 1 << ((alcnt - 1) & 7);
+                                    haveins = 1;
+                                } else if (!strcmp("<*>", s) ||
+                                    !strcmp("<NON_REF>", s)) {  //note gvcf
+                                    getlen = 1;
+                                }
+                            }
+                            if (t) {
+                                *t = ',';
+                                s = t + 1;
+                            }
+                        } while (t && alcnt < 65536);   //max allcnt is 65535
+                        line[i] = c;
+                    } else if (id == 8) { //INFO, look for "END=" / "SVLEN"
+                        int c = line[i], d = 1;
                         line[i] = 0;
                         s = strstr(line + b, "END=");
                         if (s == line + b) s += 4;
@@ -194,13 +229,84 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                                 intv->end = end;
                             }
                         }
+                        s = strstr(line + b, "SVLEN=");
+                        if (s == line + b) s += 6;  //at start of info
+                        else if (s) {               //not at the start
+                            s = strstr(line + b, ";SVLEN=");
+                            if (s) s += 7;
+                        }
+                        while (s && d < alcnt) {
+                            t = strchr(s, ',');
+                            if ((haveins) && (insals[d >> 3] & (1 << (d & 7)))) {
+                                tmp = 1;    //<INS>
+                            } else {
+                                tmp = atoll(s);
+                                tmp = tmp < 0 ? llabs(tmp) : tmp;
+                            }
+                            svlen = svlen < tmp ? tmp : svlen;
+                            s = t ? t + 1 : NULL;
+                            ++d;
+                        }
+                        line[i] = c;
+                    } else if (getlen && id == 9 ) {    //FORMAT
+                        int c = line[i], pos = -1;
+                        line[i] = 0;
+                        s = line + b;
+                        while (s) {
+                            ++pos;
+                            if (!(t = strchr(s, ':'))) {    //no further fields
+                                if (!strcmp(s, "LEN")) {
+                                    lenpos = pos;
+                                }
+                                break;  //not present at all!
+                            } else {
+                                *t = '\0';
+                                if (!strcmp(s, "LEN")) {
+                                    lenpos = pos;
+                                    *t = ':';
+                                    break;
+                                }
+                                *t = ':';
+                                s = t + 1;  //check next one
+                            }
+                        }
+                        line[i] = c;
+                        if (lenpos == -1) { //not present
+                            break;
+                        }
+                    } else if (id > 9 && getlen && lenpos != -1) {
+                        //get LEN from sample
+                        int c = line[i], d = 0;
+                        line[i] = 0; tmp = 0;
+                        s = line + b;
+                        for (d = 0; d <= lenpos; ++d) {
+                            if (d == lenpos) {
+                                tmp = atoll(s);
+                                break;
+                            }
+                            if ((t = strchr(s, ':'))) {
+                                s = t + 1;
+                            } else {
+                                break;    //not in sycn with fmt def!
+                            }
+                        }
+                        fmtlen = fmtlen < tmp ? tmp : fmtlen;
                         line[i] = c;
                     }
                 }
             }
-            b = i + 1;
+            b = i + 1;  //beginning if current field
             ++id;
         }
+    }
+    if ((conf->preset&0xffff) == TBX_VCF) {
+        tmp = reflen < svlen ?
+                svlen < fmtlen ? fmtlen : svlen :
+                reflen < fmtlen ? fmtlen : reflen ;
+        tmp += intv->beg;
+        intv->end = intv->end < tmp ? tmp : intv->end;
+
+        //NOTE: 'end' calculation be in sync with end/rlen in vcf.c:get_rlen
     }
     if (intv->ss == 0 || intv->se == 0 || intv->beg < 0 || intv->end < 0) return -1;
     return 0;
@@ -373,8 +479,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
             first = 1;
         }
         ret = get_intv(tbx, &str, &intv, 1);
-        if (ret < -1) goto fail;  // Out of memory
-        if (ret < 0) continue; // Skip unparsable lines
+        if (ret < 0) goto fail;  // Out of memory or unparsable lines
         if (hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end,
                          bgzf_tell(fp), 1) < 0) {
             goto fail;
