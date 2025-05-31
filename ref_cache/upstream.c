@@ -866,7 +866,7 @@ static int init_multi_data(CURLM *multi, Multi_data *mdata) {
                     curl_easy_strerror(cc));
             goto fail;
         }
-        cc = curl_easy_setopt(mdata->curls[i], CURLOPT_NOPROGRESS, 0);
+        cc = curl_easy_setopt(mdata->curls[i], CURLOPT_NOPROGRESS, 0L);
 #if LIBCURL_VERSION_NUM >= 0x072000 // 7.32.0
         cc = curl_easy_setopt(mdata->curls[i],
                               CURLOPT_XFERINFOFUNCTION, progress_callback);
