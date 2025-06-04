@@ -76,7 +76,7 @@ gcc_task:
     - environment:
        USE_CONFIG: yes
        # ubsan is incompatible with some -Wformat opts so we do that on clang.
-       CFLAGS: -g -O3 -fsanitize=address,undefined -DHTS_ALLOW_UNALIGNED=0 -Wno-format-truncation -Wno-format-overflow
+       CFLAGS: -g -Og -fsanitize=address,undefined -DHTS_ALLOW_UNALIGNED=0 -Wno-format-truncation -Wno-format-overflow
        LDFLAGS: -fsanitize=address,undefined
        USE_LIBDEFLATE: yes
        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
