@@ -24,6 +24,12 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+// Work around older MacOS SDKs which hid O_DIRECTORY if _POSIX_C_SOURCE
+// or _XOPEN_SOURCE are defined.
+#define _DARWIN_C_SOURCE
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
