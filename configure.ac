@@ -645,7 +645,7 @@ AS_IF([test "x$enable_ref_cache" != xno],
   [AS_CASE([$PLATFORM],
      [Darwin | default],[
         AS_IF([test "x$libcurl" = xenabled], [ref_cache="enabled"], [
-          AS_IF([test "x$enable_ref_cache" = check], [
+          AS_IF([test "x$enable_ref_cache" = xcheck], [
             AC_MSG_WARN([ref-cache not enabled: requires libcurl])
           ],[
             MSG_ERROR([ref-cache not enabled
