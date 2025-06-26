@@ -2249,8 +2249,20 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                                            b->content_id, &comp_size, method,
                                            method == GZIP_1 ? 1 : level,
                                            strat);
-            if (!comp)
+            if (!comp) {
+                // Our cached best method failed, but maybe another works?
+                // Rerun with trial mode engaged again.
+                if (metrics && metrics->trial == 0) {
+                    hts_log_info("Compressed block ID %d method %s failed, "
+                                 "redoing trial",
+                                 b->content_id, cram_block_method2str(method));
+                    metrics->trial = NTRIALS;
+                    metrics->next_trial = TRIAL_SPAN;
+                    return cram_compress_block2(fd, s, b, metrics, method,
+                                                level);
+                }
                 return -1;
+            }
 
             if (comp_size < b->uncomp_size) {
                 free(b->data);

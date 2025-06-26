@@ -3575,6 +3575,8 @@ static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 
     cp = (char *)b->data + b->idx;
     if (out) {
+        // FIXME: Add check for out overflow.  Maybe using *out_size
+        // as a maximum size?  Similarly for other variable sized decodes
         while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
             if (cp - (char *)b->data >= b->uncomp_size)
                 return -1;
