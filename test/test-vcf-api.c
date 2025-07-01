@@ -30,6 +30,8 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "../htslib/hts.h"
 #include "../htslib/vcf.h"
+#include "../htslib/vcfutils.h"
+#include "../htslib/kbitset.h"
 #include "../htslib/kstring.h"
 #include "../htslib/kseq.h"
 
@@ -904,6 +906,93 @@ static void test_vl_types(void)
     bcf_close(fp);
 }
 
+static int read_vcf_line(const char *line, bcf_hdr_t *hdr, bcf1_t *rec,
+                         kstring_t *kstr)
+{
+    int ret;
+    if (kputsn(line, strlen(line), ks_clear(kstr)) < 0)
+        return -1;
+
+    ret = vcf_parse(kstr, hdr, rec);
+    if (ret != 0) {
+        fprintf(stderr, "vcf_parse(\"%s\", hdr, rec) returned %d\n",
+                ks_c_str(kstr), ret);
+    }
+    return ret;
+}
+
+void chomp(kstring_t *kstr)
+{
+    if (kstr->l < 1)
+        return;
+    if (kstr->s[kstr->l - 1] == '\n')
+        kstr->s[--kstr->l] = '\0';
+}
+
+// Test bcf_remove_allele_set()
+void test_bcf_remove_allele_set(void)
+{
+    char header[] = "##fileformat=VCFv4.5\n"
+        "##FILTER=<ID=PASS,Description=\"All filters passed\">\n"
+        "##contig=<ID=5,length=243199373>\n"
+        "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+        "##INFO=<ID=AD,Number=R,Type=Integer,Description=\"Allele depth\">\n"
+        "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+        "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allele depth\">\n"
+        "##FORMAT=<ID=EC,Number=A,Type=Integer,Description=\"Expected allele count\">\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+        "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"List of Phred-scaled genotype likelihoods\">\n"
+        "##FORMAT=<ID=LAA,Number=.,Type=Integer,Description=\"Local alleles\">\n"
+        "##FORMAT=<ID=LAD,Number=LR,Type=Integer,Description=\"Local allele depth\">\n"
+        "##FORMAT=<ID=LEC,Number=LA,Type=Integer,Description=\"Local expected allele count\">\n"
+        "##FORMAT=<ID=LPL,Number=LG,Type=Integer,Description=\"List of Phred-scaled local genotype likelihoods\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAAA\tBBB\tCCC\n";
+    const char * inputs[] = {
+        "5\t110285\t.\tT\tC,<*>\t.\tPASS\tAC=1,0;AD=6,5,0;AF=0.99,0.01\tGT:AD:EC:PL\t.:.:.:.\t0/1:6,5,0:4,0:114,0,15,35,73,113\t.:.:.:.",
+        "5\t110290\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001\tGT:LAA:LAD:LEC:LPL\t0/0:.:3:.:0\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113\t1/1:1:0,3:46:110,15,0"
+    };
+    const char * expected[] = {
+        "5\t110285\t.\tT\tC\t.\tPASS\tAC=1;AD=6,5;AF=0.99\tGT:AD:EC:PL\t.:.:.:.\t0/1:6,5:4:114,0,15\t.:.:.:.",
+        "5\t110290\t.\tT\tC\t.\tPASS\tAC=90;AD=6,5;AF=0.009\tGT:LAA:LAD:LEC:LPL\t0/0:.:3:.:0\t0/1:1:3,2:44:114,0,15\t1/1:1:0,3:46:110,15,0"
+    };
+
+    kstring_t kstr = KS_INITIALIZE;
+
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    bcf1_t *rec = bcf_init();
+    struct kbitset_t *rm_set = kbs_init(3);
+    size_t i;
+
+    if (!hdr)
+        error("bcf_hdr_init() failed\n");
+
+    if (!rec)
+        error("bcf_init() failed\n");
+
+    if (!rm_set)
+        error("kbs_init() failed\n");
+
+    check0(ks_resize(&kstr, 1000));
+    check0(bcf_hdr_parse(hdr, header));
+    for (i = 0; i < sizeof(inputs)/sizeof(inputs[0]); i++)
+    {
+        check0(read_vcf_line(inputs[i], hdr, rec, &kstr));
+        kbs_insert(rm_set, 2);
+        check0(bcf_remove_allele_set(hdr, rec, rm_set));
+        check0(vcf_format(hdr, rec, ks_clear(&kstr)));
+        chomp(&kstr);
+        if (strcmp(expected[i], ks_c_str(&kstr)) != 0)
+        {
+            error("bcf_remove_allele_set() output differs\nExpected:\n%s\nGot:\n%s\n",
+                  expected[i], ks_c_str(&kstr));
+        }
+    }
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+    ks_free(&kstr);
+    kbs_destroy(rm_set);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -922,5 +1011,6 @@ int main(int argc, char **argv)
     test_invalid_end_tag();
     test_open_format();
     test_rlen_values();
+    test_bcf_remove_allele_set();
     return 0;
 }
