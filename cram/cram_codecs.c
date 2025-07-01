@@ -3575,12 +3575,18 @@ static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 
     cp = (char *)b->data + b->idx;
     if (out) {
+       // memccpy equivalent but without copying the terminating byte
+        ssize_t term = MIN(*out_size, b->uncomp_size - b->idx);
         while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
-            if (cp - (char *)b->data >= b->uncomp_size)
-                return -1;
+            if (term-- < 0)
+                break;
             *out++ = ch;
             cp++;
         }
+
+        // Attempted overrun on input or output
+        if (ch != (char)c->u.byte_array_stop.stop)
+            return -1;
     } else {
         // Consume input, but produce no output
         while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
