@@ -227,6 +227,12 @@ static inline int block_resize(cram_block *b, size_t len) {
     if (b->alloc > len)
         return 0;
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Removal of extra padding causes many more reallocs, but detects
+    // more buffer overruns.
+    return block_resize_exact(b, len?len:1);
+#endif
+
     size_t alloc = b->alloc+800;
     alloc = MAX(alloc + (alloc>>2), len);
     return block_resize_exact(b, alloc);
