@@ -2298,9 +2298,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     // However it's likely that this also saves memory as own growth
     // factor (*=1.5) is never applied.
     {
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+        int qsize=0, nsize=0, q_id=0;
+#else
         int qsize, nsize, q_id;
         cram_decode_estimate_sizes(c->comp_hdr, s, &qsize, &nsize, &q_id);
         //fprintf(stderr, "qsize=%d nsize=%d\n", qsize, nsize);
+#endif
 
         if (qsize && (ds & CRAM_RL)) BLOCK_RESIZE_EXACT(s->seqs_blk, qsize+1);
         if (qsize && (ds & CRAM_RL)) BLOCK_RESIZE_EXACT(s->qual_blk, qsize+1);
@@ -2800,7 +2804,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         /* Fake up dynamic string growth and appending */
         if (ds & CRAM_RL) {
             cr->seq = BLOCK_SIZE(s->seqs_blk);
-            BLOCK_GROW(s->seqs_blk, cr->len);
+            BLOCK_RESIZE(s->seqs_blk, cr->seq + cr->len);
             seq = (char *)BLOCK_END(s->seqs_blk);
             BLOCK_SIZE(s->seqs_blk) += cr->len;
 
@@ -2808,7 +2812,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                 goto block_err;
 
             cr->qual = BLOCK_SIZE(s->qual_blk);
-            BLOCK_GROW(s->qual_blk, cr->len);
+            BLOCK_RESIZE(s->qual_blk, cr->qual + cr->len);
             qual = (char *)BLOCK_END(s->qual_blk);
             BLOCK_SIZE(s->qual_blk) += cr->len;
 
