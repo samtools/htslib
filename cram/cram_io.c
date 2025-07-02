@@ -2304,12 +2304,8 @@ static int cram_compress_block3(cram_fd *fd, cram_slice *s,
 }
 
 /*
- * Compresses a block using one of two different zlib strategies. If we only
- * want one choice set strat2 to be -1.
- *
- * The logic here is that sometimes Z_RLE does a better job than Z_FILTERED
- * or Z_DEFAULT_STRATEGY on quality data. If so, we'd rather use it as it is
- * significantly faster.
+ * Compresses a block using a selection of compression codecs and options.
+ * The best is learnt and used for subsequent slices, periodically resampling.
  *
  * Method and level -1 implies defaults, as specified in cram_fd.
  */
