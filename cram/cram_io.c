@@ -1899,24 +1899,21 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
     return NULL;
 }
 
-
 /*
- * Compresses a block using one of two different zlib strategies. If we only
- * want one choice set strat2 to be -1.
- *
- * The logic here is that sometimes Z_RLE does a better job than Z_FILTERED
- * or Z_DEFAULT_STRATEGY on quality data. If so, we'd rather use it as it is
- * significantly faster.
- *
- * Method and level -1 implies defaults, as specified in cram_fd.
+ * A copy of cram_compress_block2 with added recursion detection.
+ * This is only called for error handling where the auto-tuning has failed.
+ * The simplest way of doing this is recusion + an additional argument, but
+ * we didn't want to complicate the existing code hence this is static.
  */
-int cram_compress_block2(cram_fd *fd, cram_slice *s,
-                         cram_block *b, cram_metrics *metrics,
-                         int method, int level) {
+static int cram_compress_block3(cram_fd *fd, cram_slice *s,
+                                cram_block *b, cram_metrics *metrics,
+                                int method, int level,
+                                int recurse) {
 
     if (!b)
         return 0;
 
+    int orig_method = method;
     char *comp = NULL;
     size_t comp_size = 0;
     int strat;
@@ -2249,8 +2246,23 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                                            b->content_id, &comp_size, method,
                                            method == GZIP_1 ? 1 : level,
                                            strat);
-            if (!comp)
+            if (!comp) {
+                // Our cached best method failed, but maybe another works?
+                // Rerun with trial mode engaged again.
+                if (!recurse) {
+                    hts_log_warning("Compressed block ID %d method %s failed, "
+                                    "redoing trial", b->content_id,
+                                    cram_block_method2str(method));
+                    pthread_mutex_lock(&fd->metrics_lock);
+                    metrics->trial = NTRIALS;
+                    metrics->next_trial = TRIAL_SPAN;
+                    metrics->revised_method = orig_method;
+                    pthread_mutex_unlock(&fd->metrics_lock);
+                    return cram_compress_block3(fd, s, b, metrics, method,
+                                                level, 1);
+                }
                 return -1;
+            }
 
             if (comp_size < b->uncomp_size) {
                 free(b->data);
@@ -2290,6 +2302,19 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
 
     return 0;
 }
+
+/*
+ * Compresses a block using a selection of compression codecs and options.
+ * The best is learnt and used for subsequent slices, periodically resampling.
+ *
+ * Method and level -1 implies defaults, as specified in cram_fd.
+ */
+int cram_compress_block2(cram_fd *fd, cram_slice *s,
+                         cram_block *b, cram_metrics *metrics,
+                         int method, int level) {
+    return cram_compress_block3(fd, s, b, metrics, method, level, 0);
+}
+
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
                         int method, int level) {
     return cram_compress_block2(fd, NULL, b, metrics, method, level);
