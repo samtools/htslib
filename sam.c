@@ -209,11 +209,12 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
 
         if (sam_hdr_update_target_arrays(h, h0->hrecs, 0) != 0)
             goto fail;
-    } else if (h0->text) {
-        h->l_text = h0->l_text;
+    } else {
+        h->l_text = h0->text ? h0->l_text : 0;
         h->text = malloc(h->l_text + 1);
         if (!h->text) goto fail;
-        memcpy(h->text, h0->text, h->l_text);
+        if (h0->text)
+            memcpy(h->text, h0->text, h->l_text);
         h->text[h->l_text] = '\0';
     }
 
