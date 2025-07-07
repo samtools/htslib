@@ -290,7 +290,7 @@ void sam_hrecs_free(sam_hrecs_t *hrecs);
 sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
                                      const char *ID_key, const char *ID_value);
 
-sam_hrec_tag_t *sam_hrecs_find_key(sam_hrec_type_t *type,
+sam_hrec_tag_t *sam_hrecs_find_key(const sam_hrec_type_t *type,
                                    const char *key,
                                    sam_hrec_tag_t **prev);
 
