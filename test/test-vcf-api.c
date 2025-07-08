@@ -802,6 +802,108 @@ void test_rlen_values(void)
     hts_set_log_level(logging);
 }
 
+static void test_vl_types(void)
+{
+    const char *test_vcf = "data:,"
+        "##fileformat=VCFv4.5\n"
+        "##FILTER=<ID=PASS,Description=\"All filters passed\">\n"
+        "##contig=<ID=5,length=243199373>\n"
+        "##INFO=<ID=FIXED_1_INFO,Number=1,Type=Integer,Description=\"Fixed number 1\">\n"
+        "##INFO=<ID=FIXED_4_INFO,Number=4,Type=Float,Description=\"Fixed number 4\">\n"
+        "##INFO=<ID=VL_DOT_INFO,Number=.,Type=Integer,Description=\"Variable number\">\n"
+        "##INFO=<ID=VL_A_INFO,Number=A,Type=Integer,Description=\"One value for each ALT allele\">\n"
+        "##INFO=<ID=VL_G_INFO,Number=G,Type=Integer,Description=\"One value for each possible genotype\">\n"
+        "##INFO=<ID=VL_R_INFO,Number=R,Type=Integer,Description=\"One value for each allele including REF\">\n"
+        "##FORMAT=<ID=FIXED_1_FMT,Number=1,Type=String,Description=\"Fixed number 1\">\n"
+        "##FORMAT=<ID=FIXED_4_FMT,Number=4,Type=String,Description=\"Fixed number 4\">\n"
+        "##FORMAT=<ID=VL_DOT_FMT,Number=.,Type=String,Description=\"Variable number\">\n"
+        "##FORMAT=<ID=VL_A_FMT,Number=A,Type=Integer,Description=\"One value for each ALT allele\">\n"
+        "##FORMAT=<ID=VL_G_FMT,Number=G,Type=Integer,Description=\"One value for each possible genotype\">\n"
+        "##FORMAT=<ID=VL_R_FMT,Number=R,Type=Integer,Description=\"One value for each allele including REF\">\n"
+        "##FORMAT=<ID=VL_P_FMT,Number=P,Type=String,Description=\"One value for each allele value defined in GT\">\n"
+        "##FORMAT=<ID=VL_LA_FMT,Number=LA,Type=Integer,Description=\"One value for each local ALT allele\">\n"
+        "##FORMAT=<ID=VL_LG_FMT,Number=LG,Type=Integer,Description=\"One value for each local genotype\">\n"
+        "##FORMAT=<ID=VL_LR_FMT,Number=LR,Type=Integer,Description=\"One value for each local allele including REF\">\n"
+        "##FORMAT=<ID=VL_M_FMT,Number=M,Type=Integer,Description=\"One value for each posible base modification of the given type\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAAA\n";
+
+    typedef struct {
+        const char *id;
+        int type;
+        int expected_vl_code;
+        int expected_number;
+    } expected_types_t;
+
+    expected_types_t expected[] = {
+        { "FIXED_1_INFO", BCF_HL_INFO, BCF_VL_FIXED, 1 },
+        { "FIXED_4_INFO", BCF_HL_INFO, BCF_VL_FIXED, 4 },
+        { "VL_DOT_INFO",  BCF_HL_INFO, BCF_VL_VAR,   0xfffff },
+        { "VL_A_INFO",    BCF_HL_INFO, BCF_VL_A,     0xfffff },
+        { "VL_G_INFO",    BCF_HL_INFO, BCF_VL_G,     0xfffff },
+        { "VL_R_INFO",    BCF_HL_INFO, BCF_VL_R,     0xfffff },
+        { "FIXED_1_FMT",  BCF_HL_FMT,  BCF_VL_FIXED, 1 },
+        { "FIXED_4_FMT",  BCF_HL_FMT,  BCF_VL_FIXED, 4 },
+        { "VL_DOT_FMT",   BCF_HL_FMT,  BCF_VL_VAR,   0xfffff },
+        { "VL_A_FMT",     BCF_HL_FMT,  BCF_VL_A,     0xfffff },
+        { "VL_G_FMT",     BCF_HL_FMT,  BCF_VL_G,     0xfffff },
+        { "VL_R_FMT",     BCF_HL_FMT,  BCF_VL_R,     0xfffff },
+        { "VL_P_FMT",     BCF_HL_FMT,  BCF_VL_P,     0xfffff },
+        { "VL_LA_FMT",    BCF_HL_FMT,  BCF_VL_LA,    0xfffff },
+        { "VL_LG_FMT",    BCF_HL_FMT,  BCF_VL_LG,    0xfffff },
+        { "VL_LR_FMT",    BCF_HL_FMT,  BCF_VL_LR,    0xfffff },
+        { "VL_M_FMT",     BCF_HL_FMT,  BCF_VL_M,     0xfffff },
+    };
+
+    htsFile *fp = hts_open(test_vcf, "r");
+    if (!fp) error("Failed to open test data\n");
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    if (!hdr) error("Failed to read BCF header\n");
+    size_t i;
+    for (i = 0; i < sizeof(expected)/sizeof(expected[0]); i++)
+    {
+        int id_num = bcf_hdr_id2int(hdr, BCF_DT_ID, expected[i].id);
+        if (id_num < 0)
+        {
+            error("Couldn't look up VCF header ID %s\n", expected[i].id);
+        }
+        int vl_code = bcf_hdr_id2length(hdr, expected[i].type, id_num);
+        if (vl_code != expected[i].expected_vl_code)
+        {
+            const char *length_types[] = {
+                "BCF_VL_FIXED", "BCF_VL_VAR", "BCF_VL_A", "BCF_VL_G",
+                "BCF_VL_R", "BCF_VL_P", "BCF_VL_LA", "BCF_VL_LG",
+                "BCF_VL_LR", "BCF_VL_M"
+            };
+            if (vl_code >= 0 && vl_code < sizeof(length_types)/sizeof(length_types[0]))
+            {
+                error("Unexpected length code for %s: expected %s got %s\n",
+                      expected[i].id,
+                      length_types[expected[i].expected_vl_code],
+                      length_types[vl_code]);
+            }
+            else
+            {
+                error("Unexpected length code for %s: expected %s got %d\n",
+                      expected[i].id,
+                      length_types[expected[i].expected_vl_code], vl_code);
+            }
+        }
+        int num = bcf_hdr_id2number(hdr, expected[i].type, id_num);
+        if (num != expected[i].expected_number)
+        {
+            error("Unexpected number for %s: expected %d%s got %d%s\n",
+                  expected[i].id,
+                  expected[i].expected_number,
+                  (expected[i].expected_number == 0xfffff
+                   ? " (= code for not fixed)" : ""),
+                  num,
+                  num == 0xfffff ? " (= code for not fixed)" : "");
+        }
+    }
+    bcf_hdr_destroy(hdr);
+    bcf_close(fp);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -815,6 +917,7 @@ int main(int argc, char **argv)
     iterator(fname);
 
     // additional tests. quiet unless there's a failure.
+    test_vl_types();
     test_get_info_values(fname);
     test_invalid_end_tag();
     test_open_format();
