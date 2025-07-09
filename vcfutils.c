@@ -588,7 +588,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             sample_laa_map[0] = 0;
             for (j = 0, k = 0; j < num_laa_vals; j++)
             {
-                if (sample_laa[j] == bcf_int32_vector_end)
+                if (sample_laa[j] == bcf_int32_vector_end
+                    || sample_laa[j] == bcf_int32_missing)
                     break;
                 int allele = (sample_laa[j] > 0
                               && sample_laa[j] < line->n_allele)
@@ -716,8 +717,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         ss = ++ptr;
                         k_dst++;
                     }
-                    if ( k_src==1 && s == '.' ) continue; // missing
-                    if ( k_src!=nexp )
+                    if ( k_src!=nexp
+                         && !( k_src==1 && s == '.' /* missing */ ))
                     {
                         hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=%s=%d, but found %d",
                                       bcf_hdr_int2id(header,BCF_DT_ID,fmt->id),
@@ -726,7 +727,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         goto err;
                     }
                     l = str.l - l;
-                    for (; l<size; l++) kputc(0, &str);
+                    for (; l<size; l++) kputc(l == 0 ? '.' : '\0', &str);
                 }
             }
             else    // Number=G or LG, diploid or haploid
@@ -748,8 +749,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         ptr++;
                     }
                     if ( ptr!=ss ) nexp++;
-                    if ( nexp==1 && s == '.' ) continue; // missing
-                    if ( nexp!=sample_nG_ori && nexp!=sample_nR_ori )
+                    if ( nexp!=sample_nG_ori && nexp!=sample_nR_ori
+                         && !( nexp==1 && s == '.' /* missing */))
                     {
                         hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=%s=%d(diploid) or %d(haploid), but found %d",
                                       bcf_hdr_int2id(header,BCF_DT_ID,fmt->id),
@@ -759,7 +760,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         goto err;
                     }
                     ptr = ss;
-                    if ( nexp==sample_nG_ori ) // diploid
+                    if ( nexp==1 && s == '.' ) // missing
+                    {
+                        kputc('.', &str);
+                    }
+                    else if ( nexp==sample_nG_ori ) // diploid
                     {
                         int ia, ib;
                         for (ia=0; ia<sample_nR_ori; ia++)
@@ -807,9 +812,9 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                                           nR_ori, k_src);
                             goto err;
                         }
-                        l = str.l - l;
-                        for (; l<size; l++) kputc(0, &str);
                     }
+                    l = str.l - l;
+                    for (; l<size; l++) kputc(0, &str);
                 }
             }
             nret = bcf_update_format(header, line, bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), (void*)str.s, str.l, type);
