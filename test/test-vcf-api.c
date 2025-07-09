@@ -938,6 +938,8 @@ void test_bcf_remove_allele_set(void)
         "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
         "##INFO=<ID=AD,Number=R,Type=Integer,Description=\"Allele depth\">\n"
         "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+        "##INFO=<ID=VL_A_STR_INFO,Number=A,Type=String,Description=\"INFO string Number=A\">\n"
+        "##INFO=<ID=VL_R_STR_INFO,Number=R,Type=String,Description=\"INFO string Number=R\">\n"
         "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allele depth\">\n"
         "##FORMAT=<ID=EC,Number=A,Type=Integer,Description=\"Expected allele count\">\n"
         "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
@@ -946,14 +948,20 @@ void test_bcf_remove_allele_set(void)
         "##FORMAT=<ID=LAD,Number=LR,Type=Integer,Description=\"Local allele depth\">\n"
         "##FORMAT=<ID=LEC,Number=LA,Type=Integer,Description=\"Local expected allele count\">\n"
         "##FORMAT=<ID=LPL,Number=LG,Type=Integer,Description=\"List of Phred-scaled local genotype likelihoods\">\n"
+        "##FORMAT=<ID=VL_A_STR_FMT,Number=A,Type=String,Description=\"FMT string Number=A\">\n"
+        "##FORMAT=<ID=VL_G_STR_FMT,Number=G,Type=String,Description=\"FMT string Number=G\">\n"
+        "##FORMAT=<ID=VL_LA_STR_FMT,Number=LA,Type=String,Description=\"FMT string Number=LA\">\n"
+        "##FORMAT=<ID=VL_LG_STR_FMT,Number=LG,Type=String,Description=\"FMT string Number=LG\">\n"
+        "##FORMAT=<ID=VL_LR_STR_FMT,Number=LR,Type=String,Description=\"FMT string Number=LR\">\n"
+        "##FORMAT=<ID=VL_R_STR_FMT,Number=R,Type=String,Description=\"FMT string Number=R\">\n"
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAAA\tBBB\tCCC\n";
     const char * inputs[] = {
-        "5\t110285\t.\tT\tC,<*>\t.\tPASS\tAC=1,0;AD=6,5,0;AF=0.99,0.01\tGT:AD:EC:PL\t.:.:.:.\t0/1:6,5,0:4,0:114,0,15,35,73,113\t.:.:.:.",
-        "5\t110290\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001\tGT:LAA:LAD:LEC:LPL\t0/0:.:3:.:0\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113\t1/1:1:0,3:46:110,15,0"
+        "5\t110285\t.\tT\tC,<*>\t.\tPASS\tAC=1,0;AD=6,5,0;AF=0.99,0.01;VL_A_STR_INFO=alt_c,alt_nonref;VL_R_STR_INFO=ref,alt_c,alt_nonref\tGT:AD:EC:PL:VL_A_STR_FMT:VL_G_STR_FMT:VL_R_STR_FMT\t.:.:.:.:.:.:.\t0/1:6,5,0:4,0:114,0,15,35,73,113:alt_c,alt_nonref:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_nonref\t.:.:.:.:.:.:.",
+        "5\t110290\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c"
     };
     const char * expected[] = {
-        "5\t110285\t.\tT\tC\t.\tPASS\tAC=1;AD=6,5;AF=0.99\tGT:AD:EC:PL\t.:.:.:.\t0/1:6,5:4:114,0,15\t.:.:.:.",
-        "5\t110290\t.\tT\tC\t.\tPASS\tAC=90;AD=6,5;AF=0.009\tGT:LAA:LAD:LEC:LPL\t0/0:.:3:.:0\t0/1:1:3,2:44:114,0,15\t1/1:1:0,3:46:110,15,0"
+        "5\t110285\t.\tT\tC\t.\tPASS\tAC=1;AD=6,5;AF=0.99;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:AD:EC:PL:VL_A_STR_FMT:VL_G_STR_FMT:VL_R_STR_FMT\t.:.:.:.:.:.:.\t0/1:6,5:4:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t.:.:.:.:.:.:.",
+        "5\t110290\t.\tT\tC\t.\tPASS\tAC=90;AD=6,5;AF=0.009;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1:3,2:44:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c"
     };
 
     kstring_t kstr = KS_INITIALIZE;
