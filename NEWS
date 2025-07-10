@@ -1,6 +1,46 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Bug Fixes
+---------
+
+* SECURITY fix: Prevent CRAM byte_array decoder from overflowing its output
+  buffer.  This could be triggered by certain malformed CRAM inputs.
+  (PR #1934)
+
+* Two fixes for crashes reported when trying to save data with very long
+  alignment records with sequence '*' as CRAM 3.1:
+
+  - The htscodecs submodule is updated to v1.6.4.
+    This includes a fix to the rANS encoder to prevent it from failing on
+    these inputs.
+    (PR #1935.  Reported by Martin Pollard)
+
+  - Improved error handling in cram_compress_block2().  If the previously-chosen
+    CRAM compression method starts to fail, it will now try other methods
+    instead of giving up immediately.
+    (PR #1931.  Reported by Martin Pollard)
+
+
+* Fix warnings due to the wrong datatype being passed to curl_easy_setopt()
+  (PR #1925.  Thanks to John Marshall)
+
+* Prevent instances of `memcpy(out, NULL, 0)`, which is strictly undefined
+  behaviour.
+  (PR #1930.  Thanks to Ben Lawrence).
+
+Build Changes
+-------------
+
+* Fixed compilation against older glibc / macOS SDKs that incorrectly
+  suppressed some symbols if _XOPEN_SOURCE was defined.
+  (PR #1928.  Reported by John Marshall)
+
+* Fixed ref-cache configure check for libcurl, so that if libcurl is
+  not available, or turned off by `./configure --disable-libcurl`,
+  the `ref-cache` build will be automatically disabled as well.
+  (PR #1929, fixes #1926.  Reported by biounix)
+
 Noteworthy changes in release 1.22 (30th May 2025)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
