@@ -210,10 +210,11 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
         if (sam_hdr_update_target_arrays(h, h0->hrecs, 0) != 0)
             goto fail;
     } else {
-        h->l_text = h0->l_text;
+        h->l_text = h0->text ? h0->l_text : 0;
         h->text = malloc(h->l_text + 1);
         if (!h->text) goto fail;
-        memcpy(h->text, h0->text, h->l_text);
+        if (h0->text)
+            memcpy(h->text, h0->text, h->l_text);
         h->text[h->l_text] = '\0';
     }
 
@@ -5167,12 +5168,14 @@ int bam_aux_update_array(bam1_t *b, const char tag[2],
 
     s[1] = type;
     u32_to_le(items, s + 2);
+    if (new_sz > 0) {
 #ifdef HTS_LITTLE_ENDIAN
-    memcpy(s + 6, data, new_sz);
-    return 0;
+        memcpy(s + 6, data, new_sz);
 #else
-    return aux_to_le(type, s + 6, data, new_sz);
+        return aux_to_le(type, s + 6, data, new_sz);
 #endif
+    }
+    return 0;
 }
 
 static inline int64_t get_int_aux_val(uint8_t type, const uint8_t *s,

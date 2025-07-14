@@ -233,8 +233,11 @@ static int check_addr_allowed(const Options *opts, sa_family_t family,
         start = 0;
         end = opts->first_ip6;
     } else if (family == AF_INET6 && addrlen == sizeof(struct sockaddr_in6)) {
+        const uint8_t v4mapped_prefix[12] = {
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
+        };
         addrp = (const uint8_t *) &addr->in6.sin6_addr;
-        if (IN6_IS_ADDR_V4MAPPED(&addr->in6.sin6_addr)) {
+        if (memcmp(addrp, v4mapped_prefix, sizeof(v4mapped_prefix)) == 0) {
             // V4MAPPED addresses are really IPv4, with the mapped address
             // in the last four bytes
             family = AF_INET;

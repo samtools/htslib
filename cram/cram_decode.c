@@ -1275,7 +1275,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         switch(op) {
         case 'S': { // soft clip: IN
-            int32_t out_sz2 = 1;
+            int32_t out_sz2 = cr->len ? cr->len-(pos-1) : 1;
             int have_sc = 0;
 
             if (cig_len) {
@@ -1431,7 +1431,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         }
 
         case 'I': { // Insertion (several bases); IN
-            int32_t out_sz2 = 1;
+            int32_t out_sz2 = cr->len ? cr->len-(pos-1) : 1;
 
             if (cig_len && cig_op != BAM_CINS) {
                 cigar[ncigar++] = (cig_len<<4) + cig_op;
@@ -1473,7 +1473,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         }
 
         case 'b': { // Several bases
-            int32_t len = 1;
+            int32_t len = cr->len ? cr->len-(pos-1) : 1;
 
             if (cig_len && cig_op != BAM_CMATCH) {
                 cigar[ncigar++] = (cig_len<<4) + cig_op;
@@ -1523,7 +1523,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         }
 
         case 'q': { // Several quality values
-            int32_t len = 1;
+            int32_t len = cr->len ? cr->len - (pos-1) : 1;
 
             if (cig_len && cig_op != BAM_CMATCH) {
                 cigar[ncigar++] = (cig_len<<4) + cig_op;
@@ -2298,9 +2298,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     // However it's likely that this also saves memory as own growth
     // factor (*=1.5) is never applied.
     {
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+        int qsize=0, nsize=0, q_id=0;
+#else
         int qsize, nsize, q_id;
         cram_decode_estimate_sizes(c->comp_hdr, s, &qsize, &nsize, &q_id);
         //fprintf(stderr, "qsize=%d nsize=%d\n", qsize, nsize);
+#endif
 
         if (qsize && (ds & CRAM_RL)) BLOCK_RESIZE_EXACT(s->seqs_blk, qsize+1);
         if (qsize && (ds & CRAM_RL)) BLOCK_RESIZE_EXACT(s->qual_blk, qsize+1);
@@ -2639,7 +2643,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         cr->name_len = 0;
 
         if (c->comp_hdr->read_names_included) {
-            int32_t out_sz2 = 1;
+            int32_t out_sz2 = 1; // block auto grows in decode()
 
             // Read directly into name cram_block
             cr->name = BLOCK_SIZE(s->name_blk);
@@ -2800,7 +2804,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         /* Fake up dynamic string growth and appending */
         if (ds & CRAM_RL) {
             cr->seq = BLOCK_SIZE(s->seqs_blk);
-            BLOCK_GROW(s->seqs_blk, cr->len);
+            BLOCK_RESIZE(s->seqs_blk, cr->seq + cr->len);
             seq = (char *)BLOCK_END(s->seqs_blk);
             BLOCK_SIZE(s->seqs_blk) += cr->len;
 
@@ -2808,7 +2812,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                 goto block_err;
 
             cr->qual = BLOCK_SIZE(s->qual_blk);
-            BLOCK_GROW(s->qual_blk, cr->len);
+            BLOCK_RESIZE(s->qual_blk, cr->qual + cr->len);
             qual = (char *)BLOCK_END(s->qual_blk);
             BLOCK_SIZE(s->qual_blk) += cr->len;
 
