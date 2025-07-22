@@ -708,6 +708,11 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             ret = bcf_itr_next(reader->file, reader->itr, reader->buffer[reader->nbuffer+1]);
             if ( ret < -1 ) files->errnum = bcf_read_error;
             if ( ret < 0 ) break; // no more lines or an error
+            //set phasing of 1st value as in vcf v44
+            if ((ret = update44phasing(reader->header, reader->buffer[reader->nbuffer+1], 1))) {
+                files->errnum = bcf_read_error;
+                break;
+            }
             bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
         }
 
