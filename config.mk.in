@@ -83,7 +83,7 @@ plugin_OBJS += hfile_s3_write.o
 
 CRYPTO_LIBS = @CRYPTO_LIBS@
 noplugin_LIBS += $(CRYPTO_LIBS)
-hfile_s3$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS)
+hfile_s3$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS) $(LIBCURL_LIBS)
 hfile_s3_write$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS) $(LIBCURL_LIBS)
 endif
 
