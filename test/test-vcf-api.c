@@ -921,7 +921,7 @@ static int read_vcf_line(const char *line, bcf_hdr_t *hdr, bcf1_t *rec,
     return ret;
 }
 
-void chomp(kstring_t *kstr)
+static void chomp(kstring_t *kstr)
 {
     if (kstr->l < 1)
         return;
@@ -938,6 +938,15 @@ void test_bcf_remove_allele_set(void)
         "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
         "##INFO=<ID=AD,Number=R,Type=Integer,Description=\"Allele depth\">\n"
         "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+        "##INFO=<ID=CN,Number=A,Type=Float,Description=\"Copy number of CNV/breakpoint\">\n"
+        "##INFO=<ID=CICN,Number=.,Type=Float,Description=\"Confidence interval around copy number\">\n"
+        "##INFO=<ID=CIEND,Number=.,Type=Integer,Description=\"Confidence interval around the inferred END for symbolic structural variants\">\n"
+        "##INFO=<ID=CILEN,Number=.,Type=Integer,Description=\"Confidence interval for the SVLEN field\">\n"
+        "##INFO=<ID=CIPOS,Number=.,Type=Integer,Description=\"Confidence interval around POS for symbolic structural variants\">\n"
+        "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variant\">\n"
+        "##INFO=<ID=MEINFO,Number=.,Type=String,Description=\"Mobile element info of the form NAME,START,END,POLARITY\">\n"
+        "##INFO=<ID=METRANS,Number=.,Type=String,Description=\"Mobile element transduction info of the form CHR,START,END,POLARITY\">\n"
+        "##INFO=<ID=SVLEN,Number=A,Type=Integer,Description=\"Length of structural variant\">\n"
         "##INFO=<ID=VL_A_STR_INFO,Number=A,Type=String,Description=\"INFO string Number=A\">\n"
         "##INFO=<ID=VL_R_STR_INFO,Number=R,Type=String,Description=\"INFO string Number=R\">\n"
         "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allele depth\">\n"
@@ -957,11 +966,17 @@ void test_bcf_remove_allele_set(void)
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAAA\tBBB\tCCC\n";
     const char * inputs[] = {
         "5\t110285\t.\tT\tC,<*>\t.\tPASS\tAC=1,0;AD=6,5,0;AF=0.99,0.01;VL_A_STR_INFO=alt_c,alt_nonref;VL_R_STR_INFO=ref,alt_c,alt_nonref\tGT:AD:EC:PL:VL_A_STR_FMT:VL_G_STR_FMT:VL_R_STR_FMT\t.:.:.:.:.:.:.\t0/1:6,5,0:4,0:114,0,15,35,73,113:alt_c,alt_nonref:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_nonref\t.:.:.:.:.:.:.",
-        "5\t110290\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c"
+        "5\t110290\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
+        "5\t110350\t.\tT\t<INS>,<INS>\t.\tPASS\tIMPRECISE;SVLEN=100,200;CIEND=-50,50,-25,25;CIPOS=-10,10,-20,20\tGT\t0/1\t0/1\t0/1",
+        "5\t110500\t.\tT\t<CNV>,<CNV>\t.\tPASS\tIMPRECISE;SVLEN=50,100;CILEN=0,25,-25,25;CN=2,4;CICN=-0.5,1,-1.5,1.5\tGT\t0/1\t0/1\t0/1",
+        "5\t110700\t.\tA\t<INS:ME>,<INS:ME>\t.\tPASS\tMEINFO=AluY,1,260,+,FLAM_C,1,110,-;METRANS=1,94820,95080,+,1,129678,129788,-\tGT\t0/1\t0/1\t0/1"
     };
     const char * expected[] = {
         "5\t110285\t.\tT\tC\t.\tPASS\tAC=1;AD=6,5;AF=0.99;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:AD:EC:PL:VL_A_STR_FMT:VL_G_STR_FMT:VL_R_STR_FMT\t.:.:.:.:.:.:.\t0/1:6,5:4:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t.:.:.:.:.:.:.",
-        "5\t110290\t.\tT\tC\t.\tPASS\tAC=90;AD=6,5;AF=0.009;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1:3,2:44:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c"
+        "5\t110290\t.\tT\tC\t.\tPASS\tAC=90;AD=6,5;AF=0.009;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1:3,2:44:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
+        "5\t110350\t.\tT\t<INS>\t.\tPASS\tIMPRECISE;SVLEN=100;CIEND=-50,50;CIPOS=-10,10\tGT\t0/1\t0/1\t0/1",
+        "5\t110500\t.\tT\t<CNV>\t.\tPASS\tIMPRECISE;SVLEN=50;CILEN=0,25;CN=2;CICN=-0.5,1\tGT\t0/1\t0/1\t0/1",
+        "5\t110700\t.\tA\t<INS:ME>\t.\tPASS\tMEINFO=AluY,1,260,+;METRANS=1,94820,95080,+\tGT\t0/1\t0/1\t0/1"
     };
 
     kstring_t kstr = KS_INITIALIZE;
