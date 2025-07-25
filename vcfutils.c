@@ -251,6 +251,32 @@ int bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     return 0; // FIXME: check for errs in this function
 }
 
+static inline int is_special_info_type(const char *name)
+{
+    // These types have Number=. but are really either two or four times
+    // the number of ALT fields.
+    switch (*name)
+    {
+    case 'C':
+        if (name[1] == 'I' && // Confidence intervals
+            (strcmp(name + 2, "CN") == 0
+             || strcmp(name + 2, "END") == 0
+             || strcmp(name + 2, "LEN") == 0
+             || strcmp(name + 2, "POS") == 0))
+            return 2;
+        break;
+    case 'M':
+        if (name[1] == 'E' && // Mobile elements
+            (strcmp(name, "MEINFO") == 0
+             || strcmp(name, "METRANS") == 0))
+            return 4;
+        break;
+    default:
+        break;
+    }
+    return 1;
+}
+
 int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kbitset_t *rm_set)
 {
     const uint32_t vl_a_g_r = 1U << BCF_VL_A | 1U << BCF_VL_G | 1U << BCF_VL_R;
@@ -315,6 +341,14 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         bcf_info_t *info = &line->d.info[i];
         int vlen = bcf_hdr_id2length(header,BCF_HL_INFO,info->key);
 
+        // Handle INFO types with Number=. but really a multiple of Number=A
+        int multiple = (vlen == BCF_VL_VAR
+                        ? is_special_info_type(bcf_hdr_int2id(header, BCF_DT_ID,
+                                                              info->key))
+                        : 1);
+        if (multiple > 1)
+            vlen = BCF_VL_A;
+
         if ((vl_a_g_r & (1 << vlen)) == 0) continue; // no need to change
 
         int type = bcf_hdr_id2type(header,BCF_HL_INFO,info->key);
@@ -342,7 +376,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 int nexp, inc = 0;
                 if ( vlen==BCF_VL_A )
                 {
-                    nexp = nA_ori;
+                    nexp = nA_ori * multiple;
                     inc  = 1;
                 }
                 else
@@ -351,7 +385,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 {
                     if ( !*se ) break;
                     while ( *se && *se!=',' ) se++;
-                    if ( kbs_exists(rm_set, j+inc) )
+                    if ( kbs_exists(rm_set, j / multiple + inc) )
                     {
                         if ( *se ) se++;
                         ss = se;
@@ -435,14 +469,16 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             int inc = 0, ntop;
             if ( vlen==BCF_VL_A )
             {
-                if ( nret!=nA_ori )
+                if ( nret!=nA_ori * multiple )
                 {
-                    hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=A=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nA_ori, nret);
+                    hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=%s=%d, but found %d",
+                                  bcf_hdr_int2id(header,BCF_DT_ID,info->key),
+                                  bcf_seqname_safe(header,line), line->pos+1,
+                                  multiple == 1 ? "A" : ".", nA_ori, nret);
                     goto err;
                 }
-                ntop = nA_ori;
-                ndat = nA_new;
+                ntop = nA_ori * multiple;
+                ndat = nA_new * multiple;
                 inc  = 1;
             }
             else
@@ -465,7 +501,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 for (j=0; j<ntop; j++) /* j:ori, k:new */ \
                 { \
                     if ( is_vector_end ) { memcpy(dat+k*size, dat+j*size, size); break; } \
-                    if ( kbs_exists(rm_set, j+inc) ) continue; \
+                    if ( kbs_exists(rm_set, j / multiple + inc) ) continue; \
                     if ( j!=k ) memcpy(dat+k*size, dat+j*size, size); \
                     k++; \
                 } \
@@ -542,7 +578,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     if ( !( al<nR_ori && map[al]>=0 ) )
                     {
                         hts_log_error("Problem updating genotypes at %s:%"PRIhts_pos" [ al<nR_ori && map[al]>=0 :: al=%d,nR_ori=%d,map[al]=%d ]",
-                            bcf_seqname_safe(header,line), line->pos+1, al, nR_ori, map[al]);
+                            bcf_seqname_safe(header,line), line->pos+1, al,
+                                      nR_ori, al < nR_ori ? map[al] : 0);
                         goto err;
                     }
                     // if an allele is mapped to -1, it has been removed,
