@@ -501,6 +501,10 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
         if (b->core.flag & BAM_FREVERSE) {
             // process MM list backwards
             char *cp;
+
+            if (state->MMend[i] == NULL)
+                return 0; // a valid but empty tag (with no other base mods)
+
             if (state->MMend[i]-1 < state->MM[i]) {
                 // Should be impossible to hit if coding is correct
                 hts_log_error("Assert failed while processing base modification states");
