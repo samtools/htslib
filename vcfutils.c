@@ -1,6 +1,6 @@
 /*  vcfutils.c -- allele-related utility functions.
 
-    Copyright (C) 2012-2018, 2020-2022 Genome Research Ltd.
+    Copyright (C) 2012-2018, 2020-2022, 2025 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -277,6 +277,366 @@ static inline int is_special_info_type(const char *name)
     return 1;
 }
 
+static int32_t get_int32_info_value(const bcf_info_t *info,
+                                    size_t index)
+{
+    size_t len = info->len > 0 ? info->len : 0;
+    if (index >= len)
+        return bcf_int32_missing;
+
+    int32_t val;
+    float f;
+    switch (info->type)
+    {
+    case BCF_BT_INT8:
+        val = le_to_i8(info->vptr + index);
+        return (val > bcf_int8_vector_end
+                ? val : bcf_int32_vector_end - (bcf_int8_vector_end - val));
+        break;
+    case BCF_BT_INT16:
+        val = le_to_i16(info->vptr + index * sizeof(int16_t));
+        return (val > bcf_int16_vector_end
+                ? val : bcf_int32_vector_end - (bcf_int16_vector_end - val));
+    case BCF_BT_INT32:
+        return le_to_i32(info->vptr + index * sizeof(int32_t));
+    case BCF_BT_FLOAT:
+        f = le_to_float(info->vptr + index * sizeof(float));
+        if (bcf_float_is_missing(f))
+            return bcf_int32_missing;
+        if (bcf_float_is_vector_end(f))
+            return bcf_int32_vector_end;
+        return f;
+    default:
+        break;
+    }
+    return bcf_int32_missing;
+}
+
+static int32_t get_rn_value(const bcf_info_t *rn, size_t index)
+{
+    // If RN tag is not present, default to one repeat per allele.
+    int32_t val = rn ? get_int32_info_value(rn, index) : 1;
+    // Treat MISSING or illegal values as 0.
+    return val >= 0 ? val : 0;
+}
+
+// If info->len becomes 1, the single value needs to be put in info->v1
+// in case the value is accessed through that route instead of an array lookup.
+static void set_info_v1(bcf_info_t *info)
+{
+    switch (info->type)
+    {
+    case BCF_BT_INT8:
+        info->v1.i = le_to_i8(info->vptr);
+        break;
+    case BCF_BT_INT16:
+        info->v1.i = le_to_i16(info->vptr);
+        break;
+    case BCF_BT_INT32:
+        info->v1.i = le_to_i32(info->vptr);
+        break;
+    case BCF_BT_INT64:
+        info->v1.i = le_to_i64(info->vptr);
+        break;
+    case BCF_BT_FLOAT:
+        info->v1.f = le_to_float(info->vptr);
+        break;
+    default:
+        break;
+    }
+}
+
+static int fixup_info_length_code(bcf_info_t *info)
+{
+    // Recreate INFO type encoding stored before info->vptr
+    uint8_t buf[24], *ptr = buf;
+    ptrdiff_t new_len;
+    int type = bcf_enc_inttype(info->key);
+    *ptr++ = (1 << 4) | type;
+    i32_to_le(info->key, ptr);
+    ptr += 1 << bcf_type_shift[type];
+    type = bcf_enc_inttype(info->len);
+    if (info->len < 15)
+    {
+        *ptr++ = (info->len << 4) | info->type;
+    }
+    else
+    {
+        *ptr++ = 0xf0 | info->type;
+        type = bcf_enc_inttype(info->len);
+        *ptr++ = (1 << 4) | type;
+        i32_to_le(info->len, ptr);
+        ptr += 1 << bcf_type_shift[type];
+    }
+
+    new_len = ptr - buf;
+
+    if (new_len == info->vptr_off)
+    {
+        // Happy case, length hasn't changed
+        memcpy(info->vptr - info->vptr_off, buf, new_len);
+    }
+    else if (new_len < info->vptr_off)
+    {
+        // Shrinkage - need to adjust location of following data
+        // Most likely to happen if length has gone from >= 15 to < 15.
+        ptrdiff_t adjust = info->vptr_off - new_len;
+        memcpy(info->vptr - info->vptr_off, buf, new_len);
+        memmove(info->vptr - adjust, info->vptr, info->vptr_len);
+        info->vptr -= adjust;
+        info->vptr_off -= adjust;
+    }
+    else
+    {
+        // Grown - this shouldn't happen as we are removing entries,
+        // but just in case...
+        uint8_t *new_info = malloc(info->vptr_len + new_len);
+        if (!new_info)
+            return -1;
+        memcpy(new_info, buf, new_len);
+        memcpy(new_info + new_len, info->vptr, info->vptr_len);
+        if (info->vptr_free)
+            free(info->vptr - info->vptr_off);
+        info->vptr_off = new_len;
+        info->vptr = new_info + new_len;
+        info->vptr_free = 1;
+    }
+    return 0;
+}
+
+// Remove integer CNV:TR-related tag data
+// Returns 0 on success
+//         1 if the tag had an unexpected type or number of elements
+//        -1 if it failed to allocate memory
+static int trim_int_cnv_tr_int_tags(bcf_info_t *info,
+                                     const bcf_hdr_t *header,
+                                     const struct kbitset_t *rm_set,
+                                     const char *id,
+                                     const bcf_info_t *rn,
+                                     const bcf_info_t *ruc,
+                                     size_t num_alt_orig,
+                                     size_t orig_total)
+{
+    size_t count = *id == 'C' ? 2 : 1;
+    int type = bcf_hdr_id2type(header, BCF_HL_INFO, info->key);
+    int vlen = bcf_hdr_id2length(header, BCF_HL_INFO, info->key);
+    size_t allele, unit = 0, orig_pos = 0, new_pos = 0;
+    const uint32_t element_sizes[8] = { 0, 1, 2, 4, 0, 4, 0, 0 };
+    size_t element_size = element_sizes[info->type & 0x7];
+    int new_total = 0;
+
+    // Give up in these cases
+    if (// Wrong type
+        (type != BCF_HT_INT && type != BCF_HT_REAL)
+        || element_size == 0
+        // Not Number=.
+        || vlen != BCF_VL_VAR
+        // Unexpected number of items
+        || info->len != orig_total
+        // Might fall of the end of the stored data
+        || info->vptr_len < orig_total * element_size * count)
+        return 1;
+
+    for (allele = 0; allele < num_alt_orig; allele++)
+    {
+        int32_t n_repeats = get_rn_value(rn, allele);
+        int32_t n_items = n_repeats;
+        size_t byte_len;
+
+        if (ruc)  // For the RUB tag, need to add up items in RUC
+        {
+            n_items = 0;
+            while (n_repeats-- > 0)
+            {
+                int32_t n_units = get_int32_info_value(ruc, unit++);
+                n_items += n_units >= 0 ? n_units : 0;
+            }
+        }
+
+        byte_len = n_items * element_size * count;
+
+        if (kbs_exists(rm_set, allele + 1)) // Skip
+        {
+            orig_pos += byte_len;
+            continue;
+        }
+
+        if (new_pos < orig_pos) // Shuffle data down
+            memmove(info->vptr + new_pos, info->vptr + orig_pos, byte_len);
+
+        orig_pos += byte_len;
+        new_pos += byte_len;
+        new_total += n_items;
+    }
+    info->vptr_len = new_pos;
+    info->len = new_total;
+    if (info->len == 1)
+        set_info_v1(info);
+    return fixup_info_length_code(info);
+}
+
+// Remove string CNV:TR-related tag data
+// Returns 0 on success
+//         1 if the tag had an unexpected type
+//        -1 if it failed to allocate memory
+static int trim_int_cnv_tr_str_tags(bcf_info_t *info,
+                                     const bcf_hdr_t *header,
+                                     const struct kbitset_t *rm_set,
+                                     const bcf_info_t *rn,
+                                     size_t num_alt_orig,
+                                     size_t orig_total)
+{
+    int type = bcf_hdr_id2type(header, BCF_HL_INFO, info->key);
+    int vlen = bcf_hdr_id2length(header, BCF_HL_INFO, info->key);
+    size_t allele, orig_pos = 0, new_pos = 0;
+
+    // Give up in these cases
+    if ( // Wrong type
+        type != BCF_HT_STR
+        || info->type != BCF_BT_CHAR
+        // Not Number=.
+        || vlen != BCF_VL_VAR)
+        return 1;
+
+    for (allele = 0; allele < num_alt_orig; allele++)
+    {
+        int32_t n_items = get_rn_value(rn, allele);
+        uint8_t *start = info->vptr + orig_pos;
+        uint8_t *end = start;
+        uint8_t *lim = info->vptr + info->vptr_len;
+
+        while (n_items-- > 0)
+        {
+            while (end < lim && *end != '\0' && *end != ',') ++end;
+            if (end == lim || *end == '\0')
+                break;
+            end++;
+        }
+
+        if (kbs_exists(rm_set, allele + 1)) // Skip
+        {
+            orig_pos += end - start;
+            continue;
+        }
+
+        if (new_pos < orig_pos) // Shuffle data down
+            memmove(info->vptr + new_pos, info->vptr + orig_pos, end - start);
+
+        orig_pos += end - start;
+        new_pos += end - start;
+    }
+    if (new_pos < orig_pos)
+    {
+        info->vptr[new_pos] = '\0';
+        // Dropping items at the end can leave a trailing comma.  Remove if
+        // present.
+        if (new_pos > 0 && info->vptr[new_pos - 1] == ',')
+            info->vptr[--new_pos] = '\0';
+        info->len = new_pos;
+        info->vptr_len = new_pos;
+        return fixup_info_length_code(info);
+    }
+    return 0;
+}
+
+static int fixup_cnv_tr_info_tags(const bcf_hdr_t *header, bcf1_t *line,
+                                  size_t num_alt_orig,
+                                  const struct kbitset_t *rm_set)
+{
+    /*
+      Tags for <CNV:TR> alleles (tandem repeats):
+        RN    : Repeat number.  Number=A, handled as other tags of this type
+        RUS   : Repeat unit sequence. Number for each allele is in RN.
+        RUL   : Repeat unit length. Number for each allele is in RN.
+        RB    : Repeat sequence length. Number for each allele is in RN.
+        RUC   : Repeat unit count. Number for each allele is in RN.
+        CIRB  : Confidence interval around RB.  Two items for each in RB.
+        CIRUC : Confidence interval around RUC.  Two items for each in RUC.
+        RUB   : Number of bases in each repeat unit. Number for each repeat unit
+                in RUC.
+     */
+
+    bcf_info_t *rn = bcf_get_info(header, line, "RN");
+    bcf_info_t *ruc = bcf_get_info(header, line, "RUC");
+
+    int64_t orig_total_repeats = 0;
+    int64_t orig_total_units = 0;
+    size_t allele, unit = 0;
+    uint32_t i;
+
+    // Get total number of values for RUS etc., and RUB so the counts found
+    // later can be checked.
+    for (allele = 0; allele < num_alt_orig; allele++)
+    {
+        int32_t n_repeats = get_rn_value(rn, allele);
+        orig_total_repeats += n_repeats;
+        if (ruc)
+        {
+            while (n_repeats-- > 0)
+            {
+                int32_t n_units = get_int32_info_value(ruc, unit++);
+                orig_total_units += n_units >= 0 ? n_units : 0;
+            }
+        }
+    }
+
+    // Find any INFO tags that might need to be fixed up
+    for (i = 0; i < line->n_info; i++)
+    {
+        bcf_info_t *info = &line->d.info[i];
+        const char *id = bcf_hdr_int2id(header, BCF_DT_ID, info->key);
+        uint8_t *orig_ptr = info->vptr - info->vptr_off;
+        if (*id != 'C' && *id != 'R')
+            continue;
+        // Ignore RUC here, as it's needed intact to process RUB
+        if (strcmp(id, "RB") == 0
+            || strcmp(id, "RUL") == 0
+            || strcmp(id, "CIRB") == 0
+            || strcmp(id, "CIRUC") == 0)
+        {
+            int res = trim_int_cnv_tr_int_tags(info, header, rm_set, id, rn,
+                                               NULL, num_alt_orig,
+                                               orig_total_repeats);
+            // res could be > 0 if the tag had an unexpected type or number of
+            // values.  Currently these are ignored, so left unchanged, but we
+            // may want to warn or treat them as errors instead.
+            if (res < 0)
+                return res;
+        }
+        else if (strcmp(id, "RUS") == 0)
+        {
+            int res = trim_int_cnv_tr_str_tags(info, header, rm_set, rn,
+                                               num_alt_orig,
+                                               orig_total_repeats);
+            if (res < 0)
+                return res;
+        }
+        else if (ruc && strcmp(id, "RUB") == 0)
+        {
+            int res = trim_int_cnv_tr_int_tags(info, header, rm_set, id, rn,
+                                               ruc, num_alt_orig,
+                                               orig_total_units);
+            if (res < 0)
+                return res;
+        }
+
+        // Check if storage had to be reallocated.  This can only happen if
+        // the length code stored before info->vptr was too small, which
+        // should hopefully never be the case.
+        if (info->vptr - info->vptr_off != orig_ptr)
+            line->d.shared_dirty |= BCF1_DIRTY_INF;
+    }
+    // Now do RUC, if present
+    if (ruc)
+    {
+        int res = trim_int_cnv_tr_int_tags(ruc, header, rm_set, "RUC", rn, NULL,
+                                           num_alt_orig, orig_total_repeats);
+        if (res < 0)
+            return res;
+    }
+    return 0;
+}
+
 int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kbitset_t *rm_set)
 {
     const uint32_t vl_a_g_r = 1U << BCF_VL_A | 1U << BCF_VL_G | 1U << BCF_VL_R;
@@ -292,6 +652,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     int *laa = NULL, *laa_map = NULL, *lr_orig = NULL;
     uint8_t *dat = NULL;
     int num_laa, laa_size = 0, laa_map_stride = 0;
+    int have_cnv_tr = 0;
 
     bcf_unpack(line, BCF_UN_ALL);
 
@@ -303,6 +664,9 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     map[0] = 0;
     for (i=1, j=1; i<line->n_allele; i++)
     {
+        if (strcmp(line->d.allele[i], "<CNV:TR>") == 0)
+            have_cnv_tr = 1;
+
         if ( kbs_exists(rm_set, i) )
         {
             // remove this allele
@@ -333,6 +697,15 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     int nG_new = nR_new*(nR_new + 1)/2;
 
     bcf_update_alleles_str(header, line, str.s);
+
+    if (have_cnv_tr)
+    {
+        if (fixup_cnv_tr_info_tags(header, line, nA_ori, rm_set) < 0)
+        {
+            hts_log_error("Out of memory");
+            goto err;
+        }
+    }
 
     // remove from Number=G, Number=R and Number=A INFO fields.
     int mdat = 0, ndat = 0, mdat_bytes = 0, nret;
