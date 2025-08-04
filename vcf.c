@@ -6169,12 +6169,12 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
 {
     uint8_t *f = (uint8_t*)v->shared.s, *t = NULL,
         *e = (uint8_t*)v->shared.s + v->shared.l;
-    int size, type, id, lenid, endid, svlenid, i, bad, gvcf = 0, havedel = 0;
+    int size, type, id, lenid, endid, svlenid, i, bad, gvcf = 0, use_svlen = 0;
     bcf_info_t *endinfo = NULL, *svleninfo = NULL, end_lcl, svlen_lcl;
     bcf_fmt_t *lenfmt = NULL, len_lcl;
 
     //holds <DEL> allele status for the max no of alleles
-    uint8_t delals[8192];
+    uint8_t svlenals[8192];
     //pos from info END, fmt LEN, info SVLEN
     hts_pos_t end = 0, end_fmtlen = 0, end_svlen = 0, hpos;
     int64_t len_ref = 0, len = 0, tmp;
@@ -6183,16 +6183,19 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     endid = bcf_hdr_id2int(h, BCF_DT_ID, "END");
 
     //initialise bytes which are to be used
-    memset(delals, 0, 1 + v->n_allele / 8);
+    memset(svlenals, 0, 1 + v->n_allele / 8);
 
     //use decoded data where ever available and where not, get from stream
     if (v->unpacked & BCF_UN_STR || v->d.shared_dirty & BCF1_DIRTY_ALS) {
         for (i = 1; i < v->n_allele; ++i) {
             //checks only alt alleles, with NUL
-            if (!strcmp(v->d.allele[i], "<DEL>")) {
-                //del allele, note to check corresponding svlen val
-                delals[i >> 3] |= 1 << (i & 7);
-                havedel = 1;
+            if (!strcmp(v->d.allele[i], "<DEL>")
+                || !strcmp(v->d.allele[i], "<DUP>")
+                || !strcmp(v->d.allele[i], "<CNV>")
+                || !strncmp(v->d.allele[i], "<CNV:", 5)) {
+                // del, dup or cnv allele, note to check corresponding svlen val
+                svlenals[i >> 3] |= 1 << (i & 7);
+                use_svlen = 1;
             } else if (!strcmp(v->d.allele[i], "<*>") ||
                          !strcmp(v->d.allele[i], "<NON_REF>")) {
                 gvcf = 1;   //gvcf present, have to check for LEN field
@@ -6211,10 +6214,14 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             if (!i) {   //REF length
                 len_ref = size;
             } else {
-                if (size == 5 && !strncmp((char*)f, "<DEL>", size)) {
-                    //del allele, note to check corresponding svlen val
-                    delals[i >> 3] |= 1 << (i & 7);
-                    havedel = 1;
+                if ((size == 5
+                     && (!strncmp((char*)f, "<DEL>", size)
+                         || !strncmp((char*)f, "<DUP>", size)
+                         || !strncmp((char*)f, "<CNV>", size)))
+                    || (size > 5 && !strncmp((char*)f, "<CNV:", 5))) {
+                    // del, dup or cnv allele, note to check corresponding svlen val
+                    svlenals[i >> 3] |= 1 << (i & 7);
+                    use_svlen = 1;
                 } else if ((size == 3 && !strncmp((char*)f, "<*>", size)) ||
                     (size == 9 && !strncmp((char*)f, "<NON_REF>", size))) {
                     gvcf = 1;   //gvcf present, have to check for LEN field
@@ -6232,7 +6239,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     }
 
     // Can skip SVLEN lookup if there are no <DEL> symbolic alleles
-    if (!havedel)
+    if (!use_svlen)
         svlenid = -1;
 
     // INFO
@@ -6304,7 +6311,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
         bad = 0;
         //get largest svlen corresponding to a <DEL> symbolic allele
         for (i = 0; i < svleninfo->len && i + 1 < v->n_allele; ++i) {
-            if (!(delals[i >> 3] & (1 << ((i + 1) & 7))))
+            if (!(svlenals[i >> 3] & (1 << ((i + 1) & 7))))
                 continue;
 
             switch(svleninfo->type) {
