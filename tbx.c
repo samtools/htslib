@@ -96,9 +96,9 @@ int tbx_name2id(tbx_t *tbx, const char *ss)
 int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
 {
     size_t i, b = 0;
-    int id = 1, getlen = 0, alcnt = 0, haveins = 0, lenpos = -1;
+    int id = 1, getlen = 0, alcnt = 0, havedel = 0, lenpos = -1;
     char *s, *t;
-    uint8_t insals[8192];
+    uint8_t delals[8192];
     int64_t reflen = 0, svlen = 0, fmtlen = 0, tmp = 0;
 
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
@@ -174,23 +174,23 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                         reflen = i - b;
                     } if (id == 5) {    //alt allele
                         int lastbyte = 0, c = line[i];
-                        insals[lastbyte] = 0;
+                        delals[lastbyte] = 0;
                         line[i] = 0;
                         s = line + b;
                         do {
                             t = strchr(s, ',');
                             if (alcnt >> 3 != lastbyte) {   //initialize insals
                                 lastbyte = alcnt >> 3;
-                                insals[lastbyte] = 0;
+                                delals[lastbyte] = 0;
                             }
                             ++alcnt;
                             if (t) {
                                 *t = 0;
                             }
                             if (s[0] == '<') {
-                                if (!strcmp("<INS>", s)) {  //note inserts
-                                    insals[lastbyte] |= 1 << ((alcnt - 1) & 7);
-                                    haveins = 1;
+                                if (!strcmp("<DEL>", s)) {  //note deletions
+                                    delals[lastbyte] |= 1 << ((alcnt - 1) & 7);
+                                    havedel = 1;
                                 } else if (!strcmp("<*>", s) ||
                                     !strcmp("<NON_REF>", s)) {  //note gvcf
                                     getlen = 1;
@@ -237,11 +237,12 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                         }
                         while (s && d < alcnt) {
                             t = strchr(s, ',');
-                            if ((haveins) && (insals[d >> 3] & (1 << (d & 7)))) {
-                                tmp = 1;    //<INS>
-                            } else {
+                            if ((havedel) && (delals[d >> 3] & (1 << (d & 7)))) {
+                                // <DEL> symbolic allele
                                 tmp = atoll(s);
                                 tmp = tmp < 0 ? llabs(tmp) : tmp;
+                            } else {
+                                tmp = 1;
                             }
                             svlen = svlen < tmp ? tmp : svlen;
                             s = t ? t + 1 : NULL;

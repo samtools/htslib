@@ -689,12 +689,15 @@ void test_rlen_values(void)
     "1\t4363\t.\tG\t<*>\t213.73\t.\tEND=4367;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
     "1\t4370\t.\tG\t<INS>,<*>\t213.73\t.\tEND=4371;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
     "1\t4378\t.\tG\t<DEL>,<INS>,<*>\t213.73\t.\tEND=4379;SVLEN=3,5,.;SVCLAIM=D,J,.\tGT:LEN\t0/1:7\t0|0:.\n" \
-    "1\t4385\t.\tG\tT\t213.73\t.\tEND=4387;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
-    //this last one is invalid one, to showcase how SVLEN is considered even when ALT is no SV
-    //this is because data are not cross checked with allele types, to make it simple
+    "1\t4385\t.\tG\tT,<DEL>\t213.73\t.\tEND=4387;SVLEN=.,180\tGT\t0/1\t0|0\n" \
+    "1\t4585\t.\tG\tT,<*>\t213.73\t.\tEND=4587\tGT:LEN\t0/1:190\t0|0:.\n" \
+    "1\t4785\t.\tG\tT\t213.73\t.\tEND=4787;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
+    // For the last line, SVLEN should be ignored as the allele is not <DEL>
+    // and LEN should be ignored as there is no <*> allele.  The END tag will
+    // be used as it's higher than POS + length of REF.
 
     //test vcf with different versions
-    const int vcfsz = 13, testsz = 3;
+    const int testsz = 3;
     static char d43[] = "data:,"
     "##fileformat=VCFv4.3\n" data;
     static char d44[] = "data:,"
@@ -702,11 +705,13 @@ void test_rlen_values(void)
     static char d45[] = "data:,"
     "##fileformat=VCFv4.5\n" data;
     /* ideal expected rlen for tests
-    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 2, 2, 3};
-    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 2, 4, 9};
-    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 9};*/
+    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 2, 2, 3, 3, 3};
+    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 2, 4, 181, 190, 3};
+    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 181, 190, 3};*/
     // but we dont check version and hence resulting rlen should be
-    int rlen[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 9};
+    int rlen[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 181, 190, 3};
+
+    const int vcfsz = sizeof(rlen)/sizeof(rlen[0]);
 
     char *darr[] = {&d43[0], &d44[0], &d45[0]};     //data array
     int *rarr[] = {&rlen[0], &rlen[0], &rlen[0]};   //result array
