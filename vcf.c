@@ -1819,15 +1819,14 @@ static void bcf_record_check_err(const bcf_hdr_t *hdr, bcf1_t *rec,
  *  @param p - pointer to phase value array
  *  @param end - end of array
  *  @param q - pointer to consumed data
- *  @param set - whether to set (while read) or reset (for write)
  *  @param samples - no. of samples in array
  *  @param ploidy - no. of phasing values per sample
  *  @param type - value type (one of BCF_BT_...)
  *  Returns 0 on success and 1 on failure
  */
-static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int set, int samples, int ploidy, int type)
+static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int ploidy, int type)
 {
-    int j, k, upd = set ? 1 : -1;
+    int j, k;
     size_t bytes;
     for (j = 0; j < samples; ++j) {   //for each sample
         int anyunphased = 0;
@@ -1839,10 +1838,10 @@ static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int set, int sam
                     val = *(uint8_t*)p;
                 break;
                 case BCF_BT_INT16:
-                    val = *(uint16_t*)p;
+                    val = le_to_i16(p);
                 break;
                 case BCF_BT_INT32:
-                    val = *(uint32_t*)p;
+                    val = le_to_i32(p);
                 break;
                 //wont have anything bigger than 32bit for GT
                 default: //invalid
@@ -1854,26 +1853,28 @@ static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int set, int sam
                 anyunphased = 1;
             }
             //get to next phasing or skip the rest for this sample
-            bytes = (anyunphased ? ploidy - k : 1) << bcf_type_shift[type];
+            bytes = ((anyunphased || al1 & 1) ? ploidy - k : 1) << bcf_type_shift[type];
             if (end - p < bytes)
                 return 1;
             p += bytes;
-            if (anyunphased) {
+            if (anyunphased || al1 & 1) {
+                //either unphased is found or 1st one itself is set as phased
                 break;  //no further check required
             }
         }
         if (!anyunphased && al1 > 1) {  //no other unphased
             /*set phased on read or make unphased on write as upto 4.3 1st
             phasing is not described explicitly and has to be inferred*/
+            al1 |= 1;
             switch(type) {
                 case BCF_BT_INT8:
-                    *(uint8_t*)ptr1 += upd;
+                    *(uint8_t*)ptr1 = al1;
                 break;
                 case BCF_BT_INT16:
-                    *(uint16_t*)ptr1 += upd;
+                    i16_to_le(le_to_i16((uint8_t*)&al1), ptr1);
                 break;
                 case BCF_BT_INT32:
-                    *(uint32_t*)ptr1 += upd;
+                    i32_to_le(le_to_i32((uint8_t*)&al1), ptr1);
                 break;
             }
         }
@@ -1886,14 +1887,11 @@ static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int set, int sam
  *  update44phasing - converts GT to/from v4.4 way representation
  *  @param h - bcf header, to get version
  *  @param v - pointer to bcf data
- *  @param setreset - whether to set or reset
- *  Returns 0 on success and -1 on failure
- *  For data read, to be converted to v44, setreset to be 1. For data write, to
- *  be converted to v < v44, setreset to be 0.
+ *  Returns 0 on success and 1 on failure
  *  If the version in header is >= 4.4, no change is made. Otherwise 1st phasing
  *  is set if there are no other unphased ones.
  */
-HTSLIB_EXPORT int update44phasing(bcf_hdr_t *h, bcf1_t *b, int setreset)
+HTSLIB_EXPORT int update44phasing(bcf_hdr_t *h, bcf1_t *b)
 {
     int i, idgt = -1, ver = VCF_DEF, num, type;
     uint8_t *ptr = NULL, *end = NULL;
@@ -1938,7 +1936,7 @@ HTSLIB_EXPORT int update44phasing(bcf_hdr_t *h, bcf1_t *b, int setreset)
     }
     if (ptr) {
         //with GT and v < v44, need phase conversion
-        if (updatephasing(ptr, end, &ptr, setreset, b->n_sample, num, type)) return 1;
+        if (updatephasing(ptr, end, &ptr, b->n_sample, num, type)) return 1;
     }
     return 0;
 }
@@ -2076,7 +2074,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
         }
         if (ver < VCF44 && idgt != -1 && idgt == key) {
             //with GT and v < v44, need phase conversion
-            if (updatephasing(ptr, end, &ptr, 1, rec->n_sample, num, type)) {
+            if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
                 err |= BCF_ERR_TAG_INVALID;
             }
         } else {
@@ -2439,11 +2437,6 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     if ( v->unpacked & BCF_IS_64BIT )
     {
         hts_log_error("Data at %s:%"PRIhts_pos" contains 64-bit values not representable in BCF. Please use VCF instead", bcf_seqname_safe(h,v), v->pos+1);
-        return -1;
-    }
-
-    if (update44phasing(h, v, 0)) { //reset phasing update made after read
-        hts_log_error("Failed to set prorper phasing at %s:%"PRIhts_pos"", bcf_seqname_safe(h,v), v->pos+1);
         return -1;
     }
 
