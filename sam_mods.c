@@ -452,13 +452,9 @@ int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state) {
  */
 int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                          hts_base_mod *mods, int n_mods) {
-    if (b->core.flag & BAM_FREVERSE) {
-        if (state->seq_pos < 0)
-            return -1;
-    } else {
-        if (state->seq_pos >= b->core.l_qseq)
-            return -1;
-    }
+
+    if (state->seq_pos >= b->core.l_qseq)
+        return 0;
 
     int i, j, n = 0;
     unsigned char base = bam_seqi(bam_get_seq(b), state->seq_pos);
@@ -501,6 +497,7 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
         if (b->core.flag & BAM_FREVERSE) {
             // process MM list backwards
             char *cp;
+
             if (state->MMend[i]-1 < state->MM[i]) {
                 // Should be impossible to hit if coding is correct
                 hts_log_error("Assert failed while processing base modification states");
@@ -594,18 +591,19 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
             state->MMcount[i] -= freq[state->canonical[i]];
     }
 
-    if (b->core.l_qseq && state->seq_pos >= b->core.l_qseq &&
-        !(b->core.flag & BAM_FREVERSE)) {
-        // Spots +ve orientation run-overs.
-        // The -ve orientation is spotted in bam_parse_basemod2
-        int i;
-        for (i = 0; i < state->nmods; i++) {
-            // Check if any remaining items in MM after hitting the end
-            // of the sequence.
-            if (state->MMcount[i] < 0x7f000000 ||
-                (*state->MM[i]!=0 && *state->MM[i]!=';')) {
-                hts_log_warning("MM tag refers to bases beyond sequence length");
-                return -1;
+    if (b->core.l_qseq && state->seq_pos >= b->core.l_qseq) {
+        if (!(b->core.flag & BAM_FREVERSE)) {
+            // Spots +ve orientation run-overs.
+            // The -ve orientation is spotted in bam_parse_basemod2
+            int i;
+            for (i = 0; i < state->nmods; i++) {
+                // Check if any remaining items in MM after hitting the end
+                // of the sequence.
+                if (state->MMcount[i] < 0x7f000000 ||
+                    (*state->MM[i]!=0 && *state->MM[i]!=';')) {
+                    hts_log_warning("MM tag refers to bases beyond sequence length");
+                    return -1;
+                }
             }
         }
         return 0;
