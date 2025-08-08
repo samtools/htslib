@@ -1814,6 +1814,133 @@ static void bcf_record_check_err(const bcf_hdr_t *hdr, bcf1_t *rec,
     (*reports)++;
 }
 
+/**
+ *  updatephasing - updates 1st phasing based on other phasing status
+ *  @param p - pointer to phase value array
+ *  @param end - end of array
+ *  @param q - pointer to consumed data
+ *  @param samples - no. of samples in array
+ *  @param ploidy - no. of phasing values per sample
+ *  @param type - value type (one of BCF_BT_...)
+ *  Returns 0 on success and 1 on failure
+ */
+static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int ploidy, int type)
+{
+    int j, k;
+    size_t bytes;
+    for (j = 0; j < samples; ++j) {   //for each sample
+        int anyunphased = 0;
+        uint8_t *ptr1 = p;
+        int32_t al1 = 0, val;
+        for (k = 0; k < ploidy; ++k) { //in each ploidy
+            switch(type) {
+                case BCF_BT_INT8:
+                    val = *(uint8_t*)p;
+                break;
+                case BCF_BT_INT16:
+                    val = le_to_i16(p);
+                break;
+                case BCF_BT_INT32:
+                    val = le_to_i32(p);
+                break;
+                //wont have anything bigger than 32bit for GT
+                default: //invalid
+                    return 1;
+                break;
+            }
+            if (!k) al1 = val;
+            else if (!(val & 1)) {
+                anyunphased = 1;
+            }
+            //get to next phasing or skip the rest for this sample
+            bytes = ((anyunphased || al1 & 1) ? ploidy - k : 1) << bcf_type_shift[type];
+            if (end - p < bytes)
+                return 1;
+            p += bytes;
+            if (anyunphased || al1 & 1) {
+                //either unphased is found or 1st one itself is set as phased
+                break;  //no further check required
+            }
+        }
+        if (!anyunphased && al1 > 1) {  //no other unphased
+            /*set phased on read or make unphased on write as upto 4.3 1st
+            phasing is not described explicitly and has to be inferred*/
+            al1 |= 1;
+            switch(type) {
+                case BCF_BT_INT8:
+                    *(uint8_t*)ptr1 = al1;
+                break;
+                case BCF_BT_INT16:
+                    i16_to_le(le_to_i16((uint8_t*)&al1), ptr1);
+                break;
+                case BCF_BT_INT32:
+                    i32_to_le(le_to_i32((uint8_t*)&al1), ptr1);
+                break;
+            }
+        }
+    }
+    *q = p;
+    return 0;
+}
+
+/**
+ *  update44phasing - converts GT to/from v4.4 way representation
+ *  @param h - bcf header, to get version
+ *  @param v - pointer to bcf data
+ *  Returns 0 on success and 1 on failure
+ *  If the version in header is >= 4.4, no change is made. Otherwise 1st phasing
+ *  is set if there are no other unphased ones.
+ */
+HTSLIB_EXPORT int update44phasing(bcf_hdr_t *h, bcf1_t *b)
+{
+    int i, idgt = -1, ver = VCF_DEF, num, type;
+    uint8_t *ptr = NULL, *end = NULL;
+    if (!b) return 1;
+
+    ver = bcf_get_version(h, "");
+    idgt = h ? bcf_hdr_id2int(h, BCF_DT_ID, "GT") : -1;
+    if (ver >= VCF44 || idgt == -1) return 0;   //no change required
+
+    if (b->unpacked & BCF_UN_FMT) { //unpacked, get from decoded data
+        for (i=0; i<b->n_fmt; i++)
+        {
+            if ( b->d.fmt[i].id == idgt ) {
+                ptr = b->d.fmt[i].p;
+                end = ptr + b->d.fmt[i].p_len;
+                num = b->d.fmt[i].n;
+                type = b->d.fmt[i].type;
+                break;
+            }
+        }
+    } else {    //get from indiv.s binary stream
+        ptr = (uint8_t *) b->indiv.s;
+        end = ptr + b->indiv.l;
+        int found = 0;
+        for (i = 0; i < b->n_fmt; ++i) {
+            int32_t key = -1;
+            if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) return 1;
+            if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) return 1;
+            if (type > BCF_BT_CHAR) return 1;   //invalid type
+            if (idgt == key) {
+                found = 1;
+                break;
+            } else {    //skip and check next
+                size_t bytes = ((size_t) num << bcf_type_shift[type]) * b->n_sample;
+                if (end - ptr < bytes) return 1;
+                ptr += bytes;
+            }
+        }
+        if (!found) {
+            ptr = end = NULL;
+        }
+    }
+    if (ptr) {
+        //with GT and v < v44, need phase conversion
+        if (updatephasing(ptr, end, &ptr, b->n_sample, num, type)) return 1;
+    }
+    return 0;
+}
+
 static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     uint8_t *ptr, *end;
     size_t bytes;
@@ -1832,6 +1959,10 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                                     (1 << BCF_BT_FLOAT) |
                                     (1 << BCF_BT_CHAR));
     int32_t max_id = hdr ? hdr->n[BCF_DT_ID] : 0;
+    int idgt = -1, ver = VCF_DEF;
+
+    ver = bcf_get_version(hdr, NULL);
+    idgt = hdr ? bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1;
 
     // Check for valid contig ID
     if (rec->rid < 0
@@ -1941,9 +2072,16 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
-        bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
-        if (end - ptr < bytes) goto bad_indiv;
-        ptr += bytes;
+        if (ver < VCF44 && idgt != -1 && idgt == key) {
+            //with GT and v < v44, need phase conversion
+            if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
+                err |= BCF_ERR_TAG_INVALID;
+            }
+        } else {
+            bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
+            if (end - ptr < bytes) goto bad_indiv;
+            ptr += bytes;
+        }
     }
 
     if (!err && rec->rlen < 0) {
@@ -2032,6 +2170,8 @@ int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_po
     if (ret == 0) ret = bcf_record_check(NULL, v);
     if (ret  >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
+    /*bcf data read may need conversion to vcf44 phasing format, as header is
+    not availble here, it has to be done after this returns the data*/
     return ret;
 }
 
@@ -3225,7 +3365,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
                     }
-                    if (ver >= VCF44 && !phasingprfx) {
+                    if (!phasingprfx) { //get GT in v44 way when no prefixed phasing
                         /* no explicit phasing for 1st allele, set based on
                          other alleles and ploidy */
                         if (ploidy == 1) {  //implicitly phased
