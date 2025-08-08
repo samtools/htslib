@@ -691,11 +691,13 @@ void test_rlen_values(void)
     "1\t4370\t.\tG\t<INS>,<*>\t213.73\t.\tEND=4371;SVLEN=.;SVCLAIM=.\tGT:LEN\t0/1:7\t0|0:.\n" \
     "1\t4378\t.\tG\t<DEL>,<INS>,<*>\t213.73\t.\tEND=4379;SVLEN=3,5,.;SVCLAIM=D,J,.\tGT:LEN\t0/1:7\t0|0:.\n" \
     "1\t4385\t.\tG\tT,<DEL>\t213.73\t.\tEND=4387;SVLEN=.,180\tGT\t0/1\t0|0\n" \
-    "1\t4585\t.\tG\t<DUP>,<DUP>\t213.73\t.\tEND=4587;SVLEN=10,10\tGT\t0/1\t0|0\n" \
-    "1\t4605\t.\tG\t<CNV>\t213.73\t.\tEND=4607;SVLEN=11;CN=2\tGT\t0/1\t0|0\n" \
-    "1\t4625\t.\tG\t<CNV:TR>\t213.73\t.\tEND=4627;SVLEN=12;CN=1.5\tGT\t0/1\t0|0\n" \
-    "1\t4785\t.\tG\tT,<*>\t213.73\t.\tEND=4787\tGT:LEN\t0/1:190\t0|0:.\n" \
-    "1\t5785\t.\tG\tT\t213.73\t.\tEND=5787;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
+    "1\t4585\t.\tG\tT,<DEL:ME>\t213.73\t.\tEND=4587;SVLEN=.,180\tGT\t0/1\t0|0\n" \
+    "1\t4685\t.\tG\t<DUP>,<DUP>\t213.73\t.\tEND=4687;SVLEN=10,10\tGT\t0/1\t0|0\n" \
+    "1\t4705\t.\tG\t<CNV>\t213.73\t.\tEND=4707;SVLEN=11;CN=2\tGT\t0/1\t0|0\n" \
+    "1\t4725\t.\tG\t<CNV:TR>\t213.73\t.\tEND=4727;SVLEN=12;CN=1.5\tGT\t0/1\t0|0\n" \
+    "1\t4745\t.\tG\t<INV>\t213.73\t.\tEND=4747;SVLEN=10\tGT\t0/1\t0|0\n" \
+    "1\t4885\t.\tG\tT,<*>\t213.73\t.\tEND=4887\tGT:LEN\t0/1:190\t0|0:.\n" \
+    "1\t5885\t.\tG\tT\t213.73\t.\tEND=5887;SVLEN=8;SVCLAIM=.\tGT:LEN\t0/1:.\t0|0:10\n"
     // For the last line, SVLEN should be ignored as the allele is not symbolic
     // and LEN should be ignored as there is no <*> allele.  The END tag will
     // be used as it's higher than POS + length of REF.
@@ -709,11 +711,11 @@ void test_rlen_values(void)
     static char d45[] = "data:,"
     "##fileformat=VCFv4.5\n" data;
     /* ideal expected rlen for tests
-    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 2, 2, 3, 3, 3, 3, 3, 3};
-    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 2, 4, 181, 11, 12, 13, 3, 3};
-    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 181, 11, 12, 13, 190, 3};*/
+    int rlen43[] = {1, 1, 2, 1, 1, 1, 11, 5, 5, 5, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3};
+    int rlen44[] = {1, 1, 2, 1, 11, 1, 11, 5, 5, 5, 2, 4, 181, 181, 11, 12, 13, 11, 3, 3};
+    int rlen45[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 181, 181, 11, 12, 13, 11, 190, 3};*/
     // but we dont check version and hence resulting rlen should be
-    int rlen[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 181, 11, 12, 13, 190, 3};
+    int rlen[] = {1, 1, 2, 1, 11, 1, 11, 8, 7, 7, 7, 7, 181, 181, 11, 12, 13, 11, 190, 3};
 
     const int vcfsz = sizeof(rlen)/sizeof(rlen[0]);
 

@@ -6173,7 +6173,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     bcf_info_t *endinfo = NULL, *svleninfo = NULL, end_lcl, svlen_lcl;
     bcf_fmt_t *lenfmt = NULL, len_lcl;
 
-    //holds <DEL> allele status for the max no of alleles
+    //holds SVLEN allele status for the max no of alleles
     uint8_t svlenals[8192];
     //pos from info END, fmt LEN, info SVLEN
     hts_pos_t end = 0, end_fmtlen = 0, end_svlen = 0, hpos;
@@ -6189,10 +6189,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     if (v->unpacked & BCF_UN_STR || v->d.shared_dirty & BCF1_DIRTY_ALS) {
         for (i = 1; i < v->n_allele; ++i) {
             //checks only alt alleles, with NUL
-            if (!strcmp(v->d.allele[i], "<DEL>")
-                || !strcmp(v->d.allele[i], "<DUP>")
-                || !strcmp(v->d.allele[i], "<CNV>")
-                || !strncmp(v->d.allele[i], "<CNV:", 5)) {
+            if (svlen_on_ref_for_vcf_alt(v->d.allele[i], -1)) {
                 // del, dup or cnv allele, note to check corresponding svlen val
                 svlenals[i >> 3] |= 1 << (i & 7);
                 use_svlen = 1;
@@ -6214,11 +6211,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             if (!i) {   //REF length
                 len_ref = size;
             } else {
-                if ((size == 5
-                     && (!strncmp((char*)f, "<DEL>", size)
-                         || !strncmp((char*)f, "<DUP>", size)
-                         || !strncmp((char*)f, "<CNV>", size)))
-                    || (size > 5 && !strncmp((char*)f, "<CNV:", 5))) {
+                if (size >= 0 && svlen_on_ref_for_vcf_alt((char *) f, size)) {
                     // del, dup or cnv allele, note to check corresponding svlen val
                     svlenals[i >> 3] |= 1 << (i & 7);
                     use_svlen = 1;

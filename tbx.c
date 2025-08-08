@@ -187,17 +187,13 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                             if (t) {
                                 *t = 0;
                             }
-                            if (s[0] == '<') {
-                                if (!strcmp("<DEL>", s)  // note deletions
-                                    || !strcmp("<DUP>", s) // and DUPs
-                                    || !strcmp("<CNV>", s)
-                                    || !strncmp("<CNV:", s, 5)) { // and CNVs
-                                    svlenals[lastbyte] |= 1 << ((alcnt - 1) & 7);
-                                    use_svlen = 1;
-                                } else if (!strcmp("<*>", s) ||
-                                    !strcmp("<NON_REF>", s)) {  //note gvcf
-                                    getlen = 1;
-                                }
+                            if (svlen_on_ref_for_vcf_alt(s, -1)) {
+                                // Need to check SVLEN for this ALT
+                                svlenals[lastbyte] |= 1 << ((alcnt - 1) & 7);
+                                use_svlen = 1;
+                            } else if (!strcmp("<*>", s) ||
+                                       !strcmp("<NON_REF>", s)) {  //note gvcf
+                                getlen = 1;
                             }
                             if (t) {
                                 *t = ',';
