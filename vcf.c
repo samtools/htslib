@@ -4546,7 +4546,12 @@ static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fn
         fp->idx = NULL;
         return -1;
     }
-    fp->fnidx = fnidx;
+    fp->fnidx = strdup(fnidx);
+    if (!fp->fnidx) {
+        hts_idx_destroy(fp->idx);
+        fp->idx = NULL;
+        return -1;
+    }
 
     return 0;
 }
@@ -4571,7 +4576,12 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!fp->idx) return -1;
-    fp->fnidx = fnidx;
+    fp->fnidx = strdup(fnidx);
+    if (!fp->fnidx) {
+        hts_idx_destroy(fp->idx);
+        fp->idx = NULL;
+        return -1;
+    }
 
     return 0;
 }
