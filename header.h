@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013-2019 Genome Research Ltd.
+Copyright (c) 2013-2019,2025 Genome Research Ltd.
 Authors: James Bonfield <jkb@sanger.ac.uk>, Valeriu Ohan <vo2@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -48,6 +48,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 #include "htslib/sam.h"
+#include "htslib/hts.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -263,6 +264,20 @@ sam_hrecs_t *sam_hrecs_dup(sam_hrecs_t *hrecs);
  */
 int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
                                  int refs_changed);
+
+/*! Populate sam_hdr_t from SAM file content
+ *
+ * @param hdr empty header struct to be filled
+ * @param fp  File to read from
+ * @return 0 on success
+ *        -1 on failure
+ *
+ * This function is used to build the header structure when reading SAM files.
+ * The lines read from the file are used to create sam_hrecs_t structures.
+ * The function also populates sam_hdr_t::text, sam_hdr_t::l_text,
+ * sam_hdr_t::target_name and sam_hdr_t::target_len.
+ */
+int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp);
 
 /*! Reconstructs a kstring from the header hash table.
  *
