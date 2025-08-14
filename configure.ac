@@ -666,6 +666,33 @@ Linux, FreeBSD, MacOS, and other BSD derivatives])
     ])
   ])
 
+# Check for a working fstatat interface
+AS_IF([test "$ref_cache" = enabled],[
+  AC_MSG_CHECKING([for fstatat])
+  AC_LINK_IFELSE([
+    AC_LANG_PROGRAM([
+      #include <fcntl.h>
+      #include <sys/stat.h>
+    ],[
+      struct stat statbuf;
+      return fstatat(AT_FDCWD, "/", &statbuf, AT_SYMLINK_NOFOLLOW);
+    ])
+  ], [
+    AC_MSG_RESULT([yes])
+  ], [
+    AC_MSG_RESULT([no])
+    ref_cache="disabled"
+    AS_IF([test "x$enable_ref_cache" = xcheck], [
+      AC_MSG_WARN([ref-cache not enabled: missing fstatat()])
+    ],[
+      MSG_ERROR([ref-cache not enabled
+
+ref-cache is not supported on this configuration, as the fstatat() interface
+cannot be found.])
+    ])
+  ])
+])
+
 # Check how to get a working cmsg interface
 AS_IF([test "$ref_cache" = enabled],[
   AC_MSG_CHECKING([for CMSG_LEN])
