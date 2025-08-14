@@ -6178,8 +6178,6 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     //pos from info END, fmt LEN, info SVLEN
     hts_pos_t end = 0, end_fmtlen = 0, end_svlen = 0, hpos;
     int64_t len_ref = 0, len = 0, tmp;
-    lenid = bcf_hdr_id2int(h, BCF_DT_ID, "LEN");
-    svlenid = bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN");
     endid = bcf_hdr_id2int(h, BCF_DT_ID, "END");
 
     //initialise bytes which are to be used
@@ -6188,7 +6186,9 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     //use decoded data where ever available and where not, get from stream
     if (v->unpacked & BCF_UN_STR || v->d.shared_dirty & BCF1_DIRTY_ALS) {
         for (i = 1; i < v->n_allele; ++i) {
-            //checks only alt alleles, with NUL
+            // check only symbolic alt alleles
+            if (v->d.allele[i][0] != '<')
+                continue;
             if (svlen_on_ref_for_vcf_alt(v->d.allele[i], -1)) {
                 // del, dup or cnv allele, note to check corresponding svlen val
                 svlenals[i >> 3] |= 1 << (i & 7);
@@ -6210,8 +6210,8 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             size = bcf_dec_size(f, &f, &type);
             if (!i) {   //REF length
                 len_ref = size;
-            } else {
-                if (size >= 0 && svlen_on_ref_for_vcf_alt((char *) f, size)) {
+            } else if (size > 0 && *f == '<') {
+                if (svlen_on_ref_for_vcf_alt((char *) f, size)) {
                     // del, dup or cnv allele, note to check corresponding svlen val
                     svlenals[i >> 3] |= 1 << (i & 7);
                     use_svlen = 1;
@@ -6231,9 +6231,8 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
         f += size << bcf_type_shift[type];
     }
 
-    // Can skip SVLEN lookup if there are no <DEL> symbolic alleles
-    if (!use_svlen)
-        svlenid = -1;
+    // Only do SVLEN lookup if there are suitable symbolic alleles
+    svlenid = use_svlen ? bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN") : -1;
 
     // INFO
     if (svlenid >= 0 || endid >= 0 ) {  //only if end/svlen present
@@ -6264,8 +6263,12 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             }
         }
     }
+
+    // Only do LEN lookup if a <*> allele was found
+    lenid = gvcf ? bcf_hdr_id2int(h, BCF_DT_ID, "LEN") : -1;
+
     // FORMAT
-    if (lenid >= 0 && gvcf) {
+    if (lenid >= 0) {
         //with LEN and has gvcf allele
         f = (uint8_t*)v->indiv.s; t = NULL; e = (uint8_t*)v->indiv.s + v->indiv.l;
         if (v->unpacked & BCF_UN_FMT || v->d.indiv_dirty) {
