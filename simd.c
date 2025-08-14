@@ -34,8 +34,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "sam_internal.h"
 
-#if defined __x86_64__
-#include <immintrin.h>
+#if defined __x86_64__ && defined HAVE_X86INTRIN_H && HAVE_X86INTRIN_H
+#include <x86intrin.h>
 #elif defined __ARM_NEON
 #include <arm_neon.h>
 #endif

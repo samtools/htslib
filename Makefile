@@ -305,6 +305,9 @@ config.h:
 	if [ "x$(HTS_BUILD_AVX512)" != "x" ] ; then \
 	    echo '#define HAVE_AVX512 1' >> $@ ; \
 	fi
+	echo '#if defined __x86_64__ && (defined HAVE_SSSE3 || defined HAVE_AVX2 || defined HAVE_AVX512)' >> $@
+	echo '#define HAVE_X86INTRIN_H 1' >> $@
+	echo '#endif' >> $@
 	echo '#if defined __x86_64__ || defined __arm__ || defined __aarch64__' >> $@
 	echo '#define HAVE_ATTRIBUTE_CONSTRUCTOR 1' >> $@
 	echo '#endif' >> $@

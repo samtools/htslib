@@ -82,14 +82,16 @@ AC_CHECK_DECL([_XOPEN_SOURCE], [],
   [AC_DEFINE([_XOPEN_SOURCE], [600], [Specify X/Open requirements])],
   [])
 
-dnl Check that we have cpuid, and if so run the x86 SIMD checks
+dnl Check that we have cpuid and x86intrin.h, and if so run the x86 SIMD checks
 AC_CHECK_DECLS([__get_cpuid_max, __cpuid_count], [
    hts_have_cpuid=yes
 ], [
    hts_have_cpuid=no
 ], [[#include <cpuid.h>]])
 
-AS_IF(test "x$hts_have_cpuid" = "xyes", [
+AC_CHECK_HEADERS([x86intrin.h])
+
+AS_IF([test "x$hts_have_cpuid" = "xyes" && test "x$ac_cv_header_x86intrin_h" = "xyes"], [
 dnl Options for rANS32x16 sse4.1 version - sse4.1
 HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
  [AC_LANG_PROGRAM([[
