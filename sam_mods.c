@@ -556,10 +556,11 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
     int next[16], freq[16] = {0}, i;
     memset(next, 0x7f, 16*sizeof(*next));
     const int unchecked = state->flags & HTS_MOD_REPORT_UNCHECKED;
+
     if (b->core.flag & BAM_FREVERSE) {
         for (i = 0; i < state->nmods; i++) {
             if (unchecked && !state->implicit[i])
-                next[seqi_rc[state->canonical[i]]] = 1;
+                next[seqi_rc[state->canonical[i]]] = 0;
             else if (next[seqi_rc[state->canonical[i]]] > state->MMcount[i])
                 next[seqi_rc[state->canonical[i]]] = state->MMcount[i];
         }

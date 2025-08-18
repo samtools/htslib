@@ -1,0 +1,9 @@
+@SQ	SN:chr1	LN:2000
+fwd-implicit-has-list	0	chr1	1010	20	7M	*	0	0	ATGCATC	abcdefg	MM:Z:C+m.,0,0;G-a.,0;
+rev-implicit-has-list	16	chr1	1020	20	7M	*	0	0	ATGCATG	abcdefg	MM:Z:C+m.,0,0;G-a.,0;
+fwd-explicit-has-list	0	chr1	1030	20	7M	*	0	0	ATGCATC	abcdefg	MM:Z:C+m?,0,0;G-a?,0;
+rev-explicit-has-list	16	chr1	1040	20	7M	*	0	0	ATGCATG	abcdefg	MM:Z:C+m?,0,0;G-a?,0;
+fwd-implicit-empty	0	chr1	1050	20	7M	*	0	0	ATGCATC	abcdefg	MM:Z:C+m.;G-a.;
+rev-implicit-empty	16	chr1	1060	20	7M	*	0	0	ATGCATG	abcdefg	MM:Z:C+m.;G-a.;
+fwd-explicit-empty	0	chr1	1070	20	7M	*	0	0	ATGCATC	abcdefg	MM:Z:C+m?;G-a?;
+rev-explicit-empty	16	chr1	1080	20	7M	*	0	0	ATGCATG	abcdefg	MM:Z:C+m?;G-a?;
