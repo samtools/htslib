@@ -554,23 +554,17 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
     // Look through state->MMcount arrays to see when the next lowest is
     // per base type;
     int next[16], freq[16] = {0}, i;
-    memset(next, 0x7f, 16*sizeof(*next));
+    memset(next, 0x7f, 16*sizeof(*next)); // approx max => no next value
     const int unchecked = state->flags & HTS_MOD_REPORT_UNCHECKED;
 
-    if (b->core.flag & BAM_FREVERSE) {
-        for (i = 0; i < state->nmods; i++) {
-            if (unchecked && !state->implicit[i])
-                next[seqi_rc[state->canonical[i]]] = 0;
-            else if (next[seqi_rc[state->canonical[i]]] > state->MMcount[i])
-                next[seqi_rc[state->canonical[i]]] = state->MMcount[i];
-        }
-    } else {
-        for (i = 0; i < state->nmods; i++) {
-            if (unchecked && !state->implicit[i])
-                next[state->canonical[i]] = 0;
-            else if (next[state->canonical[i]] > state->MMcount[i])
-                next[state->canonical[i]] = state->MMcount[i];
-       }
+    for (i = 0; i < state->nmods; i++) {
+        int base = state->canonical[i];
+        if (b->core.flag & BAM_FREVERSE)
+            base = seqi_rc[base];
+        if (unchecked && !state->implicit[i])
+            next[base] = 0;
+        else if (next[base] > state->MMcount[i])
+            next[base] = state->MMcount[i];
     }
 
     // Now step through the sequence counting off base types.
