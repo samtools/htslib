@@ -6169,30 +6169,30 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
 {
     uint8_t *f = (uint8_t*)v->shared.s, *t = NULL,
         *e = (uint8_t*)v->shared.s + v->shared.l;
-    int size, type, id, lenid, endid, svlenid, i, bad, gvcf = 0, haveins = 0;
+    int size, type, id, lenid, endid, svlenid, i, bad, gvcf = 0, use_svlen = 0;
     bcf_info_t *endinfo = NULL, *svleninfo = NULL, end_lcl, svlen_lcl;
     bcf_fmt_t *lenfmt = NULL, len_lcl;
 
-    //holds <ins> allele status for the max no of alleles
-    uint8_t insals[8192];
+    //holds SVLEN allele status for the max no of alleles
+    uint8_t svlenals[8192];
     //pos from info END, fmt LEN, info SVLEN
     hts_pos_t end = 0, end_fmtlen = 0, end_svlen = 0, hpos;
     int64_t len_ref = 0, len = 0, tmp;
-    lenid = bcf_hdr_id2int(h, BCF_DT_ID, "LEN");
-    svlenid = bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN");
     endid = bcf_hdr_id2int(h, BCF_DT_ID, "END");
 
     //initialise bytes which are to be used
-    memset(insals, 0, 1 + v->n_allele / 8);
+    memset(svlenals, 0, 1 + v->n_allele / 8);
 
     //use decoded data where ever available and where not, get from stream
     if (v->unpacked & BCF_UN_STR || v->d.shared_dirty & BCF1_DIRTY_ALS) {
         for (i = 1; i < v->n_allele; ++i) {
-            //checks only alt alleles, with NUL
-            if (!strcmp(v->d.allele[i], "<INS>")) {
-                //ins allele, note to skip corresponding svlen val
-                insals[i >> 3] |= 1 << (i & 7);
-                haveins = 1;
+            // check only symbolic alt alleles
+            if (v->d.allele[i][0] != '<')
+                continue;
+            if (svlen_on_ref_for_vcf_alt(v->d.allele[i], -1)) {
+                // del, dup or cnv allele, note to check corresponding svlen val
+                svlenals[i >> 3] |= 1 << (i & 7);
+                use_svlen = 1;
             } else if (!strcmp(v->d.allele[i], "<*>") ||
                          !strcmp(v->d.allele[i], "<NON_REF>")) {
                 gvcf = 1;   //gvcf present, have to check for LEN field
@@ -6210,11 +6210,11 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             size = bcf_dec_size(f, &f, &type);
             if (!i) {   //REF length
                 len_ref = size;
-            } else {
-                if (size == 5 && !strncmp((char*)f, "<INS>", size)) {
-                    //ins allele, note to skip corresponding svlen val
-                    insals[i >> 3] |= 1 << (i & 7);
-                    haveins = 1;
+            } else if (size > 0 && *f == '<') {
+                if (svlen_on_ref_for_vcf_alt((char *) f, size)) {
+                    // del, dup or cnv allele, note to check corresponding svlen val
+                    svlenals[i >> 3] |= 1 << (i & 7);
+                    use_svlen = 1;
                 } else if ((size == 3 && !strncmp((char*)f, "<*>", size)) ||
                     (size == 9 && !strncmp((char*)f, "<NON_REF>", size))) {
                     gvcf = 1;   //gvcf present, have to check for LEN field
@@ -6230,6 +6230,10 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
         size = bcf_dec_size(f, &f, &type);
         f += size << bcf_type_shift[type];
     }
+
+    // Only do SVLEN lookup if there are suitable symbolic alleles
+    svlenid = use_svlen ? bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN") : -1;
+
     // INFO
     if (svlenid >= 0 || endid >= 0 ) {  //only if end/svlen present
         if (v->unpacked & BCF_UN_INFO || v->d.shared_dirty & BCF1_DIRTY_INF) {
@@ -6259,8 +6263,12 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             }
         }
     }
+
+    // Only do LEN lookup if a <*> allele was found
+    lenid = gvcf ? bcf_hdr_id2int(h, BCF_DT_ID, "LEN") : -1;
+
     // FORMAT
-    if (lenid >= 0 && gvcf) {
+    if (lenid >= 0) {
         //with LEN and has gvcf allele
         f = (uint8_t*)v->indiv.s; t = NULL; e = (uint8_t*)v->indiv.s + v->indiv.l;
         if (v->unpacked & BCF_UN_FMT || v->d.indiv_dirty) {
@@ -6297,23 +6305,26 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     if (svleninfo && svleninfo->vptr) {
         //svlen info exists, not being deleted
         bad = 0;
-        //get largest svlen, except <ins>; expects to be . for non SV alleles
+        //get largest svlen corresponding to a <DEL> symbolic allele
         for (i = 0; i < svleninfo->len && i + 1 < v->n_allele; ++i) {
+            if (!(svlenals[i >> 3] & (1 << ((i + 1) & 7))))
+                continue;
+
             switch(svleninfo->type) {
                 case BCF_BT_INT8:
-                    tmp = ((int8_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i8(&svleninfo->vptr[i]);
                     tmp = tmp == bcf_int8_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT16:
-                    tmp = ((int16_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i16(&svleninfo->vptr[i * 2]);
                     tmp = tmp == bcf_int16_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT32:
-                    tmp = ((int32_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i32(&svleninfo->vptr[i * 4]);
                     tmp = tmp == bcf_int32_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT64:
-                    tmp = ((int64_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i64(&svleninfo->vptr[i * 8]);
                     tmp = tmp == bcf_int64_missing ? 0 : tmp;
                 break;
                 default: //invalid
@@ -6325,10 +6336,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
                 len = 0;
                 break;
             }
-            //expects only SV will have valid svlen and rest have '.'
-            if ((haveins) && (insals[i >> 3] & (1 << ((i + 1) & 7)))) {
-                continue;   //skip svlen for <ins>
-            }
+
             tmp = tmp < 0 ? llabs(tmp) : tmp;
             if (len < tmp) len = tmp;
         }
@@ -6348,19 +6356,19 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             for (j = 0; j < lenfmt->n; ++j) {
                 switch(lenfmt->type) {
                 case BCF_BT_INT8:
-                    tmp = (((int8_t*)lenfmt->p + offset))[j];
+                    tmp = le_to_i8(lenfmt->p + offset + j);
                     tmp = tmp == bcf_int8_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT16:
-                    tmp = ((int16_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i16(lenfmt->p + offset + j * 2);
                     tmp = tmp == bcf_int16_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT32:
-                    tmp = ((int32_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i32(lenfmt->p + offset + j * 4);
                     tmp = tmp == bcf_int32_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT64:
-                    tmp = ((int64_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i64(lenfmt->p + offset + j * 8);
                     tmp = tmp == bcf_int64_missing ? 0 : tmp;
                 break;
                 default: //invalid
