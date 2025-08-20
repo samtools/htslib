@@ -276,7 +276,7 @@ cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) $(htslib_cram_h) cr
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
 fuzz_settings_h = fuzz_settings.h
-header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
+header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_hts_h)
 hfile_internal_h = hfile_internal.h $(htslib_hts_defs_h) $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
 hts_time_funcs_h = hts_time_funcs.h
@@ -490,7 +490,7 @@ hts-object-files: $(LIBHTS_OBJS)
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
-header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h)
+header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_kseq_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
