@@ -1523,6 +1523,16 @@ static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
     return bcf_format_gt_v2(NULL, fmt, isample, str);
 }
 
+/**
+ *  update44phasing - converts GT to/from v4.4 way representation
+ *  @param h - bcf header, to get version
+ *  @param v - pointer to bcf data
+ *  Returns 0 on success and 1 on failure
+ *  If the version in header is >= 4.4, no change is made. Otherwise 1st phasing
+ *  is set if there are no other unphased ones.
+ */
+HTSLIB_EXPORT int update44phasing(bcf_hdr_t *h, bcf1_t *b) HTS_RESULT_USED;
+
 static inline int bcf_enc_size(kstring_t *s, int size, int type)
 {
     // Most common case is first
