@@ -56,6 +56,7 @@ typedef struct BGZF BGZF;
 #endif
 struct cram_fd;
 struct hFILE;
+struct hFILE_callback_ops;
 struct hts_tpool;
 struct sam_hdr_t;
 
@@ -603,6 +604,17 @@ char *hts_format_description(const htsFormat *format);
 */
 HTSLIB_EXPORT
 htsFile *hts_open(const char *fn, const char *mode);
+
+/*!
+  @abstract      Open a SAM/BAM/CRAM/VCF/BCF/etc from stream callbacks
+  @param ops     The IO operation callback
+  @param mode    The mode string
+  @discussion    
+     See hts_open for description of mode string.
+	 This function is useful when data sources other than file/pipe
+	 should be consumed.
+*/
+htsFile *hts_open_callback(const char* fn, struct hFILE_callback_ops* ops, const char* mode);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
