@@ -1983,6 +1983,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                                     (1 << BCF_BT_FLOAT) |
                                     (1 << BCF_BT_CHAR));
     int32_t max_id = hdr ? hdr->n[BCF_DT_ID] : 0;
+    int idgt = hdr ? bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1;
 
     // Check for valid contig ID
     if (rec->rid < 0
@@ -2092,9 +2093,16 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
-        bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
-        if (end - ptr < bytes) goto bad_indiv;
-        ptr += bytes;
+        if (idgt >= 0 && idgt == key) {
+            // check first GT phasing bit and fix up if necessary
+            if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
+                err |= BCF_ERR_TAG_INVALID;
+            }
+        } else {
+            bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
+            if (end - ptr < bytes) goto bad_indiv;
+            ptr += bytes;
+        }
     }
 
     if (!err && rec->rlen < 0) {
@@ -2169,7 +2177,9 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 
 int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
-    if (fp->format.format == vcf) return vcf_read(fp,h,v);
+    if (fp->format.format == vcf) return vcf_read(fp, h, v);
+    if (!h)
+        h = (const bcf_hdr_t *) bgzf_get_private_data(fp->fp.bgzf);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
     if (ret == 0) ret = bcf_record_check(h, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
@@ -2179,8 +2189,9 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
+    const bcf_hdr_t *hdr = (const bcf_hdr_t *) bgzf_get_private_data(fp);
     int ret = bcf_read1_core(fp, v);
-    if (ret == 0) ret = bcf_record_check(NULL, v);
+    if (ret == 0) ret = bcf_record_check(hdr, v);
     if (ret  >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
     return ret;
