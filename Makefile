@@ -267,6 +267,7 @@ NONCONFIGURE_OBJS = hfile_libcurl.o
 PLUGIN_EXT  =
 PLUGIN_OBJS =
 
+bgzf_internal_h = bgzf_internal.h $(htslib_bgzf_h)
 cram_h = cram/cram.h $(cram_samtools_h) $(header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h $(htslib_cram_h)
 cram_io_h = cram/cram_io.h $(cram_misc_h)
 cram_misc_h = cram/misc.h
@@ -492,7 +493,7 @@ hts-object-files: $(LIBHTS_OBJS)
 	$(CC) -shared $(LDFLAGS) -o $@ $< hts.dll.a $(LIBS)
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(htslib_khash_h)
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(bgzf_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_kseq_h)
