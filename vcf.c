@@ -6101,13 +6101,12 @@ int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, c
 
 int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
-    int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag), gt = 0;
+    int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
     if ( tag[0]=='G' && tag[1]=='T' && tag[2]==0 )
     {
         // Ugly: GT field is considered to be a string by the VCF header but BCF represents it as INT.
         if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=BCF_HT_STR ) return -2;
-        gt = 1;
     }
     else if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
 
@@ -6168,38 +6167,6 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     }
     #undef BRANCH
 
-    if (gt && bcf_get_version(hdr, NULL) < VCF44) {
-        //convert to v44 phasing if required
-        int32_t *v = *dst, *ptr1, val1, anyunphased = 0, end = 0;
-        for (i=0; i<nsmpl; i++) {
-            anyunphased = 0; val1 = 0, end = 0;
-            for (j=0; j<fmt->n; j++) {
-                if (*v != bcf_int32_vector_end) {
-                    if (!j) {
-                        val1 = *v;
-                        ptr1 = v;
-                    } else {
-                        if (!(*v & 1)) {    //unphased or unkonwn
-                            anyunphased = 1;
-                        }
-                    }
-                } else {
-                    end = 1;
-                }
-
-                if (val1 & 1 || anyunphased || end) {
-                    //phased || an unphased found || end of data, skip sample
-                    v += (fmt->n - j);
-                    break;
-                }
-                ++v;
-            }
-            if (val1 && !(val1 & 1) && !anyunphased) {
-                //valid unphased one w/o any other unphased, make phased
-                *ptr1 |= 1;
-            }
-        }
-    }
     return nsmpl*fmt->n;
 }
 
