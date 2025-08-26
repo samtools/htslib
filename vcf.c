@@ -51,6 +51,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kstring.h"
 #include "htslib/sam.h"
 #include "htslib/khash.h"
+#include "bgzf_internal.h"
 
 #if 0
 // This helps on Intel a bit, often 6-7% faster VCF parsing.
@@ -117,6 +118,7 @@ typedef struct
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
     size_t *key_len;// length of h->id[BCF_DT_ID] strings
     int version;    //cached version
+    uint32_t ref_count; // reference count, low bit indicates bcf_hdr_destroy() has been called
 }
 bcf_hdr_aux_t;
 
@@ -187,6 +189,30 @@ fail:
     hts_log_warning("Couldn't get VCF version, considering as %d.%d",
         VCF_MAJOR_VER(VCF_DEF), VCF_MINOR_VER(VCF_DEF));
     return VCF_DEF;
+}
+
+// Header reference counting
+
+static void bcf_hdr_incr_ref(bcf_hdr_t *h)
+{
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    aux->ref_count += 2;
+}
+
+static void bcf_hdr_decr_ref(bcf_hdr_t *h)
+{
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux->ref_count >= 2)
+        aux->ref_count -= 2;
+
+    if (aux->ref_count == 0)
+        bcf_hdr_destroy(h);
+}
+
+static void hdr_bgzf_private_data_cleanup(void *data)
+{
+    bcf_hdr_t *h = (bcf_hdr_t *) data;
+    bcf_hdr_decr_ref(h);
 }
 
 static char *find_chrom_header_line(char *s)
@@ -1498,6 +1524,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     aux->key_len = NULL;
     aux->dict = *((vdict_t*)h->dict[0]);
     aux->version = 0;
+    aux->ref_count = 1;
     free(h->dict[0]);
     h->dict[0] = aux;
 
@@ -1522,6 +1549,12 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
     int i;
     khint_t k;
     if (!h) return;
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux->ref_count > 1) // Refs still held, so delay destruction
+    {
+        aux->ref_count &= ~1;
+        return;
+    }
     for (i = 0; i < 3; ++i) {
         vdict_t *d = (vdict_t*)h->dict[i];
         if (d == 0) continue;
@@ -1529,7 +1562,6 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
             if (kh_exist(d, k)) free((char*)kh_key(d, k));
         if ( i==0 )
         {
-            bcf_hdr_aux_t *aux = get_hdr_aux(h);
             for (k=kh_begin(aux->gen); k<kh_end(aux->gen); k++)
                 if ( kh_exist(aux->gen,k) ) free((char*)kh_key(aux->gen,k));
             kh_destroy(hdict, aux->gen);
@@ -1597,6 +1629,10 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     htxt[hlen] = '\0'; // Ensure htxt is terminated
     if ( bcf_hdr_parse(h, htxt) < 0 ) goto fail;
     free(htxt);
+
+    bcf_hdr_incr_ref(h);
+    bgzf_set_private_data(fp, h, hdr_bgzf_private_data_cleanup);
+
     return h;
  fail:
     hts_log_error("Failed to read BCF header");
@@ -1637,6 +1673,9 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     if ( bgzf_write(fp, hlen, 4) !=4 ) return -1;
     if ( bgzf_write(fp, htxt.s, htxt.l) != htxt.l ) return -1;
     if ( bgzf_flush(fp) < 0) return -1;
+
+    bcf_hdr_incr_ref(h);
+    bgzf_set_private_data(fp, h, hdr_bgzf_private_data_cleanup);
 
     free(htxt.s);
     return 0;
