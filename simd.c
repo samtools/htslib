@@ -34,6 +34,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "sam_internal.h"
 
+#ifdef BUILDING_SIMD_NIBBLE2BASE
+
 #if defined __x86_64__
 #include <immintrin.h>
 #elif defined __ARM_NEON
@@ -113,8 +115,6 @@ static inline int cpu_supports_neon(void) {
 }
 
 #endif
-
-#ifdef BUILDING_SIMD_NIBBLE2BASE
 
 void (*htslib_nibble2base)(uint8_t *nib, char *seq, int len) = nibble2base_default;
 
