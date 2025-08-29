@@ -1857,42 +1857,44 @@ static const char *get_type_name(int type) {
 static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int ploidy, int type)
 {
     int j, k;
-    size_t bytes;
+    unsigned int inc = 1 << bcf_type_shift[type];
+    ptrdiff_t bytes = samples * ploidy * inc;
 
-    #define NOSWITCHFOR(type_t, rawtype_t,convert, reconvert, p, end, samples, ploidy, consumed) \
-     for (j = 0; j < samples; ++j) {   /*for each sample */ \
-        int anyunphased = 0; \
-        uint8_t *ptr1 = p; \
-        rawtype_t al1 = 0, val; \
-        for (k = 0; k < ploidy; ++k) { /*in each ploidy */ \
-            val = convert(p); \
-            if (!k) al1 = val; \
-            else if (!(val & 1)) anyunphased = 1; \
-            /*get to next phasing or skip the rest for this sample*/ \
-            *consumed = ((anyunphased || al1 & 1) ? ploidy - k : 1) << bcf_type_shift[type_t]; \
-            if (end - p < *consumed) return 1; \
-            p += *consumed; \
-            if (anyunphased || al1 & 1) break; \
-        } \
-        if (!anyunphased && al1 > 1) {  /*no other unphased*/ \
-            /*set phased on read or make unphased on write as upto 4.3 1st
-            phasing is not described explicitly and has to be inferred*/ \
-            al1 |= 1; \
-            reconvert(convert((uint8_t*)&al1), ptr1); \
-        } \
-    }
-    #define i8_to_le(v, buf) *((uint8_t*)buf) = v;
-    switch(type) {
-        case BCF_BT_INT8:
-            NOSWITCHFOR(BCF_BT_INT8, uint8_t, le_to_i8, i8_to_le, p, end, samples, ploidy, &bytes);
+    if (samples < 0 || ploidy < 0 || end - p < bytes)
+        return 1;
+
+    /*
+     * This works because phasing is stored in the least-significant bit
+     * of the GT encoding, and the data is always stored little-endian.
+     * Thus it's possible to get the desired result by doing bit operations
+     * on the least-significant byte of each value and ignoring the
+     * higher bytes (for 16-bit and 32-bit values).
+     */
+
+    switch (ploidy) {
+    case 1:
+        // Trivial case - haploid data is phased by default
+        for (j = 0; j < samples; ++j) {
+            *p |= 1;
+            p += inc;
+        }
         break;
-        case BCF_BT_INT16:
-            NOSWITCHFOR(BCF_BT_INT16, uint16_t, le_to_i16, i16_to_le, p, end, samples, ploidy, &bytes);
+    case 2:
+        // Mostly trivial case - first is phased if second is.
+        for (j = 0; j < samples; ++j) {
+            *p |= (p[inc] & 1);
+            p += 2 * inc;
+        }
         break;
-        case BCF_BT_INT32:
-            NOSWITCHFOR(BCF_BT_INT32, uint32_t, le_to_i32, i32_to_le, p, end, samples, ploidy, &bytes);
-        break;
-        //no other types are valid for phasing.
+    default:
+        // Generic case - first is phased if all other alleles are.
+        for (j = 0; j < samples; ++j) {
+            uint8_t allphased = 1;
+            for (k = 1; k < ploidy; ++k)
+                allphased &= (p[inc * k]);
+            *p |= allphased;
+            p += ploidy * inc;
+        }
     }
     *q = p;
     return 0;
