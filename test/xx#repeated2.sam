@@ -1,0 +1,7 @@
+@SQ	SN:xx	LN:100
+S	67	xx	1	1	10M	=	11	20	AAAAAAAAAA	**********
+S	131	xx	11	1	10M	=	1	-20	TTTTTTTTTT	**********
+S	323	xx	21	1	10M	=	31	20	AAAAAAAAAA	**********
+S	387	xx	31	1	10M	=	21	-20	TTTTTTTTTT	**********
+S	323	xx	41	1	10M	=	51	20	AAAAAAAAAA	**********
+S	387	xx	51	1	10M	=	41	-20	TTTTTTTTTT	**********

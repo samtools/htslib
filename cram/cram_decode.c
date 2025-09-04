@@ -2116,14 +2116,19 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
 
                     // number of segments starting at the same point.
                     int left_cnt = 0;
+                    int right_cnt = 0;
 
                     do {
                         if (aleft > s->crecs[id2].apos)
                             aleft = s->crecs[id2].apos, left_cnt = 1;
                         else if (aleft == s->crecs[id2].apos)
                             left_cnt++;
-                        if (aright < s->crecs[id2].aend)
+                        if (aright < s->crecs[id2].aend) {
                             aright = s->crecs[id2].aend;
+                            right_cnt = 1;
+                        } else if (aright == s->crecs[id2].aend) {
+                            right_cnt++;
+                        }
                         if (s->crecs[id2].mate_line == -1) {
                             s->crecs[id2].mate_line = rec;
                             break;
@@ -2146,27 +2151,32 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
                          * end coordinates, set +/- tlen based on 1st/last
                          * bit flags instead, as a tie breaker.
                          */
-                        if (s->crecs[id2].apos == aleft) {
-                            if (left_cnt == 1 ||
-                                (s->crecs[id2].flags & BAM_FREAD1))
+                        if (s->crecs[id2].apos == aleft &&
+                            (s->crecs[id2].aend < aright ||
+                             left_cnt <= 1)) {
+                            // Leftmost, and not the rightmost
+                            s->crecs[id2].tlen = tlen;
+                            tlen = -tlen;
+                        } else if (s->crecs[id2].apos == aleft &&
+                                   s->crecs[id2].aend == aright &&
+                                   left_cnt > 1 && right_cnt > 1) {
+                            // Both leftmost and rightmost, resolve tie via
+                            // the BAM flags so changing order doesn't change
+                            // TLEN signs.
+                            if (s->crecs[id2].flags & BAM_FREAD1) {
                                 s->crecs[id2].tlen = tlen;
-                            else
+                                tlen = -tlen;
+                            } else {
                                 s->crecs[id2].tlen = -tlen;
+                            }
                         } else {
+                            // Rightmost or an internal
                             s->crecs[id2].tlen = -tlen;
                         }
 
                         id2 = s->crecs[id2].mate_line;
                         while (id2 != id1) {
-                            if (s->crecs[id2].apos == aleft) {
-                                if (left_cnt == 1 ||
-                                    (s->crecs[id2].flags & BAM_FREAD1))
-                                    s->crecs[id2].tlen = tlen;
-                                else
-                                    s->crecs[id2].tlen = -tlen;
-                            } else {
-                                s->crecs[id2].tlen = -tlen;
-                            }
+                            s->crecs[id2].tlen = tlen;
                             id2 = s->crecs[id2].mate_line;
                         }
                     } else {
