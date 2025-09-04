@@ -699,6 +699,7 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	cd test/fastq && ./test-fastq.sh
 	cd test/base_mods && ./base-mods.sh base-mods.tst
+	cd test/tlen && ./tlen.sh tlen.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx/faidx.fa test/faidx/fastqs.fq
 	test/test-regidx
 	cd test && \

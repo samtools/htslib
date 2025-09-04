@@ -1,0 +1,146 @@
+ref AAAAACCCCCGGGGGTTTTT
+    12345678901234567890
+
+Test files for read pairs.
+
+Starting letter:
+a = both start/end differ
+b = only ends differ
+c = only start differ
+d = both start/end match
+
+Each file has two versions (eg a7 and a7b) which are identical except
+for read ordering with the entries swapping lines.  (This may make some
+data unsorted.)
+
+We also have neighbouring pairs (a7/a8, a9/a10) which are the same
+coordinates, but flipping the orientation of READ1 and READ2.
+Eg pointing inwards vs pointing outwards.
+
+
+
+Starts and ends differ:
+
+Combinations: (2) R1 before R2?
+              (2) R1 starts before R2?
+              (2) R1 ends before R2?
+              (2) R1 top, R2 bottom (vs vice versa)?
+              => 16
+
+a7            a8
+1--->         <---1
+   <---2         2--->
+
+2--->         <---2
+   <---1         1--->
+
+a7b           a8b
+   <---2         2--->
+1--->         <---1
+
+   <---1         1--->
+2--->         <---2
+
+a9            a10
+1------>      <------1
+  <--2          2-->
+
+2------>      <------2
+  <--1          1-->
+
+a9b           a10b
+  <--2          2-->
+1------>      <------1
+
+  <--1          1-->
+2------>      <------2
+
+
+
+Starts match, ends differ:
+
+b7            b8
+1--->         <---1
+<------2      2------>
+
+2--->         <---2
+<------1      1------>
+
+b7b           b8b
+<------2      2------>
+1--->         <---1
+
+<------1      1------>
+2--->         <---2
+
+Starts differ, ends match:
+
+c7            c8
+1------>      <------1
+   <---2         2--->
+
+2------>      <------2
+   <---1         1--->
+
+c7b           c8b
+   <---2         2--->
+1------>      <------1
+
+   <---1         1--->
+2------>      <------2
+
+Starts and ends both match:
+
+d7
+1------>
+<------2
+
+2------>
+<------1
+
+d7b
+<------2
+1------>
+
+<------1
+2------>
+
+-----------------------------------------------------------------------------
+Test files for read triplets
+
+d4           d5
+1----->      <-----1
+<-----m      <-----m
+<-----2      2----->
+
+d4b          d5b
+1----->      <-----1
+<-----2      2----->
+<-----m      <-----m
+
+d4c          d5c
+<-----2      2----->
+<-----m      <-----m
+1----->      <-----1
+
+d4d          d5d
+<-----2      2----->
+1----->      <-----1
+<-----m      <-----m
+
+d4e          d5e
+<-----m      <-----m
+1----->      <-----1
+<-----2      2----->
+
+d4f          d5f
+<-----m      <-----m
+<-----2      2----->
+1----->      <-----1
+
+
+a4           a5
+1--->        m--->
+  m--->        1--->
+    <---2        <---2
+
