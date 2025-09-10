@@ -1853,6 +1853,7 @@ static const char *get_type_name(int type) {
  *  @param ploidy - no. of phasing values per sample
  *  @param type - value type (one of BCF_BT_...)
  *  Returns 0 on success and 1 on failure
+ *  Update for haploids made only if it is not unknown (.)
  */
 static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int ploidy, int type)
 {
@@ -1875,7 +1876,7 @@ static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int
     case 1:
         // Trivial case - haploid data is phased by default
         for (j = 0; j < samples; ++j) {
-            *p |= 1;
+            if (*p) *p |= 1;    //only if not unknown (.)
             p += inc;
         }
         break;
@@ -1897,64 +1898,6 @@ static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int
         }
     }
     *q = p;
-    return 0;
-}
-
-/**
- *  update44phasing - converts GT to/from v4.4 way representation
- *  @param h - bcf header, to get version
- *  @param v - pointer to bcf data
- *  Returns 0 on success and 1 on failure
- *  If the version in header is >= 4.4, no change is made. Otherwise 1st phasing
- *  is set if there are no other unphased ones.
- */
-HTSLIB_EXPORT int update44phasing(bcf_hdr_t *h, bcf1_t *b)
-{
-    int i, idgt = -1, ver = VCF_DEF, num, type;
-    uint8_t *ptr = NULL, *end = NULL;
-    if (!b) return 1;
-
-    ver = bcf_get_version(h, "");
-    idgt = h ? bcf_hdr_id2int(h, BCF_DT_ID, "GT") : -1;
-    if (ver >= VCF44 || idgt == -1) return 0;   //no change required
-
-    if (b->unpacked & BCF_UN_FMT) { //unpacked, get from decoded data
-        for (i=0; i<b->n_fmt; i++)
-        {
-            if ( b->d.fmt[i].id == idgt ) {
-                ptr = b->d.fmt[i].p;
-                end = ptr + b->d.fmt[i].p_len;
-                num = b->d.fmt[i].n;
-                type = b->d.fmt[i].type;
-                break;
-            }
-        }
-    } else {    //get from indiv.s binary stream
-        ptr = (uint8_t *) b->indiv.s;
-        end = ptr + b->indiv.l;
-        int found = 0;
-        for (i = 0; i < b->n_fmt; ++i) {
-            int32_t key = -1;
-            if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) return 1;
-            if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) return 1;
-            if (type > BCF_BT_CHAR) return 1;   //invalid type
-            if (idgt == key) {
-                found = 1;
-                break;
-            } else {    //skip and check next
-                size_t bytes = ((size_t) num << bcf_type_shift[type]) * b->n_sample;
-                if (end - ptr < bytes) return 1;
-                ptr += bytes;
-            }
-        }
-        if (!found) {
-            ptr = end = NULL;
-        }
-    }
-    if (ptr) {
-        //with GT and v < v44, need phase conversion
-        if (updatephasing(ptr, end, &ptr, b->n_sample, num, type)) return 1;
-    }
     return 0;
 }
 
@@ -1985,7 +1928,13 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                                     (1 << BCF_BT_FLOAT) |
                                     (1 << BCF_BT_CHAR));
     int32_t max_id = hdr ? hdr->n[BCF_DT_ID] : 0;
-    int idgt = hdr ? bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1;
+    /* set phasing for 1st allele as in v44 for versions upto v43, to have
+    consistent binary values irrespective of version; not run for v >= v44,
+    to retain explicit phasing in v44 and higher */
+    int idgt = hdr ?
+                    bcf_get_version(hdr, NULL) < VCF44 ?
+                        bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1 :
+                    -1;
 
     // Check for valid contig ID
     if (rec->rid < 0
