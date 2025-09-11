@@ -355,12 +355,20 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_po
     tbx_t *tbx = (tbx_t *) tbxv;
     kstring_t *s = (kstring_t *) sv;
     int ret;
-    if ((ret = bgzf_getline(fp, '\n', s)) >= 0) {
+
+    // Get a line until either EOF or a non-meta character
+    do {
+        ret = bgzf_getline(fp, '\n', s);
+    } while (ret >= 0 && s->l && *s->s == tbx->conf.meta_char);
+
+    // Parse line
+    if (ret >= 0)  {
         tbx_intv_t intv;
         if (get_intv(tbx, s, &intv, 0) < 0)
             return -2;
         *tid = intv.tid; *beg = intv.beg; *end = intv.end;
     }
+
     return ret;
 }
 
