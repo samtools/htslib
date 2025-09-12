@@ -934,6 +934,9 @@ static sam_hrec_type_t * sam_hrecs_parse_single_line(sam_hrecs_t *hrecs,
     // Add the header line type
     if (!(h_type = pool_alloc(hrecs->type_pool)))
         return NULL;
+
+    h_type->tag = NULL;
+
     k = kh_put(sam_hrecs_t, hrecs->h, type, &new);
     if (new < 0)
         goto error;
