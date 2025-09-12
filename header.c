@@ -1483,7 +1483,7 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
     if (sq_count) {
         // Hash table should be empty at the moment
         if (kh_grow_to_fit(m_s2i, hrecs->ref_hash, sq_count + an_count) < 0)
-            return -1;
+            goto error;
 
         if (hrecs->ref_sz < sq_count) {
             sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
@@ -1501,7 +1501,7 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
         do {
             h_type = h_type->global_next;
             if (-1 == sam_hrecs_update_hashes(hrecs, h_type->type, h_type))
-                return -1;
+                goto error;
         } while (h_type != last_h_type);
     }
 
