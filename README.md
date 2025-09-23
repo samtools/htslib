@@ -61,3 +61,9 @@ Please cite this paper when using HTSlib for your publications.
     eprint = {https://academic.oup.com/gigascience/article-pdf/10/2/giab007/36332285/giab007.pdf},
 }
 ```
+
+### Support
+
+If you have found a bug or would like a new feature, please report the same in GitHub [HTSlib](https://github.com/samtools/htslib/issues) issue tracker.
+
+For any security related issue, please send a mail to [samtools@sanger.ac.uk](mailto:samtools@sanger.ac.uk) instead of reporting in GitHub issue tracker. 
