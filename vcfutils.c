@@ -948,11 +948,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     if ( bcf_gt_is_missing(ptr[j]) ) continue;
                     if ( ptr[j]==bcf_int32_vector_end ) break;
                     int al = bcf_gt_allele(ptr[j]);
-                    if ( !( al<nR_ori && map[al]>=0 ) )
+                    if ( !( al<nR_ori && map[al]>=-1 ) )
                     {
-                        hts_log_error("Problem updating genotypes at %s:%"PRIhts_pos" [ al<nR_ori && map[al]>=0 :: al=%d,nR_ori=%d,map[al]=%d ]",
+                        hts_log_error("Problem updating genotypes at %s:%"PRIhts_pos" [ al<nR_ori && map[al]>=-1 :: al=%d,nR_ori=%d,map[al]=%d ]",
                             bcf_seqname_safe(header,line), line->pos+1, al,
-                                      nR_ori, al < nR_ori ? map[al] : 0);
+                                      nR_ori, al < nR_ori ? map[al] : -1);
                         goto err;
                     }
                     // if an allele is mapped to -1, it has been removed,
