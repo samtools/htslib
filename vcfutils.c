@@ -1001,8 +1001,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if (sample_laa[j] == bcf_int32_vector_end
                     || sample_laa[j] == bcf_int32_missing)
                     break;
-                int allele = (sample_laa[j] > 0
-                              && sample_laa[j] < line->n_allele)
+                int allele = (sample_laa[j] > 0 && sample_laa[j] < nR_ori)
                     ? sample_laa[j] : 0;
                 if (!allele || map[allele] < 0)
                 {
