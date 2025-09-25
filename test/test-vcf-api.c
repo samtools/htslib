@@ -979,15 +979,22 @@ void test_bcf_remove_allele_set(void)
         "5\t110350\t.\tT\t<INS>,<INS>\t.\tPASS\tIMPRECISE;SVLEN=100,200;CIEND=-50,50,-25,25;CIPOS=-10,10,-20,20\tGT\t0/1\t0/1\t0/1",
         "5\t110500\t.\tT\t<CNV>,<CNV>\t.\tPASS\tIMPRECISE;SVLEN=50,100;CILEN=0,25,-25,25;CN=2,4;CICN=-0.5,1,-1.5,1.5\tGT\t0/1\t0/1\t0/1",
         "5\t110700\t.\tA\t<INS:ME>,<INS:ME>\t.\tPASS\tMEINFO=AluY,1,260,+,FLAM_C,1,110,-;METRANS=1,94820,95080,+,1,129678,129788,-\tGT\t0/1\t0/1\t0/1",
-        "5\t112000\t.\tC\t<CNV:TR>,<CNV:TR>\t.\tPASS\tRN=2,1;RUS=CAG,TTG,CA;RUL=3,3,2;RB=12,6,6;RUC=4,2,3;RUB=3,3,3,3,3,3,2,2,2;SVLEN=18,6"
+        "5\t112000\t.\tC\t<CNV:TR>,<CNV:TR>\t.\tPASS\tRN=2,1;RUS=CAG,TTG,CA;RUL=3,3,2;RB=12,6,6;RUC=4,2,3;RUB=3,3,3,3,3,3,2,2,2;SVLEN=18,6",
+        "5\t113000\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
+        "5\t114000\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
     };
     const char * expected[] = {
+        // 2nd allele removed
         "5\t110285\t.\tT\tC\t.\tPASS\tAC=1;AD=6,5;AF=0.99;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:AD:EC:PL:VL_A_STR_FMT:VL_G_STR_FMT:VL_R_STR_FMT\t.:.:.:.:.:.:.\t0/1:6,5:4:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t.:.:.:.:.:.:.",
         "5\t110290\t.\tT\tC\t.\tPASS\tAC=90;AD=6,5;AF=0.009;VL_A_STR_INFO=alt_c;VL_R_STR_INFO=ref,alt_c\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1:3,2:44:114,0,15:alt_c:gt_00,gt_01,gt_11:ref,alt_c\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
         "5\t110350\t.\tT\t<INS>\t.\tPASS\tIMPRECISE;SVLEN=100;CIEND=-50,50;CIPOS=-10,10\tGT\t0/1\t0/1\t0/1",
         "5\t110500\t.\tT\t<CNV>\t.\tPASS\tIMPRECISE;SVLEN=50;CILEN=0,25;CN=2;CICN=-0.5,1\tGT\t0/1\t0/1\t0/1",
         "5\t110700\t.\tA\t<INS:ME>\t.\tPASS\tMEINFO=AluY,1,260,+;METRANS=1,94820,95080,+\tGT\t0/1\t0/1\t0/1",
-        "5\t112000\t.\tC\t<CNV:TR>\t.\tPASS\tRN=2;RUS=CAG,TTG;RUL=3,3;RB=12,6;RUC=4,2;RUB=3,3,3,3,3,3;SVLEN=18"
+        "5\t112000\t.\tC\t<CNV:TR>\t.\tPASS\tRN=2;RUS=CAG,TTG;RUL=3,3;RB=12,6;RUC=4,2;RUB=3,3,3,3,3,3;SVLEN=18",
+        // 1st allele removed
+        "5\t113000\t.\tT\tA\t.\tPASS\tAC=1;AD=6,6;AF=0.0001;VL_A_STR_INFO=alt_a;VL_R_STR_INFO=ref,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/.:1:3,0:27:114,35,113:alt_a:gt_00,gt_02,gt_22:ref,alt_a\t./.:.:0:.:110:.:gt_00:ref",
+        // Both alleles removed
+        "5\t114000\t.\tT\t.\t.\tPASS\tAD=6;VL_R_STR_INFO=ref\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/.:.:3:.:114:.:gt_00:ref\t./.:.:0:.:110:.:gt_00:ref",
     };
 
     kstring_t kstr = KS_INITIALIZE;
@@ -1011,7 +1018,15 @@ void test_bcf_remove_allele_set(void)
     for (i = 0; i < sizeof(inputs)/sizeof(inputs[0]); i++)
     {
         check0(read_vcf_line(inputs[i], hdr, rec, &kstr));
-        kbs_insert(rm_set, 2);
+        kbs_clear(rm_set);
+        if (rec->pos == 113000 - 1) {
+            kbs_insert(rm_set, 1);
+        } else if (rec->pos == 114000 - 1) {
+            kbs_insert(rm_set, 1);
+            kbs_insert(rm_set, 2);
+        } else {
+            kbs_insert(rm_set, 2);
+        }
         check0(bcf_remove_allele_set(hdr, rec, rm_set));
         check0(vcf_format(hdr, rec, ks_clear(&kstr)));
         chomp(&kstr);
