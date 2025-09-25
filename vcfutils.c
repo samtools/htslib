@@ -1031,13 +1031,24 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             if (max_k < num_laa_vals)
             {
                 // Max number of items has shrunk, so consolidate.
-                for (i = 1; i < line->n_sample; i++)
-                {
-                    memmove(&laa[i * max_k],
-                            &laa[i * num_laa_vals],
-                            max_k * sizeof(laa[0]));
+                if (max_k > 0) {
+                    for (i = 1; i < line->n_sample; i++)
+                    {
+                        memmove(&laa[i * max_k],
+                                &laa[i * num_laa_vals],
+                                max_k * sizeof(laa[0]));
+                    }
+                    num_laa = line->n_sample * max_k;
+                } else {
+                    // No values left - all referenced alleles must have been
+                    // removed.  Store MISSING to prevent the LAA tag from
+                    // also being removed (which would invalidate LAD,
+                    // LPL etc.)
+                    assert(num_laa >= line->n_sample);
+                    for (i = 0; i < line->n_sample; i++)
+                        laa[i] = bcf_int32_missing;
+                    num_laa = line->n_sample;
                 }
-                num_laa = line->n_sample * max_k;
             }
             // Push back new LAA values
             if (bcf_update_format_int32(header, line,
