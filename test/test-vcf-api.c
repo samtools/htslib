@@ -982,6 +982,7 @@ void test_bcf_remove_allele_set(void)
         "5\t112000\t.\tC\t<CNV:TR>,<CNV:TR>\t.\tPASS\tRN=2,1;RUS=CAG,TTG,CA;RUL=3,3,2;RB=12,6,6;RUC=4,2,3;RUB=3,3,3,3,3,3,2,2,2;SVLEN=18,6",
         "5\t113000\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
         "5\t114000\t.\tT\tC,A\t.\tPASS\tAC=90,1;AD=6,5,6;AF=0.009,0.0001;VL_A_STR_INFO=alt_c,alt_a;VL_R_STR_INFO=ref,alt_c,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/1:1,2:3,2,0:44,27:114,0,15,35,73,113:alt_c,alt_a:gt_00,gt_01,gt_11,gt_02,gt_12,gt_22:ref,alt_c,alt_a\t1/1:1:0,3:46:110,15,0:alt_c:gt_00,gt_01,gt_11:ref,alt_c",
+        "5\t115000\t.\tC\t<CNV:TR>,<CNV:TR>\t.\tPASS\tRN=2,1;RUS=CAG,TTG,CA;RUL=3,3,2;RB=12,6,6;RUC=4,2,3;RUB=3,3,3,3,3,3,2,2,2;SVLEN=18,6",
     };
     const char * expected[] = {
         // 2nd allele removed
@@ -995,6 +996,7 @@ void test_bcf_remove_allele_set(void)
         "5\t113000\t.\tT\tA\t.\tPASS\tAC=1;AD=6,6;AF=0.0001;VL_A_STR_INFO=alt_a;VL_R_STR_INFO=ref,alt_a\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/.:1:3,0:27:114,35,113:alt_a:gt_00,gt_02,gt_22:ref,alt_a\t./.:.:0:.:110:.:gt_00:ref",
         // Both alleles removed
         "5\t114000\t.\tT\t.\t.\tPASS\tAD=6;VL_R_STR_INFO=ref\tGT:LAA:LAD:LEC:LPL:VL_LA_STR_FMT:VL_LG_STR_FMT:VL_LR_STR_FMT\t0/0:.:3:.:0:.:gt_00:ref\t0/.:.:3:.:114:.:gt_00:ref\t./.:.:0:.:110:.:gt_00:ref",
+        "5\t115000\t.\tC\t.\t.\tPASS\t.",
     };
 
     kstring_t kstr = KS_INITIALIZE;
@@ -1021,7 +1023,7 @@ void test_bcf_remove_allele_set(void)
         kbs_clear(rm_set);
         if (rec->pos == 113000 - 1) {
             kbs_insert(rm_set, 1);
-        } else if (rec->pos == 114000 - 1) {
+        } else if (rec->pos >= 114000 - 1) {
             kbs_insert(rm_set, 1);
             kbs_insert(rm_set, 2);
         } else {
