@@ -404,6 +404,18 @@ static int fixup_info_length_code(bcf_info_t *info)
     return 0;
 }
 
+static int mark_for_removal(bcf_info_t *info)
+{
+    if (info->vptr_free)
+    {
+        free(info->vptr - info->vptr_off);
+        info->vptr_free = 0;
+    }
+    info->vptr = NULL;
+    info->vptr_off = info->vptr_len = 0;
+    return 0;
+}
+
 // Remove integer CNV:TR-related tag data
 // Returns 0 on success
 //         1 if the tag had an unexpected type or number of elements
@@ -468,6 +480,10 @@ static int trim_int_cnv_tr_int_tags(bcf_info_t *info,
         new_pos += byte_len;
         new_total += n_items;
     }
+
+    if (new_total == 0)
+        return mark_for_removal(info);
+
     info->vptr_len = new_pos;
     info->len = new_total;
     if (info->len == 1)
@@ -525,6 +541,9 @@ static int trim_int_cnv_tr_str_tags(bcf_info_t *info,
         orig_pos += end - start;
         new_pos += end - start;
     }
+    if (new_pos == 0)
+        return mark_for_removal(info);
+
     if (new_pos < orig_pos)
     {
         info->vptr[new_pos] = '\0';
@@ -620,10 +639,10 @@ static int fixup_cnv_tr_info_tags(const bcf_hdr_t *header, bcf1_t *line,
                 return res;
         }
 
-        // Check if storage had to be reallocated.  This can only happen if
-        // the length code stored before info->vptr was too small, which
-        // should hopefully never be the case.
-        if (info->vptr - info->vptr_off != orig_ptr)
+        // Check if the info tag was removed, or storage had to be reallocated.
+        // The latter can only happen if the length code stored before info->vptr
+        // was too small, which should hopefully never be the case.
+        if (!info->vptr || info->vptr - info->vptr_off != orig_ptr)
             line->d.shared_dirty |= BCF1_DIRTY_INF;
     }
     // Now do RUC, if present
