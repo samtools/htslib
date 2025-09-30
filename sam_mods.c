@@ -507,15 +507,22 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                 if (*cp == ',')
                     break;
             state->MMend[i] = cp;
-            if (cp != state->MM[i])
-                state->MMcount[i] = strtol(cp+1, NULL, 10);
-            else
+            if (cp != state->MM[i]) {
+                char *tmp;
+                int of = 0;
+                uint64_t v = hts_str2uint(cp + 1, &tmp, 31, &of);
+                state->MMcount[i] = (int)v;
+            } else {
                 state->MMcount[i] = INT_MAX;
+            }
         } else {
-            if (*state->MM[i] == ',')
-                state->MMcount[i] = strtol(state->MM[i]+1, &state->MM[i], 10);
-            else
+            if (*state->MM[i] == ',') {
+                int of = 0;
+                uint64_t v = hts_str2uint(state->MM[i] + 1, &state->MM[i], 31, &of);
+                state->MMcount[i] = (int)v;
+            } else {
                 state->MMcount[i] = INT_MAX;
+            }
         }
 
         // Multiple mods at the same coords.
