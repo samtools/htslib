@@ -296,13 +296,12 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
             char *cp_end = NULL;
             int chebi = 0;
             if (isdigit_c(*cp)) {
-                uint64_t uv = hts_str2uint(cp, &cp_end, 31, &failed);
+                chebi = (int)hts_str2uint(cp, &cp_end, 31, &failed);
                 if (cp_end == cp || failed) {
                     hts_log_error("%s: malformed MM tag (invalid ChEBI code)",
                                   bam_get_qname(b));
                     return -1;
                 }
-                chebi = (int)uv;
                 cp = cp_end;
                 ms = cp-1;
             } else {
@@ -348,13 +347,12 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                     if (*cp == 0 || *cp == ';')
                         break;
 
-                    uint64_t uv = hts_str2uint(cp, &cp_end, 31, &failed);
+                    delta = (long)hts_str2uint(cp, &cp_end, 31, &failed);
                     if (cp_end == cp || failed) {
                         hts_log_error("%s: Hit end of MM tag. Missing "
                                       "semicolon?", bam_get_qname(b));
                         return -1;
                     }
-                    delta = (long)uv;
 
                     cp = cp_end;
                     total_seq += delta+1;
@@ -363,13 +361,12 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                 delta = freq[seqi_rc[btype]] - total_seq; // remainder
             } else {
                 if (*cp == ',') {
-                    uint64_t uv = hts_str2uint(cp+1, &cp_end, 31, &failed);
+                    delta = (long)hts_str2uint(cp+1, &cp_end, 31, &failed);
                     if (cp_end == cp+1 || failed) {
                         hts_log_error("%s: Failed to parse integer from MM tag",
                                       bam_get_qname(b));
                         return -1;
                     }
-                    delta = (long)uv;
                 } else {
                     delta = INT_MAX;
                     cp_end = cp;
@@ -522,15 +519,13 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                     break;
             state->MMend[i] = cp;
             if (cp != state->MM[i]) {
-                uint64_t v = hts_str2uint(cp + 1, &tmp, 31, &failed);
-                state->MMcount[i] = (int)v;
+                state->MMcount[i] = (int)hts_str2uint(cp + 1, &tmp, 31, &failed);
             } else {
                 state->MMcount[i] = INT_MAX;
             }
         } else {
             if (*state->MM[i] == ',') {
-                uint64_t v = hts_str2uint(state->MM[i] + 1, &state->MM[i], 31, &failed);
-                state->MMcount[i] = (int)v;
+                state->MMcount[i] = (int)hts_str2uint(state->MM[i] + 1, &state->MM[i], 31, &failed);
             } else {
                 state->MMcount[i] = INT_MAX;
             }
