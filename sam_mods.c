@@ -272,6 +272,7 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
     char *cp = (char *)mm+1;
     int mod_num = 0;
     int implicit = 1;
+    int failed = 0;
     while (*cp) {
         for (; *cp; cp++) {
             // cp should be [ACGTNU][+-]([a-zA-Z]+|[0-9]+)[.?]?(,\d+)*;
@@ -295,7 +296,13 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
             char *cp_end = NULL;
             int chebi = 0;
             if (isdigit_c(*cp)) {
-                chebi = strtol(cp, &cp_end, 10);
+                uint64_t uv = hts_str2uint(cp, &cp_end, 31, &failed);
+                if (cp_end == cp || failed) {
+                    hts_log_error("%s: malformed MM tag (invalid ChEBI code)",
+                                  bam_get_qname(b));
+                    return -1;
+                }
+                chebi = (int)uv;
                 cp = cp_end;
                 ms = cp-1;
             } else {
@@ -341,12 +348,13 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                     if (*cp == 0 || *cp == ';')
                         break;
 
-                    delta = strtol(cp, &cp_end, 10);
-                    if (cp_end == cp) {
+                    uint64_t uv = hts_str2uint(cp, &cp_end, 31, &failed);
+                    if (cp_end == cp || failed) {
                         hts_log_error("%s: Hit end of MM tag. Missing "
                                       "semicolon?", bam_get_qname(b));
                         return -1;
                     }
+                    delta = (long)uv;
 
                     cp = cp_end;
                     total_seq += delta+1;
@@ -354,11 +362,15 @@ int bam_parse_basemod2(const bam1_t *b, hts_base_mod_state *state,
                 }
                 delta = freq[seqi_rc[btype]] - total_seq; // remainder
             } else {
-                delta = *cp == ','
-                    ? strtol(cp+1, &cp_end, 10)
-                    : 0;
-                if (!cp_end) {
-                    // empty list
+                if (*cp == ',') {
+                    uint64_t uv = hts_str2uint(cp+1, &cp_end, 31, &failed);
+                    if (cp_end == cp+1 || failed) {
+                        hts_log_error("%s: Failed to parse integer from MM tag",
+                                      bam_get_qname(b));
+                        return -1;
+                    }
+                    delta = (long)uv;
+                } else {
                     delta = INT_MAX;
                     cp_end = cp;
                 }
@@ -494,9 +506,11 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                 ? -state->MLstride[i]
                 : +state->MLstride[i];
 
+        int failed = 0;
         if (b->core.flag & BAM_FREVERSE) {
             // process MM list backwards
             char *cp;
+            char *tmp;
 
             if (state->MMend[i]-1 < state->MM[i]) {
                 // Should be impossible to hit if coding is correct
@@ -508,21 +522,22 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                     break;
             state->MMend[i] = cp;
             if (cp != state->MM[i]) {
-                char *tmp;
-                int of = 0;
-                uint64_t v = hts_str2uint(cp + 1, &tmp, 31, &of);
+                uint64_t v = hts_str2uint(cp + 1, &tmp, 31, &failed);
                 state->MMcount[i] = (int)v;
             } else {
                 state->MMcount[i] = INT_MAX;
             }
         } else {
             if (*state->MM[i] == ',') {
-                int of = 0;
-                uint64_t v = hts_str2uint(state->MM[i] + 1, &state->MM[i], 31, &of);
+                uint64_t v = hts_str2uint(state->MM[i] + 1, &state->MM[i], 31, &failed);
                 state->MMcount[i] = (int)v;
             } else {
                 state->MMcount[i] = INT_MAX;
             }
+        }
+        if (failed) {
+            hts_log_error("%s: Error parsing unsigned integer from MM tag", bam_get_qname(b));
+            return -1;
         }
 
         // Multiple mods at the same coords.
