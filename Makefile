@@ -334,10 +334,12 @@ config.h:
 	echo '#if defined __x86_64__ || defined __arm__ || defined __aarch64__' >> $@
 	echo '#define HAVE_ATTRIBUTE_CONSTRUCTOR 1' >> $@
 	echo '#endif' >> $@
-	echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@
-	echo '#define HAVE_ATTRIBUTE_TARGET_SSSE3 1' >> $@
-	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
-	echo '#endif' >> $@
+	if [ "x$(HTS_HAVE_SSSE3_BUILTINS)" != "x" ]; then \
+	    echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@ ; \
+	    echo '#define HAVE_ATTRIBUTE_TARGET_SSSE3 1' >> $@ ; \
+	    echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@ ; \
+	    echo '#endif' >> $@ ; \
+	fi
 	echo '#if defined __linux__' >> $@
 	echo '#define HAVE_GETAUXVAL' >> $@
 	echo '#elif defined __FreeBSD__' >> $@
