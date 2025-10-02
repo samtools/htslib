@@ -518,17 +518,15 @@ int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
                 if (*cp == ',')
                     break;
             state->MMend[i] = cp;
-            if (cp != state->MM[i]) {
+            if (cp != state->MM[i])
                 state->MMcount[i] = (int)hts_str2uint(cp + 1, &tmp, 31, &failed);
-            } else {
+            else
                 state->MMcount[i] = INT_MAX;
-            }
         } else {
-            if (*state->MM[i] == ',') {
+            if (*state->MM[i] == ',')
                 state->MMcount[i] = (int)hts_str2uint(state->MM[i] + 1, &state->MM[i], 31, &failed);
-            } else {
+            else
                 state->MMcount[i] = INT_MAX;
-            }
         }
         if (failed) {
             hts_log_error("%s: Error parsing unsigned integer from MM tag", bam_get_qname(b));
