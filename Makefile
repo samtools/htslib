@@ -311,9 +311,19 @@ config.h:
 	echo '#if defined __x86_64__ || defined __arm__ || defined __aarch64__' >> $@
 	echo '#define HAVE_ATTRIBUTE_CONSTRUCTOR 1' >> $@
 	echo '#endif' >> $@
-	echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@
-	echo '#define HAVE_ATTRIBUTE_TARGET 1' >> $@
-	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
+	if [ "x$(HTS_HAVE_SSSE3_BUILTINS)" != "x" ]; then \
+	    echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@ ; \
+	    echo '#define HAVE_ATTRIBUTE_TARGET_SSSE3 1' >> $@ ; \
+	    echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@ ; \
+	    echo '#endif' >> $@ ; \
+	fi
+	echo '#if defined __linux__' >> $@
+	echo '#define HAVE_GETAUXVAL' >> $@
+	echo '#elif defined __FreeBSD__' >> $@
+	echo '#define HAVE_ELF_AUX_INFO' >> $@
+	echo '#elif defined __OpenBSD__' >> $@
+	echo '// Enable extra OpenBSD checks (see simd.c)' >> $@
+	echo '#define HAVE_OPENBSD' >> $@
 	echo '#endif' >> $@
 
 # And similarly for htslib.pc.tmp ("pkg-config template").  No dependency
