@@ -1917,6 +1917,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
 sam_hdr_t *sam_hdr_read(htsFile *fp)
 {
+    sam_hdr_t *h = NULL;
     if (!fp) {
         errno = EINVAL;
         return NULL;
@@ -1924,13 +1925,16 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
 
     switch (fp->format.format) {
     case bam:
-        return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
+        h = sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
+        break;
 
     case cram:
-        return sam_hdr_sanitise(sam_hdr_dup(fp->fp.cram->header));
+        h = sam_hdr_sanitise(sam_hdr_dup(fp->fp.cram->header));
+        break;
 
     case sam:
-        return sam_hdr_create(fp);
+        h = sam_hdr_create(fp);
+        break;
 
     case fastq_format:
     case fasta_format:
@@ -1944,6 +1948,13 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         errno = EFTYPE;
         return NULL;
     }
+    //only sam,bam and cram reaches here
+    if (h && !fp->bam_header) { //set except for sam which already has it
+        //for cram, it is the o/p header as for rest and not the internal header
+        fp->bam_header = h;
+        sam_hdr_incr_ref(fp->bam_header);
+    }
+    return h;
 }
 
 int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
@@ -2041,11 +2052,18 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
     case fastq_format:
     case fasta_format:
         // Nothing to output; FASTQ has no file headers.
+        return 0;
         break;
 
     default:
         errno = EBADF;
         return -1;
+    }
+    //only sam,bam and cram reaches here
+    if (h) {    //the new header
+        if (fp->bam_header)
+            sam_hdr_destroy(fp->bam_header);
+        fp->bam_header = sam_hdr_dup(h);
     }
     return 0;
 }
