@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <signal.h>
 #include <inttypes.h>
 #include <unistd.h>
+#include <regex.h>
 
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 #include "fuzz_settings.h"
@@ -3701,6 +3702,7 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     return 0;
 }
 
+#define UMI_TAGS 5
 typedef struct {
     kstring_t name;
     kstring_t comment; // NB: pointer into name, do not free
@@ -3710,9 +3712,11 @@ typedef struct {
     int aux;
     int rnum;
     char BC[3];         // aux tag ID for barcode
+    char UMI[UMI_TAGS][3]; // aux tag list for UMIs.
     khash_t(tag) *tags; // which aux tags to use (if empty, use all).
     char nprefix;
     int sra_names;
+    regex_t regex;
 } fastq_state;
 
 // Initialise fastq state.
@@ -3723,6 +3727,12 @@ static fastq_state *fastq_state_init(int name_char) {
         return NULL;
     strcpy(x->BC, "BC");
     x->nprefix = name_char;
+    // Default Illumina naming convention
+    char *re = "^[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:([^:#/]+)";
+    if (regcomp(&x->regex, re, REG_EXTENDED) != 0) {
+        free(x);
+        return NULL;
+    }
 
     return x;
 }
@@ -3735,6 +3745,7 @@ void fastq_state_destroy(htsFile *fp) {
         ks_free(&x->name);
         ks_free(&x->seq);
         ks_free(&x->qual);
+        regfree(&x->regex);
         free(fp->state);
     }
 }
@@ -3792,6 +3803,52 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
         va_end(args);
         strncpy(x->BC, bc, 2);
         x->BC[2] = 0;
+        break;
+    }
+
+    case FASTQ_OPT_UMI: {
+        // UMI tag: an empty string disables UMI by setting x->UMI[0] to \0\0\0
+        va_start(args, opt);
+        char *bc = va_arg(args, char *), *bc_orig = bc;
+        va_end(args);
+        if (!bc || strcmp(bc, "1") == 0)
+            bc = "RX";
+        int ntags = 0, err = 0;
+        for (ntags = 0; *bc && ntags < UMI_TAGS; ntags++) {
+            if (!isalpha(bc[0]) || !isalnum_c(bc[1])) {
+                err = 1;
+                break;
+            }
+
+            strncpy(x->UMI[ntags], bc, 3);
+            bc += 2;
+            if (*bc && *bc != ',') {
+                err = 1;
+                break;
+            }
+            bc+=(*bc==',');
+            x->UMI[ntags][2] = 0;
+        }
+        for (; ntags < UMI_TAGS; ntags++)
+            x->UMI[ntags][0] = x->UMI[ntags][1] = x->UMI[ntags][2] = 0;
+
+
+        if (err)
+            hts_log_warning("Bad UMI tag list '%s'", bc_orig);
+
+        break;
+    }
+
+    case FASTQ_OPT_UMI_REGEX: {
+        va_start(args, opt);
+        char *re = va_arg(args, char *);
+        va_end(args);
+
+        regfree(&x->regex);
+        if (regcomp(&x->regex, re, REG_EXTENDED) != 0) {
+            hts_log_error("Regular expression '%s' is not supported", re);
+            return -1;
+        }
         break;
     }
 
@@ -3907,6 +3964,43 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         x->name.s[x->name.l-=2] = 0;
     }
 
+    // Strip Illumina formatted UMI off read-name
+    char UMI_seq[256]; // maximum length in spec
+    size_t UMI_len = 0;
+    if (x->UMI[0][0]) {
+        regmatch_t match[3];
+        if (regexec(&x->regex, x->name.s, 2, match, 0) == 0
+            && match[0].rm_so >= 0     // whole regex
+            && match[1].rm_so >= 0) {  // bracketted UMI component
+            UMI_len = match[1].rm_eo - match[1].rm_so;
+            if (UMI_len > 255) {
+                hts_log_error("SAM read name is too long");
+                return -2;
+            }
+
+            // The SAMTags spec recommends (but not requires) separating
+            // barcodes with hyphen ('-').
+            size_t i;
+            for (i = 0; i < UMI_len; i++)
+                UMI_seq[i] = isalpha_c(x->name.s[i+match[1].rm_so])
+                    ? x->name.s[i+match[1].rm_so]
+                    : '-';
+
+            // Move any trailing #num earlier in the name
+            if (UMI_len) {
+                UMI_seq[UMI_len++] = 0;
+
+                x->name.l = match[1].rm_so;
+                if (x->name.l > 0 && x->name.s[x->name.l-1] == ':')
+                    x->name.l--; // remove colon too
+                char *cp = x->name.s + match[1].rm_eo;
+                while (*cp)
+                    x->name.s[x->name.l++] = *cp++;
+                x->name.s[x->name.l] = 0;
+            }
+        }
+    }
+
     // Convert to BAM
     ret = bam_set1(b,
                    x->name.s + x->name.l - name, name,
@@ -3917,6 +4011,12 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
                    x->seq.l, x->seq.s, x->qual.s,
                    0);
     if (ret < 0) return -2;
+
+    // Add UMI tag if removed from read-name above
+    if (UMI_len) {
+        if (bam_aux_append(b, x->UMI[0], 'Z', UMI_len, (uint8_t *)UMI_seq) < 0)
+            ret = -2;
+    }
 
     // Identify Illumina CASAVA strings.
     // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
@@ -4259,6 +4359,39 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
     // Name
     if (kputc(x->nprefix, str) == EOF || kputs(bam_get_qname(b), str) == EOF)
         return -1;
+
+    // UMI tag
+    if (x && *x->UMI[0]) {
+        // Temporary copy of '#num' if present
+        char plex[256];
+        size_t len = str->l;
+        while (len && str->s[len] != ':' && str->s[len] != '#')
+            len--;
+
+        if (str->s[len] == '#' && str->l - len < 255) {
+            memcpy(plex, &str->s[len], str->l - len);
+            plex[str->l - len] = 0;
+            str->l = len;
+        } else {
+            *plex = 0;
+        }
+
+        uint8_t *bc = NULL;
+        int n;
+        for (n = 0; !bc && n < UMI_TAGS; n++)
+            bc = bam_aux_get(b, x->UMI[n]);
+        if (bc && *bc == 'Z') {
+            int err = kputc(':', str) < 0;
+            // Replace any non-alpha with '+'
+            while (*++bc)
+                err |= kputc(isalpha_c(*bc) ? toupper_c(*bc) : '+', str) < 0;
+            if (err)
+                return -1;
+        }
+
+        if (*plex && kputs(plex, str) < 0)
+            return -1;
+    }
 
     // /1 or /2 suffix
     if (x && x->rnum && (flag & BAM_FPAIRED)) {

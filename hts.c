@@ -1208,6 +1208,14 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         strcmp(o->arg, "FASTQ_NAME2") == 0)
         o->opt = FASTQ_OPT_NAME2, o->val.i = 1;
 
+    else if (strcmp(o->arg, "fastq_umi") == 0 ||
+        strcmp(o->arg, "FASTQ_UMI") == 0)
+        o->opt = FASTQ_OPT_UMI, o->val.s = val;
+
+    else if (strcmp(o->arg, "fastq_umi_regex") == 0 ||
+        strcmp(o->arg, "FASTQ_UMI_REGEX") == 0)
+        o->opt = FASTQ_OPT_UMI_REGEX, o->val.s = val;
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1250,6 +1258,8 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
             case HTS_OPT_FILTER:
             case FASTQ_OPT_AUX:
             case FASTQ_OPT_BARCODE:
+            case FASTQ_OPT_UMI:
+            case FASTQ_OPT_UMI_REGEX:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
                     return -1;
                 break;
@@ -1841,6 +1851,8 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         return 0;
 
     case FASTQ_OPT_BARCODE:
+    case FASTQ_OPT_UMI:
+    case FASTQ_OPT_UMI_REGEX:
         if (fp->format.format == fastq_format ||
             fp->format.format == fasta_format) {
             va_start(args, opt);
