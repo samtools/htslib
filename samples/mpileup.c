@@ -73,7 +73,7 @@ int readdata(void *data, bam1_t *b)
     }
 
     //read alignment and send
-    return sam_read1(conf->infile, conf->infile->bam_header, b);
+    return sam_read1(conf->infile, conf->in_samhdr, b);
 }
 
 /// main_demo - start of the demo
