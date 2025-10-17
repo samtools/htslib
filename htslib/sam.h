@@ -2415,6 +2415,29 @@ int bam_mods_queryi(hts_base_mod_state *state, int i,
 HTSLIB_EXPORT
 int *bam_mods_recorded(hts_base_mod_state *state, int *ntype);
 
+// Sets the header to the file
+/**
+ * @param fp         File to which header to be set
+ * @param h          Header to be set
+ * @param dup        Whether to use duplicated header (1) or not (0)
+ *
+ * @return -1 on error and 0 on success
+ * Existing header will be destroyed, thr' sam_hdr_destroy, and new one is set.
+ * When header is set directly (dup=0), the reference count is incremented.
+ */
+HTSLIB_EXPORT
+int sam_hdr_set(samFile *fp, sam_hdr_t *h, int dup);
+
+// Get the header from the file pointer
+/**
+ * @param fp         File pointer from which header to be retrieved
+ * @return pointer to header or NULL
+ * For a valid file pointer, the returned header could be NULL when the header
+ * is not read yet. sam_hdr_incr_ref has to be invoked where ever apropriate.
+ */
+HTSLIB_EXPORT
+sam_hdr_t* sam_hdr_get(samFile* fp);
+
 #ifdef __cplusplus
 }
 #endif

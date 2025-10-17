@@ -1909,6 +1909,8 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
         return NULL;
     }
 
+    if (fp->bam_header)
+        sam_hdr_destroy(fp->bam_header);
     fp->bam_header = sam_hdr_sanitise(h);
     fp->bam_header->ref_count = 1;
 
@@ -2061,9 +2063,11 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
     }
     //only sam,bam and cram reaches here
     if (h) {    //the new header
-        if (fp->bam_header)
-            sam_hdr_destroy(fp->bam_header);
+        sam_hdr_t *tmp = fp->bam_header;
         fp->bam_header = sam_hdr_dup(h);
+        sam_hdr_destroy(tmp);
+        if (!fp->bam_header && h)
+            return -1;  //failed to duplicate
     }
     return 0;
 }
@@ -2161,6 +2165,39 @@ int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
     }
     return sam_hdr_rebuild(h);
 }
+
+/* releases existing header and sets new one; increments ref count if not
+duplicating */
+int sam_hdr_set(samFile *fp, sam_hdr_t *h, int duplicate)
+{
+    if (!fp)
+        return -1;
+
+    if (duplicate) {
+        sam_hdr_t *tmp = fp->bam_header;
+        fp->bam_header = sam_hdr_dup(h);
+        sam_hdr_destroy(tmp);
+        if (!fp->bam_header && h)
+            return -1;  //duplicate failed
+    } else {
+        if (fp->bam_header != h) {  //if not the same
+            sam_hdr_destroy(fp->bam_header);
+            fp->bam_header = h;
+            sam_hdr_incr_ref(fp->bam_header);
+        }
+    }
+
+    return 0;
+}
+
+//return the bam_header, user has to use sam_hdr_incr_ref where ever required
+sam_hdr_t* sam_hdr_get(samFile* fp)
+{
+    if (!fp)
+        return NULL;
+    return fp->bam_header;
+}
+
 /**********************
  *** SAM record I/O ***
  **********************/
