@@ -1552,6 +1552,15 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
     uint32_t ncigar = b->core.n_cigar;
     uint32_t cig_op = 0, cig_len = 0, cig_ind = 0;
 
+    // End position of the sequence on the reference.
+    hts_pos_t rlen = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+    hts_pos_t rseq_end = b->core.pos + (rlen ? rlen : b->core.l_qseq);
+
+    // No sequence means extend based on CIGAR instead
+    if (!b->core.l_qseq && extend_ref(ref, hist, rseq_end,
+                                      ref_start, ref_end) < 0)
+        return -1;
+
     int iseq = 0, next_op;
     hts_pos_t iref = b->core.pos - ref_start;
 
