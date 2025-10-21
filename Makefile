@@ -267,6 +267,7 @@ NONCONFIGURE_OBJS = hfile_libcurl.o
 PLUGIN_EXT  =
 PLUGIN_OBJS =
 
+bgzf_internal_h = bgzf_internal.h $(htslib_bgzf_h)
 cram_h = cram/cram.h $(cram_samtools_h) $(header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h $(htslib_cram_h)
 cram_io_h = cram/cram_io.h $(cram_misc_h)
 cram_misc_h = cram/misc.h
@@ -492,7 +493,7 @@ hts-object-files: $(LIBHTS_OBJS)
 	$(CC) -shared $(LDFLAGS) -o $@ $< hts.dll.a $(LIBS)
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(htslib_khash_h)
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(bgzf_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_kseq_h)
@@ -504,7 +505,7 @@ hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h
 hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_log_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
-vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
+vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h) $(bgzf_internal_h)
 sam.o sam.pico: sam.c config.h $(fuzz_settings_h) $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 sam_mods.o sam_mods.pico: sam_mods.c config.h $(htslib_sam_h) $(textutils_internal_h)
 simd.o simd.pico: simd.c config.h $(htslib_sam_h) $(sam_internal_h)

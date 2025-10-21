@@ -51,6 +51,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kstring.h"
 #include "htslib/sam.h"
 #include "htslib/khash.h"
+#include "bgzf_internal.h"
 
 #if 0
 // This helps on Intel a bit, often 6-7% faster VCF parsing.
@@ -117,6 +118,7 @@ typedef struct
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
     size_t *key_len;// length of h->id[BCF_DT_ID] strings
     int version;    //cached version
+    uint32_t ref_count; // reference count, low bit indicates bcf_hdr_destroy() has been called
 }
 bcf_hdr_aux_t;
 
@@ -187,6 +189,30 @@ fail:
     hts_log_warning("Couldn't get VCF version, considering as %d.%d",
         VCF_MAJOR_VER(VCF_DEF), VCF_MINOR_VER(VCF_DEF));
     return VCF_DEF;
+}
+
+// Header reference counting
+
+static void bcf_hdr_incr_ref(bcf_hdr_t *h)
+{
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    aux->ref_count += 2;
+}
+
+static void bcf_hdr_decr_ref(bcf_hdr_t *h)
+{
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux->ref_count >= 2)
+        aux->ref_count -= 2;
+
+    if (aux->ref_count == 0)
+        bcf_hdr_destroy(h);
+}
+
+static void hdr_bgzf_private_data_cleanup(void *data)
+{
+    bcf_hdr_t *h = (bcf_hdr_t *) data;
+    bcf_hdr_decr_ref(h);
 }
 
 static char *find_chrom_header_line(char *s)
@@ -1498,6 +1524,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     aux->key_len = NULL;
     aux->dict = *((vdict_t*)h->dict[0]);
     aux->version = 0;
+    aux->ref_count = 1;
     free(h->dict[0]);
     h->dict[0] = aux;
 
@@ -1522,6 +1549,12 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
     int i;
     khint_t k;
     if (!h) return;
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux->ref_count > 1) // Refs still held, so delay destruction
+    {
+        aux->ref_count &= ~1;
+        return;
+    }
     for (i = 0; i < 3; ++i) {
         vdict_t *d = (vdict_t*)h->dict[i];
         if (d == 0) continue;
@@ -1529,7 +1562,6 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
             if (kh_exist(d, k)) free((char*)kh_key(d, k));
         if ( i==0 )
         {
-            bcf_hdr_aux_t *aux = get_hdr_aux(h);
             for (k=kh_begin(aux->gen); k<kh_end(aux->gen); k++)
                 if ( kh_exist(aux->gen,k) ) free((char*)kh_key(aux->gen,k));
             kh_destroy(hdict, aux->gen);
@@ -1597,6 +1629,10 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     htxt[hlen] = '\0'; // Ensure htxt is terminated
     if ( bcf_hdr_parse(h, htxt) < 0 ) goto fail;
     free(htxt);
+
+    bcf_hdr_incr_ref(h);
+    bgzf_set_private_data(fp, h, hdr_bgzf_private_data_cleanup);
+
     return h;
  fail:
     hts_log_error("Failed to read BCF header");
@@ -1637,6 +1673,9 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     if ( bgzf_write(fp, hlen, 4) !=4 ) return -1;
     if ( bgzf_write(fp, htxt.s, htxt.l) != htxt.l ) return -1;
     if ( bgzf_flush(fp) < 0) return -1;
+
+    bcf_hdr_incr_ref(h);
+    bgzf_set_private_data(fp, h, hdr_bgzf_private_data_cleanup);
 
     free(htxt.s);
     return 0;
@@ -1805,6 +1844,63 @@ static const char *get_type_name(int type) {
     return types[t];
 }
 
+/**
+ *  updatephasing - updates 1st phasing based on other phasing status
+ *  @param p - pointer to phase value array
+ *  @param end - end of array
+ *  @param q - pointer to consumed data
+ *  @param samples - no. of samples in array
+ *  @param ploidy - no. of phasing values per sample
+ *  @param type - value type (one of BCF_BT_...)
+ *  Returns 0 on success and 1 on failure
+ *  Update for haploids made only if it is not unknown (.)
+ */
+static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int ploidy, int type)
+{
+    int j, k;
+    unsigned int inc = 1 << bcf_type_shift[type];
+    ptrdiff_t bytes = samples * ploidy * inc;
+
+    if (samples < 0 || ploidy < 0 || end - p < bytes)
+        return 1;
+
+    /*
+     * This works because phasing is stored in the least-significant bit
+     * of the GT encoding, and the data is always stored little-endian.
+     * Thus it's possible to get the desired result by doing bit operations
+     * on the least-significant byte of each value and ignoring the
+     * higher bytes (for 16-bit and 32-bit values).
+     */
+
+    switch (ploidy) {
+    case 1:
+        // Trivial case - haploid data is phased by default
+        for (j = 0; j < samples; ++j) {
+            if (*p) *p |= 1;    //only if not unknown (.)
+            p += inc;
+        }
+        break;
+    case 2:
+        // Mostly trivial case - first is phased if second is.
+        for (j = 0; j < samples; ++j) {
+            *p |= (p[inc] & 1);
+            p += 2 * inc;
+        }
+        break;
+    default:
+        // Generic case - first is phased if all other alleles are.
+        for (j = 0; j < samples; ++j) {
+            uint8_t allphased = 1;
+            for (k = 1; k < ploidy; ++k)
+                allphased &= (p[inc * k]);
+            *p |= allphased;
+            p += ploidy * inc;
+        }
+    }
+    *q = p;
+    return 0;
+}
+
 static void bcf_record_check_err(const bcf_hdr_t *hdr, bcf1_t *rec,
                                  char *type, uint32_t *reports, int i) {
     if (*reports == 0 || hts_verbose >= HTS_LOG_DEBUG)
@@ -1832,6 +1928,13 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                                     (1 << BCF_BT_FLOAT) |
                                     (1 << BCF_BT_CHAR));
     int32_t max_id = hdr ? hdr->n[BCF_DT_ID] : 0;
+    /* set phasing for 1st allele as in v44 for versions upto v43, to have
+    consistent binary values irrespective of version; not run for v >= v44,
+    to retain explicit phasing in v44 and higher */
+    int idgt = hdr ?
+                    bcf_get_version(hdr, NULL) < VCF44 ?
+                        bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1 :
+                    -1;
 
     // Check for valid contig ID
     if (rec->rid < 0
@@ -1941,9 +2044,16 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
-        bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
-        if (end - ptr < bytes) goto bad_indiv;
-        ptr += bytes;
+        if (idgt >= 0 && idgt == key) {
+            // check first GT phasing bit and fix up if necessary
+            if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
+                err |= BCF_ERR_TAG_INVALID;
+            }
+        } else {
+            bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
+            if (end - ptr < bytes) goto bad_indiv;
+            ptr += bytes;
+        }
     }
 
     if (!err && rec->rlen < 0) {
@@ -2018,7 +2128,9 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 
 int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
-    if (fp->format.format == vcf) return vcf_read(fp,h,v);
+    if (fp->format.format == vcf) return vcf_read(fp, h, v);
+    if (!h)
+        h = (const bcf_hdr_t *) bgzf_get_private_data(fp->fp.bgzf);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
     if (ret == 0) ret = bcf_record_check(h, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
@@ -2028,8 +2140,9 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
+    const bcf_hdr_t *hdr = (const bcf_hdr_t *) bgzf_get_private_data(fp);
     int ret = bcf_read1_core(fp, v);
-    if (ret == 0) ret = bcf_record_check(NULL, v);
+    if (ret == 0) ret = bcf_record_check(hdr, v);
     if (ret  >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
     return ret;
@@ -3225,7 +3338,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
                     }
-                    if (ver >= VCF44 && !phasingprfx) {
+                    if (!phasingprfx) { //get GT in v44 way when no prefixed phasing
                         /* no explicit phasing for 1st allele, set based on
                          other alleles and ploidy */
                         if (ploidy == 1) {  //implicitly phased
@@ -6004,6 +6117,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         default: hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, fmt->type, bcf_seqname_safe(hdr,line), line->pos+1); exit(1);
     }
     #undef BRANCH
+
     return nsmpl*fmt->n;
 }
 
