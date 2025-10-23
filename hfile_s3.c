@@ -485,9 +485,10 @@ static int is_escaped(const char *str) {
     return escaped || !needs_escape;
 }
 
-static int redirect_endpoint_callback(void *auth, long response,
-                                      kstring_t *header, kstring_t *url) {
-    s3_auth_data *ad = (s3_auth_data *)auth;
+
+static int redirect_endpoint(hFILE_s3 *fp, kstring_t *header) {
+    s3_auth_data *ad = fp->au;
+    kstring_t *url = &fp->url;
     char *new_region;
     char *end;
     int ret = -1;
@@ -1078,10 +1079,6 @@ static int v4_authorisation(hFILE_s3 *fp, char *request, kstring_t *content, cha
     if (cqs) {
         kputs(cqs, &ad->canonical_query_string);
 
-        //if (ad->canonical_query_string.l == 0) {
-        //    return -1;
-        //}
-
         /* add a user provided query string, normally only useful on upload initiation */
         if (uqs) {
             kputs("&", &ad->canonical_query_string);
@@ -1121,10 +1118,12 @@ static int set_region(void *adv, kstring_t *region) {
 //
 // Writing and reading handling
 //
-//
-//
 
 // Some common code
+
+#define S3_MOVED_PERMANENTLY 301
+#define S3_BAD_REQUEST 400
+
 
 static struct {
     kstring_t useragent;
@@ -1171,6 +1170,125 @@ static void free_authorisation_values(hFILE_s3 *fp) {
     ks_free(&fp->range);
 }
 
+/* As the response text is case insensitive we need a version of strstr that
+   is also case insensitive.  The response is small so no need to get too
+   complicated on the string search.
+*/
+static char *stristr(char *haystack, char *needle) {
+
+    while (*haystack) {
+        char *h = haystack;
+        char *n = needle;
+
+        while (toupper(*h) == toupper(*n)) {
+            h++, n++;
+            if (!*h || !*n) break;
+        }
+
+        if (!*n) break;
+
+        haystack++;
+    }
+
+    if (!*haystack) return NULL;
+
+    return haystack;
+}
+
+
+static int get_entry(char *in, char *start_tag, char *end_tag, kstring_t *out) {
+    char *start;
+    char *end;
+
+    if (!in) {
+        return EOF;
+    }
+
+    start = stristr(in, start_tag);
+    if (!start) return EOF;
+
+    start += strlen(start_tag);
+    end = stristr(start, end_tag);
+
+    if (!end) return EOF;
+
+    return kputsn(start, end - start, out);
+}
+
+
+static int report_s3_error(kstring_t *body, long resp_code) {
+    kstring_t entry = KS_INITIALIZE;
+
+    if (get_entry(body->s, "<Code>", "</Code>", &entry) == EOF) {
+        return -1;
+    }
+
+    fprintf(stderr, "hfile_s3: S3 error %ld: %s\n", resp_code, entry.s);
+
+    ks_clear(&entry);
+
+    if (get_entry(body->s, "<Message>", "</Message>", &entry) == EOF) {
+        return -1;
+    }
+
+    if (entry.l)
+        fprintf(stderr, "%s\n", entry.s);
+
+    ks_free(&entry);
+
+    return 0;
+}
+
+
+static int http_status_errno(int status)
+{
+    if (status >= 500)
+        switch (status) {
+        case 501: return ENOSYS;
+        case 503: return EBUSY;
+        case 504: return ETIMEDOUT;
+        default:  return EIO;
+        }
+    else if (status >= 400)
+        switch (status) {
+        case 401: return EPERM;
+        case 403: return EACCES;
+        case 404: return ENOENT;
+        case 405: return EROFS;
+        case 407: return EPERM;
+        case 408: return ETIMEDOUT;
+        case 410: return ENOENT;
+        default:  return EINVAL;
+        }
+    else if (status >= 300)
+        return EIO;
+    else return 0;
+}
+
+
+static void initialise_local(hFILE_s3 *fp) {
+    ks_initialize(&fp->buffer);
+    ks_initialize(&fp->url);
+    ks_initialize(&fp->upload_id);           // write only
+    ks_initialize(&fp->completion_message);  // write only
+}
+
+
+static void cleanup_local(hFILE_s3 *fp) {
+    ks_free(&fp->buffer);
+    ks_free(&fp->url);
+    ks_free(&fp->upload_id);
+    ks_free(&fp->completion_message);
+    curl_easy_cleanup(fp->curl);
+    free_authorisation_values(fp);
+}
+
+
+static void cleanup(hFILE_s3 *fp) {
+    // free up authorisation data
+    free_auth_data(fp->au);
+    cleanup_local(fp);
+}
 
 static size_t response_callback(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t realsize = size * nmemb;
@@ -1189,22 +1307,29 @@ static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstrin
     struct curl_slist *headers = NULL;
 
     if (auth->l)
-        headers = curl_slist_append(headers, auth->s);
+        if ((headers = curl_slist_append(headers, auth->s)) == NULL)
+            goto error;
 
-    headers = curl_slist_append(headers, date->s);
+    if ((headers = curl_slist_append(headers, date->s)) == NULL)
+        goto error;
 
     if (content->l)
-        headers = curl_slist_append(headers, content->s);
+        if ((headers = curl_slist_append(headers, content->s)) == NULL)
+            goto error;
 
     if (range) {
-        headers = curl_slist_append(headers, range->s);
+        if ((headers = curl_slist_append(headers, range->s)) == NULL)
+            goto error;
     }
 
     if (token->l) {
-        headers = curl_slist_append(headers, token->s);
+        if ((headers = curl_slist_append(headers, token->s)) == NULL)
+            goto error;
     }
 
     curl_easy_setopt(fp->curl, CURLOPT_HTTPHEADER, headers);
+
+error:
 
     return headers;
 }
@@ -1253,83 +1378,11 @@ uploads and abandon the upload process.
 */
 
 #define MINIMUM_S3_WRITE_SIZE 5242880
-#define S3_MOVED_PERMANENTLY 301
-#define S3_BAD_REQUEST 400
-#define S3_NOT_FOUND 404
 
 // Lets the part memory size grow to about 1Gb giving a 2.5Tb max file size.
 // Max. parts allowed by AWS is 10000, so use ceil(10000.0/9.0)
 #define EXPAND_ON 1112
 
-/* As the response text is case insensitive we need a version of strstr that
-   is also case insensitive.  The response is small so no need to get too
-   complicated on the string search.
-*/
-static char *stristr(char *haystack, char *needle) {
-
-    while (*haystack) {
-        char *h = haystack;
-        char *n = needle;
-
-        while (toupper(*h) == toupper(*n)) {
-            h++, n++;
-            if (!h || !n) break;
-        }
-
-        if (!*n) break;
-
-        haystack++;
-    }
-
-    if (!*haystack) return NULL;
-
-    return haystack;
-}
-
-
-static int get_entry(char *in, char *start_tag, char *end_tag, kstring_t *out) {
-    char *start;
-    char *end;
-
-    if (!in) {
-        return EOF;
-    }
-
-    start = stristr(in, start_tag);
-    if (!start) return EOF;
-
-    start += strlen(start_tag);
-    end = stristr(start, end_tag);
-
-    if (!end) return EOF;
-
-    return kputsn(start, end - start, out);
-}
-
-
-static void initialise_local(hFILE_s3 *fp) {
-    ks_initialize(&fp->buffer);
-    ks_initialize(&fp->url);
-    ks_initialize(&fp->upload_id);           // write only
-    ks_initialize(&fp->completion_message);  // write only
-}
-
-
-static void cleanup_local(hFILE_s3 *fp) {
-    ks_free(&fp->buffer);
-    ks_free(&fp->url);
-    ks_free(&fp->upload_id);
-    ks_free(&fp->completion_message);
-    curl_easy_cleanup(fp->curl);
-    free_authorisation_values(fp);
-}
-
-
-static void cleanup(hFILE_s3 *fp) {
-    // free up authorisation data
-    free_auth_data(fp->au);
-    cleanup_local(fp);
-}
 
 
 /*
@@ -1372,6 +1425,10 @@ static int abort_upload(hFILE_s3 *fp) {
         goto out;
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
+
+    if (!headers)
+        goto out;
+
     fp->ret = curl_easy_perform(fp->curl);
 
     if (fp->ret == CURLE_OK) {
@@ -1436,6 +1493,10 @@ static int complete_upload(hFILE_s3 *fp, kstring_t *resp) {
         goto out;
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
+
+    if (!headers)
+        goto out;
+
     fp->ret = curl_easy_perform(fp->curl);
 
     if (fp->ret == CURLE_OK) {
@@ -1512,6 +1573,10 @@ static int upload_part(hFILE_s3 *fp, kstring_t *resp) {
         goto out;
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
+
+    if (!headers)
+        goto out;
+
     fp->ret = curl_easy_perform(fp->curl);
 
     if (fp->ret == CURLE_OK) {
@@ -1530,6 +1595,7 @@ static int upload_part(hFILE_s3 *fp, kstring_t *resp) {
 static ssize_t s3_write(hFILE *fpv, const void *bufferv, size_t nbytes) {
     hFILE_s3 *fp = (hFILE_s3 *)fpv;
     const char *buffer  = (const char *)bufferv;
+    CURLcode cret;
 
     if (kputsn(buffer, nbytes, &fp->buffer) == EOF) {
         return -1;
@@ -1546,13 +1612,14 @@ static ssize_t s3_write(hFILE *fpv, const void *bufferv, size_t nbytes) {
             long response_code;
             kstring_t etag = {0, 0, NULL};
 
-            curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+            cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-            if (response_code > 200) {
+            if (cret != CURLE_OK || response_code > 200) {
+                errno = http_status_errno(response_code);
                 ret = -1;
             } else {
                 if (get_entry(response.s, "Etag: \"", "\"", &etag) == EOF) {
-                    fprintf(stderr, "Failed to read Etag\n");
+                    fprintf(stderr, "hfile_s3: Failed to read Etag\n");
                     ret = -1;
                 } else {
                     ksprintf(&fp->completion_message, "\t<Part>\n\t\t<PartNumber>%d</PartNumber>\n\t\t<ETag>%s</ETag>\n\t</Part>\n",
@@ -1586,6 +1653,7 @@ static int s3_write_close(hFILE *fpv) {
     hFILE_s3 *fp = (hFILE_s3 *)fpv;
     kstring_t response = {0, 0, NULL};
     int ret = 0;
+    CURLcode cret;
 
     if (!fp->aborted) {
 
@@ -1598,9 +1666,10 @@ static int s3_write_close(hFILE *fpv) {
                 long response_code;
                 kstring_t etag = {0, 0, NULL};
 
-                curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+                cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-                if (response_code > 200) {
+                if (cret != CURLE_OK || response_code > 200) {
+                    errno = http_status_errno(response_code);
                     ret = -1;
                 } else {
                     if (get_entry(response.s, "ETag: \"", "\"", &etag) == EOF) {
@@ -1648,14 +1717,6 @@ static int s3_write_close(hFILE *fpv) {
     return ret;
 }
 
-
-static int redirect_endpoint(hFILE_s3 *fp, kstring_t *head) {
-    int ret = -1;
-
-    ret = redirect_endpoint_callback((void *)fp->au, 301, head, &fp->url);
-
-    return ret;
-}
 
 static int handle_bad_request(hFILE_s3 *fp, kstring_t *resp) {
     kstring_t region = {0, 0, NULL};
@@ -1712,6 +1773,10 @@ static int initialise_upload(hFILE_s3 *fp, kstring_t *head, kstring_t *resp, int
         goto out;
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
+
+    if (!headers)
+        goto out;
+
     fp->ret = curl_easy_perform(fp->curl);
 
     if (fp->ret == CURLE_OK) {
@@ -1740,9 +1805,6 @@ static int get_upload_id(hFILE_s3 *fp, kstring_t *resp) {
 /*
     Now for the reading code
 */
-// Todo - need to keep track of (and control) its own buffer for reading
-//        with the idea being to read in "chunks" and reduce the overall
-//        cost involved in using AWS.
 
 #define READ_PART_SIZE 1048576
 
@@ -1752,7 +1814,7 @@ static size_t recv_callback(char *ptr, size_t size, size_t nmemb, void *fpv) {
 
     if (n) {
         if (kputsn(ptr, n, &fp->buffer) == EOF) {
-            fprintf(stderr, "Error: unable to allocate memory to read data.\n");
+            fprintf(stderr, "hfile_s3: error: unable to allocate memory to read data.\n");
             return 0;
         }
     }
@@ -1777,40 +1839,35 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
     char canonical_query_string = 0;
     CURLcode err;
 
-    if (hts_verbose > 5) fprintf(stderr, "get_part\n");
-
     ks_clear(&fp->buffer); // reset storage buffer
     clear_authorisation_values(fp);
-
 
     if (fp->au->is_v4) {
         if (v4_authorisation(fp, http_request, NULL, &canonical_query_string, 0) != 0) {
             goto out;
         }
 
-        if (hts_verbose > 5) fprintf(stderr, "get_part v4 auth done\n");
+        if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: get_part: v4 auth done\n");
 
         if (ksprintf(&fp->content, "x-amz-content-sha256: %s", fp->content_hash.s) < 0) {
             goto out;
         }
-
-        if (hts_verbose > 5) fprintf(stderr, "get_part content set\n");
-
     } else {
         if (v2_authorisation(fp, http_request) != 0) {
             goto out;
         }
 
-        if (hts_verbose > 5) fprintf(stderr, "get_part v2 auth done\n");
+        if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: get_part v2 auth done\n");
     }
 
     if (ksprintf(&fp->range, "Range: bytes=%zu-%zu", fp->last_read, fp->last_read + fp->part_size - 1) < 0) {
         goto out;
     }
 
-    if (hts_verbose > 5) fprintf(stderr, "get_part range set %s\n", fp->range.s);
-
-    if (hts_verbose > 5) fprintf(stderr, "get_part url %s\n", fp->url.s);
+    if (hts_verbose >= HTS_LOG_INFO) {
+        fprintf(stderr, "hfile_s3: get_part: range set %s\n", fp->range.s);
+        fprintf(stderr, "hfile_s3: url %s\n", fp->url.s);
+    }
 
     curl_easy_reset(fp->curl);
 
@@ -1822,19 +1879,23 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERDATA, (void *)resp);
     err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
 
-     if (err != CURLE_OK)
+    if (err != CURLE_OK)
         goto out;
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, &fp->range);
+
+    if (!headers)
+        goto out;
+
     fp->ret = curl_easy_perform(fp->curl);
 
     if (fp->ret == CURLE_OK) {
         ret = 0;
     }
 
-    if (hts_verbose > 5) fprintf(stderr, "get_part ret %d\n", ret);
+    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: get_part: ret %d\n", ret);
 
- out:
+out:
     curl_slist_free_all(headers);
 
     return ret;
@@ -1845,20 +1906,12 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
     hFILE_s3 *fp = (hFILE_s3 *)fpv;
     char *buffer = (char *)bufferv;
     size_t read = 0;
-    static size_t total = 0;
-    static size_t gets  = 0;
 
     /* Transfer data from the fp->buffer to the calling buffer.
        If there is no data left in the fp->buffer, grab another chunk of
        data from s3.
     */
-
-    if (hts_verbose > 5) fprintf(stderr, "s3_read keep_going %d read %zu nbytes %zu\n", fp->keep_going, read, nbytes);
-
     while (fp->keep_going && read < nbytes) {
-        if (hts_verbose > 5) fprintf(stderr, "read  %zu nbytes %zu\n", read, nbytes);
-
-        if (hts_verbose > 5) fprintf(stderr, "buffer.l %zu last_read %zu\n", fp->buffer.l, fp->last_read_buffer);
 
         if (fp->buffer.l && fp->last_read_buffer < fp->buffer.l) {
             // copy data across
@@ -1866,7 +1919,7 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
             size_t remaining = fp->buffer.l - fp->last_read_buffer;
             size_t bytes_left = nbytes - read;
 
-            if (hts_verbose >  5) fprintf(stderr, "remaining %zu read %zu bytes_left %zu, nbytes %zu\n", remaining, read, bytes_left, nbytes);
+            if (hts_verbose >  HTS_LOG_INFO) fprintf(stderr, "hfile_s3: read - remaining %zu read %zu bytes_left %zu, nbytes %zu\n", remaining, read, bytes_left, nbytes);
 
             if (bytes_left < remaining) {
                 to_copy = bytes_left;
@@ -1887,28 +1940,23 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
 
             ret = get_part(fp, &response);
 
-            if (hts_verbose > 5) fprintf(stderr, "read error %d\n", ret);
+            if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: read - read error %d\n", ret);
 
             if (ret < 0)
                 return ret;
 
             if (fp->buffer.l == 0) {
-                fprintf(stderr, "Returned no data.\n");
                 fp->keep_going = 0;
                 break;
             }
 
             fp->last_read_buffer = 0;
             fp->last_read = fp->last_read + fp->buffer.l;
-            gets++;
 
             // deal with the response
             ks_free(&response);
         }
     }
-
-    total += read;
-    if (hts_verbose > 5) fprintf(stderr, "s3_read end read  %zu nbytes %zu total %zu gets %zu\n", read, nbytes, total, gets);
 
     return read;
 }
@@ -1930,7 +1978,7 @@ static off_t s3_seek(hFILE *fpv, off_t offset, int whence) {
             origin = 0;
             break;
         case SEEK_CUR:
-            // we might be able to work this out
+            // hseek() should convert this to SEEK_SET
             errno = ENOSYS;
             return -1;
         case SEEK_END:
@@ -1954,11 +2002,20 @@ static off_t s3_seek(hFILE *fpv, off_t offset, int whence) {
     }
 
     fp->keep_going = 1;
-    fp->last_read = origin + offset; // origin is really only useful if we can make the other modes work
-    ks_clear(&fp->buffer); // resetting fp->buffer triggers a new remote read
+
+    size_t pos = origin + offset; // origin is really only useful if we can make the other modes work
+
+    if (pos <= fp->last_read && pos > (fp->last_read - fp->buffer.l)) {
+        // within the current local buffer
+        fp->last_read_buffer = pos - (fp->last_read - fp->buffer.l);
+    } else {
+        fp->last_read = pos;
+        ks_clear(&fp->buffer); // resetting fp->buffer triggers a new remote read
+    }
 
     return fp->last_read;
 }
+
 
 /*
     Unlike upload, download does not really need an initialisation.  Here we use it to
@@ -1999,6 +2056,8 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
     int ret, has_user_query = 0;
     char *query_start;
     const char *env;
+    CURLcode cret;
+    long response_code;
 
 
     fp = (hFILE_s3 *)hfile_init(sizeof(hFILE_s3), "w", 0);
@@ -2043,29 +2102,45 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
     }
 
     ret = initialise_upload(fp, &header, &response, has_user_query);
+    cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
     if (ret == 0) {
-        long response_code;
+        if (cret == CURLE_OK) {
+            if (response_code == S3_MOVED_PERMANENTLY) {
+                if (redirect_endpoint(fp, &header) == 0) {
+                    ks_clear(&response);
+                    ks_clear(&header);
 
-        curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+                    ret = initialise_upload(fp, &header, &response, has_user_query);
+                }
+            } else if (response_code == S3_BAD_REQUEST) {
+                if (handle_bad_request(fp, &response) == 0) {
+                    ks_clear(&response);
+                    ks_clear(&header);
 
-        if (response_code == S3_MOVED_PERMANENTLY) {
-            if (redirect_endpoint(fp, &header) == 0) {
-                ks_free(&response);
-                ks_free(&header);
-
-                ret = initialise_upload(fp, &header, &response, has_user_query);
+                    ret = initialise_upload(fp, &header, &response, has_user_query);
+                }
             }
-        } else if (response_code == S3_BAD_REQUEST) {
-            if (handle_bad_request(fp, &response) == 0) {
-                ks_free(&response);
-                ks_free(&header);
+        } else {
+            // unable to get a response code from curl
+            ret = -1;
+        }
+    }
 
-                ret = initialise_upload(fp, &header, &response, has_user_query);
+    if (response_code >= 300) {
+        // something went wrong with the initialisation
+
+        if (cret == CURLE_OK) {
+            if (hts_verbose >= HTS_LOG_INFO) {
+                if (report_s3_error(&response, response_code)) {
+                    fprintf(stderr, "hfile_s3: warning, unable to report full S3 error status.\n");
+                }
             }
+
+            errno = http_status_errno(response_code);
         }
 
-        ks_free(&header); // no longer needed
+        ret = -1;
     }
 
     if (ret) goto error;
@@ -2085,11 +2160,13 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
 
     fp->base.backend = &s3_backend;
     ks_free(&response);
+    ks_free(&header);
 
     return &fp->base;
 
 error:
     ks_free(&response);
+    ks_free(&header);
     cleanup_local(fp);
     free_authorisation_values(fp);
     hfile_destroy((hFILE *)fp);
@@ -2103,6 +2180,8 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
     kstring_t response   = {0, 0, NULL};
     kstring_t file_range = {0, 0, NULL};
     int ret;
+    CURLcode cret;
+    long response_code = 0;
 
     fp = (hFILE_s3 *)hfile_init(sizeof(hFILE_s3), "r", 0);
 
@@ -2138,36 +2217,52 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
     kputs(url, &fp->url);
 
     ret = initialise_download(fp, &response);
+    cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
     if (ret == 0) {
-        long response_code;
+        if (cret == CURLE_OK) {
+            if (response_code == S3_MOVED_PERMANENTLY) {
+                ks_clear(&response);
 
-        curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+                if (redirect_endpoint(fp, &response) == 0) {
+                    ret = initialise_download(fp, &response);
+                }
+            } else if (response_code == S3_BAD_REQUEST) {
+                ks_clear(&response);
 
-        if (response_code == S3_MOVED_PERMANENTLY) {
-            if (redirect_endpoint(fp, &response) == 0) {
-                ret = initialise_download(fp, &response);
+                if (handle_bad_request(fp, &fp->buffer) == 0) {
+                    ret = initialise_download(fp, &response);
+                }
             }
-        } else if (response_code == S3_BAD_REQUEST) {
-            if (hts_verbose > 5) fprintf(stderr, "%s\n", fp->buffer.s);
 
-            if (handle_bad_request(fp, &fp->buffer) == 0) {
-                ret = initialise_download(fp, &response);
-            }
-        } else if (response_code == S3_NOT_FOUND) {
-            fprintf(stderr, "File not found.\n");
+            // reget the response code (may not have changed)
+            cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+        } else {
+            // unable to get a response code from curl
             ret = -1;
         }
     }
 
+    if (response_code >= 300) {
+        // something went wrong with the initialisation
 
-    if (ret) {
-        fprintf(stderr, "Unable to open file.\n");
-        goto error;
+        if (cret == CURLE_OK) {
+            if (hts_verbose >= HTS_LOG_INFO) {
+                if (report_s3_error(&fp->buffer, response_code)) {
+                    fprintf(stderr, "hfile_s3: warning, unable to report full S3 error status.\n");
+                }
+            }
+
+            errno = http_status_errno(response_code);
+        }
+
+        ret = -1;
     }
 
+    if (ret) goto error;
+
     if (get_entry(response.s, "content-range: bytes ", "\n", &file_range) == EOF) {
-        fprintf(stderr, "Warning: Failed to read file size.\n");
+        fprintf(stderr, "hfile_s3: warning: failed to read file size.\n");
         fp->file_size = -1;
     } else {
         char *s;
@@ -2208,7 +2303,7 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
         return NULL;
     }
 
-    if (hts_verbose > 5) fprintf(stderr, "s3_open_v4 url %s\n", url.s);
+    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: s3_open_v4 url %s\n", url.s);
 
     if (*mode == 'r') {
         fp  = s3_read_open(url.s, ad);
@@ -2234,12 +2329,12 @@ static hFILE *s3_open_v2(const char *s3url, const char *mode, va_list *argsp) {
         return NULL;
     }
 
-    if (hts_verbose > 5) fprintf(stderr, "s3_open_v2 url %s\n", url.s);
+    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: s3_open_v2 url %s\n", url.s);
 
     if (*mode == 'r') {
         fp  = s3_read_open(url.s, ad);
     } else {
-        fprintf(stderr, "Error: signature v2 not handled for writing.\n.");
+        fprintf(stderr, "hfile_s3: error - signature v2 not handled for writing.\n.");
     }
 
     ks_free(&url);
@@ -2270,9 +2365,6 @@ static hFILE *vhopen_s3(const char *url, const char *mode, va_list args0)
 
     // This should handle to vargs case.  Not sure what vargs we want
     // to handle
-
-    fprintf(stderr, "vhopen\n");
-
     fp = hopen_s3(url, mode);
 
     return fp;

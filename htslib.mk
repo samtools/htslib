@@ -97,7 +97,6 @@ HTSLIB_ALL = \
 	$(HTSSRCDIR)/hfile_gcs.c \
 	$(HTSSRCDIR)/hfile_libcurl.c \
 	$(HTSSRCDIR)/hfile_s3.c \
-	$(HTSSRCDIR)/hfile_s3_write.c \
 	$(HTSSRCDIR)/hts.c \
 	$(HTSSRCDIR)/hts_expr.c \
 	$(HTSSRCDIR)/hts_internal.h \
