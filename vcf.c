@@ -1358,7 +1358,7 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
             if (bcf_hdr_id2type(hdr, BCF_HL_INFO, id) != info_tags[i].type) {
                 hts_log_warning("%s should be declared as Type=%s",
                                 info_tags[i].name, info_tags[i].type_str);
-                fmt_warned[i] = 1;
+                info_warned[i] = 1;
             }
         }
     }
