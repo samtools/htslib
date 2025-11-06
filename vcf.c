@@ -1272,104 +1272,121 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
 
     struct tag {
         char name[10];
-        char type_str[3];
-        int type;
+        char number_str[3];
+        int number;
         int version;
+        char type_str[8];
+        int type;
     };
 
     struct tag info_tags[] = {
-        {"AD",        "R",  BCF_VL_R,     VCF_DEF},
-        {"ADF",       "R",  BCF_VL_R,     VCF_DEF},
-        {"ADR",       "R",  BCF_VL_R,     VCF_DEF},
-        {"AC",        "A",  BCF_VL_A,     VCF_DEF},
-        {"AF",        "A",  BCF_VL_A,     VCF_DEF},
-        {"CIGAR",     "A",  BCF_VL_A,     VCF_DEF},
-        {"AA",        "1",  BCF_VL_FIXED, VCF_DEF},
-        {"AN",        "1",  BCF_VL_FIXED, VCF_DEF},
-        {"BQ",        "1",  BCF_VL_FIXED, VCF_DEF},
-        {"DB",        "0",  BCF_VL_FIXED, VCF_DEF},
-        {"DP",        "1",  BCF_VL_FIXED, VCF_DEF},
-        {"END",       "1",  BCF_VL_FIXED, VCF_DEF},
-        {"H2",        "0",  BCF_VL_FIXED, VCF_DEF},
-        {"H3",        "0",  BCF_VL_FIXED, VCF_DEF},
-        {"MQ",        "1",  BCF_VL_FIXED, VCF_DEF},
-        {"MQ0",       "1",  BCF_VL_FIXED, VCF_DEF},
-        {"NS",        "1",  BCF_VL_FIXED, VCF_DEF},
-        {"SB",        "4",  BCF_VL_FIXED, VCF_DEF},
-        {"SOMATIC",   "0",  BCF_VL_FIXED, VCF_DEF},
-        {"VALIDATED", "0",  BCF_VL_FIXED, VCF_DEF},
-        {"1000G",     "0",  BCF_VL_FIXED, VCF_DEF},
+        {"AD",        "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"ADF",       "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"ADR",       "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"AC",        "A",  BCF_VL_A,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"AF",        "A",  BCF_VL_A,     VCF_DEF, "Float",   BCF_HT_REAL},
+        {"CIGAR",     "A",  BCF_VL_A,     VCF_DEF, "String",  BCF_HT_STR},
+        {"AA",        "1",  BCF_VL_FIXED, VCF_DEF, "String",  BCF_HT_STR},
+        {"AN",        "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"BQ",        "1",  BCF_VL_FIXED, VCF_DEF, "Float",   BCF_HT_REAL},
+        {"DB",        "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
+        {"DP",        "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"END",       "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"H2",        "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
+        {"H3",        "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
+        {"MQ",        "1",  BCF_VL_FIXED, VCF_DEF, "Float",   BCF_HT_REAL},
+        {"MQ0",       "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"NS",        "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"SB",        "4",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"SOMATIC",   "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
+        {"VALIDATED", "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
+        {"1000G",     "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
     };
     static int info_warned[sizeof(info_tags)/sizeof(*info_tags)] = {0};
 
     struct tag fmt_tags[] = {
-        {"AD",   "R",  BCF_VL_R,     VCF_DEF},
-        {"ADF",  "R",  BCF_VL_R,     VCF_DEF},
-        {"ADR",  "R",  BCF_VL_R,     VCF_DEF},
-        {"EC",   "A",  BCF_VL_A,     VCF_DEF},
-        {"GL",   "G",  BCF_VL_G,     VCF_DEF},
-        {"GP",   "G",  BCF_VL_G,     VCF_DEF},
-        {"PL",   "G",  BCF_VL_G,     VCF_DEF},
-        {"PP",   "G",  BCF_VL_G,     VCF_DEF},
-        {"DP",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"LEN",  "1",  BCF_VL_FIXED, VCF_DEF},
-        {"FT",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"GQ",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"GT",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"HQ",   "2",  BCF_VL_FIXED, VCF_DEF},
-        {"MQ",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"PQ",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"PS",   "1",  BCF_VL_FIXED, VCF_DEF},
-        {"PSL",  "P",  BCF_VL_P,     VCF44},
-        {"PSO",  "P",  BCF_VL_P,     VCF44},
-        {"PSQ",  "P",  BCF_VL_P,     VCF44},
-        {"LGL",  "LG", BCF_VL_LG,    VCF45},
-        {"LGP",  "LG", BCF_VL_LG,    VCF45},
-        {"LPL",  "LG", BCF_VL_LG,    VCF45},
-        {"LPP",  "LG", BCF_VL_LG,    VCF45},
-        {"LEC",  "LA", BCF_VL_LA,    VCF45},
-        {"LAD",  "LR", BCF_VL_LR,    VCF45},
-        {"LADF", "LR", BCF_VL_LR,    VCF45},
-        {"LADR", "LR", BCF_VL_LR,    VCF45},
+        {"AD",   "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"ADF",  "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"ADR",  "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"EC",   "A",  BCF_VL_A,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"GL",   "G",  BCF_VL_G,     VCF_DEF, "Float",   BCF_HT_REAL},
+        {"GP",   "G",  BCF_VL_G,     VCF_DEF, "Float",   BCF_HT_REAL},
+        {"PL",   "G",  BCF_VL_G,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"PP",   "G",  BCF_VL_G,     VCF_DEF, "Integer", BCF_HT_INT},
+        {"DP",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"LEN",  "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"FT",   "1",  BCF_VL_FIXED, VCF_DEF, "String",  BCF_HT_STR},
+        {"GQ",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"GT",   "1",  BCF_VL_FIXED, VCF_DEF, "String",  BCF_HT_STR},
+        {"HQ",   "2",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"MQ",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"PQ",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"PS",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
+        {"PSL",  "P",  BCF_VL_P,     VCF44,   "String",  BCF_HT_STR},
+        {"PSO",  "P",  BCF_VL_P,     VCF44,   "Integer", BCF_HT_INT},
+        {"PSQ",  "P",  BCF_VL_P,     VCF44,   "Integer", BCF_HT_INT},
+        {"LGL",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
+        {"LGP",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
+        {"LPL",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
+        {"LPP",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
+        {"LEC",  "LA", BCF_VL_LA,    VCF45,   "Integer", BCF_HT_INT},
+        {"LAD",  "LR", BCF_VL_LR,    VCF45,   "Integer", BCF_HT_INT},
+        {"LADF", "LR", BCF_VL_LR,    VCF45,   "Integer", BCF_HT_INT},
+        {"LADR", "LR", BCF_VL_LR,    VCF45,   "Integer", BCF_HT_INT},
     };
     static int fmt_warned[sizeof(fmt_tags)/sizeof(*fmt_tags)] = {0};
 
-    // Check INFO tag types.  We shouldn't really permit ".", but it's
+    // Check INFO tag numbers.  We shouldn't really permit ".", but it's
     // commonly misused so we let it slide unless it's a new tag and the
     // file format claims to be new also.  We also cannot distinguish between
     // Number=1 and Number=2, but we at least report the correct term if we
     // get, say, Number=G in its place.
+    // Also check the types.
     int i;
     for (i = 0; i < sizeof(info_tags)/sizeof(*info_tags); i++) {
         if (info_warned[i])
             continue;
         int id = bcf_hdr_id2int(hdr, BCF_DT_ID, info_tags[i].name);
-        if (bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, id) &&
-            bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != info_tags[i].type &&
-            bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != BCF_VL_VAR) {
-            hts_log_warning("%s should be declared as Number=%s",
-                            info_tags[i].name, info_tags[i].type_str);
-            info_warned[i] = 1;
+        if (bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, id)) {
+            if (bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != info_tags[i].number &&
+                bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != BCF_VL_VAR) {
+                hts_log_warning("%s should be declared as Number=%s",
+                                info_tags[i].name, info_tags[i].number_str);
+                info_warned[i] = 1;
+            }
+
+            if (bcf_hdr_id2type(hdr, BCF_HL_INFO, id) != info_tags[i].type) {
+                hts_log_warning("%s should be declared as Type=%s",
+                                info_tags[i].name, info_tags[i].type_str);
+                fmt_warned[i] = 1;
+            }
         }
     }
 
-    // Check FORMAT tag types.
+    // Check FORMAT tag numbers and types.
     for (i = 0; i < sizeof(fmt_tags)/sizeof(*fmt_tags); i++) {
         if (fmt_warned[i])
             continue;
         int id = bcf_hdr_id2int(hdr, BCF_DT_ID, fmt_tags[i].name);
-        if (bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, id) &&
-            bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != fmt_tags[i].type) {
-            // Permit "Number=." if this tag predates the vcf version it is
-            // defined within.  This is a common tactic for callers to use
-            // new tags with older formats in order to avoid parsing failures
-            // with some software.
-            // We don't care for 4.3 and earlier as that's more of a wild-west
-            // and it's not abnormal to see incorrect usage of Number=. there.
-            if ((version < VCF44 &&
-                 bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != BCF_VL_VAR) ||
-                (version >= VCF44 && version >= fmt_tags[i].version)) {
-                hts_log_warning("%s should be declared as Number=%s",
+        if (bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, id)) {
+            if (bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != fmt_tags[i].number) {
+                // Permit "Number=." if this tag predates the vcf version it is
+                // defined within.  This is a common tactic for callers to use
+                // new tags with older formats in order to avoid parsing failures
+                // with some software.
+                // We don't care for 4.3 and earlier as that's more of a wild-west
+                // and it's not abnormal to see incorrect usage of Number=. there.
+                if ((version < VCF44 &&
+                     bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != BCF_VL_VAR) ||
+                    (version >= VCF44 && version >= fmt_tags[i].version)) {
+                    hts_log_warning("%s should be declared as Number=%s",
+                                    fmt_tags[i].name, fmt_tags[i].number_str);
+                    fmt_warned[i] = 1;
+                }
+            }
+
+            if (bcf_hdr_id2type(hdr, BCF_HL_FMT, id) != fmt_tags[i].type) {
+                hts_log_warning("%s should be declared as Type=%s",
                                 fmt_tags[i].name, fmt_tags[i].type_str);
                 fmt_warned[i] = 1;
             }
