@@ -4633,11 +4633,11 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 
 // Calculate number of index levels given min_shift and the header contig
 // list.  Also returns number of contigs in *nids_out.
-static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
+static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int *min_shift_in_out,
                                int starting_n_lvls, int *nids_out)
 {
-    int n_lvls, i, nids = 0;
-    int64_t max_len = 0, s;
+    int n_lvls = starting_n_lvls, i, nids = 0;
+    int64_t max_len = 0;
 
     for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
     {
@@ -4647,9 +4647,8 @@ static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
         nids++;
     }
     if ( !max_len ) max_len = (1LL<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
-    s = hts_bin_maxpos(min_shift, starting_n_lvls);
-    for (n_lvls = starting_n_lvls; max_len > s; ++n_lvls, s <<= 3);
+
+    hts_adjust_csi_settings(max_len, min_shift_in_out, &n_lvls);
 
     if (nids_out) *nids_out = nids;
     return n_lvls;
@@ -4665,7 +4664,7 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
     int nids = 0;
-    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
+    n_lvls = idx_calc_n_lvls_ids(h, &min_shift, 0, &nids);
     idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!idx) goto fail;
     b = bcf_init1();
@@ -4765,7 +4764,7 @@ static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fn
         // Set initial n_lvls to match tbx_index()
         int starting_n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
         // Increase if necessary
-        n_lvls = idx_calc_n_lvls_ids(h, min_shift, starting_n_lvls, NULL);
+        n_lvls = idx_calc_n_lvls_ids(h, &min_shift, starting_n_lvls, NULL);
         fmt = HTS_FMT_CSI;
     }
 
@@ -4807,7 +4806,7 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     if (!min_shift)
         min_shift = 14;
 
-    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
+    n_lvls = idx_calc_n_lvls_ids(h, &min_shift, 0, &nids);
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!fp->idx) return -1;

@@ -995,13 +995,13 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     h = sam_hdr_read(fp);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
-        hts_pos_t max_len = 0, s;
+        hts_pos_t max_len = 0;
         for (i = 0; i < h->n_targets; ++i) {
             hts_pos_t len = sam_hdr_tid2len(h, i);
             if (max_len < len) max_len = len;
         }
-        max_len += 256;
-        for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+        n_lvls = 0;
+        hts_adjust_csi_settings(max_len, &min_shift, &n_lvls);
         fmt = HTS_FMT_CSI;
     } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
@@ -1093,13 +1093,12 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
         (fp->format.format == sam && fp->format.compression == bgzf)) {
         int n_lvls, fmt = HTS_FMT_CSI;
         if (min_shift > 0) {
-            int64_t max_len = 0, s;
+            int64_t max_len = 0;
             int i;
             for (i = 0; i < h->n_targets; ++i)
                 if (max_len < h->target_len[i]) max_len = h->target_len[i];
-            max_len += 256;
-            for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-
+            n_lvls = 0;
+            hts_adjust_csi_settings(max_len, &min_shift, &n_lvls);
         } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
 
         fp->idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);

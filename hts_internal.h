@@ -49,6 +49,19 @@ struct hts_json_token {
 struct cram_fd;
 
 /*
+ * Adjust CSI index parameters to support max_len_in bases
+ *
+ * @param max_len_in         Maximum position to be indexed
+ * @param min_shift_[in,out] min_shift parameter
+ * @param n_lvls_[in,out]    n_lvls parameter
+ *
+ * Adjusts *n_lvls_ (preferred) or *min_shift_ so that the resulting values
+ * can be passed to hts_idx_init(, HTS_FMT_CSI, ...) in order to make an
+ * index that can store positions up to max_len_in bases.
+ */
+void hts_adjust_csi_settings(int64_t max_len_in, int *min_shift_, int *n_lvls_);
+
+/*
  * Check the existence of a local index file using part of the alignment file name.
  * The order is alignment.bam.csi, alignment.csi, alignment.bam.bai, alignment.bai
  * @param fn    - pointer to the file name

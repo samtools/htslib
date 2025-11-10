@@ -434,16 +434,6 @@ static void adjust_max_ref_len_sam(const char *str, int64_t *max_ref_len)
     if (*max_ref_len < len) *max_ref_len = len;
 }
 
-// Adjusts number of levels if not big enough.  This can happen for
-// files with very large contigs.
-static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
-{
-    int64_t s = hts_bin_maxpos(min_shift, n_lvls);
-    max_len += 256;
-    for (; max_len > s; ++n_lvls, s <<= 3) {}
-    return n_lvls;
-}
-
 tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
     tbx_t *tbx;
@@ -478,9 +468,19 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
         }
         if (first == 0) {
             if (fmt == HTS_FMT_CSI) {
-                if (!max_ref_len)
-                    max_ref_len = (int64_t)100*1024*1024*1024; // 100G default
-                n_lvls = adjust_n_lvls(min_shift, n_lvls, max_ref_len);
+                if (max_ref_len) {
+                    hts_adjust_csi_settings(max_ref_len, &min_shift, &n_lvls);
+                } else {
+                    // This will give a maximum reference length of at
+                    // least 100Gbases for min_shift >= 10, and the
+                    // maximum possible for min_shift < 10.
+                    const int max_n_lvls = 9; // To prevent bin number overflow
+                    n_lvls = (min_shift < 10
+                              ? max_n_lvls
+                              : (min_shift < 25
+                                 ? max_n_lvls - (min_shift - 10) / 3
+                                 : 4));
+                }
             }
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
             if (!tbx->idx) goto fail;
