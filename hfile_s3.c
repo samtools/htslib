@@ -1893,9 +1893,8 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
         ret = 0;
     }
 
-    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: get_part: ret %d\n", ret);
-
 out:
+    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: get_part: ret %d\n", ret);
     curl_slist_free_all(headers);
 
     return ret;
@@ -1939,6 +1938,16 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
             kstring_t response = {0, 0, NULL};
 
             ret = get_part(fp, &response);
+
+            if (!ret) {
+                long response_code;
+                CURLcode cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+
+                if (cret != CURLE_OK || response_code > 300) {
+                    errno = http_status_errno(response_code);
+                    ret = -1;
+                }
+            }
 
             if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: read - read error %d\n", ret);
 
