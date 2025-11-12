@@ -1275,64 +1275,65 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
         char number_str[3];
         int number;
         int version;
-        char type_str[8];
         int type;
     };
 
+    char type_str[][8] = {"Flag", "Integer", "Float", "String"};
+
     struct tag info_tags[] = {
-        {"AD",        "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"ADF",       "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"ADR",       "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"AC",        "A",  BCF_VL_A,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"AF",        "A",  BCF_VL_A,     VCF_DEF, "Float",   BCF_HT_REAL},
-        {"CIGAR",     "A",  BCF_VL_A,     VCF_DEF, "String",  BCF_HT_STR},
-        {"AA",        "1",  BCF_VL_FIXED, VCF_DEF, "String",  BCF_HT_STR},
-        {"AN",        "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"BQ",        "1",  BCF_VL_FIXED, VCF_DEF, "Float",   BCF_HT_REAL},
-        {"DB",        "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
-        {"DP",        "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"END",       "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"H2",        "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
-        {"H3",        "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
-        {"MQ",        "1",  BCF_VL_FIXED, VCF_DEF, "Float",   BCF_HT_REAL},
-        {"MQ0",       "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"NS",        "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"SB",        "4",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"SOMATIC",   "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
-        {"VALIDATED", "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
-        {"1000G",     "0",  BCF_VL_FIXED, VCF_DEF, "Flag",    BCF_HT_FLAG},
+        {"AD",        "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADF",       "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADR",       "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"AC",        "A",  BCF_VL_A,     VCF_DEF, BCF_HT_INT},
+        {"AF",        "A",  BCF_VL_A,     VCF_DEF, BCF_HT_REAL},
+        {"CIGAR",     "A",  BCF_VL_A,     VCF_DEF, BCF_HT_STR},
+        {"AA",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_STR},
+        {"AN",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"BQ",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_REAL},
+        {"DB",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"DP",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"END",       "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"H2",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"H3",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"MQ",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_REAL},
+        {"MQ0",       "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"NS",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"SB",        "4",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"SOMATIC",   "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"VALIDATED", "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"1000G",     "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
     };
     static int info_warned[sizeof(info_tags)/sizeof(*info_tags)] = {0};
 
     struct tag fmt_tags[] = {
-        {"AD",   "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"ADF",  "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"ADR",  "R",  BCF_VL_R,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"EC",   "A",  BCF_VL_A,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"GL",   "G",  BCF_VL_G,     VCF_DEF, "Float",   BCF_HT_REAL},
-        {"GP",   "G",  BCF_VL_G,     VCF_DEF, "Float",   BCF_HT_REAL},
-        {"PL",   "G",  BCF_VL_G,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"PP",   "G",  BCF_VL_G,     VCF_DEF, "Integer", BCF_HT_INT},
-        {"DP",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"LEN",  "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"FT",   "1",  BCF_VL_FIXED, VCF_DEF, "String",  BCF_HT_STR},
-        {"GQ",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"GT",   "1",  BCF_VL_FIXED, VCF_DEF, "String",  BCF_HT_STR},
-        {"HQ",   "2",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"MQ",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"PQ",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"PS",   "1",  BCF_VL_FIXED, VCF_DEF, "Integer", BCF_HT_INT},
-        {"PSL",  "P",  BCF_VL_P,     VCF44,   "String",  BCF_HT_STR},
-        {"PSO",  "P",  BCF_VL_P,     VCF44,   "Integer", BCF_HT_INT},
-        {"PSQ",  "P",  BCF_VL_P,     VCF44,   "Integer", BCF_HT_INT},
-        {"LGL",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
-        {"LGP",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
-        {"LPL",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
-        {"LPP",  "LG", BCF_VL_LG,    VCF45,   "Integer", BCF_HT_INT},
-        {"LEC",  "LA", BCF_VL_LA,    VCF45,   "Integer", BCF_HT_INT},
-        {"LAD",  "LR", BCF_VL_LR,    VCF45,   "Integer", BCF_HT_INT},
-        {"LADF", "LR", BCF_VL_LR,    VCF45,   "Integer", BCF_HT_INT},
-        {"LADR", "LR", BCF_VL_LR,    VCF45,   "Integer", BCF_HT_INT},
+        {"AD",   "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADF",  "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADR",  "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"EC",   "A",  BCF_VL_A,     VCF_DEF, BCF_HT_INT},
+        {"GL",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_REAL},
+        {"GP",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_REAL},
+        {"PL",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_INT},
+        {"PP",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_INT},
+        {"DP",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"LEN",  "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"FT",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_STR},
+        {"GQ",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"GT",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_STR},
+        {"HQ",   "2",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"MQ",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"PQ",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"PS",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"PSL",  "P",  BCF_VL_P,     VCF44,   BCF_HT_STR},
+        {"PSO",  "P",  BCF_VL_P,     VCF44,   BCF_HT_INT},
+        {"PSQ",  "P",  BCF_VL_P,     VCF44,   BCF_HT_INT},
+        {"LGL",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LGP",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LPL",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LPP",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LEC",  "LA", BCF_VL_LA,    VCF45,   BCF_HT_INT},
+        {"LAD",  "LR", BCF_VL_LR,    VCF45,   BCF_HT_INT},
+        {"LADF", "LR", BCF_VL_LR,    VCF45,   BCF_HT_INT},
+        {"LADR", "LR", BCF_VL_LR,    VCF45,   BCF_HT_INT},
     };
     static int fmt_warned[sizeof(fmt_tags)/sizeof(*fmt_tags)] = {0};
 
@@ -1350,14 +1351,20 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
         if (bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, id)) {
             if (bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != info_tags[i].number &&
                 bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != BCF_VL_VAR) {
+                info_warned[i] = 1;
+            } else if (bcf_hdr_id2length(hdr, BCF_HL_INFO, id) == BCF_VL_FIXED &&
+                       bcf_hdr_id2number(hdr, BCF_HL_INFO, id) != atoi(info_tags[i].number_str)) {
+                info_warned[i] = 1;
+            }
+
+            if (info_warned[i]) {
                 hts_log_warning("%s should be declared as Number=%s",
                                 info_tags[i].name, info_tags[i].number_str);
-                info_warned[i] = 1;
             }
 
             if (bcf_hdr_id2type(hdr, BCF_HL_INFO, id) != info_tags[i].type) {
                 hts_log_warning("%s should be declared as Type=%s",
-                                info_tags[i].name, info_tags[i].type_str);
+                                info_tags[i].name, type_str[info_tags[i].type]);
                 info_warned[i] = 1;
             }
         }
@@ -1379,15 +1386,21 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
                 if ((version < VCF44 &&
                      bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != BCF_VL_VAR) ||
                     (version >= VCF44 && version >= fmt_tags[i].version)) {
-                    hts_log_warning("%s should be declared as Number=%s",
-                                    fmt_tags[i].name, fmt_tags[i].number_str);
                     fmt_warned[i] = 1;
                 }
+            } else if (bcf_hdr_id2length(hdr, BCF_HL_FMT, id) == BCF_VL_FIXED &&
+                       bcf_hdr_id2number(hdr, BCF_HL_FMT, id) != atoi(fmt_tags[i].number_str)) {
+                fmt_warned[i] = 1;
+            }
+
+            if (fmt_warned[i]) {
+                hts_log_warning("%s should be declared as Number=%s",
+                                fmt_tags[i].name, fmt_tags[i].number_str);
             }
 
             if (bcf_hdr_id2type(hdr, BCF_HL_FMT, id) != fmt_tags[i].type) {
                 hts_log_warning("%s should be declared as Type=%s",
-                                fmt_tags[i].name, fmt_tags[i].type_str);
+                                fmt_tags[i].name, type_str[fmt_tags[i].type]);
                 fmt_warned[i] = 1;
             }
         }
