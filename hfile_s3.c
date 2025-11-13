@@ -1875,9 +1875,12 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEFUNCTION, recv_callback);
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEDATA, (void *)fp);
     err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERFUNCTION, response_callback);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERDATA, (void *)resp);
     err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+
+    if (resp) {
+        err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERFUNCTION, response_callback);
+        err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERDATA, (void *)resp);
+    }
 
     if (err != CURLE_OK)
         goto out;
@@ -1935,9 +1938,8 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
             }
         } else {
             int ret;
-            kstring_t response = {0, 0, NULL};
 
-            ret = get_part(fp, &response);
+            ret = get_part(fp, NULL);
 
             if (!ret) {
                 long response_code;
@@ -1961,9 +1963,6 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
 
             fp->last_read_buffer = 0;
             fp->last_read = fp->last_read + fp->buffer.l;
-
-            // deal with the response
-            ks_free(&response);
         }
     }
 
