@@ -4400,6 +4400,51 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     return sam_format1_append(h, b, str);
 }
 
+void sam_format_seq(char *dest, const uint8_t *seq, size_t seqlen)
+{
+    nibble2base(seq, dest, seqlen);
+}
+
+void sam_format_qual(char *dest, const uint8_t *qual, size_t quallen)
+{
+    if (qual[0] != 0xff) {
+        add33((uint8_t *) dest, qual, quallen);
+    }
+    else {
+        memset(dest, '\0', quallen);
+        dest[0] = '*';
+    }
+}
+
+int sam_parse_seq(uint8_t *seq, const char *src, size_t len)
+{
+    if (src[0] == '*' && (len == 1 || src[1] == '\0')) return 0;
+
+    const uint8_t *usrc = (const uint8_t *) src;
+    uint8_t *seq0 = seq;
+    size_t i, even_len = len & ~1;
+    for (i = 0; i < even_len; i += 2)
+        *seq++ = (seq_nt16_table[usrc[i]] << 4) | seq_nt16_table[usrc[i + 1]];
+    for (; i < len; i++)
+        *seq++ = seq_nt16_table[usrc[i]] << 4;
+
+    return seq - seq0;
+}
+
+int sam_parse_qual(uint8_t *qual, const char *src, size_t len)
+{
+    if (src[0] == '*' && (len == 1 || src[1] == '\0')) {
+        memset(qual, 0xff, len);
+    }
+    else {
+        int failed = 0;
+        COPY_MINUS_N(qual, src, 33, len, failed);
+        if (failed) { errno = EINVAL; return -1; }
+    }
+
+    return len;
+}
+
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end);
 int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 {
