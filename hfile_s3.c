@@ -1108,9 +1108,7 @@ static int v4_authorisation(hFILE_s3 *fp, char *request, kstring_t *content, cha
     return 0;
 }
 
-static int set_region(void *adv, kstring_t *region) {
-    s3_auth_data *ad = (s3_auth_data *) adv;
-
+static int set_region(s3_auth_data *ad, kstring_t *region) {
     ad->region.l = 0;
     return kputsn(region->s, region->l, &ad->region) < 0;
 }
@@ -1302,34 +1300,52 @@ static size_t response_callback(void *contents, size_t size, size_t nmemb, void 
 }
 
 
+static int add_header(struct curl_slist **head, char *value) {
+    int err = 0;
+    struct curl_slist *tmp;
+
+    if ((tmp = curl_slist_append(*head, value)) == NULL) {
+        err = 1;
+    } else {
+        *head = tmp;
+    }
+
+    return err;
+}
+
+
 static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstring_t *date,
                  kstring_t *content, kstring_t *token, kstring_t *range) {
     struct curl_slist *headers = NULL;
+    int error = 0;
 
     if (auth->l)
-        if ((headers = curl_slist_append(headers, auth->s)) == NULL)
+        if ((error = add_header(&headers, auth->s)))
             goto error;
 
-    if ((headers = curl_slist_append(headers, date->s)) == NULL)
+    if ((error = add_header(&headers, date->s)))
         goto error;
 
     if (content->l)
-        if ((headers = curl_slist_append(headers, content->s)) == NULL)
+        if ((error = add_header(&headers, content->s)))
             goto error;
 
-    if (range) {
-        if ((headers = curl_slist_append(headers, range->s)) == NULL)
+    if (range)
+        if ((error = add_header(&headers, range->s)))
             goto error;
-    }
 
-    if (token->l) {
-        if ((headers = curl_slist_append(headers, token->s)) == NULL)
+    if (token->l)
+        if ((error = add_header(&headers, token->s)))
             goto error;
-    }
 
     curl_easy_setopt(fp->curl, CURLOPT_HTTPHEADER, headers);
 
 error:
+
+    if (error) {
+        curl_slist_free_all(headers);
+        headers = NULL;
+    }
 
     return headers;
 }
@@ -1726,7 +1742,7 @@ static int handle_bad_request(hFILE_s3 *fp, kstring_t *resp) {
         return -1;
     }
 
-    ret = set_region((void *)fp->au, &region);
+    ret = set_region(fp->au, &region);
 
     ks_free(&region);
 
@@ -2399,7 +2415,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_s3)(struct hFILE_plugin *self) {
 #ifdef ENABLE_PLUGINS
     // Embed version string for examination via strings(1) or what(1)
     static const char id[] =
-        "@(#)hfile_s3 test plugin (htslib)\t" HTS_VERSION_TEXT;
+        "@(#)hfile_s3 plugin (htslib)\t" HTS_VERSION_TEXT;
     const char *version = strchr(id, '\t') + 1;
 
     if (hts_verbose >= 9)
