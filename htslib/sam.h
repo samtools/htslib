@@ -2245,7 +2245,7 @@ typedef struct hts_base_mod {
  * done using bam_parse_basemod.  Successive calls may be made to that
  * without the need to free and allocate a new state.
  *
- * The state be destroyed using the hts_base_mode_state_free function.
+ * The state be destroyed using the hts_base_mod_state_free function.
  */
 HTSLIB_EXPORT
 hts_base_mod_state *hts_base_mod_state_alloc(void);
