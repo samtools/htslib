@@ -2236,25 +2236,25 @@ typedef struct hts_base_mod {
 // Flags for bam_parse_basemod2
 #define HTS_MOD_REPORT_UNCHECKED 1
 
-/// Allocates an hts_base_mode_state.
+/// Allocates an hts_base_mod_state.
 /**
- * @return An hts_base_mode_state pointer on success,
+ * @return An hts_base_mod_state pointer on success,
  *         NULL on failure.
  *
  * This just allocates the memory.  The initialisation of the contents is
  * done using bam_parse_basemod.  Successive calls may be made to that
  * without the need to free and allocate a new state.
  *
- * The state be destroyed using the hts_base_mode_state_free function.
+ * The state be destroyed using the hts_base_mod_state_free function.
  */
 HTSLIB_EXPORT
 hts_base_mod_state *hts_base_mod_state_alloc(void);
 
-/// Destroys an  hts_base_mode_state.
+/// Destroys an  hts_base_mod_state.
 /**
  * @param state    The base modification state pointer.
  *
- * The should have previously been created by hts_base_mode_state_alloc.
+ * The should have previously been created by hts_base_mod_state_alloc.
  */
 HTSLIB_EXPORT
 void hts_base_mod_state_free(hts_base_mod_state *state);
