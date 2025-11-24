@@ -1317,32 +1317,32 @@ static int add_header(struct curl_slist **head, char *value) {
 static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstring_t *date,
                  kstring_t *content, kstring_t *token, kstring_t *range) {
     struct curl_slist *headers = NULL;
-    int error = 0;
+    int err = 0;
 
     if (auth->l)
-        if ((error = add_header(&headers, auth->s)))
+        if ((err = add_header(&headers, auth->s)))
             goto error;
 
-    if ((error = add_header(&headers, date->s)))
+    if ((err = add_header(&headers, date->s)))
         goto error;
 
     if (content->l)
-        if ((error = add_header(&headers, content->s)))
+        if ((err = add_header(&headers, content->s)))
             goto error;
 
     if (range)
-        if ((error = add_header(&headers, range->s)))
+        if ((err = add_header(&headers, range->s)))
             goto error;
 
     if (token->l)
-        if ((error = add_header(&headers, token->s)))
+        if ((err = add_header(&headers, token->s)))
             goto error;
 
     curl_easy_setopt(fp->curl, CURLOPT_HTTPHEADER, headers);
 
 error:
 
-    if (error) {
+    if (err) {
         curl_slist_free_all(headers);
         headers = NULL;
     }
@@ -1923,21 +1923,21 @@ out:
 static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
     hFILE_s3 *fp = (hFILE_s3 *)fpv;
     char *buffer = (char *)bufferv;
-    size_t read = 0;
+    size_t got = 0;
 
     /* Transfer data from the fp->buffer to the calling buffer.
        If there is no data left in the fp->buffer, grab another chunk of
        data from s3.
     */
-    while (fp->keep_going && read < nbytes) {
+    while (fp->keep_going && got < nbytes) {
 
         if (fp->buffer.l && fp->last_read_buffer < fp->buffer.l) {
             // copy data across
             size_t to_copy;
             size_t remaining = fp->buffer.l - fp->last_read_buffer;
-            size_t bytes_left = nbytes - read;
+            size_t bytes_left = nbytes - got;
 
-            if (hts_verbose >  HTS_LOG_INFO) fprintf(stderr, "hfile_s3: read - remaining %zu read %zu bytes_left %zu, nbytes %zu\n", remaining, read, bytes_left, nbytes);
+            if (hts_verbose >  HTS_LOG_INFO) fprintf(stderr, "hfile_s3: read - remaining %zu read %zu bytes_left %zu, nbytes %zu\n", remaining, got, bytes_left, nbytes);
 
             if (bytes_left < remaining) {
                 to_copy = bytes_left;
@@ -1945,8 +1945,8 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
                 to_copy = remaining;
             }
 
-            memcpy(buffer + read, fp->buffer.s + fp->last_read_buffer, to_copy);
-            read += to_copy;
+            memcpy(buffer + got, fp->buffer.s + fp->last_read_buffer, to_copy);
+            got += to_copy;
             fp->last_read_buffer += to_copy;
 
             if ((fp->buffer.l < fp->part_size) && (fp->last_read_buffer == fp->buffer.l)) {
@@ -1982,7 +1982,7 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
         }
     }
 
-    return read;
+    return got;
 }
 
 
