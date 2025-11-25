@@ -1089,6 +1089,18 @@ sub test_index
     unlink("$$opts{tmp}/index.cram.crai");
     test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
 
+    # CRAM container skipping test
+    # Prepare a file with records split into multiple containers, the first two
+    # records spanning far enough to overlap the last two.
+    cmd("$$opts{path}/test_view $nthreads -C -p $$opts{tmp}/index3.cram -x $$opts{tmp}/index3.cram.crai -o seqs_per_slice=2 $$opts{path}/index3.sam");
+    # An index lookup for the last two records should return the first two
+    # as well.
+    test_compare($opts, "$$opts{path}/test_view $nthreads -p $$opts{tmp}/index3_rgn.sam $$opts{tmp}/index3.cram CHROMOSOME_I:5000-5100",
+                 "$$opts{path}/index3_exp.sam", "$$opts{tmp}/index3_rgn.sam");
+    # Also check the multi-region iterator
+    test_compare($opts, "$$opts{path}/test_view $nthreads -M -p $$opts{tmp}/index3_rgnm.sam $$opts{tmp}/index3.cram CHROMOSOME_I:5000-5100",
+                 "$$opts{path}/index3_exp.sam", "$$opts{tmp}/index3_rgnm.sam");
+
     # BCF
     test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -b -m 14 -x $$opts{tmp}/index.bcf.csi $$opts{path}/index.vcf > $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
     unlink("$$opts{tmp}/index.bcf.csi");
