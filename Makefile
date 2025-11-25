@@ -525,7 +525,7 @@ realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(htslib_sam_h) $(hts_internal_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(fuzz_settings_h) $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
-cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
+cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hfile_h)
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h) $(textutils_internal_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htscodecs_rANS_static4x16_h) $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
