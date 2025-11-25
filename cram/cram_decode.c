@@ -51,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../htslib/hfile.h"
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
@@ -3270,14 +3271,18 @@ cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                         break;
                     }
 
-                    // before start of range; skip to next container
+                    // Before start of range; skip to next container.
+                    // Can't use cram_seek() here as it drops in-progress
+                    // multi-threaded decode jobs, so call hseek() directly.
                     if (fd->range.refid != -1 &&
                         c_next->ref_seq_start + c_next->ref_seq_span-1 <
                         fd->range.start) {
-                        c_next->curr_slice_mt = c_next->max_slice;
-                        cram_seek(fd, c_next->length, SEEK_CUR);
+                        off_t skip_length = c_next->length;
                         cram_free_container(c_next);
                         c_next = NULL;
+                        fd->ooc = 0;
+                        if (hseek(fd->fp, skip_length, SEEK_CUR) < 0)
+                            return NULL;
                         continue;
                     }
                 }
