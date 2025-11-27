@@ -500,7 +500,6 @@ header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(ht
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
-hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(hts_time_funcs_h)
 hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_log_h) $(textutils_internal_h)
