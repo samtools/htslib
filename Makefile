@@ -952,7 +952,7 @@ $(srcprefix)htslib.map: libhts.so
 	    echo "Refusing to update $@ - HTSlib version not changed" 1>&2 ; \
 	    exit 1 ; \
 	fi && \
-	nm --with-symbol-versions -D -g libhts.so | awk '$$2 ~ /^[DGRT]$$/ && $$3 ~ /@@Base$$/ && $$3 !~ /^(_init|_fini|_edata)@@/ { sub(/@@Base$$/, ";", $$3); print "    " $$3 }' > $@.tmp && \
+	nm --defined-only --with-symbol-versions -D -g libhts.so | awk '$$2 ~ /^[DGRT]$$/ && ($$3 ~ /@@Base$$/ || $$3 !~ /@/) && $$3 !~ /^(_init|_fini|_edata)(@|$$)/ { sub(/@@Base$$/, "", $$3); print "    " $$3 ";" }' > $@.tmp && \
 	if [ -s $@.tmp ] ; then \
 	    cat $@ > $@.new.tmp && \
 	    printf '\n%s {\n' "HTSLIB_$$curr_vers" >> $@.new.tmp && \
