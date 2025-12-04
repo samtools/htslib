@@ -29,6 +29,11 @@ Updates
   (PR #1967, fixes #1937 and samtools/bcftools#2431.
    Reported by Jukka Matilainen)
 
+* S3 reading code now reads in `chunks` to minimise S3 reading length when
+  doing a range request.  Also this combines the reading, writing and
+  authorisation code into a single file.
+  (PR #1958, fixes #1670.  Reported by Stephan Drukewitz)
+
 
 Build Changes
 -------------
@@ -40,6 +45,8 @@ Build Changes
 * Fix compilation failure on MacOS X 10.9 (and likely other very old platforms).
   (PR #1945, fixes #1941.  Reported by Ryan Carsten Schmidt)
 
+* Fix htslib.map update due to recent change in nm behaviour.
+  (PR #1975, fixes #1971.  Reported by John Marshall).
 
 
 Bug fixes
@@ -79,6 +86,9 @@ Bug fixes
   user setting of min_shift (with warning) if needed.
   (PR #1968, fixes #1966. Reported by Marc Sturm)
 
+* Prevent the dropping of in-flight decode jobs when seeking in
+  cram_next_slice().
+  (PR #1973, fixes samtools/samtools#2285,  Reported by Nick Owens)
 
 
 Documentation updates
@@ -86,6 +96,9 @@ Documentation updates
 
 * Added support information and samtools email for security issues.
   (PR #1956)
+
+* Fix spelling in function name in sam.h.
+  (PR #1972.  Thanks to Jack Turpitt)
 
 
 
