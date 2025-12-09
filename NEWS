@@ -3,6 +3,27 @@ Noteworthy changes in release a.b
 Updates
 -------
 
+* HTSlib 1.22 changed the VCF reader so that it stored GT prefixed phasing
+  information, but only for files specifying `fileformat=VCFv4.4` or higher.
+  This caused problems when merging files with different versions, so the
+  VCF reader will now store prefixed phasing information irrespective of
+  the VCF version listed in the file headers.  For files up to VCFv4.3, the
+  first phasing bit will be set if all other alleles are phased, and cleared
+  otherwise (following the rules for VCFv4.4 onwards where no explicit
+  phasing symbol is present).  This will also happen when reading BCF.
+
+  When accessing GT data, it is no longer safe to assume that the phasing
+  is set to zero even if the file reports a version earlier than VCFv4.4.
+  Interfaces such as `bcf_gt_allele()` should always be used to access
+  GT allele data.
+
+  For compatibility, prefixed phasing will be stripped when writing VCF
+  files with version 4.3 or earlier.
+  (PR #1938, fixes #1932)
+
+* Add support for VCFv4.4 / VCFv4.5 "Number=" fields.
+  (PR #1874)
+
 * Consolidate and simplify SAM header parsing.  This considerably speeds up
   parsing files with many SQ lines.
   (PR #1947. PR #1953 fixes oss-fuzz issues 444492071, 444492076, 444547724,
@@ -17,11 +38,9 @@ Updates
 * Removed direct access to htsFile struct members in some sample functions.
   (PR #1963, fixes #1961.  Reported by John Marshall)
 
-* Add support for VCFv4.4 / VCFv4.5 "Number=" fields.
-  (PR #1874)
-
 * Improved operation of filters that work with header data.  Filter expressions
-  such as rname, mrname, rnext and library were not working well with iterators.
+  set as an `HTS_OPT_FILTER` on a BAM or CRAM iterator failed to return
+  records matching on `rname`, `mrname`, `rnext` or `library`.
   (PR #1959)
 
 * Add Type to the INFO/FORMAT sanity check.  This produces a warning on
@@ -29,9 +48,10 @@ Updates
   (PR #1967, fixes #1937 and samtools/bcftools#2431.
    Reported by Jukka Matilainen)
 
-* S3 reading code now reads in `chunks` to minimise S3 reading length when
-  doing a range request.  Also this combines the reading, writing and
-  authorisation code into a single file.
+* S3 reading code now reads in `chunks` to limit the amount of data read (and
+  therefore egress costs) from the object store when doing a range request.
+  Also this combines the reading, writing and authorisation code into a single
+  file.
   (PR #1958, fixes #1670.  Reported by Stephan Drukewitz)
 
 
@@ -67,27 +87,25 @@ Bug fixes
   with multiple secondary alignments.  See also samtools/hts-specs#842.
   (PR #1951, fixes #1948.  Reported by Matt Sexton)
 
-* Recognise the tabix comment character (-c) when reading records.
+* Make tabix skip comments (-c) wherever they occur, not just at the start of
+  the file.
   (PR #1952, fixes #1950.  Reported by Victor Negîrneac)
 
 * Update htscodecs for better AVX2 / AVX512 runtime detection.
   (PR #1954, fixes samtools/samtools#2256.  Reported by Ran Fan)
 
 * Fix embed_ref=2 on SEQ * and MD:Z tag. The combination of no sequence and
-  MD:Z with embed_ref=2 caused the slice extents to be miscalculated.
+  MD:Z with embed_ref=2 caused the slice extents to be miscalculated,
+  causing invalid CRAM output to be written.
   (PR #1964, fixes samtools/samtools#2277.  Reported by fo40225)
-
-* Internally store phase in VCF4.4 format irrespective of input file format.
-  This should prevent problems when dealing with different VCF versions.
-  (PR #1938, fixes #1932)
 
 * Try to ensure CSI indexes are built with valid parameters.  Adjusts the
   min_shift and n_lvls to cover the size of the genome.  This may override the
   user setting of min_shift (with warning) if needed.
   (PR #1968, fixes #1966. Reported by Marc Sturm)
 
-* Prevent the dropping of in-flight decode jobs when seeking in
-  cram_next_slice().
+* Fix bug where multi-threaded CRAM iterators could drop long alignments
+  starting significantly before, but overlapping, the region of interest.
   (PR #1973, fixes samtools/samtools#2285,  Reported by Nick Owens)
 
 
