@@ -1,6 +1,121 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Updates
+-------
+
+* HTSlib 1.22 changed the VCF reader so that it stored GT prefixed phasing
+  information, but only for files specifying `fileformat=VCFv4.4` or higher.
+  This caused problems when merging files with different versions, so the
+  VCF reader will now store prefixed phasing information irrespective of
+  the VCF version listed in the file headers.  For files up to VCFv4.3, the
+  first phasing bit will be set if all other alleles are phased, and cleared
+  otherwise (following the rules for VCFv4.4 onwards where no explicit
+  phasing symbol is present).  This will also happen when reading BCF.
+
+  When accessing GT data, it is no longer safe to assume that the phasing
+  is set to zero even if the file reports a version earlier than VCFv4.4.
+  Interfaces such as `bcf_gt_allele()` should always be used to access
+  GT allele data.
+
+  For compatibility, prefixed phasing will be stripped when writing VCF
+  files with version 4.3 or earlier.
+  (PR #1938, fixes #1932)
+
+* Add support for VCFv4.4 / VCFv4.5 "Number=" fields.
+  (PR #1874)
+
+* Consolidate and simplify SAM header parsing.  This considerably speeds up
+  parsing files with many SQ lines.
+  (PR #1947. PR #1953 fixes oss-fuzz issues 444492071, 444492076, 444547724,
+   444490034)
+
+* Switch from strtol to hts_str2uint in mod parsing for speed increase.
+  (PR #1957.  Thanks to Chris Wright)
+
+* Add UMI support to FASTQ input and output.  See samtools/samtools#2270.
+  (PR #1960, fixes samtools/samtools#2259.  Requested by Poshi)
+
+* Removed direct access to htsFile struct members in some sample functions.
+  (PR #1963, fixes #1961.  Reported by John Marshall)
+
+* Improved operation of filters that work with header data.  Filter expressions
+  set as an `HTS_OPT_FILTER` on a BAM or CRAM iterator failed to return
+  records matching on `rname`, `mrname`, `rnext` or `library`.
+  (PR #1959)
+
+* Add Type to the INFO/FORMAT sanity check.  This produces a warning on
+  incorrect Type usage.
+  (PR #1967, fixes #1937 and samtools/bcftools#2431.
+   Reported by Jukka Matilainen)
+
+* S3 reading code now reads in `chunks` to limit the amount of data read (and
+  therefore egress costs) from the object store when doing a range request.
+  Also this combines the reading, writing and authorisation code into a single
+  file.
+  (PR #1958, fixes #1670.  Reported by Stephan Drukewitz)
+
+Build Changes
+-------------
+
+* Change optimisation for -fsanitize=address,undefined test build to counter
+  slow build and high compiler memory use.
+  (PR #1924)
+
+* Fix compilation failure on MacOS X 10.9 (and likely other very old platforms).
+  (PR #1945, fixes #1941.  Reported by Ryan Carsten Schmidt)
+
+* Fix htslib.map update due to recent change in nm behaviour.
+  (PR #1975, fixes #1971.  Reported by John Marshall).
+
+Bug fixes
+---------
+
+* Fix segfault on an empty valid MM tag.
+  (PR #1939, fixes #1936.  Reported by John Marshall)
+
+* Fix bam_next_basemod + HTS_MOD_REPORT_UNCHECKED flag.
+  (PR #1946, fixes #1943)
+
+* For the VCF rlen calculation, only use SVLEN for DEL, DUP and CNV symbolic
+  alleles.  A bug is also fixed on big-endian platforms where INFO and FORMAT
+  values were being accessed incorrectly.
+  (PR #1942, fixes #1940)
+
+* Correct TLEN assignment in CRAM decode.  Also improve decoder when dealing
+  with multiple secondary alignments.  See also samtools/hts-specs#842.
+  (PR #1951, fixes #1948.  Reported by Matt Sexton)
+
+* Make tabix skip comments (-c) wherever they occur, not just at the start of
+  the file.
+  (PR #1952, fixes #1950.  Reported by Victor Negîrneac)
+
+* Update htscodecs for better AVX2 / AVX512 runtime detection.
+  (PR #1954, fixes samtools/samtools#2256.  Reported by Ran Fan)
+
+* Fix embed_ref=2 on SEQ * and MD:Z tag. The combination of no sequence and
+  MD:Z with embed_ref=2 caused the slice extents to be miscalculated,
+  causing invalid CRAM output to be written.
+  (PR #1964, fixes samtools/samtools#2277.  Reported by fo40225)
+
+* Try to ensure CSI indexes are built with valid parameters.  Adjusts the
+  min_shift and n_lvls to cover the size of the genome.  This may override the
+  user setting of min_shift (with warning) if needed.
+  (PR #1968, fixes #1966. Reported by Marc Sturm)
+
+* Fix bug where multi-threaded CRAM iterators could drop long alignments
+  starting significantly before, but overlapping, the region of interest.
+  (PR #1973, fixes samtools/samtools#2285,  Reported by Nick Owens)
+
+Documentation updates
+---------------------
+
+* Added support information and samtools email for security issues.
+  (PR #1956)
+
+* Fix spelling in function name in sam.h.
+  (PR #1972.  Thanks to Jack Turpitt)
+
 Noteworthy changes in release 1.22.1 (14th July 2025)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
