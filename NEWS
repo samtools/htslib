@@ -68,6 +68,11 @@ Build Changes
 * Fix htslib.map update due to recent change in nm behaviour.
   (PR #1975, fixes #1971.  Reported by John Marshall).
 
+* The htscodecs submodule is updated to v1.6.5.
+  This includes a fix to the rANS encoder when running on x86-64
+  hardware with some SIMD features disabled.
+  (Fixes samtools/samtools#2256. Reported by Ran Fan)
+
 Bug fixes
 ---------
 
