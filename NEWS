@@ -1,5 +1,6 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Updates
 -------
 
@@ -54,7 +55,6 @@ Updates
   file.
   (PR #1958, fixes #1670.  Reported by Stephan Drukewitz)
 
-
 Build Changes
 -------------
 
@@ -67,7 +67,6 @@ Build Changes
 
 * Fix htslib.map update due to recent change in nm behaviour.
   (PR #1975, fixes #1971.  Reported by John Marshall).
-
 
 Bug fixes
 ---------
@@ -108,7 +107,6 @@ Bug fixes
   starting significantly before, but overlapping, the region of interest.
   (PR #1973, fixes samtools/samtools#2285,  Reported by Nick Owens)
 
-
 Documentation updates
 ---------------------
 
@@ -117,8 +115,6 @@ Documentation updates
 
 * Fix spelling in function name in sam.h.
   (PR #1972.  Thanks to Jack Turpitt)
-
-
 
 Noteworthy changes in release 1.22.1 (14th July 2025)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
