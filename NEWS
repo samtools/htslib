@@ -28,7 +28,7 @@ Updates
 * Consolidate and simplify SAM header parsing.  This considerably speeds up
   parsing files with many SQ lines.
   (PR #1947. PR #1953 fixes oss-fuzz issues 444492071, 444492076, 444547724,
-   444490034)
+   444490034, PR #1977)
 
 * Switch from strtol to hts_str2uint in mod parsing for speed increase.
   (PR #1957.  Thanks to Chris Wright)
