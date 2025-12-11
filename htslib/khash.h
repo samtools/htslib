@@ -311,6 +311,7 @@ static const double __ac_HASH_UPPER = 0.77;
 	SCOPE int kh_grow_to_fit_##name(kh_##name##_t *h, khint_t n_items)	\
 	{																	\
 		khint_t n_buckets;												\
+		khint_t resize_limit = (khint_t) ((double) INT_MAX * __ac_HASH_UPPER); \
 		if (n_items < h->upper_bound - h->size) {						\
 			/* Should be big enough ... */								\
 			if (n_items < h->upper_bound - h->n_occupied)				\
@@ -321,7 +322,7 @@ static const double __ac_HASH_UPPER = 0.77;
 		if (UINT_MAX - h->size < n_items)								\
 			return -2;													\
 		n_items += h->size;												\
-		if (n_items >= INT_MAX * __ac_HASH_UPPER)						\
+		if (n_items >= resize_limit)									\
 			return -2;													\
 		n_buckets = n_items > 0 ? n_items : 1;							\
 		kroundup32(n_buckets);											\
