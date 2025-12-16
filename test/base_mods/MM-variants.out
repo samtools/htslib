@@ -1,0 +1,114 @@
+0	A
+1	T
+2	G	G-a.
+3	C	C+m.
+4	A
+5	T
+6	C	C+m.
+---
+Present: m. a.
+2	G	G-a.
+3	C	C+m.
+6	C	C+m.
+
+===
+
+0	A
+1	T
+2	G	C+m.
+3	C	G-a.
+4	A
+5	T
+6	G	C+m.
+---
+Present: m. a.
+2	G	C+m.
+3	C	G-a.
+6	G	C+m.
+
+===
+
+0	A
+1	T
+2	G	G-a.
+3	C	C+m.
+4	A
+5	T
+6	C	C+m.
+---
+Present: m? a?
+2	G	G-a.
+3	C	C+m.
+6	C	C+m.
+
+===
+
+0	A
+1	T
+2	G	C+m.
+3	C	G-a.
+4	A
+5	T
+6	G	C+m.
+---
+Present: m? a?
+2	G	C+m.
+3	C	G-a.
+6	G	C+m.
+
+===
+
+0	A
+1	T
+2	G
+3	C
+4	A
+5	T
+6	C
+---
+Present: m. a.
+
+===
+
+0	A
+1	T
+2	G
+3	C
+4	A
+5	T
+6	G
+---
+Present: m. a.
+
+===
+
+0	A
+1	T
+2	G	G-a#
+3	C	C+m#
+4	A
+5	T
+6	C	C+m#
+---
+Present: m? a?
+2	G	G-a#
+3	C	C+m#
+6	C	C+m#
+
+===
+
+0	A
+1	T
+2	G	C+m#
+3	C	G-a#
+4	A
+5	T
+6	G	C+m#
+---
+Present: m? a?
+2	G	C+m#
+3	C	G-a#
+6	G	C+m#
+
+===
+

@@ -96,9 +96,9 @@ int tbx_name2id(tbx_t *tbx, const char *ss)
 int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
 {
     size_t i, b = 0;
-    int id = 1, getlen = 0, alcnt = 0, haveins = 0, lenpos = -1;
+    int id = 1, getlen = 0, alcnt = 0, use_svlen = 0, lenpos = -1;
     char *s, *t;
-    uint8_t insals[8192];
+    uint8_t svlenals[8192];
     int64_t reflen = 0, svlen = 0, fmtlen = 0, tmp = 0;
 
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
@@ -174,27 +174,26 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                         reflen = i - b;
                     } if (id == 5) {    //alt allele
                         int lastbyte = 0, c = line[i];
-                        insals[lastbyte] = 0;
+                        svlenals[lastbyte] = 0;
                         line[i] = 0;
                         s = line + b;
                         do {
                             t = strchr(s, ',');
                             if (alcnt >> 3 != lastbyte) {   //initialize insals
                                 lastbyte = alcnt >> 3;
-                                insals[lastbyte] = 0;
+                                svlenals[lastbyte] = 0;
                             }
                             ++alcnt;
                             if (t) {
                                 *t = 0;
                             }
-                            if (s[0] == '<') {
-                                if (!strcmp("<INS>", s)) {  //note inserts
-                                    insals[lastbyte] |= 1 << ((alcnt - 1) & 7);
-                                    haveins = 1;
-                                } else if (!strcmp("<*>", s) ||
-                                    !strcmp("<NON_REF>", s)) {  //note gvcf
-                                    getlen = 1;
-                                }
+                            if (svlen_on_ref_for_vcf_alt(s, -1)) {
+                                // Need to check SVLEN for this ALT
+                                svlenals[lastbyte] |= 1 << ((alcnt - 1) & 7);
+                                use_svlen = 1;
+                            } else if (!strcmp("<*>", s) ||
+                                       !strcmp("<NON_REF>", s)) {  //note gvcf
+                                getlen = 1;
                             }
                             if (t) {
                                 *t = ',';
@@ -237,11 +236,12 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                         }
                         while (s && d < alcnt) {
                             t = strchr(s, ',');
-                            if ((haveins) && (insals[d >> 3] & (1 << (d & 7)))) {
-                                tmp = 1;    //<INS>
-                            } else {
+                            if ((use_svlen) && (svlenals[d >> 3] & (1 << (d & 7)))) {
+                                // <DEL> symbolic allele
                                 tmp = atoll(s);
                                 tmp = tmp < 0 ? llabs(tmp) : tmp;
+                            } else {
+                                tmp = 1;
                             }
                             svlen = svlen < tmp ? tmp : svlen;
                             s = t ? t + 1 : NULL;
@@ -355,12 +355,20 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_po
     tbx_t *tbx = (tbx_t *) tbxv;
     kstring_t *s = (kstring_t *) sv;
     int ret;
-    if ((ret = bgzf_getline(fp, '\n', s)) >= 0) {
+
+    // Get a line until either EOF or a non-meta character
+    do {
+        ret = bgzf_getline(fp, '\n', s);
+    } while (ret >= 0 && s->l && *s->s == tbx->conf.meta_char);
+
+    // Parse line
+    if (ret >= 0)  {
         tbx_intv_t intv;
         if (get_intv(tbx, s, &intv, 0) < 0)
             return -2;
         *tid = intv.tid; *beg = intv.beg; *end = intv.end;
     }
+
     return ret;
 }
 
@@ -426,16 +434,6 @@ static void adjust_max_ref_len_sam(const char *str, int64_t *max_ref_len)
     if (*max_ref_len < len) *max_ref_len = len;
 }
 
-// Adjusts number of levels if not big enough.  This can happen for
-// files with very large contigs.
-static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
-{
-    int64_t s = hts_bin_maxpos(min_shift, n_lvls);
-    max_len += 256;
-    for (; max_len > s; ++n_lvls, s <<= 3) {}
-    return n_lvls;
-}
-
 tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
     tbx_t *tbx;
@@ -470,9 +468,19 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
         }
         if (first == 0) {
             if (fmt == HTS_FMT_CSI) {
-                if (!max_ref_len)
-                    max_ref_len = (int64_t)100*1024*1024*1024; // 100G default
-                n_lvls = adjust_n_lvls(min_shift, n_lvls, max_ref_len);
+                if (max_ref_len) {
+                    hts_adjust_csi_settings(max_ref_len, &min_shift, &n_lvls);
+                } else {
+                    // This will give a maximum reference length of at
+                    // least 100Gbases for min_shift >= 10, and the
+                    // maximum possible for min_shift < 10.
+                    const int max_n_lvls = 9; // To prevent bin number overflow
+                    n_lvls = (min_shift < 10
+                              ? max_n_lvls
+                              : (min_shift < 25
+                                 ? max_n_lvls - (min_shift - 10) / 3
+                                 : 4));
+                }
             }
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
             if (!tbx->idx) goto fail;

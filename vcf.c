@@ -51,6 +51,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kstring.h"
 #include "htslib/sam.h"
 #include "htslib/khash.h"
+#include "bgzf_internal.h"
 
 #if 0
 // This helps on Intel a bit, often 6-7% faster VCF parsing.
@@ -117,6 +118,7 @@ typedef struct
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
     size_t *key_len;// length of h->id[BCF_DT_ID] strings
     int version;    //cached version
+    uint32_t ref_count; // reference count, low bit indicates bcf_hdr_destroy() has been called
 }
 bcf_hdr_aux_t;
 
@@ -187,6 +189,30 @@ fail:
     hts_log_warning("Couldn't get VCF version, considering as %d.%d",
         VCF_MAJOR_VER(VCF_DEF), VCF_MINOR_VER(VCF_DEF));
     return VCF_DEF;
+}
+
+// Header reference counting
+
+static void bcf_hdr_incr_ref(bcf_hdr_t *h)
+{
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    aux->ref_count += 2;
+}
+
+static void bcf_hdr_decr_ref(bcf_hdr_t *h)
+{
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux->ref_count >= 2)
+        aux->ref_count -= 2;
+
+    if (aux->ref_count == 0)
+        bcf_hdr_destroy(h);
+}
+
+static void hdr_bgzf_private_data_cleanup(void *data)
+{
+    bcf_hdr_t *h = (bcf_hdr_t *) data;
+    bcf_hdr_decr_ref(h);
 }
 
 static char *find_chrom_header_line(char *s)
@@ -913,14 +939,20 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         }
         else if ( !strcmp(hrec->keys[i], "Number") )
         {
+            int is_fmt = hrec->type == BCF_HL_FMT;
             if ( !strcmp(hrec->vals[i],"A") ) var = BCF_VL_A;
             else if ( !strcmp(hrec->vals[i],"R") ) var = BCF_VL_R;
             else if ( !strcmp(hrec->vals[i],"G") ) var = BCF_VL_G;
             else if ( !strcmp(hrec->vals[i],".") ) var = BCF_VL_VAR;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"P") )  var = BCF_VL_P;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"LA") ) var = BCF_VL_LA;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"LR") ) var = BCF_VL_LR;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"LG") ) var = BCF_VL_LG;
+            else if ( is_fmt && !strcmp(hrec->vals[i],"M") )  var = BCF_VL_M;
             else
             {
-                sscanf(hrec->vals[i],"%d",&num);
-                var = BCF_VL_FIXED;
+                if (sscanf(hrec->vals[i],"%d",&num) == 1)
+                    var = BCF_VL_FIXED;
             }
             if (var != BCF_VL_FIXED) num = 0xfffff;
         }
@@ -931,7 +963,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
                 *hrec->key == 'I' ? "An" : "A", hrec->key);
             type = BCF_HT_STR;
         }
-        if (var == -1) {
+        if (var == UINT32_MAX) {
             hts_log_warning("%s %s field has no Number defined. Assuming '.'",
                 *hrec->key == 'I' ? "An" : "A", hrec->key);
             var = BCF_VL_VAR;
@@ -1230,26 +1262,147 @@ bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *key, co
     return kh_val(d, k).hrec[type==BCF_HL_CTG?0:type];
 }
 
+// Check the VCF header is correctly formatted as per the specification.
+// Note the code that calls this doesn't bother to check return values and
+// we have so many broken VCFs in the wild that for now we just reprt a
+// warning and continue anyway.  So currently this is a void function.
 void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
 {
-    static int PL_warned = 0, GL_warned = 0;
+    int version = bcf_get_version(hdr, NULL);
 
-    if ( !PL_warned )
-    {
-        int id = bcf_hdr_id2int(hdr, BCF_DT_ID, "PL");
-        if ( bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_hdr_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
-        {
-            hts_log_warning("PL should be declared as Number=G");
-            PL_warned = 1;
+    struct tag {
+        char name[10];
+        char number_str[3];
+        int number;
+        int version;
+        int type;
+    };
+
+    char type_str[][8] = {"Flag", "Integer", "Float", "String"};
+
+    struct tag info_tags[] = {
+        {"AD",        "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADF",       "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADR",       "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"AC",        "A",  BCF_VL_A,     VCF_DEF, BCF_HT_INT},
+        {"AF",        "A",  BCF_VL_A,     VCF_DEF, BCF_HT_REAL},
+        {"CIGAR",     "A",  BCF_VL_A,     VCF_DEF, BCF_HT_STR},
+        {"AA",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_STR},
+        {"AN",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"BQ",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_REAL},
+        {"DB",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"DP",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"END",       "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"H2",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"H3",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"MQ",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_REAL},
+        {"MQ0",       "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"NS",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"SB",        "4",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"SOMATIC",   "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"VALIDATED", "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+        {"1000G",     "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
+    };
+    static int info_warned[sizeof(info_tags)/sizeof(*info_tags)] = {0};
+
+    struct tag fmt_tags[] = {
+        {"AD",   "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADF",  "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"ADR",  "R",  BCF_VL_R,     VCF_DEF, BCF_HT_INT},
+        {"EC",   "A",  BCF_VL_A,     VCF_DEF, BCF_HT_INT},
+        {"GL",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_REAL},
+        {"GP",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_REAL},
+        {"PL",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_INT},
+        {"PP",   "G",  BCF_VL_G,     VCF_DEF, BCF_HT_INT},
+        {"DP",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"LEN",  "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"FT",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_STR},
+        {"GQ",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"GT",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_STR},
+        {"HQ",   "2",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"MQ",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"PQ",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"PS",   "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
+        {"PSL",  "P",  BCF_VL_P,     VCF44,   BCF_HT_STR},
+        {"PSO",  "P",  BCF_VL_P,     VCF44,   BCF_HT_INT},
+        {"PSQ",  "P",  BCF_VL_P,     VCF44,   BCF_HT_INT},
+        {"LGL",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LGP",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LPL",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LPP",  "LG", BCF_VL_LG,    VCF45,   BCF_HT_INT},
+        {"LEC",  "LA", BCF_VL_LA,    VCF45,   BCF_HT_INT},
+        {"LAD",  "LR", BCF_VL_LR,    VCF45,   BCF_HT_INT},
+        {"LADF", "LR", BCF_VL_LR,    VCF45,   BCF_HT_INT},
+        {"LADR", "LR", BCF_VL_LR,    VCF45,   BCF_HT_INT},
+    };
+    static int fmt_warned[sizeof(fmt_tags)/sizeof(*fmt_tags)] = {0};
+
+    // Check INFO tag numbers.  We shouldn't really permit ".", but it's
+    // commonly misused so we let it slide unless it's a new tag and the
+    // file format claims to be new also.  We also cannot distinguish between
+    // Number=1 and Number=2, but we at least report the correct term if we
+    // get, say, Number=G in its place.
+    // Also check the types.
+    int i;
+    for (i = 0; i < sizeof(info_tags)/sizeof(*info_tags); i++) {
+        if (info_warned[i])
+            continue;
+        int id = bcf_hdr_id2int(hdr, BCF_DT_ID, info_tags[i].name);
+        if (bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, id)) {
+            if (bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != info_tags[i].number &&
+                bcf_hdr_id2length(hdr, BCF_HL_INFO, id) != BCF_VL_VAR) {
+                info_warned[i] = 1;
+            } else if (bcf_hdr_id2length(hdr, BCF_HL_INFO, id) == BCF_VL_FIXED &&
+                       bcf_hdr_id2number(hdr, BCF_HL_INFO, id) != atoi(info_tags[i].number_str)) {
+                info_warned[i] = 1;
+            }
+
+            if (info_warned[i]) {
+                hts_log_warning("%s should be declared as Number=%s",
+                                info_tags[i].name, info_tags[i].number_str);
+            }
+
+            if (bcf_hdr_id2type(hdr, BCF_HL_INFO, id) != info_tags[i].type) {
+                hts_log_warning("%s should be declared as Type=%s",
+                                info_tags[i].name, type_str[info_tags[i].type]);
+                info_warned[i] = 1;
+            }
         }
     }
-    if ( !GL_warned )
-    {
-        int id = bcf_hdr_id2int(hdr, BCF_DT_ID, "GL");
-        if ( bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_hdr_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
-        {
-            hts_log_warning("GL should be declared as Number=G");
-            GL_warned = 1;
+
+    // Check FORMAT tag numbers and types.
+    for (i = 0; i < sizeof(fmt_tags)/sizeof(*fmt_tags); i++) {
+        if (fmt_warned[i])
+            continue;
+        int id = bcf_hdr_id2int(hdr, BCF_DT_ID, fmt_tags[i].name);
+        if (bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, id)) {
+            if (bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != fmt_tags[i].number) {
+                // Permit "Number=." if this tag predates the vcf version it is
+                // defined within.  This is a common tactic for callers to use
+                // new tags with older formats in order to avoid parsing failures
+                // with some software.
+                // We don't care for 4.3 and earlier as that's more of a wild-west
+                // and it's not abnormal to see incorrect usage of Number=. there.
+                if ((version < VCF44 &&
+                     bcf_hdr_id2length(hdr, BCF_HL_FMT, id) != BCF_VL_VAR) ||
+                    (version >= VCF44 && version >= fmt_tags[i].version)) {
+                    fmt_warned[i] = 1;
+                }
+            } else if (bcf_hdr_id2length(hdr, BCF_HL_FMT, id) == BCF_VL_FIXED &&
+                       bcf_hdr_id2number(hdr, BCF_HL_FMT, id) != atoi(fmt_tags[i].number_str)) {
+                fmt_warned[i] = 1;
+            }
+
+            if (fmt_warned[i]) {
+                hts_log_warning("%s should be declared as Number=%s",
+                                fmt_tags[i].name, fmt_tags[i].number_str);
+            }
+
+            if (bcf_hdr_id2type(hdr, BCF_HL_FMT, id) != fmt_tags[i].type) {
+                hts_log_warning("%s should be declared as Type=%s",
+                                fmt_tags[i].name, type_str[fmt_tags[i].type]);
+                fmt_warned[i] = 1;
+            }
         }
     }
 }
@@ -1498,6 +1651,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     aux->key_len = NULL;
     aux->dict = *((vdict_t*)h->dict[0]);
     aux->version = 0;
+    aux->ref_count = 1;
     free(h->dict[0]);
     h->dict[0] = aux;
 
@@ -1522,6 +1676,12 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
     int i;
     khint_t k;
     if (!h) return;
+    bcf_hdr_aux_t *aux = get_hdr_aux(h);
+    if (aux->ref_count > 1) // Refs still held, so delay destruction
+    {
+        aux->ref_count &= ~1;
+        return;
+    }
     for (i = 0; i < 3; ++i) {
         vdict_t *d = (vdict_t*)h->dict[i];
         if (d == 0) continue;
@@ -1529,7 +1689,6 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
             if (kh_exist(d, k)) free((char*)kh_key(d, k));
         if ( i==0 )
         {
-            bcf_hdr_aux_t *aux = get_hdr_aux(h);
             for (k=kh_begin(aux->gen); k<kh_end(aux->gen); k++)
                 if ( kh_exist(aux->gen,k) ) free((char*)kh_key(aux->gen,k));
             kh_destroy(hdict, aux->gen);
@@ -1597,6 +1756,10 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     htxt[hlen] = '\0'; // Ensure htxt is terminated
     if ( bcf_hdr_parse(h, htxt) < 0 ) goto fail;
     free(htxt);
+
+    bcf_hdr_incr_ref(h);
+    bgzf_set_private_data(fp, h, hdr_bgzf_private_data_cleanup);
+
     return h;
  fail:
     hts_log_error("Failed to read BCF header");
@@ -1637,6 +1800,9 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     if ( bgzf_write(fp, hlen, 4) !=4 ) return -1;
     if ( bgzf_write(fp, htxt.s, htxt.l) != htxt.l ) return -1;
     if ( bgzf_flush(fp) < 0) return -1;
+
+    bcf_hdr_incr_ref(h);
+    bgzf_set_private_data(fp, h, hdr_bgzf_private_data_cleanup);
 
     free(htxt.s);
     return 0;
@@ -1805,6 +1971,63 @@ static const char *get_type_name(int type) {
     return types[t];
 }
 
+/**
+ *  updatephasing - updates 1st phasing based on other phasing status
+ *  @param p - pointer to phase value array
+ *  @param end - end of array
+ *  @param q - pointer to consumed data
+ *  @param samples - no. of samples in array
+ *  @param ploidy - no. of phasing values per sample
+ *  @param type - value type (one of BCF_BT_...)
+ *  Returns 0 on success and 1 on failure
+ *  Update for haploids made only if it is not unknown (.)
+ */
+static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int ploidy, int type)
+{
+    int j, k;
+    unsigned int inc = 1 << bcf_type_shift[type];
+    ptrdiff_t bytes = samples * ploidy * inc;
+
+    if (samples < 0 || ploidy < 0 || end - p < bytes)
+        return 1;
+
+    /*
+     * This works because phasing is stored in the least-significant bit
+     * of the GT encoding, and the data is always stored little-endian.
+     * Thus it's possible to get the desired result by doing bit operations
+     * on the least-significant byte of each value and ignoring the
+     * higher bytes (for 16-bit and 32-bit values).
+     */
+
+    switch (ploidy) {
+    case 1:
+        // Trivial case - haploid data is phased by default
+        for (j = 0; j < samples; ++j) {
+            if (*p) *p |= 1;    //only if not unknown (.)
+            p += inc;
+        }
+        break;
+    case 2:
+        // Mostly trivial case - first is phased if second is.
+        for (j = 0; j < samples; ++j) {
+            *p |= (p[inc] & 1);
+            p += 2 * inc;
+        }
+        break;
+    default:
+        // Generic case - first is phased if all other alleles are.
+        for (j = 0; j < samples; ++j) {
+            uint8_t allphased = 1;
+            for (k = 1; k < ploidy; ++k)
+                allphased &= (p[inc * k]);
+            *p |= allphased;
+            p += ploidy * inc;
+        }
+    }
+    *q = p;
+    return 0;
+}
+
 static void bcf_record_check_err(const bcf_hdr_t *hdr, bcf1_t *rec,
                                  char *type, uint32_t *reports, int i) {
     if (*reports == 0 || hts_verbose >= HTS_LOG_DEBUG)
@@ -1832,6 +2055,13 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                                     (1 << BCF_BT_FLOAT) |
                                     (1 << BCF_BT_CHAR));
     int32_t max_id = hdr ? hdr->n[BCF_DT_ID] : 0;
+    /* set phasing for 1st allele as in v44 for versions upto v43, to have
+    consistent binary values irrespective of version; not run for v >= v44,
+    to retain explicit phasing in v44 and higher */
+    int idgt = hdr ?
+                    bcf_get_version(hdr, NULL) < VCF44 ?
+                        bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1 :
+                    -1;
 
     // Check for valid contig ID
     if (rec->rid < 0
@@ -1941,9 +2171,16 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
-        bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
-        if (end - ptr < bytes) goto bad_indiv;
-        ptr += bytes;
+        if (idgt >= 0 && idgt == key) {
+            // check first GT phasing bit and fix up if necessary
+            if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
+                err |= BCF_ERR_TAG_INVALID;
+            }
+        } else {
+            bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
+            if (end - ptr < bytes) goto bad_indiv;
+            ptr += bytes;
+        }
     }
 
     if (!err && rec->rlen < 0) {
@@ -2018,7 +2255,9 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 
 int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
-    if (fp->format.format == vcf) return vcf_read(fp,h,v);
+    if (fp->format.format == vcf) return vcf_read(fp, h, v);
+    if (!h)
+        h = (const bcf_hdr_t *) bgzf_get_private_data(fp->fp.bgzf);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
     if (ret == 0) ret = bcf_record_check(h, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
@@ -2028,8 +2267,9 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
+    const bcf_hdr_t *hdr = (const bcf_hdr_t *) bgzf_get_private_data(fp);
     int ret = bcf_read1_core(fp, v);
-    if (ret == 0) ret = bcf_record_check(NULL, v);
+    if (ret == 0) ret = bcf_record_check(hdr, v);
     if (ret  >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
     return ret;
@@ -3225,7 +3465,7 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
                     }
-                    if (ver >= VCF44 && !phasingprfx) {
+                    if (!phasingprfx) { //get GT in v44 way when no prefixed phasing
                         /* no explicit phasing for 1st allele, set based on
                          other alleles and ploidy */
                         if (ploidy == 1) {  //implicitly phased
@@ -4393,11 +4633,11 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 
 // Calculate number of index levels given min_shift and the header contig
 // list.  Also returns number of contigs in *nids_out.
-static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
+static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int *min_shift_in_out,
                                int starting_n_lvls, int *nids_out)
 {
-    int n_lvls, i, nids = 0;
-    int64_t max_len = 0, s;
+    int n_lvls = starting_n_lvls, i, nids = 0;
+    int64_t max_len = 0;
 
     for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
     {
@@ -4407,9 +4647,8 @@ static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
         nids++;
     }
     if ( !max_len ) max_len = (1LL<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
-    s = hts_bin_maxpos(min_shift, starting_n_lvls);
-    for (n_lvls = starting_n_lvls; max_len > s; ++n_lvls, s <<= 3);
+
+    hts_adjust_csi_settings(max_len, min_shift_in_out, &n_lvls);
 
     if (nids_out) *nids_out = nids;
     return n_lvls;
@@ -4425,7 +4664,7 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
     int nids = 0;
-    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
+    n_lvls = idx_calc_n_lvls_ids(h, &min_shift, 0, &nids);
     idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!idx) goto fail;
     b = bcf_init1();
@@ -4525,7 +4764,7 @@ static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fn
         // Set initial n_lvls to match tbx_index()
         int starting_n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
         // Increase if necessary
-        n_lvls = idx_calc_n_lvls_ids(h, min_shift, starting_n_lvls, NULL);
+        n_lvls = idx_calc_n_lvls_ids(h, &min_shift, starting_n_lvls, NULL);
         fmt = HTS_FMT_CSI;
     }
 
@@ -4567,7 +4806,7 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     if (!min_shift)
         min_shift = 14;
 
-    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
+    n_lvls = idx_calc_n_lvls_ids(h, &min_shift, 0, &nids);
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!fp->idx) return -1;
@@ -6004,6 +6243,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         default: hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, fmt->type, bcf_seqname_safe(hdr,line), line->pos+1); exit(1);
     }
     #undef BRANCH
+
     return nsmpl*fmt->n;
 }
 
@@ -6169,30 +6409,30 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
 {
     uint8_t *f = (uint8_t*)v->shared.s, *t = NULL,
         *e = (uint8_t*)v->shared.s + v->shared.l;
-    int size, type, id, lenid, endid, svlenid, i, bad, gvcf = 0, haveins = 0;
+    int size, type, id, lenid, endid, svlenid, i, bad, gvcf = 0, use_svlen = 0;
     bcf_info_t *endinfo = NULL, *svleninfo = NULL, end_lcl, svlen_lcl;
     bcf_fmt_t *lenfmt = NULL, len_lcl;
 
-    //holds <ins> allele status for the max no of alleles
-    uint8_t insals[8192];
+    //holds SVLEN allele status for the max no of alleles
+    uint8_t svlenals[8192];
     //pos from info END, fmt LEN, info SVLEN
     hts_pos_t end = 0, end_fmtlen = 0, end_svlen = 0, hpos;
     int64_t len_ref = 0, len = 0, tmp;
-    lenid = bcf_hdr_id2int(h, BCF_DT_ID, "LEN");
-    svlenid = bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN");
     endid = bcf_hdr_id2int(h, BCF_DT_ID, "END");
 
     //initialise bytes which are to be used
-    memset(insals, 0, 1 + v->n_allele / 8);
+    memset(svlenals, 0, 1 + v->n_allele / 8);
 
     //use decoded data where ever available and where not, get from stream
     if (v->unpacked & BCF_UN_STR || v->d.shared_dirty & BCF1_DIRTY_ALS) {
         for (i = 1; i < v->n_allele; ++i) {
-            //checks only alt alleles, with NUL
-            if (!strcmp(v->d.allele[i], "<INS>")) {
-                //ins allele, note to skip corresponding svlen val
-                insals[i >> 3] |= 1 << (i & 7);
-                haveins = 1;
+            // check only symbolic alt alleles
+            if (v->d.allele[i][0] != '<')
+                continue;
+            if (svlen_on_ref_for_vcf_alt(v->d.allele[i], -1)) {
+                // del, dup or cnv allele, note to check corresponding svlen val
+                svlenals[i >> 3] |= 1 << (i & 7);
+                use_svlen = 1;
             } else if (!strcmp(v->d.allele[i], "<*>") ||
                          !strcmp(v->d.allele[i], "<NON_REF>")) {
                 gvcf = 1;   //gvcf present, have to check for LEN field
@@ -6210,11 +6450,11 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             size = bcf_dec_size(f, &f, &type);
             if (!i) {   //REF length
                 len_ref = size;
-            } else {
-                if (size == 5 && !strncmp((char*)f, "<INS>", size)) {
-                    //ins allele, note to skip corresponding svlen val
-                    insals[i >> 3] |= 1 << (i & 7);
-                    haveins = 1;
+            } else if (size > 0 && *f == '<') {
+                if (svlen_on_ref_for_vcf_alt((char *) f, size)) {
+                    // del, dup or cnv allele, note to check corresponding svlen val
+                    svlenals[i >> 3] |= 1 << (i & 7);
+                    use_svlen = 1;
                 } else if ((size == 3 && !strncmp((char*)f, "<*>", size)) ||
                     (size == 9 && !strncmp((char*)f, "<NON_REF>", size))) {
                     gvcf = 1;   //gvcf present, have to check for LEN field
@@ -6230,6 +6470,10 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
         size = bcf_dec_size(f, &f, &type);
         f += size << bcf_type_shift[type];
     }
+
+    // Only do SVLEN lookup if there are suitable symbolic alleles
+    svlenid = use_svlen ? bcf_hdr_id2int(h, BCF_DT_ID, "SVLEN") : -1;
+
     // INFO
     if (svlenid >= 0 || endid >= 0 ) {  //only if end/svlen present
         if (v->unpacked & BCF_UN_INFO || v->d.shared_dirty & BCF1_DIRTY_INF) {
@@ -6259,8 +6503,12 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             }
         }
     }
+
+    // Only do LEN lookup if a <*> allele was found
+    lenid = gvcf ? bcf_hdr_id2int(h, BCF_DT_ID, "LEN") : -1;
+
     // FORMAT
-    if (lenid >= 0 && gvcf) {
+    if (lenid >= 0) {
         //with LEN and has gvcf allele
         f = (uint8_t*)v->indiv.s; t = NULL; e = (uint8_t*)v->indiv.s + v->indiv.l;
         if (v->unpacked & BCF_UN_FMT || v->d.indiv_dirty) {
@@ -6297,23 +6545,26 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
     if (svleninfo && svleninfo->vptr) {
         //svlen info exists, not being deleted
         bad = 0;
-        //get largest svlen, except <ins>; expects to be . for non SV alleles
+        //get largest svlen corresponding to a <DEL> symbolic allele
         for (i = 0; i < svleninfo->len && i + 1 < v->n_allele; ++i) {
+            if (!(svlenals[i >> 3] & (1 << ((i + 1) & 7))))
+                continue;
+
             switch(svleninfo->type) {
                 case BCF_BT_INT8:
-                    tmp = ((int8_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i8(&svleninfo->vptr[i]);
                     tmp = tmp == bcf_int8_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT16:
-                    tmp = ((int16_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i16(&svleninfo->vptr[i * 2]);
                     tmp = tmp == bcf_int16_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT32:
-                    tmp = ((int32_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i32(&svleninfo->vptr[i * 4]);
                     tmp = tmp == bcf_int32_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT64:
-                    tmp = ((int64_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i64(&svleninfo->vptr[i * 8]);
                     tmp = tmp == bcf_int64_missing ? 0 : tmp;
                 break;
                 default: //invalid
@@ -6325,10 +6576,7 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
                 len = 0;
                 break;
             }
-            //expects only SV will have valid svlen and rest have '.'
-            if ((haveins) && (insals[i >> 3] & (1 << ((i + 1) & 7)))) {
-                continue;   //skip svlen for <ins>
-            }
+
             tmp = tmp < 0 ? llabs(tmp) : tmp;
             if (len < tmp) len = tmp;
         }
@@ -6348,19 +6596,19 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             for (j = 0; j < lenfmt->n; ++j) {
                 switch(lenfmt->type) {
                 case BCF_BT_INT8:
-                    tmp = (((int8_t*)lenfmt->p + offset))[j];
+                    tmp = le_to_i8(lenfmt->p + offset + j);
                     tmp = tmp == bcf_int8_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT16:
-                    tmp = ((int16_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i16(lenfmt->p + offset + j * 2);
                     tmp = tmp == bcf_int16_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT32:
-                    tmp = ((int32_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i32(lenfmt->p + offset + j * 4);
                     tmp = tmp == bcf_int32_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT64:
-                    tmp = ((int64_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i64(lenfmt->p + offset + j * 8);
                     tmp = tmp == bcf_int64_missing ? 0 : tmp;
                 break;
                 default: //invalid

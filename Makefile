@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2024 Genome Research Ltd.
+#    Copyright (C) 2013-2025 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -158,8 +158,8 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.22
-MACH_O_CURRENT_VERSION = 3.1.22
+MACH_O_COMPATIBILITY_VERSION = 3.1.23
+MACH_O_CURRENT_VERSION = 3.1.23
 
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
@@ -267,6 +267,7 @@ NONCONFIGURE_OBJS = hfile_libcurl.o
 PLUGIN_EXT  =
 PLUGIN_OBJS =
 
+bgzf_internal_h = bgzf_internal.h $(htslib_bgzf_h)
 cram_h = cram/cram.h $(cram_samtools_h) $(header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h $(htslib_cram_h)
 cram_io_h = cram/cram_io.h $(cram_misc_h)
 cram_misc_h = cram/misc.h
@@ -276,7 +277,7 @@ cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) $(htslib_cram_h) cr
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
 fuzz_settings_h = fuzz_settings.h
-header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
+header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_hts_h)
 hfile_internal_h = hfile_internal.h $(htslib_hts_defs_h) $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
 hts_time_funcs_h = hts_time_funcs.h
@@ -328,13 +329,18 @@ config.h:
 	if [ "x$(HTS_BUILD_AVX512)" != "x" ] ; then \
 	    echo '#define HAVE_AVX512 1' >> $@ ; \
 	fi
+	echo '#if defined __x86_64__ && (defined HAVE_SSSE3 || defined HAVE_AVX2 || defined HAVE_AVX512)' >> $@
+	echo '#define HAVE_X86INTRIN_H 1' >> $@
+	echo '#endif' >> $@
 	echo '#if defined __x86_64__ || defined __arm__ || defined __aarch64__' >> $@
 	echo '#define HAVE_ATTRIBUTE_CONSTRUCTOR 1' >> $@
 	echo '#endif' >> $@
-	echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@
-	echo '#define HAVE_ATTRIBUTE_TARGET_SSSE3 1' >> $@
-	echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@
-	echo '#endif' >> $@
+	if [ "x$(HTS_HAVE_SSSE3_BUILTINS)" != "x" ]; then \
+	    echo '#if (defined(__x86_64__) || defined(_M_X64))' >> $@ ; \
+	    echo '#define HAVE_ATTRIBUTE_TARGET_SSSE3 1' >> $@ ; \
+	    echo '#define HAVE_BUILTIN_CPU_SUPPORT_SSSE3 1' >> $@ ; \
+	    echo '#endif' >> $@ ; \
+	fi
 	echo '#if defined __linux__' >> $@
 	echo '#define HAVE_GETAUXVAL' >> $@
 	echo '#elif defined __FreeBSD__' >> $@
@@ -487,19 +493,18 @@ hts-object-files: $(LIBHTS_OBJS)
 	$(CC) -shared $(LDFLAGS) -o $@ $< hts.dll.a $(LIBS)
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(htslib_khash_h)
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(bgzf_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
-header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h)
+header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_kseq_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
-hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(hts_time_funcs_h)
 hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
 hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_log_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
-vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
+vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h) $(bgzf_internal_h)
 sam.o sam.pico: sam.c config.h $(fuzz_settings_h) $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 sam_mods.o sam_mods.pico: sam_mods.c config.h $(htslib_sam_h) $(textutils_internal_h)
 simd.o simd.pico: simd.c config.h $(htslib_sam_h) $(sam_internal_h)
@@ -520,7 +525,7 @@ realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(htslib_sam_h) $(hts_internal_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(fuzz_settings_h) $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
-cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
+cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hfile_h)
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h) $(textutils_internal_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htscodecs_rANS_static4x16_h) $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
@@ -699,6 +704,7 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	cd test/fastq && ./test-fastq.sh
 	cd test/base_mods && ./base-mods.sh base-mods.tst
+	cd test/tlen && ./tlen.sh tlen.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx/faidx.fa test/faidx/fastqs.fq
 	test/test-regidx
 	cd test && \
@@ -872,7 +878,7 @@ test/test_time_funcs.o: test/test_time_funcs.c config.h $(hts_time_funcs_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_hts_log_h)
 test/test_faidx.o: test/test_faidx.c config.h $(htslib_faidx_h)
 test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
-test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
+test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_vcfutils_h) $(htslib_kbitset_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_hts_defs_h) $(htslib_synced_bcf_reader_h) $(htslib_hts_h) $(htslib_vcf_h)
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
@@ -946,7 +952,7 @@ $(srcprefix)htslib.map: libhts.so
 	    echo "Refusing to update $@ - HTSlib version not changed" 1>&2 ; \
 	    exit 1 ; \
 	fi && \
-	nm --with-symbol-versions -D -g libhts.so | awk '$$2 ~ /^[DGRT]$$/ && $$3 ~ /@@Base$$/ && $$3 !~ /^(_init|_fini|_edata)@@/ { sub(/@@Base$$/, ";", $$3); print "    " $$3 }' > $@.tmp && \
+	nm --defined-only --with-symbol-versions -D -g libhts.so | awk '$$2 ~ /^[DGRT]$$/ && ($$3 ~ /@@Base$$/ || $$3 !~ /@/) && $$3 !~ /^(_init|_fini|_edata)(@|$$)/ { sub(/@@Base$$/, "", $$3); print "    " $$3 ";" }' > $@.tmp && \
 	if [ -s $@.tmp ] ; then \
 	    cat $@ > $@.new.tmp && \
 	    printf '\n%s {\n' "HTSLIB_$$curr_vers" >> $@.new.tmp && \

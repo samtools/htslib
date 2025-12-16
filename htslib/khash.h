@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2014-2015, 2018, 2024 Genome Research Ltd.
+   Copyright (C) 2014-2015, 2018, 2024-2025 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -308,6 +308,28 @@ static const double __ac_HASH_UPPER = 0.77;
 		}																\
 		return 0;														\
 	}																	\
+	SCOPE int kh_grow_to_fit_##name(kh_##name##_t *h, khint_t n_items)	\
+	{																	\
+		khint_t n_buckets;												\
+		khint_t resize_limit = (khint_t) ((double) INT_MAX * __ac_HASH_UPPER); \
+		if (n_items < h->upper_bound - h->size) {						\
+			/* Should be big enough ... */								\
+			if (n_items < h->upper_bound - h->n_occupied)				\
+				return 0; /* ... even accounting for deleted items */	\
+			/* otherwise need to remove them */							\
+			return kh_resize_##name(h, h->n_buckets - 1);				\
+		}																\
+		if (UINT_MAX - h->size < n_items)								\
+			return -2;													\
+		n_items += h->size;												\
+		if (n_items >= resize_limit)									\
+			return -2;													\
+		n_buckets = n_items > 0 ? n_items : 1;							\
+		kroundup32(n_buckets);											\
+		if (n_buckets * __ac_HASH_UPPER + 0.5 < n_items)				\
+			n_buckets *= 2;												\
+		return kh_resize_##name(h, n_buckets);							\
+	}																	\
 	SCOPE khint_t kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret) \
 	{																	\
 		khint_t x;														\
@@ -553,6 +575,21 @@ static kh_inline khint_t __ac_Wang_hash(khint_t key)
   @param  s     New size [khint_t]
  */
 #define kh_resize(name, h, s) kh_resize_##name(h, s)
+
+/*! @function
+  @abstract     Grow a hash table to fit given number of items.
+  @param  name  Name of the hash table [symbol]
+  @param  h     Pointer to the hash table [khash_t(name)*]
+  @param  n     Number of items [khint_t]
+  @return  0 on success
+		  -1 on failure to allocate memory
+		  -2 adding @p n items would exceed the maximum capacity of the table
+  Unlike ks_resize(), this function takes account of the load factor
+  of the hash table when allocating space.  After a successful return,
+  it will be possible to add @p n items to the table without triggering
+  another resize.
+ */
+#define kh_grow_to_fit(name, h, n) kh_grow_to_fit_##name(h, n)
 
 /*! @function
   @abstract     Insert a key to the hash table.

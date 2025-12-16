@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2020, 2022-2024 Genome Research Ltd.
+Copyright (c) 2012-2020, 2022-2025 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../htslib/hfile.h"
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
@@ -2116,14 +2117,19 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
 
                     // number of segments starting at the same point.
                     int left_cnt = 0;
+                    int right_cnt = 0;
 
                     do {
                         if (aleft > s->crecs[id2].apos)
                             aleft = s->crecs[id2].apos, left_cnt = 1;
                         else if (aleft == s->crecs[id2].apos)
                             left_cnt++;
-                        if (aright < s->crecs[id2].aend)
+                        if (aright < s->crecs[id2].aend) {
                             aright = s->crecs[id2].aend;
+                            right_cnt = 1;
+                        } else if (aright == s->crecs[id2].aend) {
+                            right_cnt++;
+                        }
                         if (s->crecs[id2].mate_line == -1) {
                             s->crecs[id2].mate_line = rec;
                             break;
@@ -2146,27 +2152,32 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
                          * end coordinates, set +/- tlen based on 1st/last
                          * bit flags instead, as a tie breaker.
                          */
-                        if (s->crecs[id2].apos == aleft) {
-                            if (left_cnt == 1 ||
-                                (s->crecs[id2].flags & BAM_FREAD1))
+                        if (s->crecs[id2].apos == aleft &&
+                            (s->crecs[id2].aend < aright ||
+                             left_cnt <= 1)) {
+                            // Leftmost, and not the rightmost
+                            s->crecs[id2].tlen = tlen;
+                            tlen = -tlen;
+                        } else if (s->crecs[id2].apos == aleft &&
+                                   s->crecs[id2].aend == aright &&
+                                   left_cnt > 1 && right_cnt > 1) {
+                            // Both leftmost and rightmost, resolve tie via
+                            // the BAM flags so changing order doesn't change
+                            // TLEN signs.
+                            if (s->crecs[id2].flags & BAM_FREAD1) {
                                 s->crecs[id2].tlen = tlen;
-                            else
+                                tlen = -tlen;
+                            } else {
                                 s->crecs[id2].tlen = -tlen;
+                            }
                         } else {
+                            // Rightmost or an internal
                             s->crecs[id2].tlen = -tlen;
                         }
 
                         id2 = s->crecs[id2].mate_line;
                         while (id2 != id1) {
-                            if (s->crecs[id2].apos == aleft) {
-                                if (left_cnt == 1 ||
-                                    (s->crecs[id2].flags & BAM_FREAD1))
-                                    s->crecs[id2].tlen = tlen;
-                                else
-                                    s->crecs[id2].tlen = -tlen;
-                            } else {
-                                s->crecs[id2].tlen = -tlen;
-                            }
+                            s->crecs[id2].tlen = tlen;
                             id2 = s->crecs[id2].mate_line;
                         }
                     } else {
@@ -3277,14 +3288,18 @@ cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                         break;
                     }
 
-                    // before start of range; skip to next container
+                    // Before start of range; skip to next container.
+                    // Can't use cram_seek() here as it drops in-progress
+                    // multi-threaded decode jobs, so call hseek() directly.
                     if (fd->range.refid != -1 &&
                         c_next->ref_seq_start + c_next->ref_seq_span-1 <
                         fd->range.start) {
-                        c_next->curr_slice_mt = c_next->max_slice;
-                        cram_seek(fd, c_next->length, SEEK_CUR);
+                        off_t skip_length = c_next->length;
                         cram_free_container(c_next);
                         c_next = NULL;
+                        fd->ooc = 0;
+                        if (hseek(fd->fp, skip_length, SEEK_CUR) < 0)
+                            return NULL;
                         continue;
                     }
                 }

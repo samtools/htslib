@@ -887,6 +887,13 @@ sub test_view
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
 
+    $ersam = "embed_MD.sam";
+    $ercram = "embed_MD.tmp.cram";
+    $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -o embed_ref=2 -o seqs_per_slice=3 -o bases_per_slice=1000000 -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+
     if ($test_view_failures == 0) {
         passed($opts, "embed_ref=2 tests");
     } else {
@@ -1081,6 +1088,18 @@ sub test_index
     test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
     unlink("$$opts{tmp}/index.cram.crai");
     test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+
+    # CRAM container skipping test
+    # Prepare a file with records split into multiple containers, the first two
+    # records spanning far enough to overlap the last two.
+    cmd("$$opts{path}/test_view $nthreads -C -p $$opts{tmp}/index3.cram -x $$opts{tmp}/index3.cram.crai -o seqs_per_slice=2 $$opts{path}/index3.sam");
+    # An index lookup for the last two records should return the first two
+    # as well.
+    test_compare($opts, "$$opts{path}/test_view $nthreads -p $$opts{tmp}/index3_rgn.sam $$opts{tmp}/index3.cram CHROMOSOME_I:5000-5100",
+                 "$$opts{path}/index3_exp.sam", "$$opts{tmp}/index3_rgn.sam");
+    # Also check the multi-region iterator
+    test_compare($opts, "$$opts{path}/test_view $nthreads -M -p $$opts{tmp}/index3_rgnm.sam $$opts{tmp}/index3.cram CHROMOSOME_I:5000-5100",
+                 "$$opts{path}/index3_exp.sam", "$$opts{tmp}/index3_rgnm.sam");
 
     # BCF
     test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -b -m 14 -x $$opts{tmp}/index.bcf.csi $$opts{path}/index.vcf > $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);

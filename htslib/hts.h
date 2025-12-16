@@ -366,6 +366,16 @@ enum hts_fmt_option {
     // name to the second field and insert a constructed <run>.<number>
     // name in its place.
     FASTQ_OPT_NAME2,
+
+    // Process the UMI tag.  Tag or Tag,tag,tag...
+    // On read, this converts the last read-name element (Illumina) to the tag.
+    // On write, it queries the tags in turn and copies the first found
+    // to the read name suffix, converting any non-alpha to "+".
+    FASTQ_OPT_UMI,
+
+    // Regex to use for matching read name.
+    // Def: "^[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:([^:#/]+)"
+    FASTQ_OPT_UMI_REGEX,
 };
 
 // Profile options for encoding; primarily used at present in CRAM
@@ -490,7 +500,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 102201
+#define HTS_VERSION 102300
 
 /*! @abstract Introspection on the features enabled in htslib
  *

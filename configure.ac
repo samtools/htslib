@@ -35,7 +35,7 @@ m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2020-2024 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2020-2025 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
@@ -83,14 +83,16 @@ AC_CHECK_DECL([_XOPEN_SOURCE], [],
   [AC_DEFINE([_XOPEN_SOURCE], [700], [Specify X/Open requirements])],
   [])
 
-dnl Check that we have cpuid, and if so run the x86 SIMD checks
+dnl Check that we have cpuid and x86intrin.h, and if so run the x86 SIMD checks
 AC_CHECK_DECLS([__get_cpuid_max, __cpuid_count], [
    hts_have_cpuid=yes
 ], [
    hts_have_cpuid=no
 ], [[#include <cpuid.h>]])
 
-AS_IF(test "x$hts_have_cpuid" = "xyes", [
+AC_CHECK_HEADERS([x86intrin.h])
+
+AS_IF([test "x$hts_have_cpuid" = "xyes" && test "x$ac_cv_header_x86intrin_h" = "xyes"], [
 dnl Options for rANS32x16 sse4.1 version - sse4.1
 HTS_CHECK_COMPILE_FLAGS_NEEDED([sse4.1], [-msse4.1 -mssse3 -mpopcnt],
  [AC_LANG_PROGRAM([[
@@ -665,6 +667,33 @@ Linux, FreeBSD, MacOS, and other BSD derivatives])
       ])
     ])
   ])
+
+# Check for a working fstatat interface
+AS_IF([test "$ref_cache" = enabled],[
+  AC_MSG_CHECKING([for fstatat])
+  AC_LINK_IFELSE([
+    AC_LANG_PROGRAM([
+      #include <fcntl.h>
+      #include <sys/stat.h>
+    ],[
+      struct stat statbuf;
+      return fstatat(AT_FDCWD, "/", &statbuf, AT_SYMLINK_NOFOLLOW);
+    ])
+  ], [
+    AC_MSG_RESULT([yes])
+  ], [
+    AC_MSG_RESULT([no])
+    ref_cache="disabled"
+    AS_IF([test "x$enable_ref_cache" = xcheck], [
+      AC_MSG_WARN([ref-cache not enabled: missing fstatat()])
+    ],[
+      MSG_ERROR([ref-cache not enabled
+
+ref-cache is not supported on this configuration, as the fstatat() interface
+cannot be found.])
+    ])
+  ])
+])
 
 # Check how to get a working cmsg interface
 AS_IF([test "$ref_cache" = enabled],[

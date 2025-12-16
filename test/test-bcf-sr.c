@@ -243,7 +243,7 @@ int main(int argc, char *argv[])
               w/o name it has to be along with file with default naming*/
 
             const char *idxname = strstr(vcfs[i], HTS_IDX_DELIM);
-            idxname += idxname ? sizeof(HTS_IDX_DELIM) - 1 : 0;
+            if (idxname) idxname += strlen(HTS_IDX_DELIM);
             if ( !bcf_sr_add_hreader(sr, htsfp[i], 1, idxname) ) {
                 error("Failed to add reader %s: %s\n", vcfs[i],
                     bcf_sr_strerror(sr->errnum));

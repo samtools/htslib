@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013-2018, 2020-2021, 2023 Genome Research Ltd.
+   Copyright (C) 2013-2018, 2020-2021, 2023, 2025 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -379,9 +379,14 @@ void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 	int i, j, *prep = 0, *bmGs, *bmBc;
 	const ubyte_t *str, *pat;
 	str = (const ubyte_t*)_str; pat = (const ubyte_t*)_pat;
-	prep = (_prep == 0 || *_prep == 0)? ksBM_prep(pat, m) : *_prep;
-    if (!prep) return NULL;
-	if (_prep && *_prep == 0) *_prep = prep;
+	if (_prep && *_prep) {
+		prep = *_prep;
+	} else {
+		prep = ksBM_prep(pat, m);
+		if (!prep) return NULL;
+		if (_prep)
+			*_prep = prep;
+	}
 	bmGs = prep; bmBc = prep + m;
 	j = 0;
 	while (j <= n - m) {
@@ -390,7 +395,10 @@ void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 			int max = bmBc[str[i+j]] - m + 1 + i;
 			if (max < bmGs[i]) max = bmGs[i];
 			j += max;
-		} else return (void*)(str + j);
+		} else {
+			if (_prep == 0) free(prep);
+			return (void*)(str + j);
+		}
 	}
 	if (_prep == 0) free(prep);
 	return 0;

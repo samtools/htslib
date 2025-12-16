@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2024 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2025 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1208,6 +1208,14 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         strcmp(o->arg, "FASTQ_NAME2") == 0)
         o->opt = FASTQ_OPT_NAME2, o->val.i = 1;
 
+    else if (strcmp(o->arg, "fastq_umi") == 0 ||
+        strcmp(o->arg, "FASTQ_UMI") == 0)
+        o->opt = FASTQ_OPT_UMI, o->val.s = val;
+
+    else if (strcmp(o->arg, "fastq_umi_regex") == 0 ||
+        strcmp(o->arg, "FASTQ_UMI_REGEX") == 0)
+        o->opt = FASTQ_OPT_UMI_REGEX, o->val.s = val;
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1250,6 +1258,8 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
             case HTS_OPT_FILTER:
             case FASTQ_OPT_AUX:
             case FASTQ_OPT_BARCODE:
+            case FASTQ_OPT_UMI:
+            case FASTQ_OPT_UMI_REGEX:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
                     return -1;
                 break;
@@ -1841,6 +1851,8 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         return 0;
 
     case FASTQ_OPT_BARCODE:
+    case FASTQ_OPT_UMI:
+    case FASTQ_OPT_UMI_REGEX:
         if (fp->format.format == fastq_format ||
             fp->format.format == fasta_format) {
             va_start(args, opt);
@@ -2350,6 +2362,39 @@ static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t of
     }
     if (l->n < end + 1) l->n = end + 1;
     return 0;
+}
+
+void hts_adjust_csi_settings(int64_t max_len_in, int *min_shift_, int *n_lvls_)
+{
+    const int max_n_lvls = 9; // To prevent bin number overflow
+    int min_shift = *min_shift_;
+    int n_lvls = *n_lvls_;
+    int64_t max_len = max_len_in + 256, maxpos;
+
+    // Check if we need to adjust n_lvls or min_shift to get the range needed
+    if (max_len <= hts_bin_maxpos(min_shift, max_n_lvls)) {
+        // Can get required range by adjusting n_lvls
+        maxpos = hts_bin_maxpos(min_shift, n_lvls);
+        while (max_len > maxpos) {
+            ++n_lvls;
+            maxpos *= 8;
+        }
+        *n_lvls_ = n_lvls;
+    } else {
+        // No room to change n_lvls - adjust min_shift instead
+        // This was likely user-supplied so warn about the change too.
+        n_lvls = max_n_lvls;
+        maxpos = hts_bin_maxpos(min_shift, n_lvls);
+        while (max_len > maxpos) {
+            ++min_shift;
+            maxpos *= 2;
+        }
+        hts_log_warning("Adjusted min_shift from %d to %d"
+                        " due to longest reference of %"PRId64" bases.",
+                        *min_shift_, min_shift, max_len_in);
+        *n_lvls_ = n_lvls;
+        *min_shift_ = min_shift;
+    }
 }
 
 hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls)

@@ -61,3 +61,6 @@ N MM-pileup.out $test_mod < MM-MNf1.sam
 N MM-pileup.out $test_mod < MM-MNf2.sam
 N MM-pileup.out $test_mod < MM-bounds+.sam
 N MM-pileup.out $test_mod < MM-bounds-.sam
+
+# Test issue 1943 with rev-strand, HTS_MOD_REPORT_UNCHECKED and bam_next_base_mod
+P MM-variants.out $test_mod -f 1 MM-variants.sam

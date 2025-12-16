@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <signal.h>
 #include <inttypes.h>
 #include <unistd.h>
+#include <regex.h>
 
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 #include "fuzz_settings.h"
@@ -994,13 +995,13 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     h = sam_hdr_read(fp);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
-        hts_pos_t max_len = 0, s;
+        hts_pos_t max_len = 0;
         for (i = 0; i < h->n_targets; ++i) {
             hts_pos_t len = sam_hdr_tid2len(h, i);
             if (max_len < len) max_len = len;
         }
-        max_len += 256;
-        for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+        n_lvls = 0;
+        hts_adjust_csi_settings(max_len, &min_shift, &n_lvls);
         fmt = HTS_FMT_CSI;
     } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
@@ -1092,13 +1093,12 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
         (fp->format.format == sam && fp->format.compression == bgzf)) {
         int n_lvls, fmt = HTS_FMT_CSI;
         if (min_shift > 0) {
-            int64_t max_len = 0, s;
+            int64_t max_len = 0;
             int i;
             for (i = 0; i < h->n_targets; ++i)
                 if (max_len < h->target_len[i]) max_len = h->target_len[i];
-            max_len += 256;
-            for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-
+            n_lvls = 0;
+            hts_adjust_csi_settings(max_len, &min_shift, &n_lvls);
         } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
 
         fp->idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
@@ -1825,22 +1825,6 @@ sam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
     return bh;
 }
 
-static int valid_sam_header_type(const char *s) {
-    if (s[0] != '@') return 0;
-    switch (s[1]) {
-    case 'H':
-        return s[2] == 'D' && s[3] == '\t';
-    case 'S':
-        return s[2] == 'Q' && s[3] == '\t';
-    case 'R':
-    case 'P':
-        return s[2] == 'G' && s[3] == '\t';
-    case 'C':
-        return s[2] == 'O';
-    }
-    return 0;
-}
-
 // Minimal sanitisation of a header to ensure.
 // - null terminated string.
 // - all lines start with @ (also implies no blank lines).
@@ -1915,283 +1899,27 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
     return h;
 }
 
-static void known_stderr(const char *tool, const char *advice) {
-    hts_log_warning("SAM file corrupted by embedded %s error/log message", tool);
-    hts_log_warning("%s", advice);
-}
-
-static void warn_if_known_stderr(const char *line) {
-    if (strstr(line, "M::bwa_idx_load_from_disk") != NULL)
-        known_stderr("bwa", "Use `bwa mem -o file.sam ...` or `bwa sampe -f file.sam ...` instead of `bwa ... > file.sam`");
-    else if (strstr(line, "M::mem_pestat") != NULL)
-        known_stderr("bwa", "Use `bwa mem -o file.sam ...` instead of `bwa mem ... > file.sam`");
-    else if (strstr(line, "loaded/built the index") != NULL)
-        known_stderr("minimap2", "Use `minimap2 -o file.sam ...` instead of `minimap2 ... > file.sam`");
-}
-
 static sam_hdr_t *sam_hdr_create(htsFile* fp) {
-    kstring_t str = { 0, 0, NULL };
-    khint_t k;
     sam_hdr_t* h = sam_hdr_init();
-    const char *q, *r;
-    char* sn = NULL;
-    khash_t(s2i) *d = kh_init(s2i);
-    khash_t(s2i) *long_refs = NULL;
-    if (!h || !d)
-        goto error;
+    if (!h)
+        return NULL;
 
-    int ret, has_SQ = 0;
-    int next_c = '@';
-    while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
-        if (fp->line.s[0] != '@')
-            break;
-
-        if (fp->line.l > 3 && strncmp(fp->line.s, "@SQ", 3) == 0) {
-            has_SQ = 1;
-            hts_pos_t ln = -1;
-            for (q = fp->line.s + 4;; ++q) {
-                if (strncmp(q, "SN:", 3) == 0) {
-                    q += 3;
-                    for (r = q;*r != '\t' && *r != '\n' && *r != '\0';++r);
-
-                    if (sn) {
-                        hts_log_warning("SQ header line has more than one SN: tag");
-                        free(sn);
-                    }
-                    sn = (char*)calloc(r - q + 1, 1);
-                    if (!sn)
-                        goto error;
-
-                    strncpy(sn, q, r - q);
-                    q = r;
-                } else {
-                    if (strncmp(q, "LN:", 3) == 0) {
-                        hts_pos_t tmp = strtoll(q + 3, (char**)&q, 10);
-                        if (ln != -1 && ln != tmp) { //duplicate & different LN
-                            hts_log_error("Header includes @SQ line \"%s\" with"
-                                " multiple LN: tag with different values.", sn);
-                            goto error;
-                        } else {
-                            ln = tmp;
-                        }
-                    }
-                }
-
-                while (*q != '\t' && *q != '\n' && *q != '\0')
-                    ++q;
-                if (*q == '\0' || *q == '\n')
-                    break;
-            }
-            if (sn) {
-                if (ln >= 0) {
-                    int absent;
-                    k = kh_put(s2i, d, sn, &absent);
-                    if (absent < 0)
-                        goto error;
-
-                    if (!absent) {
-                        hts_log_warning("Duplicated sequence \"%s\" in file \"%s\"", sn, fp->fn);
-                        free(sn);
-                    } else {
-                        sn = NULL;
-                        if (ln >= UINT32_MAX) {
-                            // Stash away ref length that
-                            // doesn't fit in target_len array
-                            int k2;
-                            if (!long_refs) {
-                                long_refs = kh_init(s2i);
-                                if (!long_refs)
-                                    goto error;
-                            }
-                            k2 = kh_put(s2i, long_refs, kh_key(d, k), &absent);
-                            if (absent < 0)
-                                goto error;
-                            kh_val(long_refs, k2) = ln;
-                            kh_val(d, k) = ((int64_t) (kh_size(d) - 1) << 32
-                                            | UINT32_MAX);
-                        } else {
-                            kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
-                        }
-                    }
-                } else {
-                    hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
-                    warn_if_known_stderr(fp->line.s);
-                    free(sn);
-                }
-            } else {
-                hts_log_warning("Ignored @SQ line with missing SN: tag");
-                warn_if_known_stderr(fp->line.s);
-            }
-            sn = NULL;
-        }
-        else if (!valid_sam_header_type(fp->line.s)) {
-            hts_log_error("Invalid header line: must start with @HD/@SQ/@RG/@PG/@CO");
-            warn_if_known_stderr(fp->line.s);
-            goto error;
-        }
-
-        if (kputsn(fp->line.s, fp->line.l, &str) < 0)
-            goto error;
-
-        if (kputc('\n', &str) < 0)
-            goto error;
-
-        if (fp->is_bgzf) {
-            next_c = bgzf_peek(fp->fp.bgzf);
-        } else {
-            unsigned char nc;
-            ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
-            next_c = pret > 0 ? nc : pret - 1;
-        }
-        if (next_c < -1)
-            goto error;
-    }
-    if (next_c != '@')
-        fp->line.l = 0;
-
-    if (ret < -1)
-        goto error;
-
-    if (!has_SQ && fp->fn_aux) {
-        kstring_t line = { 0, 0, NULL };
-
-        /* The reference index (.fai) is actually needed here */
-        char *fai_fn = fp->fn_aux;
-        char *fn_delim = strstr(fp->fn_aux, HTS_IDX_DELIM);
-        if (fn_delim)
-            fai_fn = fn_delim + strlen(HTS_IDX_DELIM);
-
-        hFILE* f = hopen(fai_fn, "r");
-        int e = 0, absent;
-        if (f == NULL)
-            goto error;
-
-        while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
-            char* tab = strchr(line.s, '\t');
-            hts_pos_t ln;
-
-            if (tab == NULL)
-                continue;
-
-            sn = (char*)calloc(tab-line.s+1, 1);
-            if (!sn) {
-                e = 1;
-                break;
-            }
-            memcpy(sn, line.s, tab-line.s);
-            k = kh_put(s2i, d, sn, &absent);
-            if (absent < 0) {
-                e = 1;
-                break;
-            }
-
-            ln = strtoll(tab, NULL, 10);
-
-            if (!absent) {
-                hts_log_warning("Duplicated sequence \"%s\" in the file \"%s\"", sn, fai_fn);
-                free(sn);
-                sn = NULL;
-            } else {
-                sn = NULL;
-                if (ln >= UINT32_MAX) {
-                    // Stash away ref length that
-                    // doesn't fit in target_len array
-                    khint_t k2;
-                    int absent = -1;
-                    if (!long_refs) {
-                        long_refs = kh_init(s2i);
-                        if (!long_refs) {
-                            e = 1;
-                            break;
-                        }
-                    }
-                    k2 = kh_put(s2i, long_refs, kh_key(d, k), &absent);
-                    if (absent < 0) {
-                         e = 1;
-                         break;
-                    }
-                    kh_val(long_refs, k2) = ln;
-                    kh_val(d, k) = ((int64_t) (kh_size(d) - 1) << 32
-                                    | UINT32_MAX);
-                } else {
-                    kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
-                }
-                has_SQ = 1;
-            }
-
-            e |= kputs("@SQ\tSN:", &str) < 0;
-            e |= kputsn(line.s, tab - line.s, &str) < 0;
-            e |= kputs("\tLN:", &str) < 0;
-            e |= kputll(ln, &str) < 0;
-            e |= kputc('\n', &str) < 0;
-            if (e)
-                break;
-        }
-
-        ks_free(&line);
-        if (hclose(f) != 0) {
-            hts_log_error("Error on closing %s", fai_fn);
-            e = 1;
-        }
-        if (e)
-            goto error;
+    if (sam_hdr_build_from_sam_file(h, fp) != 0) {
+        sam_hdr_destroy(h);
+        return NULL;
     }
 
-    if (has_SQ) {
-        // Populate the targets array
-        h->n_targets = kh_size(d);
-
-        h->target_name = (char**) malloc(sizeof(char*) * h->n_targets);
-        if (!h->target_name) {
-            h->n_targets = 0;
-            goto error;
-        }
-
-        h->target_len = (uint32_t*) malloc(sizeof(uint32_t) * h->n_targets);
-        if (!h->target_len) {
-            h->n_targets = 0;
-            goto error;
-        }
-
-        for (k = kh_begin(d); k != kh_end(d); ++k) {
-            if (!kh_exist(d, k))
-                continue;
-
-            h->target_name[kh_val(d, k) >> 32] = (char*) kh_key(d, k);
-            h->target_len[kh_val(d, k) >> 32] = kh_val(d, k) & 0xffffffffUL;
-            kh_val(d, k) >>= 32;
-        }
-    }
-
-    // Repurpose sdict to hold any references longer than UINT32_MAX
-    h->sdict = long_refs;
-
-    kh_destroy(s2i, d);
-
-    if (str.l == 0)
-        kputsn("", 0, &str);
-    h->l_text = str.l;
-    h->text = ks_release(&str);
+    if (fp->bam_header)
+        sam_hdr_destroy(fp->bam_header);
     fp->bam_header = sam_hdr_sanitise(h);
     fp->bam_header->ref_count = 1;
 
     return fp->bam_header;
-
- error:
-    if (h && d && (!h->target_name || !h->target_len)) {
-        for (k = kh_begin(d); k != kh_end(d); ++k)
-            if (kh_exist(d, k)) free((void *)kh_key(d, k));
-    }
-    sam_hdr_destroy(h);
-    ks_free(&str);
-    kh_destroy(s2i, d);
-    kh_destroy(s2i, long_refs);
-    if (sn) free(sn);
-    return NULL;
 }
 
 sam_hdr_t *sam_hdr_read(htsFile *fp)
 {
+    sam_hdr_t *h = NULL;
     if (!fp) {
         errno = EINVAL;
         return NULL;
@@ -2199,13 +1927,16 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
 
     switch (fp->format.format) {
     case bam:
-        return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
+        h = sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
+        break;
 
     case cram:
-        return sam_hdr_sanitise(sam_hdr_dup(fp->fp.cram->header));
+        h = sam_hdr_sanitise(sam_hdr_dup(fp->fp.cram->header));
+        break;
 
     case sam:
-        return sam_hdr_create(fp);
+        h = sam_hdr_create(fp);
+        break;
 
     case fastq_format:
     case fasta_format:
@@ -2219,6 +1950,13 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         errno = EFTYPE;
         return NULL;
     }
+    //only sam,bam and cram reaches here
+    if (h && !fp->bam_header) { //set except for sam which already has it
+        //for cram, it is the o/p header as for rest and not the internal header
+        fp->bam_header = h;
+        sam_hdr_incr_ref(fp->bam_header);
+    }
+    return h;
 }
 
 int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
@@ -2316,11 +2054,20 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
     case fastq_format:
     case fasta_format:
         // Nothing to output; FASTQ has no file headers.
+        return 0;
         break;
 
     default:
         errno = EBADF;
         return -1;
+    }
+    //only sam,bam and cram reaches here
+    if (h) {    //the new header
+        sam_hdr_t *tmp = fp->bam_header;
+        fp->bam_header = sam_hdr_dup(h);
+        sam_hdr_destroy(tmp);
+        if (!fp->bam_header && h)
+            return -1;  //failed to duplicate
     }
     return 0;
 }
@@ -2418,6 +2165,39 @@ int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
     }
     return sam_hdr_rebuild(h);
 }
+
+/* releases existing header and sets new one; increments ref count if not
+duplicating */
+int sam_hdr_set(samFile *fp, sam_hdr_t *h, int duplicate)
+{
+    if (!fp)
+        return -1;
+
+    if (duplicate) {
+        sam_hdr_t *tmp = fp->bam_header;
+        fp->bam_header = sam_hdr_dup(h);
+        sam_hdr_destroy(tmp);
+        if (!fp->bam_header && h)
+            return -1;  //duplicate failed
+    } else {
+        if (fp->bam_header != h) {  //if not the same
+            sam_hdr_destroy(fp->bam_header);
+            fp->bam_header = h;
+            sam_hdr_incr_ref(fp->bam_header);
+        }
+    }
+
+    return 0;
+}
+
+//return the bam_header, user has to use sam_hdr_incr_ref where ever required
+sam_hdr_t* sam_hdr_get(samFile* fp)
+{
+    if (!fp)
+        return NULL;
+    return fp->bam_header;
+}
+
 /**********************
  *** SAM record I/O ***
  **********************/
@@ -3976,6 +3756,7 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     return 0;
 }
 
+#define UMI_TAGS 5
 typedef struct {
     kstring_t name;
     kstring_t comment; // NB: pointer into name, do not free
@@ -3985,9 +3766,11 @@ typedef struct {
     int aux;
     int rnum;
     char BC[3];         // aux tag ID for barcode
+    char UMI[UMI_TAGS][3]; // aux tag list for UMIs.
     khash_t(tag) *tags; // which aux tags to use (if empty, use all).
     char nprefix;
     int sra_names;
+    regex_t regex;
 } fastq_state;
 
 // Initialise fastq state.
@@ -3998,6 +3781,12 @@ static fastq_state *fastq_state_init(int name_char) {
         return NULL;
     strcpy(x->BC, "BC");
     x->nprefix = name_char;
+    // Default Illumina naming convention
+    char *re = "^[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:([^:#/]+)";
+    if (regcomp(&x->regex, re, REG_EXTENDED) != 0) {
+        free(x);
+        return NULL;
+    }
 
     return x;
 }
@@ -4010,6 +3799,7 @@ void fastq_state_destroy(htsFile *fp) {
         ks_free(&x->name);
         ks_free(&x->seq);
         ks_free(&x->qual);
+        regfree(&x->regex);
         free(fp->state);
     }
 }
@@ -4067,6 +3857,52 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
         va_end(args);
         strncpy(x->BC, bc, 2);
         x->BC[2] = 0;
+        break;
+    }
+
+    case FASTQ_OPT_UMI: {
+        // UMI tag: an empty string disables UMI by setting x->UMI[0] to \0\0\0
+        va_start(args, opt);
+        char *bc = va_arg(args, char *), *bc_orig = bc;
+        va_end(args);
+        if (!bc || strcmp(bc, "1") == 0)
+            bc = "RX";
+        int ntags = 0, err = 0;
+        for (ntags = 0; *bc && ntags < UMI_TAGS; ntags++) {
+            if (!isalpha(bc[0]) || !isalnum_c(bc[1])) {
+                err = 1;
+                break;
+            }
+
+            strncpy(x->UMI[ntags], bc, 3);
+            bc += 2;
+            if (*bc && *bc != ',') {
+                err = 1;
+                break;
+            }
+            bc+=(*bc==',');
+            x->UMI[ntags][2] = 0;
+        }
+        for (; ntags < UMI_TAGS; ntags++)
+            x->UMI[ntags][0] = x->UMI[ntags][1] = x->UMI[ntags][2] = 0;
+
+
+        if (err)
+            hts_log_warning("Bad UMI tag list '%s'", bc_orig);
+
+        break;
+    }
+
+    case FASTQ_OPT_UMI_REGEX: {
+        va_start(args, opt);
+        char *re = va_arg(args, char *);
+        va_end(args);
+
+        regfree(&x->regex);
+        if (regcomp(&x->regex, re, REG_EXTENDED) != 0) {
+            hts_log_error("Regular expression '%s' is not supported", re);
+            return -1;
+        }
         break;
     }
 
@@ -4182,6 +4018,43 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         x->name.s[x->name.l-=2] = 0;
     }
 
+    // Strip Illumina formatted UMI off read-name
+    char UMI_seq[256]; // maximum length in spec
+    size_t UMI_len = 0;
+    if (x->UMI[0][0]) {
+        regmatch_t match[3];
+        if (regexec(&x->regex, x->name.s, 2, match, 0) == 0
+            && match[0].rm_so >= 0     // whole regex
+            && match[1].rm_so >= 0) {  // bracketted UMI component
+            UMI_len = match[1].rm_eo - match[1].rm_so;
+            if (UMI_len > 255) {
+                hts_log_error("SAM read name is too long");
+                return -2;
+            }
+
+            // The SAMTags spec recommends (but not requires) separating
+            // barcodes with hyphen ('-').
+            size_t i;
+            for (i = 0; i < UMI_len; i++)
+                UMI_seq[i] = isalpha_c(x->name.s[i+match[1].rm_so])
+                    ? x->name.s[i+match[1].rm_so]
+                    : '-';
+
+            // Move any trailing #num earlier in the name
+            if (UMI_len) {
+                UMI_seq[UMI_len++] = 0;
+
+                x->name.l = match[1].rm_so;
+                if (x->name.l > 0 && x->name.s[x->name.l-1] == ':')
+                    x->name.l--; // remove colon too
+                char *cp = x->name.s + match[1].rm_eo;
+                while (*cp)
+                    x->name.s[x->name.l++] = *cp++;
+                x->name.s[x->name.l] = 0;
+            }
+        }
+    }
+
     // Convert to BAM
     ret = bam_set1(b,
                    x->name.s + x->name.l - name, name,
@@ -4192,6 +4065,12 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
                    x->seq.l, x->seq.s, x->qual.s,
                    0);
     if (ret < 0) return -2;
+
+    // Add UMI tag if removed from read-name above
+    if (UMI_len) {
+        if (bam_aux_append(b, x->UMI[0], 'Z', UMI_len, (uint8_t *)UMI_seq) < 0)
+            ret = -2;
+    }
 
     // Identify Illumina CASAVA strings.
     // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
@@ -4534,6 +4413,39 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
     // Name
     if (kputc(x->nprefix, str) == EOF || kputs(bam_get_qname(b), str) == EOF)
         return -1;
+
+    // UMI tag
+    if (x && *x->UMI[0]) {
+        // Temporary copy of '#num' if present
+        char plex[256];
+        size_t len = str->l;
+        while (len && str->s[len] != ':' && str->s[len] != '#')
+            len--;
+
+        if (str->s[len] == '#' && str->l - len < 255) {
+            memcpy(plex, &str->s[len], str->l - len);
+            plex[str->l - len] = 0;
+            str->l = len;
+        } else {
+            *plex = 0;
+        }
+
+        uint8_t *bc = NULL;
+        int n;
+        for (n = 0; !bc && n < UMI_TAGS; n++)
+            bc = bam_aux_get(b, x->UMI[n]);
+        if (bc && *bc == 'Z') {
+            int err = kputc(':', str) < 0;
+            // Replace any non-alpha with '+'
+            while (*++bc)
+                err |= kputc(isalpha_c(*bc) ? toupper_c(*bc) : '+', str) < 0;
+            if (err)
+                return -1;
+        }
+
+        if (*plex && kputs(plex, str) < 0)
+            return -1;
+    }
 
     // /1 or /2 suffix
     if (x && x->rnum && (flag & BAM_FPAIRED)) {

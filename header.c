@@ -36,6 +36,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include "textutils_internal.h"
 #include "header.h"
+#include "htslib/bgzf.h"
+#include "htslib/hfile.h"
+#include "htslib/kseq.h"
 
 // Hash table for removing multiple lines from the header
 KHASH_SET_INIT_STR(rm)
@@ -771,6 +774,224 @@ static int sam_hrecs_rebuild_lines(const sam_hrecs_t *hrecs, kstring_t *ks) {
     return 0;
 }
 
+// Print warnings about known log messages that may have been inadvertently
+// merged into SAM files.
+
+static void known_stderr(const char *tool, const char *advice) {
+    hts_log_warning("SAM file corrupted by embedded %s error/log message", tool);
+    hts_log_warning("%s", advice);
+}
+
+// Look for known log messages that may have been inadvertently merged into SAM
+// files, and print advice on how to avoid the problem if one is spotted.
+
+static void warn_if_known_stderr(const char *line, size_t len) {
+    int ilen = len < INT_MAX ? len : INT_MAX;
+    if (kmemmem(line, ilen, "M::bwa_idx_load_from_disk", 25, NULL) != NULL)
+        known_stderr("bwa", "Use `bwa mem -o file.sam ...` or `bwa sampe -f file.sam ...` instead of `bwa ... > file.sam`");
+    else if (kmemmem(line, ilen, "M::mem_pestat", 13, NULL) != NULL)
+        known_stderr("bwa", "Use `bwa mem -o file.sam ...` instead of `bwa mem ... > file.sam`");
+    else if (kmemmem(line, ilen, "loaded/built the index", 22, NULL) != NULL)
+        known_stderr("minimap2", "Use `minimap2 -o file.sam ...` instead of `minimap2 ... > file.sam`");
+}
+
+// Parse a CO line
+// Returns 0 on failure; line length (>= 1) on success
+static size_t parse_comment_line(const char *hdr, size_t len, size_t lno,
+                                 sam_hrecs_t *hrecs, sam_hrec_type_t *h_type) {
+    size_t j;
+    sam_hrec_tag_t *h_tag;
+
+    if (len == 0 || hdr[0] != '\t') {
+        sam_hrecs_error("Missing tab", hdr, len, lno);
+        warn_if_known_stderr(hdr, len);
+        return 0;
+    }
+
+    for (j = 1; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
+        ;
+
+    if (!(h_type->tag = h_tag = pool_alloc(hrecs->tag_pool)))
+        return -1;
+    h_tag->str = string_ndup(hrecs->str_pool, hdr + 1, j - 1);
+    h_tag->len = j - 1;
+    h_tag->next = NULL;
+    if (!h_tag->str)
+        return 0;
+    return j;
+}
+
+// Parse header lines other than CO
+// Returns 0 on failure; line length (>= 1) on success
+static size_t parse_noncomment_line(const char *hdr, size_t len, size_t lno,
+                                    sam_hrecs_t *hrecs, sam_hrec_type_t *h_type,
+                                    khint_t *sq_count, khint_t *an_count) {
+    size_t i = 0;
+    sam_hrec_tag_t *h_tag, *last = NULL;
+    int is_sq = h_type->type == TYPEKEY("SQ");
+
+    // Count reference name
+    if (is_sq)
+        (*sq_count)++;
+
+    do {
+        size_t j;
+
+        if (i == len || hdr[i] != '\t') {
+            sam_hrecs_error("Missing tab", hdr, len, lno);
+            warn_if_known_stderr(hdr, len);
+            return 0;
+        }
+
+        for (j = ++i;
+             j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t';
+             j++)
+            ;
+
+        if (j - i < 3 || hdr[i + 2] != ':') {
+            sam_hrecs_error("Malformed key:value pair", hdr, len, lno);
+            warn_if_known_stderr(hdr, len);
+            return 0;
+        }
+
+        // Count alternate names
+        if (is_sq && hdr[i] == 'A' && hdr[i + 1] == 'N') {
+            size_t k;
+            (*an_count)++;
+            for (k = i + 2; k < j; k++)
+                (*an_count) += hdr[k] == ',';
+        }
+
+        if (!(h_tag = pool_alloc(hrecs->tag_pool)))
+            return 0;
+        h_tag->str = string_ndup(hrecs->str_pool, &hdr[i], j-i);
+        h_tag->len = j-i;
+        h_tag->next = NULL;
+        if (!h_tag->str)
+            return 0;
+
+        if (last)
+            last->next = h_tag;
+        else
+            h_type->tag = h_tag;
+
+        last = h_tag;
+        i = j;
+    } while (i < len && hdr[i] != '\0' && hdr[i] != '\n');
+
+    return i;
+}
+
+/** Parse a single header line.
+ * @param         hrecs        Destination sam_hrecs_t struct
+ * @param         hdr          Data to parse
+ * @param         len          Size of @p hdr
+ * @param         lno          Line number, for error / warning messages
+ * @param[out]    line_len_out Returned length of parsed line
+ * @param[in,out] sq_count     Count of SQ lines seen so far
+ * @param[in,out] an_count     Count of alternate names seen so far
+ *
+ * Used by sam_hrecs_parse_lines() and sam_hdr_build_from_sam_file(),
+ * so has to be able to deal with lines that are not NUL terminated.
+ * A single line pointed to by @ph hdr will be parsed into @p hrecs.
+ * @p len gives the size of @p hdr, which may include more than one line
+ * if called from sam_hrecs_parse_lines(). The length of the parsed line
+ * is returned in @p line_len_out.
+ * @p sq_count and @p an_count are pointers to the number of SQ lines
+ * (i.e. references), and the number of alternate names.  These are used
+ * by the caller to set the sizes of the sam_hrecs_t::ref array and
+ * sam_hrecs_t::ref_hash table once all the lines have been parsed.
+ */
+
+static sam_hrec_type_t * sam_hrecs_parse_single_line(sam_hrecs_t *hrecs,
+                                                     const char *hdr,
+                                                     size_t len, size_t lno,
+                                                     size_t *line_len_out,
+                                                     khint_t *sq_count,
+                                                     khint_t *an_count) {
+    int new;
+    khint32_t type;
+    khint_t k;
+    sam_hrec_type_t *h_type;
+    size_t line_len = 0;
+
+    if (hdr[0] != '@') {
+        sam_hrecs_error("Header line does not start with '@'",
+                        hdr, len, lno);
+        return NULL;
+    }
+
+    if (!isalpha_c(hdr[1]) || !isalpha_c(hdr[2])) {
+        sam_hrecs_error("Header line does not have a two character key",
+                        hdr, len, lno);
+        return NULL;
+    }
+    type = TYPEKEY(&hdr[1]);
+
+    if (len < 3 || hdr[3] == '\n')
+        return NULL;
+
+    // Add the header line type
+    if (!(h_type = pool_alloc(hrecs->type_pool)))
+        return NULL;
+
+    h_type->tag = NULL;
+
+    k = kh_put(sam_hrecs_t, hrecs->h, type, &new);
+    if (new < 0)
+        goto error;
+
+    h_type->type = type;
+
+    // Parse the tags on this line
+    if (type == TYPEKEY("CO")) {
+
+        line_len = parse_comment_line(hdr + 3, len - 3, lno,
+                                      hrecs, h_type);
+        if (line_len == 0) // Failed
+            goto error;
+
+    } else {
+
+        line_len = parse_noncomment_line(hdr + 3, len - 3, lno,
+                                         hrecs, h_type,
+                                         sq_count, an_count);
+        if (line_len == 0) // Failed
+            goto error;
+    }
+
+    // Add to end of global list
+    sam_hrecs_global_list_add(hrecs, h_type, NULL);
+
+    // Form the ring, either with self or other lines of this type
+    if (!new) {
+        sam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
+        p = t->prev;
+
+        assert(p->next == t);
+        p->next = h_type;
+        h_type->prev = p;
+
+        t->prev = h_type;
+        h_type->next = t;
+    } else {
+        kh_val(hrecs->h, k) = h_type;
+        h_type->prev = h_type->next = h_type;
+    }
+
+    if (line_len_out)
+        *line_len_out = line_len + 3;
+    return h_type;
+
+ error:
+    // Tidy up as best we can
+    sam_hrecs_free_tags(hrecs, h_type->tag);
+    pool_free(hrecs->type_pool, h_type);
+    return NULL;
+}
+
+// Parse complete header into a sam_hrecs_t structure
+
 static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len) {
     size_t i, lno;
 
@@ -786,125 +1007,62 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
         return -1;
     }
 
-    for (i = 0, lno = 1; i < len - 3 && hdr[i] != '\0'; i++, lno++) {
-        khint32_t type;
-        khint_t k;
+    sam_hrec_type_t *first_h_type = NULL;
+    sam_hrec_type_t *last_h_type = NULL;
+    khint_t sq_count = 0, an_count = 0;
+    size_t line_len = 0;
 
-        int l_start = i, new;
+    for (i = 0, lno = 1; i < len - 3 && hdr[i] != '\0'; lno++) {
         sam_hrec_type_t *h_type;
-        sam_hrec_tag_t *h_tag, *last;
-
-        if (hdr[i] != '@') {
-            sam_hrecs_error("Header line does not start with '@'",
-                          &hdr[l_start], len - l_start, lno);
+        h_type = sam_hrecs_parse_single_line(hrecs, &hdr[i], len - i,
+                                             lno, &line_len,
+                                             &sq_count, &an_count);
+        if (!h_type)
             return -1;
+
+        i += line_len + 1;
+
+        // Keep track of first / last new record so they can be passed to
+        // sam_hrecs_update_hashes() below.  Ignore HD as it may be stored
+        // out of order (it always goes at the start) and
+        // sam_hrecs_update_hashes() does nothing with HD.
+        if (h_type->type != TYPEKEY("HD")) {
+            if (!first_h_type)
+                first_h_type = h_type;
+            last_h_type = h_type;
         }
-
-        if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
-            sam_hrecs_error("Header line does not have a two character key",
-                          &hdr[l_start], len - l_start, lno);
-            return -1;
-        }
-        type = TYPEKEY(&hdr[i+1]);
-
-        i += 3;
-        if (i == len || hdr[i] == '\n')
-            continue;
-
-        // Add the header line type
-        if (!(h_type = pool_alloc(hrecs->type_pool)))
-            return -1;
-        k = kh_put(sam_hrecs_t, hrecs->h, type, &new);
-        if (new < 0)
-            return -1;
-
-        h_type->type = type;
-
-        // Add to end of global list
-        sam_hrecs_global_list_add(hrecs, h_type, NULL);
-
-        // Form the ring, either with self or other lines of this type
-        if (!new) {
-            sam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
-            p = t->prev;
-
-            assert(p->next == t);
-            p->next = h_type;
-            h_type->prev = p;
-
-            t->prev = h_type;
-            h_type->next = t;
-        } else {
-            kh_val(hrecs->h, k) = h_type;
-            h_type->prev = h_type->next = h_type;
-        }
-
-        // Parse the tags on this line
-        last = NULL;
-        if (type == TYPEKEY("CO")) {
-            size_t j;
-
-            if (i == len || hdr[i] != '\t') {
-                sam_hrecs_error("Missing tab",
-                              &hdr[l_start], len - l_start, lno);
-                return -1;
-            }
-
-            for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
-                ;
-
-            if (!(h_type->tag = h_tag = pool_alloc(hrecs->tag_pool)))
-                return -1;
-            h_tag->str = string_ndup(hrecs->str_pool, &hdr[i], j-i);
-            h_tag->len = j-i;
-            h_tag->next = NULL;
-            if (!h_tag->str)
-                return -1;
-
-            i = j;
-
-        } else {
-            do {
-                size_t j;
-
-                if (i == len || hdr[i] != '\t') {
-                    sam_hrecs_error("Missing tab",
-                                  &hdr[l_start], len - l_start, lno);
-                    return -1;
-                }
-
-                for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t'; j++)
-                    ;
-
-                if (j - i < 3 || hdr[i + 2] != ':') {
-                    sam_hrecs_error("Malformed key:value pair",
-                                   &hdr[l_start], len - l_start, lno);
-                    return -1;
-                }
-
-                if (!(h_tag = pool_alloc(hrecs->tag_pool)))
-                    return -1;
-                h_tag->str = string_ndup(hrecs->str_pool, &hdr[i], j-i);
-                h_tag->len = j-i;
-                h_tag->next = NULL;
-                if (!h_tag->str)
-                    return -1;
-
-                if (last)
-                    last->next = h_tag;
-                else
-                    h_type->tag = h_tag;
-
-                last = h_tag;
-                i = j;
-            } while (i < len && hdr[i] != '\0' && hdr[i] != '\n');
-        }
-
-        /* Update RG/SQ hashes */
-        if (-1 == sam_hrecs_update_hashes(hrecs, type, h_type))
-            return -1;
     }
 
+    // Reserve space in hash tables and refs array
+    if (sq_count) {
+        // It's possible that some entries are already in the hash table,
+        // e.g. via sam_hrecs_refs_from_targets_array(), so only reserve
+        // space beyond what's already there.
+        khint_t ref_name_count = sq_count + an_count;
+        khint_t sz = kh_size(hrecs->ref_hash);
+        if (ref_name_count > sz
+            && kh_grow_to_fit(m_s2i, hrecs->ref_hash, ref_name_count - sz) < 0)
+            return -1;
+
+        if (hrecs->ref_sz < sq_count) {
+            sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
+                                             sizeof(*hrecs->ref) * sq_count);
+            if (!new_ref)
+                return -1;
+            hrecs->ref = new_ref;
+            hrecs->ref_sz = sq_count;
+        }
+    }
+
+    // Update RG/SQ/PG hashes
+    if (first_h_type) {
+        sam_hrec_type_t *h_type = first_h_type->global_prev;
+        do {
+            h_type = h_type->global_next;
+            if (-1 == sam_hrecs_update_hashes(hrecs, h_type->type, h_type))
+                return -1;
+        } while (h_type != last_h_type);
+    }
     return 0;
 }
 
@@ -1045,6 +1203,9 @@ static int sam_hrecs_refs_from_targets_array(sam_hrecs_t *hrecs,
         hrecs->ref_sz = bh->n_targets;
     }
 
+    if (kh_grow_to_fit(m_s2i, hrecs->ref_hash, bh->n_targets) != 0)
+        goto fail;
+
     for (tid = 0; tid < bh->n_targets; tid++) {
         khint_t k;
         int r;
@@ -1157,6 +1318,206 @@ int sam_hdr_fill_hrecs(sam_hdr_t *bh) {
         return -1;
 
     return 0;
+}
+
+// Check header type is valid according to the SAM specification
+
+static int valid_sam_header_type(const char *s) {
+    if (s[0] != '@') return 0;
+    switch (s[1]) {
+    case 'H':
+        return s[2] == 'D' && s[3] == '\t';
+    case 'S':
+        return s[2] == 'Q' && s[3] == '\t';
+    case 'R':
+    case 'P':
+        return s[2] == 'G' && s[3] == '\t';
+    case 'C':
+        return s[2] == 'O';
+    }
+    return 0;
+}
+
+/** Populate sam_hdr_t from SAM file content
+ *
+ * @param hdr empty header struct to be filled
+ * @param fp  File to read from
+ * @return 0 on success
+ *        -1 on failure
+ *
+ * This function is used to build the header structure when reading SAM files.
+ * The lines read from the file are used to create sam_hrecs_t structures.
+ * The function also populates sam_hdr_t::text, sam_hdr_t::l_text,
+ * sam_hdr_t::target_name and sam_hdr_t::target_len.
+ */
+int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
+    kstring_t str = { 0, 0, NULL };
+    int ret;
+    int next_c = '@';
+    sam_hrec_type_t *first_h_type = NULL;
+    sam_hrec_type_t *last_h_type = NULL;
+    sam_hrecs_t *hrecs = sam_hrecs_new();
+    size_t lno = 0;
+    khint_t sq_count = 0, an_count = 0;
+
+    if (!hrecs)
+        return -1;
+
+    hdr->hrecs = hrecs;
+
+    while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
+        sam_hrec_type_t *h_type;
+
+        lno++;
+        if (!fp->line.s || fp->line.s[0] != '@')
+            break;
+
+        if (fp->line.l < 3
+            || !isalpha_c(fp->line.s[1]) || !isalpha_c(fp->line.s[2])) {
+            sam_hrecs_error("Header line does not have a two character key",
+                            fp->line.s, fp->line.l, lno);
+            goto error;
+        }
+
+        if (fp->line.l == 3 && strncmp(fp->line.s, "@CO", 3) == 0) {
+            // HTSlib's original SAM reader let you get away with an untabbed
+            // @CO line
+            kputc('\t', &fp->line);
+        }
+
+        if (!valid_sam_header_type(fp->line.s)) {
+            hts_log_error("Invalid header line: must start with @HD/@SQ/@RG/@PG/@CO");
+            warn_if_known_stderr(fp->line.s, fp->line.l);
+            goto error;
+        }
+
+        h_type = sam_hrecs_parse_single_line(hrecs, fp->line.s, fp->line.l,
+                                             lno, NULL, &sq_count, &an_count);
+        if (!h_type)
+            goto error;
+
+        if (h_type->type != TYPEKEY("HD")) {
+            if (!first_h_type)
+                first_h_type = h_type;
+            last_h_type = h_type;
+        }
+
+        if (kputsn(fp->line.s, fp->line.l, &str) < 0)
+            goto error;
+
+        if (kputc('\n', &str) < 0)
+            goto error;
+
+        if (fp->is_bgzf) {
+            next_c = bgzf_peek(fp->fp.bgzf);
+        } else {
+            unsigned char nc;
+            ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
+            next_c = pret > 0 ? nc : pret - 1;
+        }
+        if (next_c < -1)
+            goto error;
+    }
+    if (next_c != '@')
+        fp->line.l = 0;
+
+    if (ret < -1)
+        goto error;
+
+    if (sq_count == 0 && fp->fn_aux) {
+        // No @SQ lines found.  Try to get them from the fasta index.
+        kstring_t line = { 0, 0, NULL };
+
+        /* The reference index (.fai) is actually needed here */
+        char *fai_fn = fp->fn_aux;
+        char *fn_delim = strstr(fp->fn_aux, HTS_IDX_DELIM);
+        if (fn_delim)
+            fai_fn = fn_delim + strlen(HTS_IDX_DELIM);
+
+        hFILE* f = hopen(fai_fn, "r");
+        int e = 0;
+        if (f == NULL)
+            goto error;
+
+        while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
+            char* tab = strchr(line.s, '\t');
+            size_t l_start = str.l;
+            sam_hrec_type_t *h_type;
+            hts_pos_t ln;
+
+            if (tab == NULL)
+                continue;
+
+            ln = strtoll(tab, NULL, 10);
+
+            e |= kputs("@SQ\tSN:", &str) < 0;
+            e |= kputsn(line.s, tab - line.s, &str) < 0;
+            e |= kputs("\tLN:", &str) < 0;
+            e |= kputll(ln, &str) < 0;
+            e |= kputc('\n', &str) < 0;
+            if (e)
+                break;
+
+            h_type = sam_hrecs_parse_single_line(hrecs, &str.s[l_start],
+                                                 str.l - l_start,
+                                                 lno, NULL,
+                                                 &sq_count, &an_count);
+            if (!h_type)
+                goto error;
+
+            if (!first_h_type)
+                first_h_type = h_type;
+            last_h_type = h_type;
+        }
+
+        ks_free(&line);
+        if (hclose(f) != 0) {
+            hts_log_error("Error on closing %s", fai_fn);
+            e = 1;
+        }
+        if (e)
+            goto error;
+    }
+
+    // Reserve space in hash tables
+    if (sq_count) {
+        // Hash table should be empty at the moment
+        if (kh_grow_to_fit(m_s2i, hrecs->ref_hash, sq_count + an_count) < 0)
+            goto error;
+
+        if (hrecs->ref_sz < sq_count) {
+            sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
+                                             sizeof(*hrecs->ref) * sq_count);
+            if (!new_ref)
+                goto error;
+            hrecs->ref = new_ref;
+            hrecs->ref_sz = sq_count;
+        }
+    }
+
+    // Update RG/SQ/PG hashes
+    if (first_h_type) {
+        sam_hrec_type_t *h_type = first_h_type->global_prev;
+        do {
+            h_type = h_type->global_next;
+            if (-1 == sam_hrecs_update_hashes(hrecs, h_type->type, h_type))
+                goto error;
+        } while (h_type != last_h_type);
+    }
+
+    if (str.l == 0)
+        kputsn("", 0, &str);
+    hdr->l_text = str.l;
+    hdr->text = ks_release(&str);
+
+    if (sam_hdr_update_target_arrays(hdr, hrecs, 0) < 0)
+        goto error;
+
+    return 0;
+
+ error:
+    ks_free(&str);
+    return -1;
 }
 
 /** Remove outdated header text

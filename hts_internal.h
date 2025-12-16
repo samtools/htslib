@@ -1,6 +1,6 @@
 /*  hts_internal.h -- internal functions; not part of the public API.
 
-    Copyright (C) 2015-2016, 2018-2020 Genome Research Ltd.
+    Copyright (C) 2015-2016, 2018-2020, 2025 Genome Research Ltd.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -47,6 +47,19 @@ struct hts_json_token {
 };
 
 struct cram_fd;
+
+/*
+ * Adjust CSI index parameters to support max_len_in bases
+ *
+ * @param max_len_in         Maximum position to be indexed
+ * @param min_shift_[in,out] min_shift parameter
+ * @param n_lvls_[in,out]    n_lvls parameter
+ *
+ * Adjusts *n_lvls_ (preferred) or *min_shift_ so that the resulting values
+ * can be passed to hts_idx_init(, HTS_FMT_CSI, ...) in order to make an
+ * index that can store positions up to max_len_in bases.
+ */
+void hts_adjust_csi_settings(int64_t max_len_in, int *min_shift_, int *n_lvls_);
 
 /*
  * Check the existence of a local index file using part of the alignment file name.
@@ -147,6 +160,40 @@ static inline int hts_usleep(long long usec)
 {
     struct timespec req = { usec / 1000000, (usec % 1000000) * 1000 };
     return nanosleep(&req, NULL);
+}
+
+/*!
+  @abstract   Is SVLEN the reference length for a VCF ALT allele?
+  @param alt  ALT allele
+  @param size Length of @p alt; -1 if not known
+  @return     1 if yes; 0 if not.
+
+  This is used when reading VCF and in tabix to check if SVLEN should be taken
+  into account when working out the reference length.  It should if the
+  ALT allele is a symbolic one of type CNV, DEL, DUP or INV, plus
+  sub-types like <CNV:TR> or <DEL:ME>.
+
+  @p alt does not have to be NUL-terminated, but if not @p size should be
+  greater than of equal to zero.  If @p is less than zero, @p alt must be
+  NUL-terminated.
+*/
+
+static inline int svlen_on_ref_for_vcf_alt(const char *alt, int32_t size)
+{
+    size_t sz;
+    if (*alt != '<') // Check if ALT is symbolic
+        return 0;
+    sz = size >= 0 ? (size_t) size : strlen(alt);
+    if (sz < 5)      // Reject if not long enough
+        return 0;
+    if (alt[4] != '>' && alt[4] != ':')  // Reject if too long
+        return 0;
+    if (memcmp(alt, "<CNV", 4) != 0     // Copy-number variation
+        && memcmp(alt, "<DEL", 4) != 0  // Deletion
+        && memcmp(alt, "<DUP", 4) != 0  // Duplication
+        && memcmp(alt, "<INV", 4) != 0) // Inversion
+        return 0;
+    return alt[sz - 1] == '>' ? 1 : 0; // Check symbolic allele ends correctly
 }
 
 #ifdef __cplusplus

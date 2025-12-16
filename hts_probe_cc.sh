@@ -2,7 +2,7 @@
 
 # Check compiler options for non-configure builds and create Makefile fragment
 #
-#    Copyright (C) 2022-2024 Genome Research Ltd.
+#    Copyright (C) 2022-2025 Genome Research Ltd.
 #
 #    Author: Rob Davies <rmd@sanger.ac.uk>
 #
@@ -60,9 +60,11 @@ run_test ()
     rm -f conftest conftest.err conftest.c
     cat - > conftest.c
     if run_compiler ; then
-        echo "$2 ="
+        if test "x$2" != x ; then
+            echo "$2 ="
+        fi
         echo "$3 = 1"
-    elif run_compiler "$1" ; then
+    elif test "x$1" != x && run_compiler "$1" ; then
         echo "$2 = $1"
         echo "$3 = 1"
     else
@@ -134,6 +136,31 @@ int main(int argc, char **argv) {
     __m256i c = _mm512_castsi512_si256(b);
     __m256i d = _mm512_extracti64x4_epi64(a, 1);
     return _mm_popcnt_u32(*((char *) &c)) + (*(char *) &d);
+}
+#else
+int main(int argc, char **argv) { return 0; }
+#endif
+EOF
+
+# Check for __builtin_cpu_supports("ssse3") and __attribute__((target("ssse3")))
+
+run_test '' '' HTS_HAVE_SSSE3_BUILTINS <<'EOF'
+#ifdef __x86_64__
+#include "x86intrin.h"
+__attribute__((target("ssse3")))
+static void shuffle(char *aptr, char *bptr) {
+    if (__builtin_cpu_supports("ssse3")) {
+        __m128i a = _mm_lddqu_si128((__m128i *)aptr);
+        __m128i b = _mm_shuffle_epi8(a, a);
+        _mm_storeu_si128((__m128i *)bptr, b);
+    }
+}
+
+int main(int argc, char **argv) {
+    char in[sizeof(__m128i)] = { 0 }, out[sizeof(__m128i)] = { 0 };
+    in[0] = argv[0][0];
+    shuffle(in, out);
+    return out[0];
 }
 #else
 int main(int argc, char **argv) { return 0; }

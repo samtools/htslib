@@ -264,7 +264,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     }
     //get idx name and pass to add_hreader
     idxname = strstr(fname, HTS_IDX_DELIM);
-    idxname += idxname ? sizeof(HTS_IDX_DELIM) - 1 : 0;
+    if (idxname) idxname += strlen(HTS_IDX_DELIM);
     if (!(ret = bcf_sr_add_hreader(files, file_ptr, 1, idxname))) {
         hts_close(file_ptr);    //failed, close the file
     }

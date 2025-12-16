@@ -84,6 +84,9 @@ P r2-q.sam $tview -i fastq_aux r2.fa
 P name2.sam $tview -i fastq_name2 name2.fq
 P name2-q.sam $tview -i fastq_name2 name2.fa
 
+# UMI barcodes
+P UMI.sam $tview -i fastq_umi=RX UMI.fq
+
 # --------------------
 # Writing
 
@@ -114,3 +117,6 @@ P r1.fq $tview -f -o fastq_aux -o fastq_rnum r1.sam
 P r2.fq $tview -f -o fastq_aux -o fastq_rnum r2.sam
 P r1.fa $tview -F -o fastq_aux -o fastq_rnum r1.sam
 P r2.fa $tview -F -o fastq_aux -o fastq_rnum r2.sam
+
+# UMI barcodes
+P UMI.fq $tview -f -o fastq_rnum -o fastq_umi UMI.sam
