@@ -650,3 +650,15 @@ HTSLIB_1.21 {
     cram_num_containers;
     cram_num_containers_between;
 } HTSLIB_1.20;
+
+HTSLIB_1.22 {
+    bcf_format_gt_v2;
+    bcf_sr_add_hreader;
+    hts_crc32;
+    hts_tpool_worker_id;
+} HTSLIB_1.21;
+
+HTSLIB_1.23 {
+    sam_hdr_get;
+    sam_hdr_set;
+} HTSLIB_1.22;
