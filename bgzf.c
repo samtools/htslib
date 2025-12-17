@@ -2467,6 +2467,9 @@ int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     if (fp->idx == NULL) goto fail;
     uint64_t x;
     if (hread_uint64(&x, idx) < 0) goto fail;
+    if (x >= ((SIZE_MAX < UINT64_MAX ? SIZE_MAX : UINT64_MAX)
+              / sizeof(bgzidx1_t) / 2))
+        goto fail;
 
     fp->idx->noffs = fp->idx->moffs = x + 1;
     fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
