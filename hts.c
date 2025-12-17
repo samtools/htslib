@@ -2027,6 +2027,11 @@ off_t hts_utell(htsFile *fp)
         return htell(fp->fp.hfile);
 }
 
+// Wrap hgetln() with a kgets_func2 signature for kgetline2()
+static ssize_t hgetln_wrapper(char *buf, size_t len, void *vfp) {
+    return hgetln(buf, len, (hFILE *) vfp);
+}
+
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 {
     int ret;
@@ -2038,7 +2043,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
     switch (fp->format.compression) {
     case no_compression:
         str->l = 0;
-        ret = kgetline2(str, (kgets_func2 *) hgetln, fp->fp.hfile);
+        ret = kgetline2(str, hgetln_wrapper, fp->fp.hfile);
         if (ret >= 0) ret = (str->l <= INT_MAX)? (int) str->l : INT_MAX;
         else if (herrno(fp->fp.hfile)) ret = -2, errno = herrno(fp->fp.hfile);
         else ret = -1;

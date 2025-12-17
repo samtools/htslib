@@ -1022,7 +1022,7 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
                              int *tid, hts_pos_t *beg, hts_pos_t *end,
                              int flags)
 {
-    return hts_parse_region(s, tid, beg, end, (hts_name2id_f)fai_name2id, (void *)fai, flags);
+    return hts_parse_region(s, tid, beg, end, fai_name2id, (void *)fai, flags);
 }
 
 void fai_set_cache_size(faidx_t *fai, int cache_size) {

@@ -297,6 +297,19 @@ char *hgets(char *buffer, int size, hFILE *fp)
     return hgetln(buffer, size, fp) > 0 ? buffer : NULL;
 }
 
+// Wrap around hgets() to get the right signature for kgets_func
+static char *hgets_wrapper(char *buffer, int size, void *fp)
+{
+    return hgets(buffer, size, (hFILE *) fp);
+}
+
+int khgetline(struct kstring_t *kstr, hFILE *fp)
+{
+    if (!kstr || !fp)
+        return EOF;
+    return kgetline(kstr, hgets_wrapper, fp);
+}
+
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)
 {
     size_t n = fp->end - fp->begin;
