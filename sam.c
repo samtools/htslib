@@ -414,9 +414,14 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
     return 0;
 }
 
+// Wrap around bam_name2id() to get the right signature for hts_name2id_f
+static int bam_name2id_wrapper(void *vhdr, const char *ref) {
+    return bam_name2id((sam_hdr_t *) vhdr, ref);
+}
+
 const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
                              hts_pos_t *beg, hts_pos_t *end, int flags) {
-    return hts_parse_region(s, tid, beg, end, (hts_name2id_f)bam_name2id, h, flags);
+    return hts_parse_region(s, tid, beg, end, bam_name2id_wrapper, h, flags);
 }
 
 /*************************
@@ -1755,7 +1760,7 @@ static int cram_name2id(void *fdv, const char *ref)
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr,
+    return hts_itr_querys(idx, region, bam_name2id_wrapper, hdr,
                           cidx->fmt == HTS_FMT_CRAI ? cram_itr_query : hts_itr_query,
                           sam_readrec);
 }
@@ -1777,10 +1782,10 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarra
         itr = hts_itr_regions(idx, r_list, r_count, cram_name2id, cidx->cram,
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     } else {
-        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, (hts_name2id_f)(bam_name2id));
+        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, bam_name2id_wrapper);
         if (!r_list)
             return NULL;
-        itr = hts_itr_regions(idx, r_list, r_count, (hts_name2id_f)(bam_name2id), hdr,
+        itr = hts_itr_regions(idx, r_list, r_count, bam_name2id_wrapper, hdr,
                    hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
     }
 
@@ -1801,7 +1806,7 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, sam_hdr_t *hdr, hts_reglist_t *
         return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     else
-        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr,
+        return hts_itr_regions(idx, reglist, regcount, bam_name2id_wrapper, hdr,
                    hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
 }
 

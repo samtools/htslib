@@ -1439,7 +1439,7 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
         if (f == NULL)
             goto error;
 
-        while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
+        while (line.l = 0, khgetline(&line, f) >= 0) {
             char* tab = strchr(line.s, '\t');
             size_t l_start = str.l;
             sam_hrec_type_t *h_type;

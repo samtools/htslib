@@ -290,6 +290,19 @@ int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 	return 0;
 }
 
+// Wrap around fgets to get the right signature for kgets_func
+static char * fgets_wrapper(char *buffer, int size, void *stream)
+{
+    return fgets(buffer, size, (FILE *) stream);
+}
+
+int kfgetline(kstring_t *s, FILE *fp)
+{
+    if (!s || !fp)
+        return EOF;
+    return kgetline(s, fgets_wrapper, fp);
+}
+
 int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
 {
 	size_t l0 = s->l;

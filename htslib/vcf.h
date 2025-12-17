@@ -1318,7 +1318,11 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
 
     #define bcf_itr_destroy(iter) hts_itr_destroy(iter)
     #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
-    #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
+    #define bcf_itr_querys(idx, hdr, s) bcf_itr_querys1((idx), (hdr), (s))
+
+    HTSLIB_EXPORT
+    hts_itr_t *bcf_itr_querys1(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                               const char *region);
 
     static inline int bcf_itr_next(htsFile *htsfp, hts_itr_t *itr, void *r) {
         if (htsfp->is_bgzf)
