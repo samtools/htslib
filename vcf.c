@@ -2618,7 +2618,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
                 hts_log_error("Couldn't open \"%s\"", fp->fn_aux);
                 goto error;
             }
-            while (tmp.l = 0, kgetline(&tmp, (kgets_func *) hgets, f) >= 0) {
+            while (tmp.l = 0, hget_kstr(&tmp, f) >= 0) {
                 char *tab = strchr(tmp.s, '\t');
                 if (tab == NULL) continue;
                 e |= (kputs("##contig=<ID=", &txt) < 0);
@@ -4822,6 +4822,18 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
 int bcf_idx_save(htsFile *fp) {
     return sam_idx_save(fp);
 }
+
+// Wrap around bcf_hdr_name2id() to get the right signature for hts_name2id_f
+static int bcf_hdr_name2id_wrapper(void *vhdr, const char *ref) {
+    return bcf_hdr_name2id((bcf_hdr_t *) vhdr, ref);
+}
+
+hts_itr_t *bcf_itr_querys1(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                           const char *region) {
+    return hts_itr_querys(idx, region, bcf_hdr_name2id_wrapper, hdr,
+                          hts_itr_query, bcf_readrec);
+}
+
 
 /*****************
  *** Utilities ***

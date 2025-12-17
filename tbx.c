@@ -640,3 +640,14 @@ const char **tbx_seqnames(tbx_t *tbx, int *n)
     return names;
 }
 
+// Wrap around tbx_name2id() to get the right signature for hts_name2id_f
+static int tbx_name2id_wrapper(void *vhdr, const char *ref)
+{
+    return tbx_name2id((tbx_t *) vhdr, ref);
+}
+
+hts_itr_t *tbx_itr_querys1(tbx_t *tbx, const char *region)
+{
+    return hts_itr_querys(tbx->idx, region, tbx_name2id_wrapper, tbx,
+                          hts_itr_query, tbx_readrec);
+}
