@@ -325,25 +325,84 @@ int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
 	return 0;
 }
 
+typedef unsigned char ubyte_t;
+
+/**********************
+ * Karp-Rabin search  *
+ **********************/
+
+// Backup solution for when we can't use Boyer-Moore, e.g. due to memory
+// required.  Karp-Rabin only needs to store a couple of hash values
+// so will always complete.
+
+static uint64_t fast_exp(uint64_t x, uint64_t n)
+{
+	uint64_t y = 1;
+	if (n == 0)
+		return 1;
+	while (n > 1) {
+		if (n & 1)
+			y *= x;
+		x *= x;
+		n >>= 1;
+	}
+	return y * x;
+}
+
+static void * karp_rabin(const void *str_, size_t n, const void *pat_, size_t m)
+{
+	const ubyte_t *str = (const ubyte_t *) str_;
+	const ubyte_t *pat = (const ubyte_t *) pat_;
+	const uint64_t b = 31;
+	uint64_t hash_pat = 0;
+	uint64_t hash_str = 0;
+	uint64_t b_to_m = fast_exp(b, m);
+	size_t i;
+	ubyte_t mismatch = 0;
+
+	if (m > n)
+		return NULL;
+
+	// Calculate hash of pat and initial part of str.
+	for (i = 0; i < m; i++) {
+		mismatch |= str[i] ^ pat[i];
+		hash_pat = hash_pat * b + pat[i] + 1U;
+		hash_str = hash_str * b + str[i] + 1U;
+	}
+
+	if (!mismatch) // Match found at start (or m == 0)
+		return (void *) str_;
+
+	for (; i < n; i++) {
+		hash_str = hash_str * b + str[i] + 1U - b_to_m * (str[i - m] + 1U);
+		if (hash_str == hash_pat) {
+			if (memcmp(pat, str + i + 1 - m, m) == 0)
+				return (void *) (str + i + 1 - m);
+		}
+	}
+	return NULL;
+}
+
 /**********************
  * Boyer-Moore search *
  **********************/
 
-typedef unsigned char ubyte_t;
 
 // reference: http://www-igm.univ-mlv.fr/~lecroq/string/node14.html
 static int *ksBM_prep(const ubyte_t *pat, int m)
 {
 	int i, *suff, *prep, *bmGs, *bmBc;
-	prep = (int*)calloc(m + 256, sizeof(int));
-    if (!prep) return NULL;
+	if (m < 1)
+		return NULL;
+	prep = (int*)calloc((size_t) m + 256, sizeof(int));
+	if (!prep) return NULL;
 	bmGs = prep; bmBc = prep + m;
 	{ // preBmBc()
 		for (i = 0; i < 256; ++i) bmBc[i] = m;
 		for (i = 0; i < m - 1; ++i) bmBc[pat[i]] = m - i - 1;
 	}
 	suff = (int*)calloc(m, sizeof(int));
-    if (!suff) { free(prep); return NULL; }
+	if (!suff) { free(prep); return NULL; }
 	{ // suffixes()
 		int f = 0, g;
 		suff[m - 1] = m;
@@ -374,20 +433,36 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 	return prep;
 }
 
-void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
+static void *boyer_moore(const void *str_, size_t n, const void *pat_, int m,
+						 int **stored_prep_ptr)
 {
-	int i, j, *prep = 0, *bmGs, *bmBc;
+	size_t j;
+	int i, *prep = 0, *bmGs, *bmBc;
 	const ubyte_t *str, *pat;
-	str = (const ubyte_t*)_str; pat = (const ubyte_t*)_pat;
-	if (_prep && *_prep) {
-		prep = *_prep;
+
+	if (!str_ || !pat_)
+		return (void *) str_;
+
+	str = (const ubyte_t*) str_;
+	pat = (const ubyte_t*) pat_;
+
+	if (m <= 0) // Empty string always matches at the start
+		return (void *) str_;
+	if (n < m)  // Input shorter than pattern can't match
+		return NULL;
+	if (m == 1) // Switch to memchr for 1 byte patterns (likely faster)
+		return memchr(str, pat[0], n);
+
+	if (stored_prep_ptr && *stored_prep_ptr) {
+		prep = *stored_prep_ptr;
 	} else {
 		prep = ksBM_prep(pat, m);
-		if (!prep) return NULL;
-		if (_prep)
-			*_prep = prep;
+		if (!prep) return karp_rabin(str_, n, pat_, m);
+		if (stored_prep_ptr)
+			*stored_prep_ptr = prep;
 	}
-	bmGs = prep; bmBc = prep + m;
+	bmGs = prep;      // Good-suffix shift array
+	bmBc = prep + m;  // Bad character shift array
 	j = 0;
 	while (j <= n - m) {
 		for (i = m - 1; i >= 0 && pat[i] == str[i+j]; --i);
@@ -395,23 +470,43 @@ void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 			int max = bmBc[str[i+j]] - m + 1 + i;
 			if (max < bmGs[i]) max = bmGs[i];
 			j += max;
-		} else {
-			if (_prep == 0) free(prep);
+		} else { // Match found
+			if (!stored_prep_ptr) free(prep);
 			return (void*)(str + j);
 		}
 	}
-	if (_prep == 0) free(prep);
-	return 0;
+	// No match
+	if (!stored_prep_ptr) free(prep);
+	return NULL;
 }
 
-char *kstrstr(const char *str, const char *pat, int **_prep)
+void *kmemmem(const void *str, int n, const void *pat, int m, int **prep)
 {
-	return (char*)kmemmem(str, strlen(str), pat, strlen(pat), _prep);
+	return boyer_moore(str, n >= 0 ? n : 0, pat, m, prep);
 }
 
-char *kstrnstr(const char *str, const char *pat, int n, int **_prep)
+char *kstrstr(const char *str, const char *pat, int **prep)
 {
-	return (char*)kmemmem(str, n, pat, strlen(pat), _prep);
+	size_t patlen = strlen(pat);
+	if (patlen <= INT_MAX)
+		return (char*)boyer_moore(str, strlen(str), pat, patlen, prep);
+	else
+		return karp_rabin(str, strlen(str), pat, patlen);
+}
+
+char *kstrnstr(const char *str, const char *pat, int n, int **prep)
+{
+	if (!pat || *pat == '\0')
+		return (char *) str;
+	if (n <= 0)
+		return NULL;
+	const char *endp = memchr(str, '\0', n);
+	if (endp != NULL && endp - str < n)
+		n = endp - str;
+	size_t patlen = strlen(pat);
+	if (patlen > n)
+		return NULL;
+	return (char*)boyer_moore(str, n, pat, patlen, prep);
 }
 
 /***********************
