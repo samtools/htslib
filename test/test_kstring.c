@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
@@ -32,6 +33,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <unistd.h>
 
 #include "../htslib/kstring.h"
+
+// Include kstring.c here so we can unit test internal functions.
+#include "../kstring.c"
 
 static inline void clamp(int64_t *val, int64_t min, int64_t max) {
     if (*val < min) *val = min;
@@ -579,6 +583,129 @@ static int test_kinsertstr(void) {
     return 0;
 }
 
+static int test_kmemmem(void) {
+    typedef struct {
+        const char *str;
+        int slen;
+        const char *pat;
+        int plen;
+        ptrdiff_t location;  // location of pat in str, or -1 if not present
+    } kmemmem_dat;
+
+    kmemmem_dat tests[] = {
+        { "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, "f\0\0", 3, 0 },
+        { "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, "\0\0f", 3, 1 },
+        { "\0\0f\0\0f\0\0fbar\0\0f\0\0f", 18, "\0\0f", 3, 0 },
+        { "\0\0f\0\0f\0\0fbar\0\0f\0\0f", 18, "f\0\0", 3, 2 },
+        { "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, "bar", 3, 9 },
+        { "f\0\0f\0\0f\0\0baz\0\0f\0\0f", 18, "bar", 3, -1 },
+        { "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, "", 0, 0 },
+        { "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, "\0\0b", 3, 7 },
+        { "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, "r\0\0", 3, 11 },
+        { "bar", 3, "f\0\0f\0\0f\0\0bar\0\0f\0\0f", 18, -1 },
+        { "", 0, "bar", 3, -1 },
+        { "", 0, "", 0, 0 },
+    };
+
+    size_t i;
+    int pass = 1;
+
+    for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+        char *found = kmemmem(tests[i].str, tests[i].slen,
+                              tests[i].pat, tests[i].plen, NULL);
+        ptrdiff_t loc = found ? found - tests[i].str : -1;
+        if (loc != tests[i].location) {
+            pass = 0;
+            fprintf(stderr,
+                    "kmemmem() test %zd failed - got %lld expected %lld\n",
+                    i, (long long) loc, (long long) tests[i].location);
+        }
+
+        found = karp_rabin(tests[i].str, tests[i].slen,
+                           tests[i].pat, tests[i].plen);
+        loc = found ? found - tests[i].str : -1;
+        if (loc != tests[i].location) {
+            pass = 0;
+            fprintf(stderr,
+                    "karp_rabin() test %zd failed - got %lld expected %lld\n",
+                    i, (long long) loc, (long long) tests[i].location);
+        }
+    }
+
+    return pass ? 0 : -1;
+}
+
+static int test_kstrstr(void) {
+    typedef struct {
+        const char *str;
+        const char *pat;
+        ptrdiff_t location;  // location of pat in str, or -1 if not present
+    } kstrstr_dat;
+
+    kstrstr_dat tests[] = {
+        { "foofoofoobaroofoof", "bar", 9 },
+        { "foofoofoobazoofoof", "bar", -1 },
+        { "foofoofoobaroofoof", "", 0 },
+        { "foofoofoobaroofoof", "oob", 7 },
+        { "foofoofoobaroofoof", "roo", 11 },
+        { "bar", "foofoofoobaroofoof", -1 },
+        { "", "bar", -1 },
+        { "", "", 0 },
+    };
+
+    size_t i;
+    int pass = 1;
+
+    for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+        char *found = kstrstr(tests[i].str, tests[i].pat, NULL);
+        ptrdiff_t loc = found ? found - tests[i].str : -1;
+        if (loc != tests[i].location) {
+            pass = 0;
+            fprintf(stderr,
+                    "kstrstr() test %zd failed - got %lld expected %lld\n",
+                    i, (long long) loc, (long long) tests[i].location);
+        }
+    }
+
+    return pass ? 0 : -1;
+}
+
+static int test_kstrnstr(void) {
+    typedef struct {
+        const char *str;
+        const char *pat;
+        int n;
+        ptrdiff_t location;  // location of pat in str, or -1 if not present
+    } kstrnstr_dat;
+
+    kstrnstr_dat tests[] = {
+        { "foofoofoobaroofoof", "bar", 18, 9 },
+        { "foofoofoobazoofoof", "bar", 18, -1 },
+        { "foofoofoobaroofoof", "bar", 9, -1 },
+        { "foofoofoobaroofoof", "", 18, 0 },
+        { "bar", "foofoofoobaroofoof", 18, -1 },
+        { "foofoof\0obaroofoof", "bar", 18, -1 },
+        { "", "bar", 3, -1 },
+        { "", "", 0, 0 },
+    };
+
+    size_t i;
+    int pass = 1;
+
+    for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+        char *found = kstrnstr(tests[i].str, tests[i].pat, tests[i].n, NULL);
+        ptrdiff_t loc = found ? found - tests[i].str : -1;
+        if (loc != tests[i].location) {
+            pass = 0;
+            fprintf(stderr,
+                    "kstrnstr() test %zd failed - got %lld expected %lld\n",
+                    i, (long long) loc, (long long) tests[i].location);
+        }
+    }
+
+    return pass ? 0 : -1;
+}
+
 int main(int argc, char **argv) {
     int opt, res = EXIT_SUCCESS;
     int64_t start = 0;
@@ -633,6 +760,15 @@ int main(int argc, char **argv) {
 
     if (!test || strcmp(test, "kinsertstr") == 0)
         if (test_kinsertstr() != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kmemmem") == 0)
+        if (test_kmemmem() != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kstrstr") == 0)
+        if (test_kstrstr() != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kstrnstr") == 0)
+        if (test_kstrnstr() != 0) res = EXIT_FAILURE;
 
     return res;
 }
