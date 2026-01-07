@@ -757,8 +757,8 @@ test/test_kfunc: test/test_kfunc.o libhts.a
 test/test_khash: test/test_khash.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_khash.o libhts.a $(LIBS) -lpthread
 
-test/test_kstring: test/test_kstring.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a $(LIBS) -lpthread
+test/test_kstring: test/test_kstring.o
+	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o -lm
 
 test/test_mod: test/test_mod.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_mod.o libhts.a $(LIBS) -lpthread
@@ -867,7 +867,7 @@ test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
 test/test_khash.o: test/test_khash.c config.h $(htslib_khash_h) $(htslib_kroundup_h)
-test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
+test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h) kstring.c
 test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
 test/test_nibbles.o: test/test_nibbles.c config.h $(htslib_sam_h) $(sam_internal_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
