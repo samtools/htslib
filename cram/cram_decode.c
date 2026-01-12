@@ -1948,6 +1948,23 @@ static int cram_decode_aux_1_0(cram_container *c, cram_slice *s,
     return -1;
 }
 
+// Derived from sam.c aux_type2size
+static inline int aux_ele_size(uint8_t type)
+{
+    switch (type) {
+    case 'A': case 'c': case 'C':
+        return 1;
+    case 's': case 'S':
+        return 2;
+    case 'i': case 'I': case 'f':
+        return 4;
+    case 'd':
+        return 8;
+    default:
+        return 1;
+    }
+}
+
 // has_MD and has_NM are filled out with 0 for none present,
 // 1 for present and verbatim, and -pos for present as placeholder
 // (MD*, NM*) to be generated and filled out at offset +pos.
@@ -2039,6 +2056,13 @@ static int cram_decode_aux(cram_fd *fd,
             BLOCK_APPEND(s->aux_blk, (char *)tag_data, 3);
 
             if (!m->codec) return -1;
+            if (m->codec->codec == E_BYTE_ARRAY_LEN ||
+                m->codec->codec == E_BYTE_ARRAY_STOP)
+                // NB we don't know the maximum length for B arrays yet,
+                // but we're using BYTE_ARRAY_BLOCK encodings so they're auto-
+                // resizing arrays that cannot overflow.  The codec handles this
+                // check for us.
+                out_sz *= aux_ele_size(TN[-1]);
             r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
             if (r) break;
             cr->aux_size += out_sz + 3;

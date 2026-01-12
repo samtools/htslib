@@ -3357,14 +3357,19 @@ int cram_byte_array_len_decode(cram_slice *slice, cram_codec *c,
     int32_t len = 0, one = 1;
     int r;
 
-    r = c->u.byte_array_len.len_codec->decode(slice, c->u.byte_array_len.len_codec,
-                                              in, (char *)&len, &one);
-    //printf("ByteArray Len=%d\n", len);
+    cram_codec *len_codec = c->u.byte_array_len.len_codec;
+    cram_codec *val_codec = c->u.byte_array_len.val_codec;
 
-    if (!r && c->u.byte_array_len.val_codec && len >= 0) {
-        r = c->u.byte_array_len.val_codec->decode(slice,
-                                                  c->u.byte_array_len.val_codec,
-                                                  in, out, &len);
+    r = len_codec->decode(slice, len_codec, in, (char *)&len, &one);
+    if (len < 0 || (len > *out_size &&
+                    !(val_codec->codec == E_EXTERNAL &&
+                      val_codec->u.external.type == E_BYTE_ARRAY_BLOCK))) {
+        fprintf(stderr, "Attempted overrun detected in %s\n", __FUNCTION__);
+        return -1;
+    }
+
+    if (!r && val_codec) {
+        r = val_codec->decode(slice, val_codec, in, out, &len);
     } else {
         return -1;
     }
