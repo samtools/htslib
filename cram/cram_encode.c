@@ -3197,18 +3197,21 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
     // And and increment TD hash entry
     BLOCK_APPEND_CHAR(td_b, 0);
 
-    // Duplicate key as BLOCK_DATA() can be realloced to a new pointer.
-    key = string_ndup(c->comp_hdr->TD_keys,
-                      (char *)BLOCK_DATA(td_b) + TD_blk_size,
-                      BLOCK_SIZE(td_b) - TD_blk_size);
-    if (!key)
-        goto block_err;
+    key = (char *)BLOCK_DATA(td_b) + TD_blk_size;
     k = kh_put(m_s2i, c->comp_hdr->TD_hash, key, &new);
     if (new < 0) {
         goto err;
-    } else if (new == 0) {
+    } else if (new == 0) { // Seen this one before
         BLOCK_SIZE(td_b) = TD_blk_size;
     } else {
+        // New entry.  As BLOCK_DATA() can be realloced, copy the
+        // key into a string pool and use this as the key in the hash table.
+        char *pooled_key = string_ndup(c->comp_hdr->TD_keys,
+                                       (char *)BLOCK_DATA(td_b) + TD_blk_size,
+                                       BLOCK_SIZE(td_b) - TD_blk_size);
+        if (!pooled_key)
+            goto block_err;
+        kh_key(c->comp_hdr->TD_hash, k) = pooled_key;
         kh_val(c->comp_hdr->TD_hash, k) = c->comp_hdr->nTL;
         c->comp_hdr->nTL++;
     }
@@ -3791,17 +3794,20 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         //fprintf(stderr, "Checking %"PRId64"/%.*s\t", rnum,
         //      cr->name_len, DSTRING_STR(s->name_ds)+cr->name);
         if (cr->flags & BAM_FPAIRED) {
-            char *key = string_ndup(s->pair_keys, bam_name(b), bam_name_len(b));
-            if (!key)
-                return -1;
-
-            k = kh_put(m_s2i, s->pair[sec], key, &new);
+            k = kh_put(m_s2i, s->pair[sec], bam_name(b), &new);
             if (-1 == new)
                 return -1;
-            else if (new > 0)
+            else if (new > 0) {
+                // bam_name(b) is likely to change, so copy it to a string pool
+                // and use that for the hash table key.
+                char *key = string_ndup(s->pair_keys, bam_name(b), bam_name_len(b));
+                if (!key)
+                    return -1;
+                kh_key(s->pair[sec], k) = key;
                 kh_val(s->pair[sec], k) = rnum
                     | ((unsigned)((cr->flags & BAM_FREAD1)!=0)<<30)
                     | ((unsigned)((cr->flags & BAM_FREAD2)!=0)<<31);
+            }
         } else {
             new = 1;
             k = 0; // Prevents false-positive warning from gcc -Og
