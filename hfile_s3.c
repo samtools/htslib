@@ -538,6 +538,8 @@ static int redirect_endpoint(hFILE_s3 *fp, kstring_t *header) {
         }
     }
 
+    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: redirect_endpoint: return %d\n", ret);
+
     return ret;
 }
 
@@ -1122,7 +1124,6 @@ static int set_region(s3_auth_data *ad, kstring_t *region) {
 #define S3_MOVED_PERMANENTLY 301
 #define S3_BAD_REQUEST 400
 
-
 static struct {
     kstring_t useragent;
     CURLSH *share;
@@ -1319,6 +1320,13 @@ static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstrin
     struct curl_slist *headers = NULL;
     int err = 0;
 
+    /* The next two lines have the effect of preventing curl from
+       adding these headers.  If they exist it can lead to conflicts
+       in the signature calculations (not present in all S3 systems).
+    */
+    add_header(&headers, "Content-Type:");
+    add_header(&headers, "Expect:");
+
     if (auth->l)
         if ((err = add_header(&headers, auth->s)))
             goto error;
@@ -1407,10 +1415,12 @@ uploads and abandon the upload process.
 static int abort_upload(hFILE_s3 *fp) {
     kstring_t url = KS_INITIALIZE;
     kstring_t canonical_query_string = KS_INITIALIZE;
-    int ret = -1;
+    int ret = -1, save_errno;
     struct curl_slist *headers = NULL;
     char http_request[] = "DELETE";
     CURLcode err;
+
+    save_errno = errno; // keep the errno that caused the need to abort
 
     clear_authorisation_values(fp);
 
@@ -1459,6 +1469,7 @@ static int abort_upload(hFILE_s3 *fp) {
     fp->aborted = 1;
     cleanup(fp);
 
+    errno = save_errno;
     return ret;
 }
 
@@ -1497,6 +1508,7 @@ static int complete_upload(hFILE_s3 *fp, kstring_t *resp) {
     curl_easy_reset(fp->curl);
 
     err = curl_easy_setopt(fp->curl, CURLOPT_POST, 1L);
+
     err |= curl_easy_setopt(fp->curl, CURLOPT_POSTFIELDS, fp->completion_message.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_POSTFIELDSIZE, (long) fp->completion_message.l);
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEFUNCTION, response_callback);
@@ -1670,6 +1682,7 @@ static int s3_write_close(hFILE *fpv) {
     kstring_t response = {0, 0, NULL};
     int ret = 0;
     CURLcode cret;
+    long response_code;
 
     if (!fp->aborted) {
 
@@ -1679,7 +1692,6 @@ static int s3_write_close(hFILE *fpv) {
             ret = upload_part(fp, &response);
 
             if (!ret) {
-                long response_code;
                 kstring_t etag = {0, 0, NULL};
 
                 cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
@@ -1715,6 +1727,19 @@ static int s3_write_close(hFILE *fpv) {
             if (!ret) {
                 if (strstr(response.s, "CompleteMultipartUploadResult") == NULL) {
                     ret = -1;
+                    cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+
+                    fprintf(stderr, "*** GOT HERE %ld***\n", response_code);
+
+                    if (cret == CURLE_OK) {
+                        if (hts_verbose >= HTS_LOG_INFO) {
+                            if (report_s3_error(&response, response_code)) {
+                                fprintf(stderr, "hfile_s3: warning, unable to report full S3 error status.\n");
+                            }
+                        }
+
+                        errno = http_status_errno(response_code);
+                    }
                 }
             }
         } else {
@@ -1745,6 +1770,8 @@ static int handle_bad_request(hFILE_s3 *fp, kstring_t *resp) {
     ret = set_region(fp->au, &region);
 
     ks_free(&region);
+
+    if (hts_verbose >= HTS_LOG_INFO) fprintf(stderr, "hfile_s3: handle_bad_request: return %d\n", ret);
 
     return ret;
 }
@@ -2145,6 +2172,9 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
                     ret = initialise_upload(fp, &header, &response, has_user_query);
                 }
             }
+
+            // reget the response code (may not have changed)
+            cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
         } else {
             // unable to get a response code from curl
             ret = -1;
