@@ -3364,7 +3364,7 @@ int cram_byte_array_len_decode(cram_slice *slice, cram_codec *c,
     if (len < 0 || (len > *out_size &&
                     !(val_codec->codec == E_EXTERNAL &&
                       val_codec->u.external.type == E_BYTE_ARRAY_BLOCK))) {
-        fprintf(stderr, "Attempted overrun detected in %s\n", __FUNCTION__);
+        fprintf(stderr, "Error: overflow in cram_byte_array_len_decode.\n");
         return -1;
     }
 
