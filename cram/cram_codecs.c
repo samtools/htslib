@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2021,2023 Genome Research Ltd.
+Copyright (c) 2012-2021,2023, 2025, 2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -3568,7 +3568,7 @@ cram_codec *cram_byte_array_len_encode_init(cram_stats *st,
 static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
                                             cram_block *in, char *out,
                                             int *out_size) {
-    char *cp, ch;
+    uint8_t *cp;
     cram_block *b = NULL;
 
     b = cram_get_block_by_id(slice, c->u.byte_array_stop.content_id);
@@ -3578,31 +3578,29 @@ static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
     if (b->idx >= b->uncomp_size)
         return -1;
 
-    cp = (char *)b->data + b->idx;
+    ssize_t term = b->uncomp_size - b->idx;
+    cp = b->data + b->idx;
     if (out) {
        // memccpy equivalent but without copying the terminating byte
-        ssize_t term = MIN(*out_size, b->uncomp_size - b->idx);
-        while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
-            if (term-- < 0)
-                break;
-            *out++ = ch;
-            cp++;
+        if (term > *out_size)
+            term = *out_size;
+        while (--term >= 0 && *cp != c->u.byte_array_stop.stop) {
+            *out++ = *cp++;
         }
 
-        // Attempted overrun on input or output
-        if (ch != (char)c->u.byte_array_stop.stop)
-            return -1;
     } else {
         // Consume input, but produce no output
-        while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
-            if (cp - (char *)b->data >= b->uncomp_size)
-                return -1;
+        while (--term >= 0 && *cp != c->u.byte_array_stop.stop) {
             cp++;
         }
     }
 
-    *out_size = cp - (char *)(b->data + b->idx);
-    b->idx = cp - (char *)b->data + 1;
+    // Attempted overrun on input or output
+    if (cp >= b->data + b->uncomp_size || *cp != c->u.byte_array_stop.stop)
+        return -1;
+
+    *out_size = cp - (b->data + b->idx);
+    b->idx = cp - b->data + 1;
 
     return 0;
 }
