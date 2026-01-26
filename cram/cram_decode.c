@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2020, 2022-2024 Genome Research Ltd.
+Copyright (c) 2012-2020, 2022-2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -2548,6 +2548,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                                 ->decode(s, c->comp_hdr->codecs[DS_RI], blk,
                                          (char *)&cr->ref_id, &out_sz);
                 if (r) goto block_err;
+                if (cr->ref_id < -1 || cr->ref_id >= bfd->nref) {
+                    hts_log_error("Requested unknown reference ID %d",
+                                  cr->ref_id);
+                    goto block_err;
+                }
                 if ((fd->required_fields & (SAM_SEQ|SAM_TLEN))
                     && cr->ref_id >= 0
                     && cr->ref_id != last_ref_id) {
@@ -2725,6 +2730,12 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                                 ->decode(s, c->comp_hdr->codecs[DS_NS], blk,
                                          (char *)&cr->mate_ref_id, &out_sz);
                 if (r) goto block_err;
+
+                if (cr->mate_ref_id < -1 || cr->mate_ref_id >= bfd->nref) {
+                    hts_log_error("Requested unknown mate reference ID %d",
+                                  cr->mate_ref_id);
+                    goto block_err;
+                }
             }
 
             // Skip as mate_ref of "*" is legit. It doesn't mean unmapped, just unknown.
