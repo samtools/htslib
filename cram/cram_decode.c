@@ -1221,13 +1221,16 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                         if (ref_pos + rlen > s->ref_end)
                             goto beyond_slice;
 
-                        memcpy(&seq[seq_pos-1],
-                               &s->ref[ref_pos - s->ref_start +1], rlen);
-                        if ((pos - seq_pos) - rlen > 0)
-                            memset(&seq[seq_pos-1+rlen], 'N',
-                                   (pos - seq_pos) - rlen);
+                        if (cr->len) {
+                            memcpy(&seq[seq_pos-1],
+                                   &s->ref[ref_pos - s->ref_start +1], rlen);
+                            if ((pos - seq_pos) - rlen > 0)
+                                memset(&seq[seq_pos-1+rlen], 'N',
+                                       (pos - seq_pos) - rlen);
+                        }
                     } else {
-                        memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
+                        if (cr->len)
+                            memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
                     }
                     if (md_dist >= 0)
                         md_dist += pos - seq_pos;
@@ -1238,7 +1241,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
                     const char *refp = s->ref + ref_pos - s->ref_start + 1;
                     const int frag_len = pos - seq_pos;
-                    int do_cpy = 1;
                     if (decode_md || decode_nm) {
                         char *N = memchr(refp, 'N', frag_len);
                         if (N) {
@@ -1253,14 +1255,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                                 } else {
                                     md_dist++;
                                 }
-                                seq[seq_pos-1+i] = base;
                             }
-                            do_cpy = 0;
                         } else {
                             md_dist += frag_len;
                         }
                     }
-                    if (do_cpy)
+                    if (cr->len)
                         memcpy(&seq[seq_pos-1], refp, frag_len);
                 }
             }
@@ -1299,24 +1299,33 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             switch (CRAM_MAJOR_VERS(fd->version)) {
             case 1:
                 if (ds & CRAM_IN) {
-                    r |= codecs[DS_IN]
-                        ? codecs[DS_IN]->decode(s, codecs[DS_IN],
-                                                blk,
-                                                cr->len ? &seq[pos-1] : NULL,
-                                                &out_sz2)
-                        : (seq[pos-1] = 'N', out_sz2 = 1, 0);
+                    if (codecs[DS_IN]) {
+                        r |= codecs[DS_IN]->decode(s, codecs[DS_IN],
+                                                   blk,
+                                                   cr->len ? &seq[pos-1] : NULL,
+                                                   &out_sz2);
+                    } else {
+                        if (cr->len)
+                            seq[pos-1] = 'N';
+                        out_sz2 = 1;
+                    }
                     have_sc = 1;
                 }
                 break;
             case 2:
             default:
                 if (ds & CRAM_SC) {
-                    r |= codecs[DS_SC]
-                        ? codecs[DS_SC]->decode(s, codecs[DS_SC],
-                                                blk,
-                                                cr->len ? &seq[pos-1] : NULL,
-                                                &out_sz2)
-                        : (seq[pos-1] = 'N', out_sz2 = 1, 0);
+
+                    if (codecs[DS_SC]) {
+                        r |= codecs[DS_SC]->decode(s, codecs[DS_SC],
+                                                   blk,
+                                                   cr->len ? &seq[pos-1] : NULL,
+                                                   &out_sz2);
+                    } else {
+                        if (cr->len)
+                            seq[pos-1] = 'N';
+                        out_sz2 = 1;
+                    }
                     have_sc = 1;
                 }
                 break;
@@ -1549,10 +1558,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             if (ds & CRAM_QQ) {
                 if (!codecs[DS_QQ]) return -1;
                 if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)
+                    && cr->len > 0
                     && (unsigned char)*qual == 255)
                     memset(qual, 30, cr->len); // ?
                 r |= codecs[DS_QQ]->decode(s, codecs[DS_QQ], blk,
-                                           (char *)&qual[pos-1], &len);
+                                           cr->len ? (char *)&qual[pos-1] : NULL,
+                                           &len);
                 if (r) return r;
             }
 
@@ -1599,11 +1610,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             }
             if (ds & CRAM_QS) {
                 if (!codecs[DS_QS]) return -1;
-                if (!(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)
+                if (!(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES) && cr->len > 0
                     && (unsigned char)*qual == 255)
                     memset(qual, 30, cr->len); // ASCII ?.  Same as htsjdk
                 r |= codecs[DS_QS]->decode(s, codecs[DS_QS], blk,
-                                           (char *)&qual[pos-1], &out_sz);
+                                           cr->len ? (char *)&qual[pos-1] : NULL,
+                                           &out_sz);
             }
 #ifdef USE_X
             cig_op = BAM_CBASE_MISMATCH;
@@ -1620,11 +1632,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         case 'Q': { // Quality score; QS
             if (ds & CRAM_QS) {
                 if (!codecs[DS_QS]) return -1;
-                if (!(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES) &&
-                    (unsigned char)*qual == 255)
+                if (!(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES) && cr->len > 0
+                    && (unsigned char)*qual == 255)
                     memset(qual, 30, cr->len); // ?
                 r |= codecs[DS_QS]->decode(s, codecs[DS_QS], blk,
-                                           (char *)&qual[pos-1], &out_sz);
+                                           cr->len ? (char *)&qual[pos-1] : NULL,
+                                           &out_sz);
                 //printf("  %d: QS = %d (ret %d)\n", f, qc, r);
             }
             break;
