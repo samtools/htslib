@@ -2664,6 +2664,9 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                 cr->apos += s->last_apos;
             }
             s->last_apos=  cr->apos;
+
+            if (s->hdr->ref_seq_id >= 0 && cr->apos < s->hdr->ref_seq_start)
+                goto block_err;
         } else {
             cr->apos = c->ref_seq_start;
         }
