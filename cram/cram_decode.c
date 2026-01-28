@@ -1185,15 +1185,28 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         if (r) return r;
         pos += prev_pos;
 
+        // Misplaced feature detection - before start is easy
         if (pos <= 0) {
             hts_log_error("Feature position %d before start of read", pos);
             return -1;
         }
 
-        if (pos > seq_pos) {
-            if (pos > cr->len+1)
+        // After end is more complicated as the sequence may be absent,
+        // and operations like deletions could occur after the end
+        // of the stored sequence.  First quickly find out if the feature is
+        // on or after the last base.
+        if (cr->len != 0 && pos > cr->len) {
+            // Now check carefully to ensure it's allowed.
+            int32_t valid_end = (op == 'N' || op == 'P' || op == 'H' || op == 'D')
+                ? cr->len+1
+                : cr->len;
+            if (pos > valid_end) {
+                hts_log_error("Feature position %d after end of read", pos);
                 return -1;
+            }
+        }
 
+        if (pos > seq_pos) {
             if (s->ref && cr->ref_id >= 0) {
                 if (ref_pos + pos - seq_pos > bfd->ref[cr->ref_id].len) {
                     static int whinged = 0;
