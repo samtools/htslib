@@ -1501,7 +1501,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                             break;
                         } else {
                             if (decode_md) {
-                                if (ref_pos + x > s->ref_end)
+                                if (ref_pos + x >= s->ref_end)
                                     goto beyond_slice;
                                 char r = s->ref[ref_pos+x-s->ref_start +1];
                                 BLOCK_APPEND_CHAR(s->aux_blk, r);
@@ -1572,7 +1572,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                         md_dist = -1;
                     } else {
                         if (decode_md) {
-                            if (ref_pos > s->ref_end)
+                            if (ref_pos >= s->ref_end)
                                 goto beyond_slice;
                             BLOCK_APPEND_CHAR(s->aux_blk,
                                               s->ref[ref_pos-s->ref_start +1]);
@@ -1686,6 +1686,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 // May miss MD/NM cases where both seq/ref are N, but this is a
                 // malformed cram file anyway.
                 if (rlen > 0) {
+                    if (ref_pos + rlen > s->ref_end)
+                        goto beyond_slice;
+
                     if (seq_pos-1 + rlen < cr->len)
                         memcpy(&seq[seq_pos-1],
                                &s->ref[ref_pos - s->ref_start +1], rlen);
