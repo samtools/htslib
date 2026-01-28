@@ -776,17 +776,23 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
     // does not change.
     switch(codec) {
     case E_VARINT_UNSIGNED:
-        c->decode = (option == E_INT)
-            ? cram_varint_decode_int
-            : cram_varint_decode_long;
+        if (option == E_INT || option == E_SINT)
+            c->decode = cram_varint_decode_int;
+        else if (option == E_LONG || option == E_SLONG)
+            c->decode = cram_varint_decode_long;
+        else
+            goto malformed;
         break;
     case E_VARINT_SIGNED:
-        c->decode = (option == E_INT)
-            ? cram_varint_decode_sint
-            : cram_varint_decode_slong;
+        if (option == E_INT || option == E_SINT)
+            c->decode = cram_varint_decode_sint;
+        else if (option == E_LONG || option == E_SLONG)
+            c->decode = cram_varint_decode_slong;
+        else
+            goto malformed;
         break;
     default:
-        return NULL;
+        goto malformed;
     }
 
     c->free   = cram_varint_decode_free;
@@ -798,14 +804,17 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
     c->u.varint.offset     = vv->varint_get64s(&cp, cp_end, NULL);
 
     if (cp - data != size) {
-        fprintf(stderr, "Malformed varint header stream\n");
-        free(c);
-        return NULL;
+        goto malformed;
     }
 
     c->u.varint.type = option;
 
     return c;
+
+ malformed:
+    hts_log_error("Malformed varint header stream");
+    free(c);
+    return NULL;
 }
 
 int cram_varint_encode_int(cram_slice *slice, cram_codec *c,
@@ -978,12 +987,17 @@ cram_codec *cram_const_decode_init(cram_block_compression_hdr *hdr,
         return NULL;
 
     c->codec  = codec;
-    if (codec == E_CONST_BYTE)
+    if (codec == E_CONST_BYTE && option == E_BYTE)
         c->decode = cram_const_decode_byte;
-    else if (option == E_INT)
+    else if (codec == E_CONST_INT && (option == E_INT || option == E_SINT))
         c->decode = cram_const_decode_int;
-    else
+    else if (codec == E_CONST_INT && (option == E_LONG || option == E_SLONG))
         c->decode = cram_const_decode_long;
+    else {
+        hts_log_error("Malformed const header stream");
+        free(c);
+        return NULL;
+    }
     c->free   = cram_const_decode_free;
     c->size   = cram_const_decode_size;
     c->get_block = NULL;
