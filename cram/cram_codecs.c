@@ -933,6 +933,9 @@ int cram_const_decode_byte(cram_slice *slice, cram_codec *c,
                            cram_block *in, char *out, int *out_size) {
     int i, n;
 
+    if (!out)
+        return 0;
+
     for (i = 0, n = *out_size; i < n; i++)
         out[i] = c->u.xconst.val;
 
@@ -1418,7 +1421,7 @@ int cram_xpack_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, cha
         if (out)
             memcpy(out, b->data + b->byte, *out_size);
         b->byte += *out_size;
-    } else {
+    } else if (out) {
         memset(out, c->u.xpack.rmap[0], *out_size);
     }
 
@@ -2125,7 +2128,8 @@ int cram_xrle_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char
     cram_xrle_decode_expand_char(slice, c);
     cram_block *b = slice->block_by_id[512 + c->codec_id];
 
-    memcpy(out, b->data + b->idx, n);
+    if (out)
+        memcpy(out, b->data + b->idx, n);
     b->idx += n;
     return 0;
 
