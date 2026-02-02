@@ -1403,6 +1403,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 r |= codecs[DS_DL]->decode(s, codecs[DS_DL], blk,
                                            (char *)&i32, &out_sz);
                 if (r) return r;
+                if (i32 < 0)
+                    goto beyond_slice;
                 if (decode_md || decode_nm) {
                     if (ref_pos + i32 > s->ref_end)
                         goto beyond_slice;
@@ -1638,6 +1640,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 r |= codecs[DS_HC]->decode(s, codecs[DS_HC], blk,
                                            (char *)&i32, &out_sz);
                 if (r) return r;
+                if (i32 < 0)
+                    goto beyond_slice;
                 cig_op = BAM_CHARD_CLIP;
                 cig_len += i32;
             }
@@ -1654,6 +1658,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 r |= codecs[DS_PD]->decode(s, codecs[DS_PD], blk,
                                            (char *)&i32, &out_sz);
                 if (r) return r;
+                if (i32 < 0)
+                    goto beyond_slice;
                 cig_op = BAM_CPAD;
                 cig_len += i32;
             }
@@ -1670,6 +1676,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 r |= codecs[DS_RS]->decode(s, codecs[DS_RS], blk,
                                            (char *)&i32, &out_sz);
                 if (r) return r;
+                if (i32 < 0)
+                    goto beyond_slice;
                 cig_op = BAM_CREF_SKIP;
                 cig_len += i32;
                 ref_pos += i32;
