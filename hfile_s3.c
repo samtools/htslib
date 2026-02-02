@@ -1729,8 +1729,6 @@ static int s3_write_close(hFILE *fpv) {
                     ret = -1;
                     cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-                    fprintf(stderr, "*** GOT HERE %ld***\n", response_code);
-
                     if (cret == CURLE_OK) {
                         if (hts_verbose >= HTS_LOG_INFO) {
                             if (report_s3_error(&response, response_code)) {
