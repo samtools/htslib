@@ -1122,6 +1122,7 @@ static int set_region(s3_auth_data *ad, kstring_t *region) {
 // Some common code
 
 #define S3_MOVED_PERMANENTLY 301
+#define S3_TEMPORARY_REDIRECT 307
 #define S3_BAD_REQUEST 400
 
 static struct {
@@ -1179,7 +1180,7 @@ static char *stristr(char *haystack, char *needle) {
         char *h = haystack;
         char *n = needle;
 
-        while (toupper(*h) == toupper(*n)) {
+        while (toupper_c(*h) == toupper_c(*n)) {
             h++, n++;
             if (!*h || !*n) break;
         }
@@ -1324,8 +1325,10 @@ static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstrin
        adding these headers.  If they exist it can lead to conflicts
        in the signature calculations (not present in all S3 systems).
     */
-    add_header(&headers, "Content-Type:");
-    add_header(&headers, "Expect:");
+    err = add_header(&headers, "Content-Type:");
+    err |= add_header(&headers, "Expect:");
+
+    if (err) goto error;
 
     if (auth->l)
         if ((err = add_header(&headers, auth->s)))
@@ -1877,14 +1880,13 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
     struct curl_slist *headers = NULL;
     int ret = -1;
     char http_request[] = "GET";
-    char canonical_query_string = 0;
     CURLcode err;
 
     ks_clear(&fp->buffer); // reset storage buffer
     clear_authorisation_values(fp);
 
     if (fp->au->is_v4) {
-        if (v4_authorisation(fp, http_request, NULL, &canonical_query_string, 0) != 0) {
+        if (v4_authorisation(fp, http_request, NULL, "", 0) != 0) {
             goto out;
         }
 
@@ -2102,7 +2104,7 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
     hFILE_s3 *fp;
     kstring_t response = {0, 0, NULL};
     kstring_t header   = {0, 0, NULL};
-    int ret, has_user_query = 0;
+    int has_user_query = 0;
     char *query_start;
     const char *env;
     CURLcode cret;
@@ -2150,33 +2152,35 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
         has_user_query = 1;;
     }
 
-    ret = initialise_upload(fp, &header, &response, has_user_query);
+    if (initialise_upload(fp, &header, &response, has_user_query))
+        goto error;
+
     cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-    if (ret == 0) {
-        if (cret == CURLE_OK) {
-            if (response_code == S3_MOVED_PERMANENTLY) {
-                if (redirect_endpoint(fp, &header) == 0) {
-                    ks_clear(&response);
-                    ks_clear(&header);
+    if (cret == CURLE_OK) {
+        if (response_code == S3_MOVED_PERMANENTLY || response_code == S3_TEMPORARY_REDIRECT) {
+            if (redirect_endpoint(fp, &header) == 0) {
+                ks_clear(&response);
+                ks_clear(&header);
 
-                    ret = initialise_upload(fp, &header, &response, has_user_query);
-                }
-            } else if (response_code == S3_BAD_REQUEST) {
-                if (handle_bad_request(fp, &response) == 0) {
-                    ks_clear(&response);
-                    ks_clear(&header);
-
-                    ret = initialise_upload(fp, &header, &response, has_user_query);
-                }
+                if (initialise_upload(fp, &header, &response, has_user_query))
+                    goto error;
             }
+        } else if (response_code == S3_BAD_REQUEST) {
+            if (handle_bad_request(fp, &response) == 0) {
+                ks_clear(&response);
+                ks_clear(&header);
 
-            // reget the response code (may not have changed)
-            cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
-        } else {
-            // unable to get a response code from curl
-            ret = -1;
+                if (initialise_upload(fp, &header, &response, has_user_query))
+                    goto error;
+            }
         }
+
+        // reget the response code (may not have changed)
+        cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+    } else {
+        // unable to get a response code from curl
+        goto error;
     }
 
     if (response_code >= 300) {
@@ -2192,10 +2196,8 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
             errno = http_status_errno(response_code);
         }
 
-        ret = -1;
+        goto error;
     }
-
-    if (ret) goto error;
 
     if (get_upload_id(fp, &response)) goto error;
 
@@ -2231,7 +2233,6 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
     const char *env;
     kstring_t response   = {0, 0, NULL};
     kstring_t file_range = {0, 0, NULL};
-    int ret;
     CURLcode cret;
     long response_code = 0;
 
@@ -2268,31 +2269,33 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
 
     kputs(url, &fp->url);
 
-    ret = initialise_download(fp, &response);
+    if (initialise_download(fp, &response))
+        goto error;
+
     cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-    if (ret == 0) {
-        if (cret == CURLE_OK) {
-            if (response_code == S3_MOVED_PERMANENTLY) {
-                ks_clear(&response);
+    if (cret == CURLE_OK) {
+        if (response_code == S3_MOVED_PERMANENTLY || response_code == S3_TEMPORARY_REDIRECT) {
+            ks_clear(&response);
 
-                if (redirect_endpoint(fp, &response) == 0) {
-                    ret = initialise_download(fp, &response);
-                }
-            } else if (response_code == S3_BAD_REQUEST) {
-                ks_clear(&response);
-
-                if (handle_bad_request(fp, &fp->buffer) == 0) {
-                    ret = initialise_download(fp, &response);
-                }
+            if (redirect_endpoint(fp, &response) == 0) {
+                if (initialise_download(fp, &response))
+                    goto error;
             }
+        } else if (response_code == S3_BAD_REQUEST) {
+            ks_clear(&response);
 
-            // reget the response code (may not have changed)
-            cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
-        } else {
-            // unable to get a response code from curl
-            ret = -1;
+            if (handle_bad_request(fp, &fp->buffer) == 0) {
+                if (initialise_download(fp, &response))
+                    goto error;
+            }
         }
+
+        // reget the response code (may not have changed)
+        cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
+    } else {
+        // unable to get a response code from curl
+        goto error;
     }
 
     if (response_code >= 300) {
@@ -2308,10 +2311,8 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
             errno = http_status_errno(response_code);
         }
 
-        ret = -1;
+        goto error;
     }
-
-    if (ret) goto error;
 
     if (get_entry(response.s, "content-range: bytes ", "\n", &file_range) == EOF) {
         fprintf(stderr, "hfile_s3: warning: failed to read file size.\n");
@@ -2401,7 +2402,7 @@ static hFILE *hopen_s3(const char *url, const char *mode)
 {
     hFILE *fp;
 
-    if (getenv("HTS_S3_V2") == NULL) { // Force the v2 signature code
+    if (getenv("HTS_S3_V2") == NULL) {
         fp = s3_open_v4(url, mode, NULL);
     } else {
         fp = s3_open_v2(url, mode, NULL);
