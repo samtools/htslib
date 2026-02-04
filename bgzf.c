@@ -1741,6 +1741,8 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     // No gain from multi-threading when not compressed
     if (!fp->is_compressed)
         return 0;
+    if (fp->mt)
+        return -2;  //already exists!
 
     mtaux_t *mt;
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
@@ -1789,9 +1791,10 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     if (!p)
         return -1;
 
-    if (bgzf_thread_pool(fp, p, 0) != 0) {
+    int ret = 0;
+    if ((ret = bgzf_thread_pool(fp, p, 0)) < 0) {
         hts_tpool_destroy(p);
-        return -1;
+        return ret;
     }
 
     fp->mt->own_pool = 1;
