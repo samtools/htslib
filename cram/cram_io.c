@@ -1420,6 +1420,10 @@ cram_block *cram_read_block(cram_fd *fd) {
     //fprintf(stderr, "Block at %d\n", (int)ftell(fd->fp));
 
     if (-1 == (b->method      = hgetc(fd->fp))) { free(b); return NULL; }
+    if (b->method > TOK3) {
+        hts_log_error("Unknown block compression method %d", (int) b->method);
+        free(b); return NULL;
+    }
     c = b->method; crc = crc32(crc, &c, 1);
     if (-1 == (b->content_type= hgetc(fd->fp))) { free(b); return NULL; }
     c = b->content_type; crc = crc32(crc, &c, 1);
