@@ -3713,7 +3713,7 @@ static void *sam_format_worker(void *arg) {
 
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (fp->state)
-        return 0;
+        return -2;   //already exists!
 
     if (!(fp->state = sam_state_create(fp)))
         return -1;
@@ -3747,8 +3747,11 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     p.qsize = nthreads*2;
 
     int ret = sam_set_thread_pool(fp, &p);
-    if (ret < 0)
+    if (ret < 0) {
+        if (p.pool)
+            hts_tpool_destroy(p.pool);
         return ret;
+    }
 
     SAM_state *fd = (SAM_state *)fp->state;
     fd->own_pool = 1;
