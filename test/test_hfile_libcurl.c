@@ -24,6 +24,15 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdio.h>
 #include <stdlib.h>
+
+// This test requires fork/pipe/kill which are POSIX-only.
+#ifdef _WIN32
+int main(void) {
+    fprintf(stderr, "libcurl retry tests not supported on Windows, skipping\n");
+    return 0;
+}
+#else
+
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
@@ -500,3 +509,5 @@ int main(void)
     fprintf(stderr, "All tests passed.\n");
     return EXIT_SUCCESS;
 }
+
+#endif /* !_WIN32 */
