@@ -1,6 +1,6 @@
 /*  test/test_hfile_libcurl.c -- Test cases for libcurl retry/resilience.
 
-    Copyright (C) 2025 Genome Research Ltd.
+    Copyright (C) 2026 Broad Institute.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
