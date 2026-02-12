@@ -34,6 +34,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "../htslib/hts.h"
 #include "../hts_internal.h"
 
+#ifndef EPROTONOSUPPORT
+#define EPROTONOSUPPORT ENOSYS
+#endif
+
 // Test data file to serve
 #define TEST_DATA_FILE "hfile_libcurl.tmp"
 #define TEST_DATA_SIZE 16384
@@ -457,8 +461,8 @@ int main(void)
     }
 
     // Check that HTTP URLs are supported (i.e. libcurl backend is loaded).
-    // Try opening a URL that will fail to connect — if errno is ENOTSUP
-    // or similar, the http:// scheme isn't registered.
+    // Try opening a URL that will fail to connect — if errno is
+    // EPROTONOSUPPORT the http:// scheme isn't registered.
     {
         hFILE *probe;
         setenv("HTS_RETRY_MAX", "0", 1);
@@ -466,7 +470,7 @@ int main(void)
         unsetenv("HTS_RETRY_MAX");
         if (probe) {
             hclose_abruptly(probe);
-        } else if (errno == ENOTSUP) {
+        } else if (errno == EPROTONOSUPPORT) {
             fprintf(stderr, "HTTP not supported, skipping libcurl retry tests\n");
             return 0;
         }
