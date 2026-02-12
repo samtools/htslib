@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "../htslib/hfile.h"
 #include "../htslib/hts.h"
+#include "../hts_internal.h"
 
 // Test data file to serve
 #define TEST_DATA_FILE "hfile_libcurl.tmp"
@@ -95,7 +96,7 @@ static pid_t start_server(const char *mode, int fail_count, int *port_out)
     for (i = 0; i < 50 && n == 0; i++) {
         n = read(pipefd[0], port_buf, sizeof(port_buf) - 1);
         if (n <= 0) {
-            usleep(100000); // 100ms
+            hts_usleep(100000); // 100ms
             n = 0;
         }
     }
@@ -118,7 +119,7 @@ static pid_t start_server(const char *mode, int fail_count, int *port_out)
     }
 
     // Give the server a moment to be ready for connections
-    usleep(100000);
+    hts_usleep(100000);
     return pid;
 }
 
