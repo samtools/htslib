@@ -193,7 +193,7 @@ static unsigned char *hfile_read_all(const char *url, size_t *size_out)
 
     buf = malloc(TEST_DATA_SIZE + 1024);
     if (!buf) {
-        (void) hclose(fp);
+        hclose_abruptly(fp);
         return NULL;
     }
 
@@ -205,12 +205,13 @@ static unsigned char *hfile_read_all(const char *url, size_t *size_out)
 
     if (n < 0) {
         free(buf);
-        (void) hclose(fp);
+        hclose_abruptly(fp);
         *size_out = 0;
         return NULL;
     }
 
-    (void) hclose(fp);
+    if (hclose(fp) != 0)
+        perror("hclose");
     *size_out = total;
     return buf;
 }
@@ -377,7 +378,7 @@ static void test_404_no_retry(void)
     fp = hopen(url, "r");
     if (fp != NULL) {
         FAIL(name, "hopen should have failed for 404");
-        (void) hclose(fp);
+        hclose_abruptly(fp);
     } else if (errno != ENOENT) {
         FAIL(name, "expected ENOENT, got errno=%d (%s)", errno, strerror(errno));
     } else {
@@ -408,7 +409,7 @@ static void test_retry_exhaustion(void)
     fp = hopen(url, "r");
     if (fp != NULL) {
         FAIL(name, "hopen should have failed after retry exhaustion");
-        (void) hclose(fp);
+        hclose_abruptly(fp);
     } else {
         PASS(name);
     }
@@ -437,7 +438,7 @@ static void test_retry_disabled(void)
     fp = hopen(url, "r");
     if (fp != NULL) {
         FAIL(name, "hopen should have failed with retries disabled");
-        (void) hclose(fp);
+        hclose_abruptly(fp);
     } else {
         PASS(name);
     }
@@ -464,7 +465,7 @@ int main(void)
         probe = hopen("http://0.0.0.0:1/probe", "r");
         unsetenv("HTS_RETRY_MAX");
         if (probe) {
-            (void) hclose(probe);
+            hclose_abruptly(probe);
         } else if (errno == ENOTSUP) {
             fprintf(stderr, "HTTP not supported, skipping libcurl retry tests\n");
             return 0;
