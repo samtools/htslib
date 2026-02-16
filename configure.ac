@@ -162,6 +162,35 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
   AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
 ])
 
+dnl Check for presence of builtin_clz
+AC_MSG_CHECKING([for working __builtin_clz])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+  int z = 10;
+  if (__builtin_clz(z)) {
+    return 0;
+  }
+])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE___BUILTIN_CLZ], 1,
+            [Defined to 1 if __builtin_clz works])
+], [
+  AC_MSG_RESULT([no])
+])
+
+dnl Check for presence of builtin_prefetch
+AC_MSG_CHECKING([for working __builtin_prefetch])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+  int z = 10;
+  __builtin_prefetch(&z);
+  return 0;
+])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE___BUILTIN_PREFETCH], 1,
+            [Defined to 1 if __builtin_prefetch works])
+], [
+  AC_MSG_RESULT([no])
+])
+
 dnl Check for working __builtin_cpu_supports (ssse3 is broken on some clangs)
 AC_MSG_CHECKING([for working __builtin_cpu_supports("ssse3")])
 AC_LINK_IFELSE([AC_LANG_PROGRAM([],[

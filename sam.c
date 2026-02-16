@@ -6011,7 +6011,7 @@ const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, 
         lbnode_t **pptr = &iter->head;
         while (*pptr != iter->tail) {
             if ((*pptr)->next)
-                __builtin_prefetch((*pptr)->next);
+                hts_prefetch((*pptr)->next);
             lbnode_t *p = *pptr;
             if (p->b.core.tid < iter->tid || (p->b.core.tid == iter->tid && p->end <= iter->pos)) { // then remove
                 overlap_remove(iter, &p->b);
