@@ -1,6 +1,127 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Bug fixes
+---------
+
+* Fix a number of bugs in the CRAM decoder which could result in undefined
+  behaviour on invalid inputs (PR #1981, PR #1991):
+
+  - Not checking the amount of byte array len data returned matched the amount
+    expected. (CVE-2026-31971)
+  - Incorrect check for the length of byte array stop data. (CVE-2026-31969)
+  - Invalid use of the varint and const codecs. (CVE-2026-31968)
+  - Missing check for a valid reference ID. (CVE-2026-31965)
+  - Missing check for a valid mate reference ID. (CVE-2026-31967)
+  - Incomplete validation of CRAM feature locations.
+    (CVE-2026-31965, CVE-2026-31966)
+  - Bugs due to improper handling of records where no sequence or quality
+    values were stored (CVE-2026-31962, CVE-2026-31964)
+
+* Reject GZI indexes with impossibly-large item counts. (CVE-2026-31970)
+  (PR #1978. Reported by Harrison Green)
+
+* Prevent the wrong item count from being written to GZI indexes of
+  empty files.
+  (PR #1988.  Reported by Matthieu Muffato)
+
+* Fix possible 1 byte underflow in find_file_extension().
+  Fixes an issue reported by OSS-Fuzz.
+  (PR #1840, fixes oss-fuzz id 71740)
+
+* Prevent segfault on empty tbi index.  This could happen when a VCF file has a
+  header but no data lines.
+  (PR #1845, fixes bcftools#2286.  Reported by Devon Ryan)
+
+* Fix CRAM embed_ref=2 with seqs overlapping ref end.
+  (PR #1848 and PR #1849 which fixed oss-fuzz issue 372547397)
+
+* Fix threaded sam_read1() after EOF.  Prevents sam_read1() getting stuck when
+  trying to read after EOF and waiting forever for data that is never going to
+  arrive.
+  (PR #1856, fixes #1855.  Reported by Yan Gao)
+
+* Fix cram_encode fuzzer issue caused by negative reference lengths.  Reported
+  by OSS-Fuzz.
+  (PR #1863 fixes oss-fuzz issue 382922241)
+
+* Allow BYTE_ARRAY_STOP to work on non-zero STOP code with TOK3.  Although the
+  htscodecs name tokeniser uses a NUL between names there is no reason why
+  another value could not be used.  This change lets CRAM recognise other
+  separator values.
+  (PR #1871)
+
+* Return errors instead of EOF after all I/O errors etc in
+  hts_itr_multi_next/sam_itr_next/sam_read1/vcf_parse/bcf_read.
+  (PR #1899.  Thanks to John Marshall)
+
+* Detect seek failure in the multithreaded BGZF reader.
+  (PR #1896.  Reported by John Marshall)
+
+* Fix possible buffer overruns in expand_path().
+  (PR#1907)
+
+* Fix warnings due to the wrong datatype being passed to curl_easy_setopt()
+  (PR #1925.  Thanks to John Marshall)
+
+* Fixes for crashes reported when trying to save data with very long
+  alignment records with sequence '*' as CRAM 3.1
+  (PR #1931.  Reported by Martin Pollard)
+
+* Prevent CRAM byte_array decoder from overflowing its output
+  buffer.  This could be triggered by certain malformed CRAM inputs.
+  (PR #1934)
+
+* Prevent instances of `memcpy(out, NULL, 0)`, which is strictly undefined
+  behaviour.
+  (PR #1930.  Thanks to Ben Lawrence).
+
+* Fix segfault on an empty valid MM tag.
+  (PR #1939, fixes #1936.  Reported by John Marshall)
+
+* Fix possible memory leak on successful match in kmemmem()
+  (PR #1953)
+
+* Fix embed_ref=2 on SEQ * and MD:Z tag. The combination of no sequence and
+  MD:Z with embed_ref=2 caused the slice extents to be miscalculated,
+  causing invalid CRAM output to be written.
+  (PR #1964, fixes samtools/samtools#2277.  Reported by fo40225)
+
+* Try to ensure CSI indexes are built with valid parameters.  Adjusts the
+  min_shift and n_lvls to cover the size of the genome.  This may override the
+  user setting of min_shift (with warning) if needed.
+  (PR #1968, fixes #1966. Reported by Marc Sturm)
+
+* Fix bug where multi-threaded CRAM iterators could drop long alignments
+  starting significantly before, but overlapping, the region of interest.
+  (PR #1973, fixes samtools/samtools#2285,  Reported by Nick Owens)
+
+* Fix invalid behaviour if kmemmem(), kstrstr() or kstrnstr() were
+  called with a zero-length pattern, or if kstrstr() was given a very
+  long input.  Also ensure they can never fail by supplying a fallback
+  algorithm that does not allocate any memory.
+  (PR #1980.  Reported by Harrison Green)
+
+Build Changes
+-------------
+
+* Fix broken tests due to MSYS2 changes. Due to changes in how MSYS2 perl
+  reported the identity of the OS it was built for, our tests were failing to
+  adapt to the Windows style file locations.
+  (PR #1892)
+
+* Fix builds where the build directory path includes a space, and
+  ensure include paths work for out of tree builds.
+  (PR #1905.  Thanks to John Marshall)
+
+* Fix compilation failure on MacOS X 10.9 (and likely other very old platforms).
+  (PR #1945, fixes #1941.  Reported by Ryan Carsten Schmidt)
+
+* The htscodecs submodule is updated to v1.6.6.
+  This includes a fix to the rANS encoder when running on x86-64
+  hardware with some SIMD features disabled.
+  (Fixes samtools/samtools#2256. Reported by Ran Fan)
+
 Noteworthy changes in release 1.21 (12th September 2024)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
