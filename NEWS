@@ -1,6 +1,70 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Bug Fixes
+---------
+
+* Fix a number of bugs in the CRAM decoder which could result in undefined
+  behaviour on invalid inputs (PR #1981, PR #1991):
+
+  - Not checking the amount of byte array len data returned matched the amount
+    expected. (CVE-2026-31971)
+  - Incorrect check for the length of byte array stop data. (CVE-2026-31969)
+  - Invalid use of the varint and const codecs. (CVE-2026-31968)
+  - Missing check for a valid reference ID. (CVE-2026-31965)
+  - Missing check for a valid mate reference ID. (CVE-2026-31967)
+  - Incomplete validation of CRAM feature locations.
+    (CVE-2026-31965, CVE-2026-31966)
+  - Bugs due to improper handling of records where no sequence or quality
+    values were stored (CVE-2026-31962, CVE-2026-31964)
+
+* Reject GZI indexes with impossibly-large item counts. (CVE-2026-31970)
+  (PR #1978. Reported by Harrison Green)
+
+* Prevent the wrong item count from being written to GZI indexes of
+  empty files.
+  (PR #1988.  Reported by Matthieu Muffato)
+
+* Fix segfault on an empty valid MM tag.
+  (PR #1939, fixes #1936.  Reported by John Marshall)
+
+* Fix possible memory leak on successful match in kmemmem()
+  (PR #1953)
+
+* Avoid strictly undefined pointer arithmetic in synced bcf reader.
+  (PR #1962.  Thanks to John Marshall)
+
+* Fix embed_ref=2 on SEQ * and MD:Z tag. The combination of no sequence and
+  MD:Z with embed_ref=2 caused the slice extents to be miscalculated,
+  causing invalid CRAM output to be written.
+  (PR #1964, fixes samtools/samtools#2277.  Reported by fo40225)
+
+* Try to ensure CSI indexes are built with valid parameters.  Adjusts the
+  min_shift and n_lvls to cover the size of the genome.  This may override the
+  user setting of min_shift (with warning) if needed.
+  (PR #1968, fixes #1966. Reported by Marc Sturm)
+
+* Fix bug where multi-threaded CRAM iterators could drop long alignments
+  starting significantly before, but overlapping, the region of interest.
+  (PR #1973, fixes samtools/samtools#2285,  Reported by Nick Owens)
+
+* Fix invalid behaviour if kmemmem(), kstrstr() or kstrnstr() were
+  called with a zero-length pattern, or if kstrstr() was given a very
+  long input.  Also ensure they can never fail by supplying a fallback
+  algorithm that does not allocate any memory.
+  (PR #1980.  Reported by Harrison Green)
+
+Build Changes
+-------------
+
+* Fix compilation failure on MacOS X 10.9 (and likely other very old platforms).
+  (PR #1945, fixes #1941.  Reported by Ryan Carsten Schmidt)
+
+* The htscodecs submodule is updated to v1.6.6.
+  This includes a fix to the rANS encoder when running on x86-64
+  hardware with some SIMD features disabled.
+  (Fixes samtools/samtools#2256. Reported by Ran Fan)
+
 Noteworthy changes in release 1.22.1 (14th July 2025)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
