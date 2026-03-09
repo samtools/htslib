@@ -240,6 +240,12 @@ static int is_retryable(CURL *easy, CURLcode err)
     case CURLE_OPERATION_TIMEDOUT:
     case CURLE_GOT_NOTHING:
     case CURLE_SSL_CONNECT_ERROR:
+#ifdef CURLE_HTTP2
+    case CURLE_HTTP2:
+#endif
+#ifdef CURLE_HTTP2_STREAM
+    case CURLE_HTTP2_STREAM:
+#endif
         return 1;
 
     case CURLE_HTTP_RETURNED_ERROR: {
