@@ -5980,12 +5980,12 @@ static void overlap_remove(bam_plp_t iter, const bam1_t *b)
 {
     if ( !iter->overlaps ) return;
 
-    if ( b->core.flag&BAM_FUNMAP || !(b->core.flag&BAM_FPROPER_PAIR) ) //no need
-        return;
-
     khiter_t kitr;
     if ( b )
     {
+        if ( b->core.flag&BAM_FUNMAP || !(b->core.flag&BAM_FPROPER_PAIR) ) //no need
+            return;
+
         kitr = kh_get(olap_hash, iter->overlaps, bam_get_qname(b));
         if ( kitr!=kh_end(iter->overlaps) )
             kh_del(olap_hash, iter->overlaps, kitr);
