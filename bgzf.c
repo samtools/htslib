@@ -1741,6 +1741,8 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     // No gain from multi-threading when not compressed
     if (!fp->is_compressed)
         return 0;
+    if (fp->mt)
+        return -2;  //already exists!
 
     mtaux_t *mt;
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
@@ -1789,9 +1791,10 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     if (!p)
         return -1;
 
-    if (bgzf_thread_pool(fp, p, 0) != 0) {
+    int ret = 0;
+    if ((ret = bgzf_thread_pool(fp, p, 0)) < 0) {
         hts_tpool_destroy(p);
-        return -1;
+        return ret;
     }
 
     fp->mt->own_pool = 1;
@@ -2396,10 +2399,11 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     if (bgzf_flush(fp) != 0) return -1;
 
     // discard the entry marking the end of the file
-    if (fp->mt && fp->idx)
+    if (fp->mt && fp->idx && fp->idx->noffs > 0)
         fp->idx->noffs--;
 
-    if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
+    if (hwrite_uint64(fp->idx->noffs > 0 ? fp->idx->noffs - 1 : 0, idx) < 0)
+        goto fail;
     for (i=1; i<fp->idx->noffs; i++)
     {
         if (hwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
@@ -2471,6 +2475,9 @@ int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     if (fp->idx == NULL) goto fail;
     uint64_t x;
     if (hread_uint64(&x, idx) < 0) goto fail;
+    if (x >= ((SIZE_MAX < UINT64_MAX ? SIZE_MAX : UINT64_MAX)
+              / sizeof(bgzidx1_t) / 2))
+        goto fail;
 
     fp->idx->noffs = fp->idx->moffs = x + 1;
     fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));

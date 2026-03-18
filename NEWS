@@ -1,3 +1,51 @@
+Noteworthy changes in release 1.23.1 (18th March 2026)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Bug fixes
+---------
+
+* Fix a number of bugs in the CRAM decoder which could result in undefined
+  behaviour on invalid inputs (PR #1981, PR #1991):
+
+  - Not checking the amount of byte array len data returned matched the amount
+    expected. (CVE-2026-31971)
+  - Incorrect check for the length of byte array stop data. (CVE-2026-31969)
+  - Invalid use of the varint and const codecs. (CVE-2026-31968)
+  - Missing check for a valid reference ID. (CVE-2026-31965)
+  - Missing check for a valid mate reference ID. (CVE-2026-31967)
+  - Incomplete validation of CRAM feature locations.
+    (CVE-2026-31965, CVE-2026-31966)
+  - Bugs due to improper handling of records where no sequence or quality
+    values were stored (CVE-2026-31962, CVE-2026-31964)
+
+* Reject GZI indexes with impossibly-large item counts. (CVE-2026-31970)
+  (PR #1978.  Reported by Harrison Green)
+
+* Prevent the wrong item count from being written to GZI indexes of
+  empty files.
+  (PR #1988.  Reported by Matthieu Muffato)
+
+* Fix invalid behaviour if kmemmem(), kstrstr() or kstrnstr() were
+  called with a zero-length pattern, or if kstrstr() was given a very
+  long input.  Also ensure they can never fail by supplying a fallback
+  algorithm that does not allocate any memory.
+  (PR #1980.  Reported by Harrison Green)
+
+* Prevent redundant copies of hash keys in string pools.
+  (PR #1982)
+
+* Fix regressions in the S3 plugin which caused uploads to fail.
+  (PR #1984)
+
+* Disallow attempts to set the thread pool attached to an htsFile twice.
+  (PR #1985)
+
+Build Changes
+-------------
+
+* The htscodecs submodule is updated to v1.6.6.
+  (PR #1989)
+
 Noteworthy changes in release 1.23 (16th December 2025)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

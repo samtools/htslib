@@ -1421,6 +1421,10 @@ cram_block *cram_read_block(cram_fd *fd) {
     //fprintf(stderr, "Block at %d\n", (int)ftell(fd->fp));
 
     if (-1 == (b->method      = hgetc(fd->fp))) { free(b); return NULL; }
+    if (b->method > TOK3) {
+        hts_log_error("Unknown block compression method %d", (int) b->method);
+        free(b); return NULL;
+    }
     c = b->method; crc = crc32(crc, &c, 1);
     if (-1 == (b->content_type= hgetc(fd->fp))) { free(b); return NULL; }
     c = b->content_type; crc = crc32(crc, &c, 1);
@@ -5868,6 +5872,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_NTHREADS: {
         int nthreads =  va_arg(args, int);
+        if (fd->pool)
+            return -2;  //already exists!
         if (nthreads >= 1) {
             if (!(fd->pool = hts_tpool_init(nthreads)))
                 return -1;
@@ -5881,6 +5887,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_THREAD_POOL: {
         htsThreadPool *p = va_arg(args, htsThreadPool *);
+        if (fd->pool)
+            return -2;  //already exists!
         fd->pool = p ? p->pool : NULL;
         if (fd->pool) {
             fd->rqueue = hts_tpool_process_init(fd->pool,

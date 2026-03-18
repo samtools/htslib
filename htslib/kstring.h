@@ -106,13 +106,13 @@ extern "C" {
 	int ksplit_core(char *s, int delimiter, int *_max, int **_offsets);
 
     HTSLIB_EXPORT
-	char *kstrstr(const char *str, const char *pat, int **_prep);
+	char *kstrstr(const char *str, const char *pat, int **prep);
 
     HTSLIB_EXPORT
-	char *kstrnstr(const char *str, const char *pat, int n, int **_prep);
+	char *kstrnstr(const char *str, const char *pat, int n, int **prep);
 
     HTSLIB_EXPORT
-	void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep);
+	void *kmemmem(const void *str, int n, const void *pat, int m, int **prep);
 
 	/* kstrtok() is similar to strtok_r() except that str is not
 	 * modified and both str and sep can be NULL. For efficiency, it is
