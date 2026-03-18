@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2021,2023, 2025 Genome Research Ltd.
+Copyright (c) 2012-2021,2023, 2025, 2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -776,17 +776,23 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
     // does not change.
     switch(codec) {
     case E_VARINT_UNSIGNED:
-        c->decode = (option == E_INT)
-            ? cram_varint_decode_int
-            : cram_varint_decode_long;
+        if (option == E_INT || option == E_SINT)
+            c->decode = cram_varint_decode_int;
+        else if (option == E_LONG || option == E_SLONG)
+            c->decode = cram_varint_decode_long;
+        else
+            goto malformed;
         break;
     case E_VARINT_SIGNED:
-        c->decode = (option == E_INT)
-            ? cram_varint_decode_sint
-            : cram_varint_decode_slong;
+        if (option == E_INT || option == E_SINT)
+            c->decode = cram_varint_decode_sint;
+        else if (option == E_LONG || option == E_SLONG)
+            c->decode = cram_varint_decode_slong;
+        else
+            goto malformed;
         break;
     default:
-        return NULL;
+        goto malformed;
     }
 
     c->free   = cram_varint_decode_free;
@@ -798,14 +804,17 @@ cram_codec *cram_varint_decode_init(cram_block_compression_hdr *hdr,
     c->u.varint.offset     = vv->varint_get64s(&cp, cp_end, NULL);
 
     if (cp - data != size) {
-        fprintf(stderr, "Malformed varint header stream\n");
-        free(c);
-        return NULL;
+        goto malformed;
     }
 
     c->u.varint.type = option;
 
     return c;
+
+ malformed:
+    hts_log_error("Malformed varint header stream");
+    free(c);
+    return NULL;
 }
 
 int cram_varint_encode_int(cram_slice *slice, cram_codec *c,
@@ -924,6 +933,9 @@ int cram_const_decode_byte(cram_slice *slice, cram_codec *c,
                            cram_block *in, char *out, int *out_size) {
     int i, n;
 
+    if (!out)
+        return 0;
+
     for (i = 0, n = *out_size; i < n; i++)
         out[i] = c->u.xconst.val;
 
@@ -978,12 +990,17 @@ cram_codec *cram_const_decode_init(cram_block_compression_hdr *hdr,
         return NULL;
 
     c->codec  = codec;
-    if (codec == E_CONST_BYTE)
+    if (codec == E_CONST_BYTE && option == E_BYTE)
         c->decode = cram_const_decode_byte;
-    else if (option == E_INT)
+    else if (codec == E_CONST_INT && (option == E_INT || option == E_SINT))
         c->decode = cram_const_decode_int;
-    else
+    else if (codec == E_CONST_INT && (option == E_LONG || option == E_SLONG))
         c->decode = cram_const_decode_long;
+    else {
+        hts_log_error("Malformed const header stream");
+        free(c);
+        return NULL;
+    }
     c->free   = cram_const_decode_free;
     c->size   = cram_const_decode_size;
     c->get_block = NULL;
@@ -1404,7 +1421,7 @@ int cram_xpack_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, cha
         if (out)
             memcpy(out, b->data + b->byte, *out_size);
         b->byte += *out_size;
-    } else {
+    } else if (out) {
         memset(out, c->u.xpack.rmap[0], *out_size);
     }
 
@@ -2111,7 +2128,8 @@ int cram_xrle_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char
     cram_xrle_decode_expand_char(slice, c);
     cram_block *b = slice->block_by_id[512 + c->codec_id];
 
-    memcpy(out, b->data + b->idx, n);
+    if (out)
+        memcpy(out, b->data + b->idx, n);
     b->idx += n;
     return 0;
 
@@ -3568,7 +3586,7 @@ cram_codec *cram_byte_array_len_encode_init(cram_stats *st,
 static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
                                             cram_block *in, char *out,
                                             int *out_size) {
-    char *cp, ch;
+    uint8_t *cp;
     cram_block *b = NULL;
 
     b = cram_get_block_by_id(slice, c->u.byte_array_stop.content_id);
@@ -3578,31 +3596,29 @@ static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
     if (b->idx >= b->uncomp_size)
         return -1;
 
-    cp = (char *)b->data + b->idx;
+    ssize_t term = b->uncomp_size - b->idx;
+    cp = b->data + b->idx;
     if (out) {
        // memccpy equivalent but without copying the terminating byte
-        ssize_t term = MIN(*out_size, b->uncomp_size - b->idx);
-        while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
-            if (term-- < 0)
-                break;
-            *out++ = ch;
-            cp++;
+        if (term > *out_size)
+            term = *out_size;
+        while (--term >= 0 && *cp != c->u.byte_array_stop.stop) {
+            *out++ = *cp++;
         }
 
-        // Attempted overrun on input or output
-        if (ch != (char)c->u.byte_array_stop.stop)
-            return -1;
     } else {
         // Consume input, but produce no output
-        while ((ch = *cp) != (char)c->u.byte_array_stop.stop) {
-            if (cp - (char *)b->data >= b->uncomp_size)
-                return -1;
+        while (--term >= 0 && *cp != c->u.byte_array_stop.stop) {
             cp++;
         }
     }
 
-    *out_size = cp - (char *)(b->data + b->idx);
-    b->idx = cp - (char *)b->data + 1;
+    // Attempted overrun on input or output
+    if (cp >= b->data + b->uncomp_size || *cp != c->u.byte_array_stop.stop)
+        return -1;
+
+    *out_size = cp - (b->data + b->idx);
+    b->idx = cp - b->data + 1;
 
     return 0;
 }
