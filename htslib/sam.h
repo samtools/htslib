@@ -1143,6 +1143,75 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *
 HTSLIB_EXPORT
 ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
 
+/// Unpack nibble-encoded sequence into a char buffer
+/** @param dest    Destination character buffer
+    @param seq     Pointer to sequence bases packed as per bam1_t
+    @param seqlen  Number of bases at @p seq to be unpacked
+
+Unpacks nucleotides encoded in the (seqlen+1)/2 bytes at @p seq.
+Writes exactly @p seqlen characters to @p dest. If NUL-termination
+is desired, the calling code should add '\0' appropriately itself.
+ */
+HTSLIB_EXPORT
+void sam_format_seq(char *dest, const uint8_t *seq, size_t seqlen);
+
+/// Unpack BAM record's sequence field into a char buffer
+/** @param dest  Destination character buffer
+    @param b     Source alignment record
+ */
+static inline void bam_format_seq(char *dest, const bam1_t *b) {
+    sam_format_seq(dest, bam_get_seq(b), b->core.l_qseq);
+}
+
+/// Decode base qualities into a char buffer
+/** @param dest     Destination character buffer
+    @param qual     Pointer to base qualities encoded as per bam1_t
+    @param quallen  Number of base qualities at @p seq to be decoded
+
+Decodes base qualities encoded in the @p quallen bytes at @p seq.
+Writes exactly @p quallen characters to @p dest. If the base qualities
+are missing (encoded as '\xff'), writes '*' followed by quallen-1 NULs.
+Otherwise if NUL-termination is desired, the calling code should add
+'\0' appropriately itself.
+ */
+HTSLIB_EXPORT
+void sam_format_qual(char *dest, const uint8_t *qual, size_t quallen);
+
+/// Decode BAM record's base qualities field into a char buffer
+/** @param dest  Destination character buffer
+    @param b     Source alignment record
+ */
+static inline void bam_format_qual(char *dest, const bam1_t *b) {
+    sam_format_qual(dest, bam_get_qual(b), b->core.l_qseq);
+}
+
+/// Pack ASCII sequence string into nibble-encoded sequence buffer
+/** @param seq  Destination sequence base buffer to be packed as per bam1_t
+    @param src  Pointer to ASCII-encoded base characters
+    @param len  Number of base characters at @p src to be packed
+    @return     The number of bytes written to @p seq, or negative on error
+
+Packs @p len ASCII base characters into a nibble-encoded sequence buffer.
+If the text at @p src is "*\0", writes 0 bytes to @p seq; otherwise writes
+exactly floor((len+1)/2) bytes to @p seq.
+ */
+HTSLIB_EXPORT
+int sam_parse_seq(uint8_t *seq, const char *src, size_t len);
+
+/// Encode ASCII base qualities into uint8_t buffer
+/** @param qual  Destination base quality buffer to be encoded as per bam1_t
+    @param src   Pointer to ASCII-encoded base quality characters
+    @param len   Number of base qualities at @p src to be encoded
+    @return      The number of bytes written to @p qual, or negative on error
+
+Encodes @p len ASCII base qualities into a quality buffer encoded as per bam1_t.
+If the text at @p src is "*\0" (i.e., if len==1 and src is '*', or len>1 and src
+is '*' followed by a NUL), encodes as @p len missing ('\xff') qualities. Always
+writes exactly @p len bytes to @p qual.
+ */
+HTSLIB_EXPORT
+int sam_parse_qual(uint8_t *qual, const char *src, size_t len);
+
 /*************************
  *** BAM/CRAM indexing ***
  *************************/

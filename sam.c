@@ -2683,6 +2683,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 // Basic version which operates a byte at a time
 #define COPY_MINUS_N(to,from,n,l,failed) do {                \
         uint8_t uflow = 0;                                   \
+        int i;                                               \
         for (i = 0; i < (l); ++i) {                          \
             (to)[i] = (from)[i] - (n);                       \
             uflow |= (uint8_t) (to)[i];                      \
@@ -2699,7 +2700,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     uint8_t *t;
 
     char *p = s->s, *q;
-    int i, overflow = 0;
+    int overflow = 0;
     char logbuf[40];
     hts_pos_t cigreflen;
     bam1_core_t *c = &b->core;
@@ -2796,8 +2797,8 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         c->l_qseq = p - q - 1;
         hts_pos_t ql = bam_cigar2qlen(c->n_cigar, (uint32_t*)(b->data + c->l_qname));
         _parse_err(c->n_cigar && ql != c->l_qseq, "CIGAR and query sequence are of different length");
-        i = (c->l_qseq + 1) >> 1;
-        _get_mem(uint8_t, &t, b, i);
+        int half_l_qseq = (c->l_qseq + 1) >> 1;
+        _get_mem(uint8_t, &t, b, half_l_qseq);
 
         unsigned int lqs2 = c->l_qseq&~1, i;
         for (i = 0; i < lqs2; i+=2)
@@ -4037,7 +4038,6 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
 
             // The SAMTags spec recommends (but not requires) separating
             // barcodes with hyphen ('-').
-            size_t i;
             for (i = 0; i < UMI_len; i++)
                 UMI_seq[i] = isalpha_c(x->name.s[i+match[1].rm_so])
                     ? x->name.s[i+match[1].rm_so]
@@ -4164,7 +4164,6 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 
         if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
             // We don't support multi-threaded SAM parsing with seeks yet.
-            int ret;
             if ((ret = sam_state_destroy(fp)) < 0) {
                 errno = -ret;
                 return -2;
@@ -4350,7 +4349,7 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
     r |= kputll(c->mpos + 1, str); r |= kputc_('\t', str); // mate pos
     r |= kputll(c->isize, str); r |= kputc_('\t', str); // template len
     if (c->l_qseq) { // seq and qual
-        uint8_t *s = bam_get_seq(b);
+        s = bam_get_seq(b);
         if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
         char *cp = str->s + str->l;
 
@@ -4402,6 +4401,51 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     str->l = 0;
     return sam_format1_append(h, b, str);
+}
+
+void sam_format_seq(char *dest, const uint8_t *seq, size_t seqlen)
+{
+    nibble2base(seq, dest, seqlen);
+}
+
+void sam_format_qual(char *dest, const uint8_t *qual, size_t quallen)
+{
+    if (qual[0] != 0xff) {
+        add33((uint8_t *) dest, qual, quallen);
+    }
+    else {
+        memset(dest, '\0', quallen);
+        dest[0] = '*';
+    }
+}
+
+int sam_parse_seq(uint8_t *seq, const char *src, size_t len)
+{
+    if (src[0] == '*' && (len == 1 || src[1] == '\0')) return 0;
+
+    const uint8_t *usrc = (const uint8_t *) src;
+    uint8_t *seq0 = seq;
+    size_t i, even_len = len & ~1;
+    for (i = 0; i < even_len; i += 2)
+        *seq++ = (seq_nt16_table[usrc[i]] << 4) | seq_nt16_table[usrc[i + 1]];
+    for (; i < len; i++)
+        *seq++ = seq_nt16_table[usrc[i]] << 4;
+
+    return seq - seq0;
+}
+
+int sam_parse_qual(uint8_t *qual, const char *src, size_t len)
+{
+    if (src[0] == '*' && (len == 1 || src[1] == '\0')) {
+        memset(qual, 0xff, len);
+    }
+    else {
+        int failed = 0;
+        COPY_MINUS_N(qual, src, 33, len, failed);
+        if (failed) { errno = EINVAL; return -1; }
+    }
+
+    return len;
 }
 
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end);
