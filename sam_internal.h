@@ -117,6 +117,35 @@ static inline void nibble2base(uint8_t *nib, char *seq, int len) {
 #endif
 }
 
+/// holds data for extra condition checks
+typedef struct sam_cond_t {
+    int tid, maxdepth;
+    //buffer to hold depth data
+    hts_pos_t bufstart, bufend;
+    kstring_t ksbuf;
+} sam_cond_t;
+
+/// allocates condition data
+/// returns the allocated data on success and NULL on failure
+static inline sam_cond_t* sam_cond_init(void)
+{
+    sam_cond_t *c = calloc(1, sizeof(sam_cond_t));
+    if (!c) {
+        hts_log_warning("Couldn't create condition data");
+        return NULL;
+    }
+    return c;
+}
+
+/// deallocates condition data
+static inline void sam_cond_destroy(sam_cond_t *c)
+{
+    if (!c)
+        return;
+    ks_free(&c->ksbuf);
+    free(c);
+}
+
 #ifdef __cplusplus
 }
 #endif
