@@ -1378,24 +1378,24 @@ int cram_xpack_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char
     return 0;
 }
 
-static int cram_xpack_decode_expand_char(cram_slice *slice, cram_codec *c) {
-    cram_block *b = slice->block_by_id[512 + c->codec_id];
-    if (b)
-        return 0;
+static cram_block *cram_xpack_decode_expand_char(cram_slice *slice, cram_codec *c) {
+    if (c->u.xpack.expanded)
+        return c->u.xpack.expanded;
 
     // get sub-codec data.
     cram_block *sub_b = c->u.xpack.sub_codec->get_block(slice, c->u.xpack.sub_codec);
     if (!sub_b)
-        return -1;
+        return NULL;
 
     // Allocate local block to expand into
-    b = slice->block_by_id[512 + c->codec_id] = cram_new_block(0, 0);
+    size_t n = sub_b->uncomp_size * 8/c->u.xpack.nbits;
+    cram_block *b = cram_new_block(0, 0);
     if (!b)
-        return -1;
-    int n = sub_b->uncomp_size * 8/c->u.xpack.nbits;
+        return NULL;
     BLOCK_GROW(b, n);
     b->uncomp_size = n;
 
+    // Expand data
     uint8_t p[256];
     int z;
     for (z = 0; z < 256; z++)
@@ -1403,10 +1403,17 @@ static int cram_xpack_decode_expand_char(cram_slice *slice, cram_codec *c) {
     hts_unpack(sub_b->data, sub_b->uncomp_size, b->data, b->uncomp_size,
                8 / c->u.xpack.nbits, p);
 
-    return 0;
+    // Cache for next call (and free old copy sub_b->data)
+    c->u.xpack.expanded = b;
+    free(sub_b->data);
+    sub_b->data = NULL;
+
+    return b;
 
  block_err:
-    return -1;
+    if (b)
+        cram_free_block(b);
+    return NULL;
 }
 
 int cram_xpack_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
@@ -1417,13 +1424,15 @@ int cram_xpack_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, cha
     // We therefore have to cache appropriate block info in slice and not codec.
     //    b = cram_get_block_by_id(slice, c->external.content_id);
     if (c->u.xpack.nval > 1) {
-        cram_xpack_decode_expand_char(slice, c);
-        cram_block *b = slice->block_by_id[512 + c->codec_id];
+        cram_block *b = cram_xpack_decode_expand_char(slice, c);
         if (!b)
             return -1;
 
-        if (out)
+        if (out) {
+            if (*out_size > b->uncomp_size - b->byte)
+                return -1;
             memcpy(out, b->data + b->byte, *out_size);
+        }
         b->byte += *out_size;
     } else if (out) {
         memset(out, c->u.xpack.rmap[0], *out_size);
@@ -1438,20 +1447,21 @@ void cram_xpack_decode_free(cram_codec *c) {
     if (c->u.xpack.sub_codec)
         c->u.xpack.sub_codec->free(c->u.xpack.sub_codec);
 
-    //free(slice->block_by_id[512 + c->codec_id]);
-    //slice->block_by_id[512 + c->codec_id] = 0;
+    if (c->u.xpack.expanded)
+        cram_free_block(c->u.xpack.expanded);
 
     free(c);
 }
 
 int cram_xpack_decode_size(cram_slice *slice, cram_codec *c) {
-    cram_xpack_decode_expand_char(slice, c);
-    return slice->block_by_id[512 + c->codec_id]->uncomp_size;
+    if (!cram_xpack_decode_expand_char(slice, c))
+        return -1;
+    return c->u.xpack.expanded->uncomp_size;
 }
 
 cram_block *cram_xpack_get_block(cram_slice *slice, cram_codec *c) {
     cram_xpack_decode_expand_char(slice, c);
-    return slice->block_by_id[512 + c->codec_id];
+    return c->u.xpack.expanded;
 }
 
 cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
@@ -1706,8 +1716,8 @@ int cram_xdelta_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, cha
     return 0;
 }
 
-static int cram_xdelta_decode_expand_char(cram_slice *slice, cram_codec *c) {
-    return -1;
+static cram_block *cram_xdelta_decode_expand_char(cram_slice *slice, cram_codec *c) {
+    return NULL;
 }
 
 int cram_xdelta_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
@@ -1773,13 +1783,14 @@ void cram_xdelta_decode_free(cram_codec *c) {
 }
 
 int cram_xdelta_decode_size(cram_slice *slice, cram_codec *c) {
-    cram_xdelta_decode_expand_char(slice, c);
-    return slice->block_by_id[512 + c->codec_id]->uncomp_size;
+    if (!cram_xdelta_decode_expand_char(slice, c))
+        return -1;
+    return c->u.xdelta.expanded->uncomp_size;
 }
 
 cram_block *cram_xdelta_get_block(cram_slice *slice, cram_codec *c) {
     cram_xdelta_decode_expand_char(slice, c);
-    return slice->block_by_id[512 + c->codec_id];
+    return c->u.xdelta.expanded;
 }
 
 cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
@@ -2075,26 +2086,24 @@ int cram_xrle_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char 
 }
 
 // Expands an XRLE transform and caches result in slice->block_by_id[]
-static int cram_xrle_decode_expand_char(cram_slice *slice, cram_codec *c) {
-    cram_block *b = slice->block_by_id[512 + c->codec_id];
-    if (b)
-        return 0;
+static cram_block *cram_xrle_decode_expand_char(cram_slice *slice, cram_codec *c) {
+    if (c->u.xrle.expanded)
+        return c->u.xrle.expanded;
 
-    b = slice->block_by_id[512 + c->codec_id] = cram_new_block(0, 0);
-    if (!b)
-        return -1;
+    // get sub-codec data.
     cram_block *lit_b = c->u.xrle.lit_codec->get_block(slice, c->u.xrle.lit_codec);
     if (!lit_b)
-        return -1;
+        return NULL;
     unsigned char *lit_dat = lit_b->data;
     unsigned int lit_sz = lit_b->uncomp_size;
     unsigned int len_sz = c->u.xrle.len_codec->size(slice, c->u.xrle.len_codec);
 
     cram_block *len_b = c->u.xrle.len_codec->get_block(slice, c->u.xrle.len_codec);
     if (!len_b)
-        return -1;
+        return NULL;
     unsigned char *len_dat = len_b->data;
 
+    // prepare RLE meta-data
     uint8_t rle_syms[256];
     int rle_nsyms = 0;
     int i;
@@ -2103,37 +2112,55 @@ static int cram_xrle_decode_expand_char(cram_slice *slice, cram_codec *c) {
             rle_syms[rle_nsyms++] = i;
     }
 
+    // Allocate block
     uint64_t out_sz;
     int nb = var_get_u64(len_dat, len_dat+len_sz, &out_sz);
-    if (!(b->data = malloc(out_sz)))
-        return -1;
+    cram_block *b = cram_new_block(0, 0);
+    if (!b)
+        return NULL;
+    BLOCK_GROW(b, out_sz);
+    b->uncomp_size = out_sz;
+
+    // Expand RLE
     hts_rle_decode(lit_dat, lit_sz,
                    len_dat+nb, len_sz-nb,
                    rle_syms, rle_nsyms,
                    b->data, &out_sz);
-    b->uncomp_size = out_sz;
 
-    return 0;
+    // Cache for next call (and free old copy lit_b->data / len_b->data)
+    c->u.xrle.expanded = b;
+    free(lit_b->data); lit_b->data = NULL;
+    free(len_b->data); len_b->data = NULL;
+
+    return b;
+
+ block_err:
+    if (b)
+        cram_free_block(b);
+    return NULL;
 }
 
 int cram_xrle_decode_size(cram_slice *slice, cram_codec *c) {
-    cram_xrle_decode_expand_char(slice, c);
-    return slice->block_by_id[512 + c->codec_id]->uncomp_size;
+    if (!cram_xrle_decode_expand_char(slice, c))
+        return -1;
+    return c->u.xrle.expanded->uncomp_size;
 }
 
 cram_block *cram_xrle_get_block(cram_slice *slice, cram_codec *c) {
     cram_xrle_decode_expand_char(slice, c);
-    return slice->block_by_id[512 + c->codec_id];
+    return c->u.xrle.expanded;
 }
 
 int cram_xrle_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int n = *out_size;
 
-    cram_xrle_decode_expand_char(slice, c);
-    cram_block *b = slice->block_by_id[512 + c->codec_id];
+    cram_block *b = cram_xrle_decode_expand_char(slice, c);
 
-    if (out)
+    if (out) {
+        if (*out_size > b->idx + n)
+            return -1;
         memcpy(out, b->data + b->idx, n);
+    }
     b->idx += n;
     return 0;
 
@@ -2181,6 +2208,9 @@ void cram_xrle_decode_free(cram_codec *c) {
 
     if (c->u.xrle.lit_codec)
         c->u.xrle.lit_codec->free(c->u.xrle.lit_codec);
+
+    if (c->u.xrle.expanded)
+        cram_free_block(c->u.xrle.expanded);
 
     free(c);
 }
@@ -3881,10 +3911,8 @@ cram_codec *cram_decoder_init(cram_block_compression_hdr *hdr,
     if (codec >= E_NULL && codec < E_NUM_CODECS && decode_init[codec]) {
         cram_codec *r = decode_init[codec](hdr, data, size, codec,
                                            option, version, vv);
-        if (r) {
+        if (r)
             r->vv = vv;
-            r->codec_id = hdr->ncodecs++;
-        }
         return r;
     } else {
         hts_log_error("Unimplemented codec of type %s", cram_encoding2str(codec));

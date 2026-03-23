@@ -369,9 +369,6 @@ struct cram_block_compression_hdr {
 
     char *uncomp; // A single block of uncompressed data
     size_t uncomp_size, uncomp_alloc;
-
-    // Total codec count, used for index to block_by_id for transforms
-    int ncodecs;
 };
 
 typedef struct cram_map {
