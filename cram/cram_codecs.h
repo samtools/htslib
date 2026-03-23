@@ -76,6 +76,7 @@ typedef struct {
 
 // A PACK transform, packing multiple values into a single byte
 typedef struct {
+    cram_block *expanded;
     int32_t nbits;
     enum cram_encoding sub_encoding;
     void *sub_codec_dat;
@@ -88,6 +89,7 @@ typedef cram_xpack_decoder cram_xpack_encoder;
 
 // Transforms symbols X,Y,Z to bytes 0,1,2.
 typedef struct {
+    cram_block *expanded;
     enum cram_encoding len_encoding;
     enum cram_encoding lit_encoding;
     void *len_dat;
@@ -105,6 +107,7 @@ typedef cram_xrle_decoder cram_xrle_encoder;
 // DELTA + zigzag + varint encoding
 typedef struct {
     // FIXME: define endian here too.  Require little endian?
+    cram_block *expanded;
     int64_t last;
     uint8_t word_size; // 1, 2, 4, 8
     //uint8_t sign;      // true if input data is already signed
@@ -164,7 +167,6 @@ struct cram_codec {
     enum cram_encoding codec;
     cram_block *out;
     varint_vec *vv;
-    int codec_id;
     void (*free)(struct cram_codec *codec);
     int (*decode)(cram_slice *slice, struct cram_codec *codec,
                   cram_block *in, char *out, int *out_size);
