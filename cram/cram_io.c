@@ -2427,10 +2427,10 @@ static void ref_entry_free_seq(ref_entry *e) {
 void refs_free(refs_t *r) {
     RP("refs_free()\n");
 
-    if (--r->count > 0)
+    if (!r)
         return;
 
-    if (!r)
+    if (--r->count > 0)
         return;
 
     if (r->pool)
@@ -3434,24 +3434,13 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
 
 
     /* Sanity checking: does this ID exist? */
-    if (id >= fd->refs->nref) {
+    if (!fd->refs || id < 0 || id >= fd->refs->nref || !fd->refs->ref_id[id]) {
         hts_log_error("No reference found for id %d", id);
         pthread_mutex_unlock(&fd->ref_lock);
         return NULL;
     }
 
-    if (!fd->refs || !fd->refs->ref_id[id]) {
-        hts_log_error("No reference found for id %d", id);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
-
-    if (!(r = fd->refs->ref_id[id])) {
-        hts_log_error("No reference found for id %d", id);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
-
+    r = fd->refs->ref_id[id];
 
     /*
      * It has an entry, but may not have been populated yet.
