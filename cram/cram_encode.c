@@ -3927,7 +3927,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             if (p->cram_flags & CRAM_FLAG_STATS_ADDED) {
                 cram_stats_del(c->stats[DS_NP], p->mate_pos);
                 cram_stats_del(c->stats[DS_MF], p->mate_flags);
-                if (!(p->cram_flags & CRAM_FLAG_EXPLICIT_TLEN))
+                if (!(p->cram_flags & CRAM_FLAG_EXPLICIT_TLEN)
+                    && !explicit_tlen)
                     cram_stats_del(c->stats[DS_TS], p->tlen);
                 cram_stats_del(c->stats[DS_NS], p->mate_ref_id);
             }
