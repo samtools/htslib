@@ -1211,7 +1211,7 @@ If the text at @p src is "*\0", writes 0 bytes to @p seq; otherwise writes
 exactly @c floor((len+1)/2) bytes to @p seq.
  */
 HTSLIB_EXPORT
-int sam_parse_seq(uint8_t *seq, const char *src, size_t len);
+size_t sam_parse_seq(uint8_t *seq, const char *src, size_t len);
 
 /// Encode ASCII base qualities into uint8_t buffer
 /** @param qual  Destination base quality buffer to be encoded as per bam1_t
@@ -1231,7 +1231,7 @@ ASCII 33 ('!'), i.e. a space or control character, as these are not
 valid SAM format quality values.
  */
 HTSLIB_EXPORT
-int sam_parse_qual(uint8_t *qual, const char *src, size_t len);
+ssize_t sam_parse_qual(uint8_t *qual, const char *src, size_t len);
 
 /*************************
  *** BAM/CRAM indexing ***

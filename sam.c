@@ -2683,7 +2683,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 // Basic version which operates a byte at a time
 #define COPY_MINUS_N(to,from,n,l,failed) do {                \
         uint8_t uflow = 0;                                   \
-        int i;                                               \
+        size_t i;                                               \
         for (i = 0; i < (l); ++i) {                          \
             (to)[i] = (from)[i] - (n);                       \
             uflow |= (uint8_t) (to)[i];                      \
@@ -4416,7 +4416,7 @@ void sam_format_qual(char *dest, const uint8_t *qual, size_t quallen)
     }
 }
 
-int sam_parse_seq(uint8_t *seq, const char *src, size_t len)
+size_t sam_parse_seq(uint8_t *seq, const char *src, size_t len)
 {
     if (src[0] == '*' && (len == 1 || src[1] == '\0')) return 0;
 
@@ -4428,10 +4428,10 @@ int sam_parse_seq(uint8_t *seq, const char *src, size_t len)
     for (; i < len; i++)
         *seq++ = seq_nt16_table[usrc[i]] << 4;
 
-    return seq - seq0;
+    return (size_t) (seq - seq0);
 }
 
-int sam_parse_qual(uint8_t *qual, const char *src, size_t len)
+ssize_t sam_parse_qual(uint8_t *qual, const char *src, size_t len)
 {
     if (src[0] == '*' && (len == 1 || src[1] == '\0')) {
         memset(qual, 0xff, len);
@@ -4442,7 +4442,7 @@ int sam_parse_qual(uint8_t *qual, const char *src, size_t len)
         if (failed) { errno = EINVAL; return -1; }
     }
 
-    return len;
+    return (ssize_t) len;
 }
 
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end);
