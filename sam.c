@@ -4256,6 +4256,95 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
     return ret;
 }
 
+/// extra checks on reads and decide whether to pass it to user or not
+/* fp - file pointer which holds the buffer
+ * h  - header
+ * b  - bam data
+ * returns 1 to send the read to user and 0 to discard and check next read
+ * returns -1 on errors
+ */
+int check_conditions(samFile *fp, sam_hdr_t *h, bam1_t *b)
+{
+    /* for maxdepth, depth per position is kept on a buffer in sam_cond_t data
+    in the file. It is safe as long as same file is not shared across threads.
+    Expects sorted data and if not so, fails. The depth data is discarded as
+    new position is read, to hold only relevant data.
+    */
+    int ret = 0, i, j, updlen = 0;
+    sam_cond_t *c = NULL;
+    uint32_t *depbuf = NULL, *cigar = NULL;
+    size_t seqoffset = 0, reqbuflen = 0, bkplen = 0;
+    kstring_t *ksbuf = NULL;
+
+    //assumes fp and condition data to be valid
+    c = (sam_cond_t*)fp->cond_data;
+    if (!(ksbuf = &c->ksbuf)) {
+        return -1;  //invalid, earlier alloc failed
+    }
+    bkplen = c->ksbuf.m;
+    if (b->core.flag & BAM_FUNMAP || !b->core.n_cigar)
+        return 1;      //unmapped or no cigar, pass
+
+    if (c->tid != b->core.tid) {        //tid changed, reset and reuse
+        c->bufstart = c->bufend = seqoffset = 0;
+        c->tid = b->core.tid;
+        if (ksbuf->s)
+            memset(ksbuf->s, 0, ksbuf->m);
+    } else {                            //same tid, ensure sorted data
+        if (c->bufstart > b->core.pos) {
+            hts_log_warning("Unsorted data, max depth checks won't work");
+            sam_cond_destroy(c);
+            fp->cond_data = NULL;
+            return -1;   //return failure
+        }
+    }
+
+    seqoffset = c->bufend > b->core.pos ? b->core.pos - c->bufstart : 0;
+    if (ksbuf->m) {
+        //sorted and got a new pos, we can discard all upto this point
+        if ( c->bufstart < b->core.pos) {
+            if (seqoffset) {            //part discard
+                size_t sz = seqoffset * sizeof(uint32_t);
+                size_t len = ksbuf->m - sz;
+                memmove(ksbuf->s, ksbuf->s + sz, len);
+                memset(ksbuf->s + len, 0, sz);
+            } else                      //full discard
+                memset(ksbuf->s, 0, ksbuf->m);
+
+            c->bufstart = b->core.pos;
+            seqoffset = 0;
+        }
+    }
+    if (c->bufstart < b->core.pos)
+        c->bufstart = b->core.pos;
+    //depends on l_qseq and length given by query consuming cigars matching
+    reqbuflen = seqoffset + b->core.l_qseq;
+    cigar = bam_get_cigar(b);
+    if (reqbuflen * sizeof(uint32_t) > ksbuf->m) {
+        if (ks_resize(ksbuf, reqbuflen * sizeof(uint32_t))) //failed to realloc
+            return -1;
+        memset(ksbuf->s+bkplen, 0, ksbuf->m - bkplen);      //reset
+    }
+
+    depbuf = (uint32_t*)ksbuf->s;
+
+    for (i = 0; i < b->core.n_cigar; ++i) {
+        if (!(bam_cigar_type(bam_cigar_op(cigar[i]))&1)) {
+            continue;   //irrelevant cigar
+        }
+        //cigar consuming query, update depth for each pos
+        for(j = 0; j < bam_cigar_oplen(cigar[i]); ++j) {
+            ret |= ++depbuf[seqoffset + updlen + j] <= c->maxdepth;
+        }
+        updlen += bam_cigar_oplen(cigar[i]);
+    }
+    if (c->bufend < b->core.pos + b->core.l_qseq)
+        c->bufend = b->core.pos + b->core.l_qseq;   //update bufend pos
+    ksbuf->l = c->bufend - c->bufstart;
+
+    return ret;
+}
+
 // Returns 0 on success,
 //        -1 on EOF,
 //       <-1 on error
@@ -4298,9 +4387,15 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             return -3;
         }
 
-        pass_filter = (ret >= 0 && fp->filter)
-            ? sam_passes_filter(h, b, fp->filter)
-            : 1;
+        if (ret >= 0) {
+            pass_filter = fp->filter
+                ? sam_passes_filter(h, b, fp->filter)
+                : 1;
+
+            if (pass_filter && fp->cond_data)   //extra checks if set so
+                pass_filter = check_conditions(fp, h, b);
+        } else
+            pass_filter = 1;
     } while (pass_filter == 0);
 
     return pass_filter < 0 ? -2 : ret;

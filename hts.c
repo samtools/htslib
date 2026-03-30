@@ -1216,6 +1216,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         strcmp(o->arg, "FASTQ_UMI_REGEX") == 0)
         o->opt = FASTQ_OPT_UMI_REGEX, o->val.s = val;
 
+    else if (strcmp(o->arg, "seq_max_depth") == 0 ||
+        strcmp(o->arg, "SEQ_MAX_DEPTH") == 0)
+        o->opt = SEQ_OPT_MAXDEPTH, o->val.i = atoi(val);
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1260,6 +1264,7 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
             case FASTQ_OPT_BARCODE:
             case FASTQ_OPT_UMI:
             case FASTQ_OPT_UMI_REGEX:
+            case SEQ_OPT_MAXDEPTH:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
                     return -1;
                 break;
@@ -1704,6 +1709,7 @@ int hts_close(htsFile *fp)
     free(fp->fn);
     free(fp->fn_aux);
     free(fp->line.s);
+    sam_cond_destroy((sam_cond_t*)fp->cond_data);
     free(fp);
     errno = save;
     return ret;
@@ -1902,6 +1908,27 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         } // else CRAM manages this in its own way
         break;
     }
+
+    case SEQ_OPT_MAXDEPTH: {
+        /* once max depth is reached for all pos covered by the read, it will
+        be discarded */
+        va_start(args, opt);
+        int depth = va_arg(args, int);
+        va_end(args);
+        sam_cond_t *c = NULL;
+        if (depth > 0) {
+            if (!fp->cond_data) {
+                fp->cond_data = sam_cond_init();
+            }
+            if (!fp->cond_data) {
+                hts_log_warning("Cannot set max depth option");
+                return -1;
+            }
+            c = (sam_cond_t*)fp->cond_data;
+            c->maxdepth = depth;
+        }
+    }
+    break;
 
     default:
         break;
