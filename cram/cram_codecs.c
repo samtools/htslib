@@ -1388,7 +1388,16 @@ static cram_block *cram_xpack_decode_expand_char(cram_slice *slice, cram_codec *
         return NULL;
 
     // Allocate local block to expand into
-    size_t n = sub_b->uncomp_size * 8/c->u.xpack.nbits;
+    size_t n;
+    if (c->u.xpack.nbits) {
+        if (sub_b->uncomp_size / c->u.xpack.nbits > INT32_MAX / 8)
+            return NULL; // would overflow
+
+        n = sub_b->uncomp_size * (8/c->u.xpack.nbits);
+    } else {
+        n = sub_b->uncomp_size;
+    }
+
     cram_block *b = cram_new_block(0, 0);
     if (!b)
         return NULL;
@@ -1396,12 +1405,17 @@ static cram_block *cram_xpack_decode_expand_char(cram_slice *slice, cram_codec *
     b->uncomp_size = n;
 
     // Expand data
-    uint8_t p[256];
-    int z;
-    for (z = 0; z < 256; z++)
-        p[z] = c->u.xpack.rmap[z];
-    hts_unpack(sub_b->data, sub_b->uncomp_size, b->data, b->uncomp_size,
-               8 / c->u.xpack.nbits, p);
+    if (c->u.xpack.nbits) {
+        uint8_t p[256];
+        int z;
+        for (z = 0; z < 256; z++)
+            p[z] = c->u.xpack.rmap[z];
+        hts_unpack(sub_b->data, sub_b->uncomp_size, b->data, b->uncomp_size,
+                   8 / c->u.xpack.nbits, p);
+    } else {
+        // Constant values.
+        memset(sub_b->data, c->u.xpack.rmap[0], sub_b->uncomp_size);
+    }
 
     // Cache for next call (and free old copy sub_b->data)
     c->u.xpack.expanded = b;
@@ -2096,12 +2110,12 @@ static cram_block *cram_xrle_decode_expand_char(cram_slice *slice, cram_codec *c
         return NULL;
     unsigned char *lit_dat = lit_b->data;
     unsigned int lit_sz = lit_b->uncomp_size;
-    unsigned int len_sz = c->u.xrle.len_codec->size(slice, c->u.xrle.len_codec);
 
     cram_block *len_b = c->u.xrle.len_codec->get_block(slice, c->u.xrle.len_codec);
     if (!len_b)
         return NULL;
     unsigned char *len_dat = len_b->data;
+    unsigned int len_sz = len_b->uncomp_size;
 
     // prepare RLE meta-data
     uint8_t rle_syms[256];
