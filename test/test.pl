@@ -894,6 +894,16 @@ sub test_view
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
 
+    # Embed_ref=2 with CRAM v4 uses explicit_len if it has to instead of
+    # breaking pairs with detached mode.
+    # Oddly this bug was only triggered when also specifying a reference.
+    $ersam = "xx#pair.sam";
+    $ercram = "xx#pair.tmp.cram";
+    $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -o version=4.0 -o embed_ref=2 -t xx.fa -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+
     if ($test_view_failures == 0) {
         passed($opts, "embed_ref=2 tests");
     } else {
