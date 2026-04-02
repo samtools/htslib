@@ -1503,19 +1503,19 @@ int next_cigar_op(uint32_t *cigar, uint32_t ncigar, int *skip, int *spos,
 // Ensure ref and hist are large enough.
 static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
                              hts_pos_t ref_start, hts_pos_t *ref_end,
-                             hts_pos_t *max_pos) {
-    if (*max_pos < pos)
-        *max_pos = pos;
+                             hts_pos_t *ref_end_alloc) {
+    if (*ref_end < pos)
+        *ref_end = pos;
     if (pos < ref_start)
         return -1;
-    if (pos < *ref_end)
+    if (pos < *ref_end_alloc)
         return 0;
 
     // realloc
     if (pos - ref_start > UINT_MAX)
         return -2; // protect overflow in new_end calculation
 
-    hts_pos_t old_end = *ref_end ? *ref_end : ref_start;
+    hts_pos_t old_end = *ref_end_alloc ? *ref_end_alloc : ref_start;
     hts_pos_t new_end = ref_start + 1000 + (pos-ref_start)*1.5;
 
     // Refuse to work on excessively large blocks.
@@ -1534,7 +1534,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
     if (!tmp5)
         return -1;
     *hist = tmp5;
-    *ref_end = new_end;
+    *ref_end_alloc = new_end;
 
     // initialise
     old_end -= ref_start;
@@ -1549,7 +1549,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
 // Returns 1 on success, <0 on failure
 static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
                               hts_pos_t ref_start, hts_pos_t *ref_end,
-                              hts_pos_t *max_pos, const uint8_t *MD) {
+                              hts_pos_t *ref_end_alloc, const uint8_t *MD) {
     uint8_t *seq = bam_get_seq(b);
     uint32_t *cigar = bam_get_cigar(b);
     uint32_t ncigar = b->core.n_cigar;
@@ -1561,7 +1561,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
 
     // No sequence means extend based on CIGAR instead
     if (!b->core.l_qseq && extend_ref(ref, hist, rseq_end,
-                                      ref_start, ref_end, max_pos) < 0)
+                                      ref_start, ref_end, ref_end_alloc) < 0)
         return -1;
 
     int iseq = 0, next_op;
@@ -1576,7 +1576,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
             int len = hts_str2uint((char *)MD, (char **)&MD, 31, &overflow);
             if (overflow ||
                 extend_ref(ref, hist, iref+ref_start + len,
-                           ref_start, ref_end, max_pos) < 0)
+                           ref_start, ref_end, ref_end_alloc) < 0)
                 return -1;
             while (iseq < b->core.l_qseq && len) {
                 // rewrite to have internal loops?
@@ -1608,7 +1608,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
             MD++;
             while (isalpha(*MD)) {
                 if (extend_ref(ref, hist, iref+ref_start, ref_start,
-                               ref_end, max_pos) < 0)
+                               ref_end, ref_end_alloc) < 0)
                     return -1;
                 if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
                                              &iseq, &cig_ind, &cig_op,
@@ -1625,7 +1625,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
         } else {
             // substitution
             if (extend_ref(ref, hist, iref+ref_start, ref_start, ref_end,
-                           max_pos) < 0)
+                           ref_end_alloc) < 0)
                 return -1;
             if ((next_op = next_cigar_op(cigar, ncigar, cig_skip,
                                          &iseq, &cig_ind, &cig_op,
@@ -1655,13 +1655,13 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
 //         -1 on failure (eg inconsistent data)
 static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
                            hts_pos_t ref_start, hts_pos_t *ref_end,
-                           hts_pos_t *max_pos) {
+                           hts_pos_t *ref_end_alloc) {
     const uint8_t *MD = bam_aux_get(b, "MD");
     int ret = 0;
     if (MD && *MD == 'Z') {
         // We can use MD to directly compute the reference
         int ret = cram_add_to_ref_MD(b, ref, hist, ref_start, ref_end,
-                                     max_pos, MD+1);
+                                     ref_end_alloc, MD+1);
 
         if (ret > 0)
             return ret;
@@ -1689,7 +1689,7 @@ static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
             static uint8_t L16[16] = {4,0,1,4, 2,4,4,4, 3,4,4,4, 4,4,4,4};
 
             if (extend_ref(ref, hist, iref+ref_start + len,
-                           ref_start, ref_end, max_pos) < 0)
+                           ref_start, ref_end, ref_end_alloc) < 0)
                 return -1;
             if (iseq + len <= b->core.l_qseq) {
                 // Nullify failed MD:Z if appropriate
@@ -1732,7 +1732,8 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     // user told us to do embed_ref=2.
     char *ref = NULL;
     uint32_t (*hist)[5] = NULL;
-    hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0, max_pos = 0;
+    hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0,
+        ref_end_alloc = 0;
     if (ref_start < 0)
         return -1; // cannot build consensus from unmapped data
 
@@ -1740,7 +1741,7 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     if (extend_ref(&ref, &hist,
                    c->bams[r1 + s->hdr->num_records-1]->core.pos +
                    c->bams[r1 + s->hdr->num_records-1]->core.l_qseq,
-                   ref_start, &ref_end, &max_pos) < 0)
+                   ref_start, &ref_end, &ref_end_alloc) < 0)
         return -1;
 
     // Add each bam file to the reference/consensus arrays
@@ -1753,7 +1754,7 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
         }
         last_pos = c->bams[r1]->core.pos;
         if (cram_add_to_ref(c->bams[r1], &ref, &hist, ref_start, &ref_end,
-                            &max_pos) < 0)
+                            &ref_end_alloc) < 0)
             goto err;
     }
 
@@ -1775,7 +1776,7 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     // ref file.
     c->ref       = ref;
     c->ref_start = ref_start+1;
-    c->ref_end   = max_pos+1;
+    c->ref_end   = ref_end+1;
     c->ref_free  = 1;
 
     return 0;
