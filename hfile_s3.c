@@ -249,7 +249,6 @@ static FILE *expand_tilde_open(const char *fname, const char *mode)
     return fp;
 }
 
-
 static void parse_ini(const char *fname, const char *section, ...)
 {
     kstring_t line = { 0, 0, NULL };
@@ -259,7 +258,7 @@ static void parse_ini(const char *fname, const char *section, ...)
     FILE *fp = expand_tilde_open(fname, "r");
     if (fp == NULL) return;
 
-    while (line.l = 0, kgetline(&line, (kgets_func *) fgets, fp) >= 0)
+    while (line.l = 0, kfgetline(&line, fp) >= 0)
         if (line.s[0] == '[' && (s = strchr(line.s, ']')) != NULL) {
             *s = '\0';
             active = (strcmp(&line.s[1], section) == 0);
@@ -301,7 +300,7 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
     FILE *fp = expand_tilde_open(fname, "r");
     if (fp == NULL) return;
 
-    while (kgetline(&text, (kgets_func *) fgets, fp) >= 0)
+    while (kfgetline(&text, fp) >= 0)
         kputc(' ', &text);
     fclose(fp);
 

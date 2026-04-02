@@ -58,9 +58,12 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
 
     #define tbx_itr_destroy(iter) hts_itr_destroy(iter)
     #define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end), tbx_readrec)
-    #define tbx_itr_querys(tbx, s) hts_itr_querys((tbx)->idx, (s), (hts_name2id_f)(tbx_name2id), (tbx), hts_itr_query, tbx_readrec)
+    #define tbx_itr_querys(tbx, s) tbx_itr_querys1((tbx), (s))
     #define tbx_itr_next(htsfp, tbx, itr, r) hts_itr_next(hts_get_bgzfp(htsfp), (itr), (r), (tbx))
     #define tbx_bgzf_itr_next(bgzfp, tbx, itr, r) hts_itr_next((bgzfp), (itr), (r), (tbx))
+
+    HTSLIB_EXPORT
+    hts_itr_t *tbx_itr_querys1(tbx_t *tbx, const char *region);
 
     HTSLIB_EXPORT
     int tbx_name2id(tbx_t *tbx, const char *ss);

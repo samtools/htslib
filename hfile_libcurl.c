@@ -517,7 +517,7 @@ static int read_auth_plain(auth_token *tok, hFILE *auth_fp) {
     kstring_t token = {0, 0, NULL};
     const char *start, *end;
 
-    if (kgetline(&line, (char * (*)(char *, int, void *)) hgets, auth_fp) < 0) goto error;
+    if (hget_kstr(&line, auth_fp) < 0) goto error;
     if (kputc('\0', &line) < 0) goto error;
 
     for (start = line.s; *start && isspace_c(*start); start++) {}
