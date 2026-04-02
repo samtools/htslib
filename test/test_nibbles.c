@@ -66,7 +66,7 @@ char *fmttime(long long elapsed) {
     return buf;
 }
 
-void nibble2base_single(uint8_t *nib, char *seq, int len) {
+void nibble2base_single(const uint8_t *nib, char *seq, int len) {
     int i;
     for (i = 0; i < len; i++)
         seq[i] = seq_nt16_str[bam_seqi(nib, i)];
