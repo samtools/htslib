@@ -4320,6 +4320,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 {
     void *fp;
+    void *readrec_data;
     int ret, tid, i, cr, ci;
     hts_pos_t beg, end;
     hts_reglist_t *found_reg;
@@ -4332,6 +4333,8 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
         fp = fd->fp.bgzf;
     }
 
+    readrec_data = iter->readrec_data ? iter->readrec_data : fd;
+
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
@@ -4341,7 +4344,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
             iter->curr_off = 0; // only seek once
         }
 
-        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+        ret = iter->readrec(fp, readrec_data, r, &tid, &beg, &end);
         if (ret < 0)
             iter->finished = 1;
 
@@ -4425,7 +4428,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                     // contain a few mapped reads, so scroll
                     // forward until finding the first unmapped read.
                     do {
-                        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+                        ret = iter->readrec(fp, readrec_data, r, &tid, &beg, &end);
                     } while (tid >= 0 && ret >=0);
 
                     if (ret < 0)
@@ -4531,7 +4534,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
             }
         }
 
-        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+        ret = iter->readrec(fp, readrec_data, r, &tid, &beg, &end);
         if (ret < 0) {
             if (iter->is_cram && cram_eof(fp)) {
                 // Skip to end of range

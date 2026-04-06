@@ -640,3 +640,35 @@ const char **tbx_seqnames(tbx_t *tbx, int *n)
     return names;
 }
 
+static int tbx_pseek(void *fp, int64_t offset, int whence)
+{
+    BGZF *fd = (BGZF *)fp;
+    return bgzf_seek(fd, offset, whence);
+}
+
+static int64_t tbx_ptell(void *fp)
+{
+    BGZF *fd = (BGZF *)fp;
+    if (!fd)
+        return -1L;
+    return bgzf_tell(fd);
+}
+
+hts_itr_t *tbx_itr_regions(tbx_t *tbx, hts_reglist_t *reglist, int regcount)
+{
+    hts_itr_t *itr;
+
+    if (!tbx || !reglist)
+        return NULL;
+
+    itr = hts_itr_regions(tbx->idx, reglist, regcount,
+                          (hts_name2id_f)(tbx_name2id), tbx,
+                          hts_itr_multi_bam, tbx_readrec,
+                          tbx_pseek, tbx_ptell);
+
+    if (itr)
+        itr->readrec_data = tbx;
+
+    return itr;
+}
+
