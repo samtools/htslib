@@ -886,6 +886,7 @@ typedef struct hts_itr_t {
     hts_readrec_func *readrec;
     hts_seek_func *seek;
     hts_tell_func *tell;
+    void *readrec_data; // If set, passed to readrec instead of fd
     struct {
         int n, m;
         int *a;

@@ -61,9 +61,24 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     #define tbx_itr_querys(tbx, s) hts_itr_querys((tbx)->idx, (s), (hts_name2id_f)(tbx_name2id), (tbx), hts_itr_query, tbx_readrec)
     #define tbx_itr_next(htsfp, tbx, itr, r) hts_itr_next(hts_get_bgzfp(htsfp), (itr), (r), (tbx))
     #define tbx_bgzf_itr_next(bgzfp, tbx, itr, r) hts_itr_next((bgzfp), (itr), (r), (tbx))
+    #define tbx_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
 
     HTSLIB_EXPORT
     int tbx_name2id(tbx_t *tbx, const char *ss);
+
+/// Create a multi-region iterator for a tabix-indexed file
+/** @param tbx      Tabix index
+    @param reglist  Region list created by hts_reglist_create()
+    @param regcount Number of regions in the list
+    @return An iterator, or NULL on failure
+
+    The multi-region iterator handles overlapping regions by deduplicating
+    records that fall in multiple regions, so each record is returned at
+    most once.  Free the iterator with tbx_itr_destroy() when done.
+    Use tbx_itr_multi_next() to advance the iterator.
+*/
+    HTSLIB_EXPORT
+    hts_itr_t *tbx_itr_regions(tbx_t *tbx, hts_reglist_t *reglist, int regcount);
 
     /* Internal helper function used by tbx_itr_next() */
     HTSLIB_EXPORT

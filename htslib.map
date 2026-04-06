@@ -261,6 +261,7 @@ HTSLIB_1.0 {
     tbx_index_build;
     tbx_index_load;
     tbx_name2id;
+    tbx_itr_regions;
     tbx_readrec;
     tbx_seqnames;
     vcf_format;
