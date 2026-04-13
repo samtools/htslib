@@ -57,6 +57,7 @@ typedef struct hFILE {
     char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
     off_t offset;
+    off_t readahead_limit;  // Hint: upper bound for next read (0 = no limit)
     unsigned at_eof:1, mobile:1, readonly:1, preserve:1;
     int has_errno;
     // @endcond
@@ -148,6 +149,17 @@ static inline void hclearerr(hFILE *fp)
 */
 HTSLIB_EXPORT
 off_t hseek(hFILE *fp, off_t offset, int whence) HTS_RESULT_USED;
+
+/// Set a readahead limit hint for remote backends
+/** @param limit  Upper bound file offset for next read sequence (0 = no limit)
+
+For remote file backends (HTTP, S3, etc.), this hint enables bounded
+range requests instead of reading to EOF. Set before seeking to a known
+chunk boundary (e.g., from BAM index) to enable efficient partial fetches.
+The limit is automatically cleared after the next seek.
+*/
+HTSLIB_EXPORT
+void hfile_set_readahead_limit(hFILE *fp, off_t limit);
 
 /// Report the current stream offset
 /** @return  The offset within the stream, starting from zero.
