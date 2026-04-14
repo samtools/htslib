@@ -1138,9 +1138,8 @@ static int restart_from_position(hFILE_libcurl *fp, off_t pos) {
     int update_headers = 0;
     int save_errno = 0;
 
-    // TODO If we seem to be doing random access, use CURLOPT_RANGE to do
-    // limited reads (e.g. about a BAM block!) so seeking can reuse the
-    // existing connection more often.
+    // When readahead_limit is set (via hfile_set_readahead_limit from BAM index),
+    // use CURLOPT_RANGE for bounded reads instead of reading to EOF.
 
     // Get new headers from the callback (if defined).  This changes the
     // headers in fp before it gets duplicated, but they should be have been
@@ -1182,7 +1181,18 @@ static int restart_from_position(hFILE_libcurl *fp, off_t pos) {
     if (!temp_fp.easy)
         goto early_error;
 
-    err = curl_easy_setopt(temp_fp.easy, CURLOPT_RESUME_FROM_LARGE,(curl_off_t)pos);
+    // Use bounded Range request if readahead_limit is set (from BAM index chunk info)
+    if (fp->base.readahead_limit > 0 && fp->base.readahead_limit > pos) {
+        char range[80];
+        off_t end = fp->base.readahead_limit - 1;
+        if (fp->file_size > 0 && end >= fp->file_size)
+            end = fp->file_size - 1;
+        snprintf(range, sizeof(range), "%lld-%lld", (long long)pos, (long long)end);
+        err = curl_easy_setopt(temp_fp.easy, CURLOPT_RANGE, range);
+    } else {
+        // No limit known - read from pos to EOF
+        err = curl_easy_setopt(temp_fp.easy, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)pos);
+    }
     err |= curl_easy_setopt(temp_fp.easy, CURLOPT_PRIVATE, &temp_fp);
     err |= curl_easy_setopt(temp_fp.easy, CURLOPT_WRITEDATA, &temp_fp);
     if (err != CURLE_OK) {

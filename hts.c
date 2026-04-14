@@ -4296,7 +4296,8 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                // Use bgzf_seek_limit to enable bounded HTTP Range requests for remote files
+                if (bgzf_seek_limit(fp, iter->off[iter->i+1].u, SEEK_SET, iter->off[iter->i+1].v) < 0) {
                     hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
                                   iter->off[iter->i+1].u,
                                   errno ? ": " : "", strerror(errno));

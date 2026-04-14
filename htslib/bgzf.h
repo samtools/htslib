@@ -275,6 +275,22 @@ ssize_t bgzf_write_small(BGZF *fp, const void *data, size_t length) {
     int64_t bgzf_seek(BGZF *fp, int64_t pos, int whence) HTS_RESULT_USED;
 
     /**
+     * Set the virtual file pointer, like bgzf_seek, with a readahead limit hint.
+     *
+     * The limit is the virtual file offset up to which data will be read.
+     * For remote files, this enables bounded HTTP Range requests instead of
+     * reading to EOF. Use when the read extent is known (e.g., from BAM index).
+     *
+     * @param fp     BGZF file handler
+     * @param pos    virtual file offset
+     * @param whence must be SEEK_SET
+     * @param limit  virtual file offset limit (0 = no limit)
+     * @return       non-negative virtual offset on success; -1 on error
+     */
+    HTSLIB_EXPORT
+    int64_t bgzf_seek_limit(BGZF *fp, int64_t pos, int whence, int64_t limit) HTS_RESULT_USED;
+
+    /**
      * Check if the BGZF end-of-file (EOF) marker is present
      *
      * @param fp    BGZF file handler opened for reading

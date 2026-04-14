@@ -2257,6 +2257,32 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
 }
 
+int64_t bgzf_seek_limit(BGZF* fp, int64_t pos, int where, int64_t limit)
+{
+    if (fp->is_write || where != SEEK_SET || fp->is_gzip) {
+        fp->errcode |= BGZF_ERR_MISUSE;
+        return -1;
+    }
+
+    fp->seeked = pos;
+
+    // Perform the seek first - bgzf_seek_common calls hseek which clears readahead_limit
+    int64_t ret = bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
+    if (ret < 0)
+        return ret;
+
+    // Set readahead limit hint AFTER seek (hseek clears it, so must be set after)
+    // This enables bounded Range requests for remote backends
+    if (limit > 0 && fp->fp) {
+        off_t compressed_limit = limit >> 16;
+        // Add some buffer for BGZF block overhead (~64KB worst case)
+        compressed_limit += 65536;
+        hfile_set_readahead_limit(fp->fp, compressed_limit);
+    }
+
+    return ret;
+}
+
 int bgzf_is_bgzf(const char *fn)
 {
     uint8_t buf[16];
