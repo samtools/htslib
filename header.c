@@ -174,8 +174,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             return -1; // SN should be present, according to spec.
         }
 
-        if (len == -1) {
-            hts_log_error("Header includes @SQ line \"%s\" with no LN: tag",
+        if (len <= 0) {
+            hts_log_error("Header includes @SQ line \"%s\" with invalid or no LN: tag",
                           name);
             return -1; // LN should be present, according to spec.
         }

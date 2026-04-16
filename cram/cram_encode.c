@@ -1504,7 +1504,7 @@ int next_cigar_op(uint32_t *cigar, uint32_t ncigar, int *skip, int *spos,
 static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
                              hts_pos_t ref_start, hts_pos_t *ref_end,
                              hts_pos_t *ref_end_alloc) {
-    if (*ref_end < pos)
+    if (*ref_end < pos && pos < *ref_end_alloc)
         *ref_end = pos;
     if (pos < ref_start)
         return -1;
@@ -1541,6 +1541,9 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
     new_end -= ref_start;
     memset(&(*ref)[old_end],  0,  new_end-old_end);
     memset(&(*hist)[old_end], 0, (new_end-old_end)*sizeof(**hist));
+
+    if (*ref_end < pos)
+        *ref_end = pos;
 
     return 0;
 }
