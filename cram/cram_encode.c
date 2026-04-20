@@ -48,6 +48,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "os.h"
 #include "../sam_internal.h" // for nibble2base
 #include "../htslib/hts.h"
+#include "../htslib/hts_alloc.h"
 #include "../htslib/hts_endian.h"
 #include "../textutils_internal.h"
 
@@ -517,7 +518,7 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     if (!b)
         return NULL;
 
-    cp = buf = malloc(22+16+5*(8+s->hdr->num_blocks));
+    cp = buf = hts_malloc_pse(8, s->hdr->num_blocks, 5, 22+16);
     if (NULL == buf) {
         cram_free_block(b);
         return NULL;
@@ -1119,8 +1120,10 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     c->num_records += s->hdr->num_records;
 
     int ntags = c->tags_used ? c->tags_used->n_occupied : 0;
-    s->block = calloc(DS_END + ntags*2, sizeof(s->block[0]));
-    s->hdr->block_content_ids = malloc(DS_END * sizeof(int32_t));
+    s->block = hts_calloc_ps(sizeof(s->block[0]), DS_END,
+                             hts_prod_sat2(ntags, 2));
+    s->hdr->block_content_ids = hts_malloc_p(sizeof(*s->hdr->block_content_ids),
+                                             DS_END);
     if (!s->block || !s->hdr->block_content_ids)
         return -1;
 
@@ -1213,8 +1216,9 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     {
         int i, j;
 
-        s->hdr->block_content_ids = realloc(s->hdr->block_content_ids,
-                                            s->hdr->num_blocks * sizeof(int32_t));
+        s->hdr->block_content_ids = hts_realloc_p(s->hdr->block_content_ids,
+                                                  sizeof(*s->hdr->block_content_ids),
+                                                  s->hdr->num_blocks);
         if (!s->hdr->block_content_ids)
             return -1;
 
@@ -1529,8 +1533,8 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
         return -1;
     *ref = tmp;
 
-    uint32_t (*tmp5)[5] = realloc(**hist,
-                                  (new_end - ref_start)*sizeof(**hist));
+    uint32_t (*tmp5)[5] = hts_realloc_p(**hist, sizeof(**hist),
+                                        new_end - ref_start);
     if (!tmp5)
         return -1;
     *hist = tmp5;
@@ -2103,7 +2107,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         // slice can start aggregating them from the start again.
         if (c->tags_used->n_occupied) {
             int ntags = c->tags_used->n_occupied;
-            s->aux_block = calloc(ntags*2, sizeof(*s->aux_block));
+            s->aux_block = calloc(hts_prod_sat2(ntags, 2), sizeof(*s->aux_block));
             if (!s->aux_block)
                 return -1;
 
@@ -2474,7 +2478,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* Compute landmarks */
     /* Fill out slice landmarks */
     c->num_landmarks = c->curr_slice;
-    c->landmark = malloc(c->num_landmarks * sizeof(*c->landmark));
+    c->landmark = hts_malloc_p(sizeof(*c->landmark), c->num_landmarks);
     if (!c->landmark)
         return -1;
 
@@ -2575,7 +2579,7 @@ static int cram_add_feature(cram_container *c, cram_slice *s,
                             cram_record *r, cram_feature *f) {
     if (s->nfeatures >= s->afeatures) {
         s->afeatures = s->afeatures ? s->afeatures*2 : 1024;
-        s->features = realloc(s->features, s->afeatures*sizeof(*s->features));
+        s->features = hts_realloc_p(s->features, sizeof(*s->features), s->afeatures);
         if (!s->features)
             return -1;
     }
@@ -2806,7 +2810,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
     // 2:  Don't auto-decode NM (may be invalid)
     if (cf_tag && CRAM_MAJOR_VERS(fd->version) < 4) {
         // Temporary copy of aux so we can ammend it.
-        aux = malloc(aux_size+4);
+        aux = hts_malloc_ps(sizeof(*aux), aux_size, 4);
         if (!aux)
             return NULL;
 
@@ -3484,7 +3488,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->ncigar      = bam_cigar_len(b);
         while (cr->cigar + cr->ncigar >= s->cigar_alloc) {
             s->cigar_alloc = s->cigar_alloc ? s->cigar_alloc*2 : 1024;
-            s->cigar = realloc(s->cigar, s->cigar_alloc * sizeof(*s->cigar));
+            s->cigar = hts_realloc_p(s->cigar, sizeof(*s->cigar), s->cigar_alloc);
             if (!s->cigar)
                 return -1;
         }

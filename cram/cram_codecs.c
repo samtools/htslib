@@ -48,6 +48,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../fuzz_settings.h"
 #endif
 
+#include "../htslib/hts_alloc.h"
 #include "../htslib/hts_endian.h"
 
 #if defined(HAVE_EXTERNAL_LIBHTSCODECS)
@@ -268,12 +269,14 @@ static int store_bits_MSB(cram_block *block, uint64_t val, int nbits) {
     if (block->byte+8 >= block->alloc) {
         if (block->byte) {
             block->alloc *= 2;
-            block->data = realloc(block->data, block->alloc + 8);
+            block->data = hts_realloc_ps(block->data, sizeof(*block->data),
+                                         block->alloc, 8);
             if (!block->data)
                 return -1;
         } else {
             block->alloc = 1024;
-            block->data = realloc(block->data, block->alloc + 8);
+            block->data = hts_realloc_ps(block->data, sizeof(*block->data),
+                                         block->alloc, 8);
             if (!block->data)
                 return -1;
             block->data[0] = 0; // initialise first byte of buffer
@@ -1975,7 +1978,7 @@ int cram_xdelta_encode_int(cram_slice *slice, cram_codec *c,
 
 int cram_xdelta_encode_char(cram_slice *slice, cram_codec *c,
                             char *in, int in_size) {
-    char *dat = malloc(in_size*5);
+    char *dat = hts_malloc_p(5, in_size);
     if (!dat)
         return -1;
     char *cp = dat, *cp_end = dat + in_size*5;
@@ -2269,7 +2272,7 @@ int cram_xrle_encode_flush(cram_codec *c) {
         c->u.e_xrle.to_flush_size = BLOCK_SIZE(c->out);
     }
 
-    out_len = malloc(c->u.e_xrle.to_flush_size+8);
+    out_len = hts_malloc_ps(sizeof(*out_len), c->u.e_xrle.to_flush_size, 8);
     if (!out_len)
         return -1;
 
@@ -3122,7 +3125,7 @@ int cram_huffman_encode_store(cram_codec *c, cram_block *b, char *prefix,
      *
      * Therefore 6*ncodes + 5 + 5 + 1 + 5 is max memory
      */
-    char *tmp = malloc(6*c->u.e_huffman.nvals+16);
+    char *tmp = hts_malloc_pse(6, c->u.e_huffman.nvals, 0, 16);
     char *tp = tmp, *tpend = tmp+6*c->u.e_huffman.nvals+16;
 
     if (!tmp)
@@ -3196,10 +3199,10 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            new_vals  = realloc(vals,  vals_alloc * sizeof(int));
+            new_vals  = hts_realloc_p(vals, sizeof(*vals), vals_alloc);
             if (!new_vals) goto nomem;
             vals = new_vals;
-            new_freqs = realloc(freqs, vals_alloc * sizeof(int));
+            new_freqs = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
             if (!new_freqs) goto nomem;
             freqs = new_freqs;
         }
@@ -3218,10 +3221,10 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
                 continue;
             if (nvals >= vals_alloc) {
                 vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                new_vals  = realloc(vals,  vals_alloc * sizeof(int));
+                new_vals  = hts_realloc_p(vals, sizeof(*vals), vals_alloc);
                 if (!new_vals) goto nomem;
                 vals = new_vals;
-                new_freqs = realloc(freqs, vals_alloc * sizeof(int));
+                new_freqs = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
                 if (!new_freqs) goto nomem;
                 freqs = new_freqs;
             }
@@ -3236,10 +3239,10 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
     assert(nvals > 0);
 
-    new_freqs = realloc(freqs, 2*nvals*sizeof(*freqs));
+    new_freqs = hts_realloc_p(freqs, 2 * sizeof(*freqs), nvals);
     if (!new_freqs) goto nomem;
     freqs = new_freqs;
-    lens = calloc(2*nvals, sizeof(*lens));
+    lens = calloc(nvals, 2 * sizeof(*lens));
     if (!lens) goto nomem;
 
     /* Inefficient, use pointers to form chain so we can insert and maintain
@@ -3280,7 +3283,7 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
 
     /* Sort, need in a struct */
-    if (!(codes = malloc(nvals * sizeof(*codes))))
+    if (!(codes = hts_malloc_p(sizeof(*codes), nvals)))
         goto nomem;
     for (i = 0; i < nvals; i++) {
         codes[i].symbol = vals[i];

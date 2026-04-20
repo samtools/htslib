@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/bgzf.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/thread_pool.h"
 #include "bcf_sr_sort.h"
 
@@ -156,7 +157,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     {
         if ( *tmp==',' || !*tmp )
         {
-            int *otmp = (int*) realloc(out, (nout+1)*sizeof(int));
+            int *otmp = hts_realloc_ps(out, sizeof(*otmp), nout, 1);
             if (!otmp)
                 goto err;
             out = otmp;
@@ -279,9 +280,11 @@ int bcf_sr_add_hreader(bcf_srs_t *files, htsFile *file_ptr, int autoclose, const
         return 0;
     }
 
-    files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
+    files->has_line = hts_realloc_ps(files->has_line, sizeof(*files->has_line),
+                                     files->nreaders, 1);
     files->has_line[files->nreaders] = 0;
-    files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
+    files->readers  = hts_realloc_ps(files->readers, sizeof(*files->readers),
+                                     files->nreaders, 1);
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
@@ -435,7 +438,7 @@ int bcf_sr_add_hreader(bcf_srs_t *files, htsFile *file_ptr, int autoclose, const
 
     if ((auxdata = BCF_SR_AUX(files))) {
         //store closure status for htsfile
-        int *tmp = realloc(auxdata->closefile, sizeof(int) * files->nreaders);
+        int *tmp = hts_realloc_p(auxdata->closefile, sizeof(int), files->nreaders);
         if (!tmp) {
             hts_log_error("Failed to allocate memory");
             return 0;
@@ -666,7 +669,7 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         {
             // Increase buffer size
             reader->mbuffer += 8;
-            reader->buffer = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
+            reader->buffer = hts_realloc_p(reader->buffer, sizeof(bcf1_t*), reader->mbuffer);
             for (i=8; i>0; i--)     // initialize
             {
                 reader->buffer[reader->mbuffer-i] = bcf_init1();
@@ -980,7 +983,8 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
             continue;
         }
 
-        files->samples = (char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
+        files->samples = hts_realloc_ps(files->samples, sizeof(const char*),
+                                       files->n_smpl, 1);
         files->samples[files->n_smpl++] = strdup(smpl[i]);
     }
 
@@ -1000,7 +1004,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
-        reader->samples  = (int*) malloc(sizeof(int)*files->n_smpl);
+        reader->samples  = hts_malloc_p(sizeof(int), files->n_smpl);
         reader->n_smpl   = files->n_smpl;
         for (j=0; j<files->n_smpl; j++)
             reader->samples[j] = bcf_hdr_id2int(reader->header, BCF_DT_SAMPLE, files->samples[j]);
@@ -1040,8 +1044,8 @@ static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start,
     {
         // the chromosome block does not exist
         iseq = reg->nseqs++;
-        reg->seq_names = (char**) realloc(reg->seq_names,sizeof(char*)*reg->nseqs);
-        reg->regs = (region_t*) realloc(reg->regs,sizeof(region_t)*reg->nseqs);
+        reg->seq_names = hts_realloc_p(reg->seq_names,sizeof(char*),reg->nseqs);
+        reg->regs = hts_realloc_p(reg->regs,sizeof(region_t),reg->nseqs);
         memset(&reg->regs[reg->nseqs-1],0,sizeof(region_t));
         reg->seq_names[iseq] = strdup(chr);
         reg->regs[iseq].creg = -1;

@@ -35,6 +35,7 @@
 #include <math.h>
 #include <errno.h>
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 
 /*****************************************
  * Probabilistic banded glocal alignment *
@@ -113,11 +114,11 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
     }
 
     // s[] is the scaling factor to avoid underflow
-    s = malloc((l_query+2) * sizeof(double));
+    s = hts_malloc_ps(sizeof(*s), l_query, 2);
     if (!s) goto fail;
 
     // initialize qual
-    qual = malloc(l_query * sizeof(float));
+    qual = hts_malloc_p(sizeof(float), l_query);
     if (!qual) goto fail;
     if (g_qual2prob[0] == 0)
         for (i = 0; i < 256; ++i)

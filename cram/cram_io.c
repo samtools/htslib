@@ -76,6 +76,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../htslib/hts_alloc.h"
 #include "../hts_internal.h"
 #include "open_trace_file.h"
 
@@ -2661,7 +2662,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
             int x;
 
             id_alloc = id_alloc ?id_alloc*2 : 16;
-            new_refs = realloc(r->ref_id, id_alloc * sizeof(*r->ref_id));
+            new_refs = hts_realloc_p(r->ref_id, sizeof(*r->ref_id), id_alloc);
             if (!new_refs)
                 goto err;
             r->ref_id = new_refs;
@@ -2788,7 +2789,8 @@ static int refs_from_header(cram_fd *fd) {
     //fprintf(stderr, "refs_from_header for %p mode %c\n", fd, fd->mode);
 
     /* Existing refs are fine, as long as they're compatible with the hdr. */
-    ref_entry **new_ref_id = realloc(r->ref_id, (r->nref + h->hrecs->nref) * sizeof(*r->ref_id));
+    ref_entry **new_ref_id = hts_realloc_ps(r->ref_id, sizeof(*r->ref_id),
+                                            r->nref, h->hrecs->nref);
     if (!new_ref_id)
         return -1;
     r->ref_id = new_ref_id;
@@ -3884,7 +3886,7 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
     }
 #endif
-    if (c->num_landmarks && !(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
+    if (c->num_landmarks && !(c->landmark = hts_malloc_p(sizeof(*c->landmark), c->num_landmarks))) {
         fd->err = errno;
         cram_free_container(c);
         return NULL;
@@ -4514,9 +4516,9 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block = NULL;
     s->block_by_id = NULL;
     s->last_apos = 0;
-    if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))  goto err;
+    if (!(s->crecs = hts_malloc_p(sizeof(*s->crecs), nrecs)))  goto err;
     s->cigar_alloc = 1024;
-    if (!(s->cigar = malloc(s->cigar_alloc * sizeof(*s->cigar)))) goto err;
+    if (!(s->cigar = hts_malloc_p(sizeof(*s->cigar), s->cigar_alloc))) goto err;
     s->ncigar = 0;
 
     if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))       goto err;
@@ -4620,7 +4622,7 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 
     /* Initialise encoding/decoding tables */
     s->cigar_alloc = 1024;
-    if (!(s->cigar = malloc(s->cigar_alloc * sizeof(*s->cigar)))) goto err;
+    if (!(s->cigar = hts_malloc_p(sizeof(*s->cigar), s->cigar_alloc))) goto err;
     s->ncigar = 0;
 
     if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))      goto err;

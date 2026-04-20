@@ -64,6 +64,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "../htslib/bgzf.h"
 #include "../htslib/hfile.h"
+#include "../htslib/hts_alloc.h"
 #include "../hts_internal.h"
 #include "cram.h"
 #include "os.h"
@@ -287,8 +288,8 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
                 cram_index *new_idx;
                 int new_sz = e.refid+2;
                 size_t index_end = fd->index_sz * sizeof(*fd->index);
-                new_idx = realloc(fd->index,
-                                  new_sz * sizeof(*fd->index));
+                new_idx = hts_realloc_p(fd->index, sizeof(*fd->index),
+                                        new_sz);
                 if (!new_idx)
                     goto fail;
 
@@ -315,7 +316,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         if (idx->nslice+1 >= idx->nalloc) {
             cram_index *new_e;
             idx->nalloc = idx->nalloc ? idx->nalloc*2 : 16;
-            new_e = realloc(idx->e, idx->nalloc * sizeof(*idx->e));
+            new_e = hts_realloc_p(idx->e, sizeof(*idx->e), idx->nalloc);
             if (!new_e)
                 goto fail;
 
@@ -329,7 +330,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         if (++idx_stack_ptr >= idx_stack_alloc) {
             cram_index **new_stack;
             idx_stack_alloc *= 2;
-            new_stack = realloc(idx_stack, idx_stack_alloc*sizeof(*idx_stack));
+            new_stack = hts_realloc_p(idx_stack, sizeof(*idx_stack), idx_stack_alloc);
             if (!new_stack)
                 goto fail;
             idx_stack = new_stack;

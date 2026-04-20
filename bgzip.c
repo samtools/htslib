@@ -38,6 +38,7 @@
 #include <sys/time.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hfile.h"
 
 #ifdef _WIN32
@@ -352,7 +353,8 @@ int main(int argc, char **argv)
                     fp = bgzf_open("-", out_mode);
                 else
                 {
-                    char *name = malloc(strlen(argv[optind]) + 5);
+                    char *name = hts_malloc_ps(sizeof(*name),
+                                               strlen(argv[optind]), 5);
                     strcpy(name, argv[optind]);
                     strcat(name, ".gz");
                     fp = bgzf_open(name, is_forced? out_mode : out_mode_exclusive);

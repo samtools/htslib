@@ -41,6 +41,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/regidx.h"
 #include "htslib/hts_defs.h"
 #include "htslib/hts_log.h"
@@ -154,7 +155,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         }
 
         (*nregs) += regidx_nregs(idx);
-        regs = (char**) malloc(sizeof(char*)*(*nregs));
+        regs = hts_malloc_p(sizeof(char*), *nregs);
         if (!regs) error_errno(NULL);
 
         int nseq;
@@ -184,7 +185,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
     {
         if ( argc )
         {
-            regs = (char**) malloc(sizeof(char*)*argc);
+            regs = hts_malloc_p(sizeof(char*), argc);
             if (!regs) error_errno(NULL);
         }
         else

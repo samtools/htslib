@@ -53,6 +53,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts_internal.h"
 #include "sam_internal.h"
 #include "htslib/hfile.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "htslib/hts_expr.h"
 #include "header.h"
@@ -212,7 +213,7 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
             goto fail;
     } else {
         h->l_text = h0->text ? h0->l_text : 0;
-        h->text = malloc(h->l_text + 1);
+        h->text = hts_malloc_ps(sizeof(*h->text), h->l_text, 1);
         if (!h->text) goto fail;
         if (h0->text)
             memcpy(h->text, h0->text, h->l_text);
@@ -592,7 +593,7 @@ int bam_set1(bam1_t *bam,
 
     // re-allocate the data buffer as needed.
     size_t data_len = l_qname + qname_nuls + n_cigar * 4 + (l_seq + 1) / 2 + l_seq;
-    if (realloc_bam_data(bam, data_len + l_aux) < 0) {
+    if (realloc_bam_data(bam, hts_add_sat2(data_len, l_aux)) < 0) {
         return -1;
     }
 
@@ -2909,7 +2910,7 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *
     n_cigar = read_ncigar(in);
     if (!n_cigar) return 0;
     if (n_cigar > *a_mem) {
-        uint32_t *a_tmp = realloc(*a_cigar, n_cigar*sizeof(**a_cigar));
+        uint32_t *a_tmp = hts_realloc_p(*a_cigar, sizeof(**a_cigar), n_cigar);
         if (a_tmp) {
             *a_cigar = a_tmp;
             *a_mem = n_cigar;
@@ -3257,7 +3258,7 @@ static void *sam_parse_worker(void *arg) {
         if (i >= gb->abams) {
             int old_abams = gb->abams;
             gb->abams *= 2;
-            b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
+            b = hts_realloc_p(gb->bams, sizeof(bam1_t), gb->abams);
             if (!b) {
                 gb->abams /= 2;
                 sam_state_err(fd, ENOMEM);
@@ -3364,7 +3365,7 @@ static void *sam_dispatcher_read(void *vp) {
             if (!l)
                 goto err;
             l->alloc = SAM_NBYTES;
-            l->data = malloc(l->alloc+8); // +8 for optimisation in sam_parse1
+            l->data = hts_malloc_ps(sizeof(*l->data), l->alloc, 8); // +8 for optimisation in sam_parse1
             if (!l->data) {
                 free(l);
                 l = NULL;
@@ -3375,7 +3376,8 @@ static void *sam_dispatcher_read(void *vp) {
         l->next = NULL;
 
         if (l->alloc < line_frag+SAM_NBYTES/2) {
-            char *rp = realloc(l->data, line_frag+SAM_NBYTES/2 +8);
+            char *rp = hts_realloc_ps(l->data, sizeof(*rp),
+                                      line_frag, SAM_NBYTES/2 + 8);
             if (!rp)
                 goto err;
             l->alloc = line_frag+SAM_NBYTES/2;
@@ -3408,7 +3410,7 @@ static void *sam_dispatcher_read(void *vp) {
             // entire buffer is part of a single line
             if (cp == l->data) {
                 line_frag = l->data_size;
-                char *rp = realloc(l->data, l->alloc * 2 + 8);
+                char *rp = realloc(l->data, hts_add_sat2(hts_prod_sat2(l->alloc, 2), 8));
                 if (!rp)
                     goto err;
                 l->alloc *= 2;
@@ -5393,7 +5395,7 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
     --mp->cnt; p->next = 0; // clear lbnode_t::next here
     if (mp->n == mp->max) {
         mp->max = mp->max? mp->max<<1 : 256;
-        mp->buf = (lbnode_t**)realloc(mp->buf, sizeof(lbnode_t*) * mp->max);
+        mp->buf = hts_realloc_p(mp->buf, sizeof(lbnode_t*), mp->max);
     }
     mp->buf[mp->n++] = p;
 }
@@ -6031,7 +6033,7 @@ const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, 
                 if (p->b.core.tid == iter->tid && p->beg <= iter->pos) { // here: p->end > pos; then add to pileup
                     if (n_plp == iter->max_plp) { // then double the capacity
                         iter->max_plp = iter->max_plp? iter->max_plp<<1 : 256;
-                        iter->plp = (bam_pileup1_t*)realloc(iter->plp, sizeof(bam_pileup1_t) * iter->max_plp);
+                        iter->plp = hts_realloc_p(iter->plp, sizeof(bam_pileup1_t), iter->max_plp);
                     }
                     iter->plp[n_plp].b = &p->b;
                     iter->plp[n_plp].cd = p->cd;

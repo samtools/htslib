@@ -36,6 +36,7 @@
 #include <strings.h>
 #include <errno.h>
 
+#include "../htslib/hts_alloc.h"
 #include "../htslib/hts_defs.h"
 #include "../htslib/synced_bcf_reader.h"
 #include "../htslib/hts.h"
@@ -224,7 +225,7 @@ int main(int argc, char *argv[])
             error("Failed to set targets\n");
     }
 
-    if (usefptr && !(htsfp = malloc(sizeof(htsFile*) * nvcf))) {
+    if (usefptr && !(htsfp = hts_malloc_p(sizeof(htsFile*), nvcf))) {
         error("Failed to allocate memory\n");
     }
 

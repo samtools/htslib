@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 
 #include "string_alloc.h"
+#include "../htslib/hts_alloc.h"
 
 #define MIN_STR_SIZE 1024
 
@@ -77,7 +78,7 @@ static string_t *new_string_pool(string_alloc_t *a_str) {
 
     if (a_str->nstrings == a_str->max_strings) {
         size_t new_max = (a_str->max_strings | (a_str->max_strings >> 2)) + 1;
-        str = realloc(a_str->strings, new_max * sizeof(*a_str->strings));
+        str = hts_realloc_p(a_str->strings, sizeof(*a_str->strings), new_max);
 
         if (NULL == str) return NULL;
 

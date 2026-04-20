@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram.h"
 #include "os.h"
+#include "../htslib/hts_alloc.h"
 
 cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
@@ -146,8 +147,8 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
-            int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
+            int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+            int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
             if (!vals_tmp || !freqs_tmp) {
                 free(vals_tmp  ? vals_tmp  : vals);
                 free(freqs_tmp ? freqs_tmp : freqs);
@@ -173,8 +174,8 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 
             if (nvals >= vals_alloc) {
                 vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
-                int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
+                int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+                int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
                 if (!vals_tmp || !freqs_tmp) {
                     free(vals_tmp  ? vals_tmp  : vals);
                     free(freqs_tmp ? freqs_tmp : freqs);

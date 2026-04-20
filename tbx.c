@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include "htslib/tbx.h"
 #include "htslib/bgzf.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "hts_internal.h"
 
@@ -382,7 +383,7 @@ static int tbx_set_meta(tbx_t *tbx)
     khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
 
     memcpy(x, &tbx->conf, 24);
-    name = (char**)malloc(sizeof(char*) * kh_size(d));
+    name = hts_malloc_p(sizeof(char*), kh_size(d));
     if (!name) return -1;
     for (k = kh_begin(d), l = 0; k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
@@ -390,7 +391,7 @@ static int tbx_set_meta(tbx_t *tbx)
         l += strlen(kh_key(d, k)) + 1; // +1 to include '\0'
     }
     l_nm = x[6] = l;
-    meta = (uint8_t*)malloc(l_nm + 28);
+    meta = hts_malloc_ps(sizeof(*meta), l_nm, 28);
     if (!meta) { free(name); return -1; }
     if (ed_is_big())
         for (i = 0; i < 7; ++i)
