@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <math.h>
 #include "htslib/kstring.h"
+#include "htslib/hts_alloc.h"
 
 int kputd(double d, kstring_t *s) {
 	int len = 0;
@@ -233,7 +234,7 @@ int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 			if (n == max) {					\
 				int *tmp;				\
 				max = max? max<<1 : 2;			\
-				if ((tmp = (int*)realloc(offsets, sizeof(int) * max))) {  \
+				if ((tmp = hts_realloc_p(offsets, sizeof(int), max))) {  \
 					offsets = tmp;			\
 				} else	{				\
 					free(offsets);			\
@@ -407,7 +408,7 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 	int i, *suff, *prep, *bmGs, *bmBc;
 	if (m < 1)
 		return NULL;
-	prep = (int*)calloc((size_t) m + 256, sizeof(int));
+	prep = hts_calloc_ps(sizeof(int), m, 256);
 	if (!prep) return NULL;
 	bmGs = prep; bmBc = prep + m;
 	{ // preBmBc()

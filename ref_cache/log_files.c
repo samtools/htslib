@@ -43,6 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "log_files.h"
 #include "options.h"
+#include "../htslib/hts_alloc.h"
 
 #define LOG_NAME_LEN 80
 typedef struct {
@@ -200,7 +201,7 @@ Logfiles * open_logs(const Options *opts) {
             && (strcmp(suff, "log") == 0 || strcmp(suff, "log.gz") == 0)) {
             if (logfiles->nlogs == logfiles->sz) {
                 size_t new_sz = logfiles->sz * 2;
-                Logfile *new_logs = realloc(logfiles->logs, new_sz * sizeof(Logfile));
+                Logfile *new_logs = hts_realloc_p(logfiles->logs, sizeof(Logfile), new_sz);
                 if (new_logs == NULL) {
                     perror(NULL);
                     goto fail;

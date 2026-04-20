@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <limits.h>
 
 #include "thread_pool_internal.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_log.h"
 
 // Minimum stack size for threads.  Required for some rANS codecs
@@ -738,12 +739,12 @@ hts_tpool *hts_tpool_init(int n) {
     p->t_stack = NULL;
     p->n_count = 0;
     p->n_running = 0;
-    p->t = malloc(n * sizeof(p->t[0]));
+    p->t = hts_malloc_p(sizeof(p->t[0]), n);
     if (!p->t) {
         free(p);
         return NULL;
     }
-    p->t_stack = malloc(n * sizeof(*p->t_stack));
+    p->t_stack = hts_malloc_p(sizeof(*p->t_stack), n);
     if (!p->t_stack) {
         free(p->t);
         free(p);

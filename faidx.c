@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
 #include "htslib/hfile.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 #include "hts_internal.h"
@@ -111,7 +112,7 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len,
     if (idx->n == idx->m) {
         char **tmp;
         idx->m = idx->m? idx->m<<1 : 16;
-        if (!(tmp = (char**)realloc(idx->name, sizeof(char*) * idx->m))) {
+        if (!(tmp = hts_realloc_p(idx->name, sizeof(char*), idx->m))) {
             hts_log_error("Out of memory");
             return -1;
         }
@@ -743,7 +744,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     }
 
     // Over-allocate so there is extra space for one end-of-line sequence
-    buffer = (char*)malloc((size_t) end - beg + val->line_len - val->line_blen + 1);
+    buffer = malloc(hts_add_sat3(end - beg, val->line_len - val->line_blen, 1));
     if (!buffer) {
         *len = -1;
         return NULL;

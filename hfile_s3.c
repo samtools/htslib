@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "version.h"
 #endif
 #include "htslib/hts.h"  // for hts_version() and hts_verbose
+#include "htslib/hts_alloc.h"
 #include "htslib/kstring.h"
 #include "hts_time_funcs.h"
 
@@ -398,8 +399,8 @@ static char *escape_query(const char *qs) {
     char *escaped;
 
     length = strlen(qs);
-    alloced = length * 3 + 1;
-    if ((escaped = malloc(alloced)) == NULL) {
+    alloced = hts_add_sat2(hts_prod_sat2(length, 3), 1);
+    if ((escaped = hts_malloc(alloced)) == NULL) {
         return NULL;
     }
 
@@ -426,9 +427,9 @@ static char *escape_path(const char *path) {
     char *escaped;
 
     length = strlen(path);
-    alloced = length * 3 + 1;
+    alloced = hts_add_sat2(hts_prod_sat2(length, 3), 1);
 
-    if ((escaped = malloc(alloced)) == NULL) {
+    if ((escaped = hts_malloc(alloced)) == NULL) {
         return NULL;
     }
 
@@ -1018,7 +1019,7 @@ static int order_query_string(kstring_t *qs) {
         return -1;
     }
 
-    if ((queries = malloc(num_queries * sizeof(char*))) == NULL)
+    if ((queries = hts_malloc_p(sizeof(char*), num_queries)) == NULL)
         goto err;
 
     for (i = 0; i < num_queries; i++) {

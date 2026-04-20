@@ -51,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../htslib/hts_alloc.h"
 #include "../htslib/hfile.h"
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
@@ -178,7 +179,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
             free(hdr);
             return NULL;
         }
-        if (!(hdr->landmark = malloc(hdr->num_landmarks * sizeof(int32_t)))) {
+        if (!(hdr->landmark = hts_malloc_p(sizeof(int32_t), hdr->num_landmarks))) {
             free(hdr);
             return NULL;
         }
@@ -629,7 +630,7 @@ int cram_dependent_data_series(cram_fd *fd,
         return 0;
     }
 
-    block_used = calloc(s->hdr->num_blocks+1, sizeof(int));
+    block_used = hts_calloc_ps(sizeof(*block_used), s->hdr->num_blocks, 1);
     if (!block_used)
         return -1;
 
@@ -1007,7 +1008,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
         free(hdr);
         return NULL;
     }
-    hdr->block_content_ids = malloc(hdr->num_content_ids * sizeof(int32_t));
+    hdr->block_content_ids = hts_malloc_p(sizeof(int32_t), hdr->num_content_ids);
     if (!hdr->block_content_ids) {
         free(hdr);
         return NULL;
@@ -1162,7 +1163,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (ncigar+2 >= cigar_alloc) {
             cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(s->cigar, cigar_alloc * sizeof(*cigar))))
+            if (!(cigar = hts_realloc_p(s->cigar, sizeof(*cigar), cigar_alloc)))
                 return -1;
             s->cigar = cigar;
         }
@@ -1775,7 +1776,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (ncigar+1 >= cigar_alloc) {
             cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(s->cigar, cigar_alloc * sizeof(*cigar))))
+            if (!(cigar = hts_realloc_p(s->cigar, sizeof(*cigar), cigar_alloc)))
                 return -1;
             s->cigar = cigar;
         }
@@ -1805,7 +1806,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     if (cig_len) {
         if (ncigar >= cigar_alloc) {
             cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(s->cigar, cigar_alloc * sizeof(*cigar))))
+            if (!(cigar = hts_realloc_p(s->cigar, sizeof(*cigar), cigar_alloc)))
                 return -1;
             s->cigar = cigar;
         }
@@ -2400,7 +2401,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if (s->crecs)
         free(s->crecs);
-    if (!(s->crecs = malloc(s->hdr->num_records * sizeof(*s->crecs))))
+    if (!(s->crecs = hts_malloc_p(sizeof(*s->crecs), s->hdr->num_records)))
         return -1;
 
     ref_id = s->hdr->ref_seq_id;

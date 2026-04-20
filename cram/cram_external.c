@@ -49,6 +49,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #include "../htslib/hfile.h"
+#include "../htslib/hts_alloc.h"
 #include "cram.h"
 
 /*
@@ -378,8 +379,8 @@ cram_cid2ds_t *cram_update_cid2ds_map(cram_block_compression_hdr *hdr,
                 if (c2d->ds_idx >= c2d->ds_size) {
                     c2d->ds_size += 100;
                     c2d->ds_size *= 2;
-                    ds_list *ds_new = realloc(c2d->ds,
-                                              c2d->ds_size * sizeof(*ds_new));
+                    ds_list *ds_new = hts_realloc_p(c2d->ds, sizeof(*ds_new),
+                                                    c2d->ds_size);
                     if (!ds_new)
                         goto err;
                     c2d->ds = ds_new;
@@ -450,7 +451,7 @@ int *cram_cid2ds_query(cram_cid2ds_t *c2d, int content_id, int *n) {
         return NULL;
 
     if (!c2d->ds_a) {
-        c2d->ds_a = malloc(c2d->ds_idx * sizeof(int));
+        c2d->ds_a = hts_malloc_p(sizeof(*c2d->ds_a), c2d->ds_idx);
         if (!c2d->ds_a)
             return NULL;
     }

@@ -27,6 +27,7 @@
 #include <strings.h>
 #include <assert.h>
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/kstring.h"
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
@@ -184,7 +185,7 @@ int regidx_push(regidx_t *idx, char *chr_beg, char *chr_end, hts_pos_t beg, hts_
     list->reg[list->nreg].end = end;
     if ( idx->payload_size ) {
         if ( mreg != list->mreg ) {
-            uint8_t *new_dat = realloc(list->dat, idx->payload_size*list->mreg);
+            uint8_t *new_dat = hts_realloc_p(list->dat, idx->payload_size, list->mreg);
             if (!new_dat) return -1;
             list->dat = new_dat;
         }
@@ -339,12 +340,12 @@ static int reglist_build_index_(regidx_t *regidx, reglist_t *list)
         if ( !regidx->payload_size ) {
             qsort(list->reg,list->nreg,sizeof(reg_t),cmp_reg_ptrs);
         } else {
-            reg_t **ptr = malloc(sizeof(*ptr)*list->nreg);
+            reg_t **ptr = hts_malloc_p(sizeof(*ptr), list->nreg);
             if (!ptr) return -1;
             for (i=0; i<list->nreg; i++) ptr[i] = list->reg + i;
             qsort(ptr,list->nreg,sizeof(*ptr),cmp_reg_ptrs2);
 
-            uint8_t *tmp_dat = malloc(regidx->payload_size*list->nreg);
+            uint8_t *tmp_dat = hts_malloc_p(regidx->payload_size, list->nreg);
             if (!tmp_dat) { free(ptr); return -1; }
             for (i=0; i<list->nreg; i++) {
                 size_t iori = ptr[i] - list->reg;
@@ -355,7 +356,7 @@ static int reglist_build_index_(regidx_t *regidx, reglist_t *list)
             free(list->dat);
             list->dat = tmp_dat;
 
-            reg_t *tmp_reg = (reg_t*) malloc(sizeof(reg_t)*list->nreg);
+            reg_t *tmp_reg = (reg_t*) hts_malloc_p(sizeof(reg_t), list->nreg);
             if (!tmp_reg) { free(ptr); return -1; }
             for (i=0; i<list->nreg; i++) {
                 size_t iori = ptr[i] - list->reg;

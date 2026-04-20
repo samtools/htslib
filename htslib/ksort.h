@@ -64,6 +64,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "hts_alloc.h"
 #include "hts_defs.h"
 
 #ifndef klib_unused
@@ -103,7 +104,7 @@ typedef struct {
 		int curr, shift;												\
 																		\
 		a2[0] = array;													\
-		a2[1] = temp? temp : (type_t*)malloc(sizeof(type_t) * n);		\
+		a2[1] = temp? temp : (type_t*)hts_malloc_p(sizeof(type_t), n);	\
 		for (curr = 0, shift = 0; (1ul<<shift) < n; ++shift) {			\
 			a = a2[curr]; b = a2[1-curr];								\
 			if (shift == 0) {											\
@@ -214,7 +215,8 @@ typedef struct {
 			return 0;														\
 		}																\
 		for (d = 2; 1ul<<d < n; ++d);									\
-		stack = (ks_isort_stack_t*)malloc(sizeof(ks_isort_stack_t) * ((sizeof(size_t)*d)+2)); \
+		stack = (ks_isort_stack_t*)hts_malloc_ps(sizeof(ks_isort_stack_t), \
+			                           hts_prod_sat2(sizeof(size_t), d), 2); \
 		top = stack; s = a; t = a + (n-1); d <<= 1;						\
 		while (1) {														\
 			if (s < t) {												\

@@ -27,6 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 
 #include "htslib/vcfutils.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/kbitset.h"
 
 int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
@@ -667,7 +668,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     const char *cardinalities[] = {
         "fixed", ".", "A", "G", "R", "P", "LA", "LG", "LR", "M"
     };
-    int *map = malloc(line->n_allele * sizeof(int));
+    int *map = hts_malloc_p(sizeof(int), line->n_allele);
     int *laa = NULL, *laa_map = NULL, *lr_orig = NULL;
     uint8_t *dat = NULL;
     int num_laa, laa_size = 0, laa_map_stride = 0;
@@ -1002,10 +1003,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         int num_laa_vals = num_laa / line->n_sample;
         laa_map_stride = num_laa_vals + 1;
         int max_k = 0;
-        laa_map = malloc(sizeof(*laa_map) * laa_map_stride * line->n_sample);
+        laa_map = hts_malloc_p(sizeof(*laa_map),
+                              hts_prod_sat2(laa_map_stride, line->n_sample));
         if (!laa_map)
             goto err;
-        lr_orig = malloc(sizeof(*lr_orig) * line->n_sample);
+        lr_orig = hts_malloc_p(sizeof(*lr_orig), line->n_sample);
         if (!lr_orig)
             goto err;
         int laa_changed = 0;

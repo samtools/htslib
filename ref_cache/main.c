@@ -61,6 +61,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "poll_wrap.h"
 #include "server.h"
 #include "upstream.h"
+#include "../htslib/hts_alloc.h"
 
 // May not have been defined, depending on compiler options
 #ifndef NI_MAXHOST
@@ -107,10 +108,10 @@ static void change_name(char *name) {
 static int init_children(Options *opts) {
     int k;
 
-    upstream = malloc((opts->max_kids + 1U) * sizeof(int));
+    upstream = hts_malloc_ps(sizeof(*upstream), opts->max_kids, 1);
     if (upstream == NULL) return -1;
 
-    kids = malloc((opts->max_kids + 1U) * sizeof(Child_proc));
+    kids = hts_malloc_ps(sizeof(*kids), opts->max_kids, 1);
     if (kids == NULL) return -1;
 
     for (k = 0; k <= opts->max_kids; k++) {
@@ -751,8 +752,9 @@ static int add_match_addr(Options *opts, const char *addr_list) {
             if (opts->match_addrs_size == opts->num_match_addrs) {
                 size_t new_size = (opts->match_addrs_size > 0
                                    ? opts->match_addrs_size * 2 : 16);
-                MatchAddr *new_addrs = realloc(opts->match_addrs,
-                                               new_size * sizeof(*new_addrs));
+                MatchAddr *new_addrs = hts_realloc_p(opts->match_addrs,
+                                                     sizeof(*new_addrs),
+                                                     new_size);
                 if (!new_addrs) {
                     perror("Allocating address match list");
                     freeaddrinfo(addrs);

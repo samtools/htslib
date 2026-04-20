@@ -31,6 +31,7 @@
 #include "bcf_sr_sort.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/kbitset.h"
+#include "htslib/hts_alloc.h"
 
 // Variant types and pair-wise compatibility of their combinations, see bcf_sr_init_scores()
 #define SR_REF   1
@@ -311,7 +312,9 @@ static char *grp_create_key(sr_sort_t *srt)
         if ( i>0 ) srt->charp[i][-1] = 0;
     }
     qsort(srt->charp, srt->noff, sizeof(*srt->charp), cmpstringp);
-    char *ret = (char*) malloc(srt->str.l + 1), *ptr = ret;
+    char *ret = hts_malloc_ps(sizeof(*ret), srt->str.l, 1), *ptr = ret;
+    if (!ret)
+        return NULL;
     for (i=0; i<srt->noff; i++)
     {
         int len = strlen(srt->charp[i]);
@@ -461,7 +464,7 @@ static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, 
             int mvcf = var->mvcf;
             var->nvcf++;
             hts_expand0(int*, var->nvcf, var->mvcf, var->vcf);
-            if ( mvcf != var->mvcf ) var->rec = (bcf1_t **) realloc(var->rec,sizeof(bcf1_t*)*var->mvcf);
+            if ( mvcf != var->mvcf ) var->rec = hts_realloc_p(var->rec, sizeof(bcf1_t*), var->mvcf);
             var->vcf[var->nvcf-1] = ireader;
             var->rec[var->nvcf-1] = line;
 
@@ -600,7 +603,8 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, hts_po
         srt->sr = readers;
         if ( srt->nsr < readers->nreaders )
         {
-            srt->vcf_buf = (vcf_buf_t*) realloc(srt->vcf_buf,readers->nreaders*sizeof(vcf_buf_t));
+            srt->vcf_buf = hts_realloc_p(srt->vcf_buf, sizeof(vcf_buf_t),
+                                         readers->nreaders);
             memset(srt->vcf_buf + srt->nsr, 0, sizeof(vcf_buf_t)*(readers->nreaders - srt->nsr));
             if ( srt->msr < srt->nsr ) srt->msr = srt->nsr;
         }

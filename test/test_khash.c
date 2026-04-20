@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "../htslib/hts_alloc.h"
 #include "../htslib/khash.h"
 #include "../htslib/kroundup.h"
 
@@ -68,7 +69,7 @@ char * make_keys(size_t num, size_t kl) {
     char *keys;
 
     if (num > MAX_ENTRIES) return NULL;
-    keys = malloc(kl * num);
+    keys = hts_malloc_p(kl, num);
     if (!keys) {
         perror(NULL);
         return NULL;
@@ -285,7 +286,7 @@ static size_t read_keys(const char *keys_file, char **keys_out,
         if (key < end) nkeys++;
     }
 
-    key_locations = malloc(nkeys * sizeof(*key_locations));
+    key_locations = hts_malloc_p(sizeof(*key_locations), nkeys);
     if (!key_locations)
         goto fail;
 

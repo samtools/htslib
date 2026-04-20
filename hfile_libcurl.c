@@ -42,6 +42,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "version.h"
 #endif
 #include "htslib/hts.h"  // for hts_version() and hts_verbose
+#include "htslib/hts_alloc.h"
 #include "htslib/kstring.h"
 #include "htslib/khash.h"
 
@@ -353,8 +354,8 @@ static void libcurl_exit(void)
 static int append_header(hdrlist *hdrs, const char *data, int dup) {
     if (hdrs->num == hdrs->size) {
         unsigned int new_sz = hdrs->size ? hdrs->size * 2 : 4, i;
-        struct curl_slist *new_list = realloc(hdrs->list,
-                                              new_sz * sizeof(*new_list));
+        struct curl_slist *new_list = hts_realloc_p(hdrs->list,
+                                                    sizeof(*new_list), new_sz);
         if (!new_list) return -1;
         hdrs->size = new_sz;
         hdrs->list = new_list;
