@@ -1,0 +1,132 @@
+# Linux builds
+name: linux CI
+on: [push, pull_request]
+
+jobs:
+  build-ubuntu:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Fully declare each matrix entry here, as otherwise it's possible
+        # to get unexpected results due to the way the entries get expanded
+        # (See https://magmanu.github.io/blog/tech/matrices-github-actions/)
+        include:
+          # x86-64, clang, configure, libdeflate
+          - os: ubuntu-latest
+            use-configure: use-configure
+            compiler: clang
+            use-libdeflate: use-libdeflate
+            sanitize: no-sanitize
+            run-extra-checks: no-extra-checks
+
+          # x86-64, gcc, configure, libdeflate, sanitize
+          - os: ubuntu-latest
+            use-configure: use-configure
+            compiler: gcc
+            use-libdeflate: use-libdeflate
+            sanitize: sanitize
+            run-extra-checks: no-extra-checks
+
+          # x86-64, gcc, no configure, run extra checks
+          - os: ubuntu-latest
+            use-configure: no-configure
+            compiler: gcc
+            use-libdeflate: use-libdeflate
+            sanitize: no-sanitize
+            run-extra-checks: run-extra-checks
+
+          # arm, gcc, configure, libdeflate
+          - os: ubuntu-24.04-arm
+            use-configure: use-configure
+            compiler: gcc
+            use-libdeflate: use-libdeflate
+            sanitize: no-sanitize
+            run-extra-checks: no-extra-checks
+
+          # x86-64, gcc, configure, zlib only, sanitize
+          - os: ubuntu-latest
+            use-configure: use-configure
+            compiler: gcc
+            use-libdeflate: no-libdeflate
+            sanitize: sanitize
+            run-extra-checks: no-extra-checks
+
+    env:
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+    steps:
+    - name: Checkout
+      # This is actions/checkout@v6.0.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        submodules: true
+        persist-credentials: false
+
+    # Linux (ubuntu-latest) build
+    - name: Run apt
+      run: |
+        autoconf_pkgs=""
+        deflate_pkgs=""
+        if [ '${{ matrix.use-configure }}' = 'use-configure' ] ; then
+           autoconf_pkgs="autoconf automake"
+        fi
+        if [ '${{ matrix.use-libdeflate }}' = 'use-libdeflate' ] ; then
+          deflate_pkgs="libdeflate-dev"
+        fi
+        sudo apt-get update
+        sudo apt-get install -y --no-install-suggests --no-install-recommends $autoconf_pkgs make ${{ matrix.compiler }} perl zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev $deflate_pkgs
+
+    - name: Configure
+      if: ${{ matrix.use-configure == 'use-configure' }}
+      run: |
+        autoreconf -i
+
+        # Select configure options
+
+        libdeflate_opt='--without-libdeflate'
+        if [ '${{ matrix.use-libdeflate }}' = 'use-libdeflate' ] ; then
+          libdeflate_opt='--with-libdeflate'
+        fi
+
+        config_opts='--enable-werror --enable-plugins'
+        cc='${{ matrix.compiler }}'
+        cflags='-g -O3 -std=c99 -pedantic'
+        ldflags=''
+
+        if [ '${{ matrix.sanitize }}' = 'sanitize' ] ; then
+          config_opts='--enable-werror'
+          cflags='-g -Og -fsanitize=address,undefined -DHTS_ALLOW_UNALIGNED=0 -Wno-format-truncation -Wno-format-overflow'
+          ldflags='-fsanitize=address,undefined'
+        fi
+
+        # Run configure, and ensure that it did set -Werror
+
+        printf "\nRunning ./configure $config_opts ${libdeflate_opt}${cc:+ CC='$cc'}${cflags:+ CFLAGS='$cflags'}${ldflags:+ LDFLAGS='$ldflags'} ...\n\n"
+
+        { ./configure $config_opts $libdeflate_opt ${cc:+CC="$cc"} ${cflags:+CFLAGS="$cflags"} ${ldflags:+LDFLAGS="$ldflags"} &&
+          { grep -qE 'CFLAGS *=.*-Werror' config.mk ||
+            { printf "\nStopping as -Werror was not set.\n" 1>&2 ; false ; } ;
+          } ;
+        } || { printf "\n### config.log content follows...\n\n" 1>&2 ; cat config.log ; false ; }
+
+    - name: Compile
+      run: |
+        if [ '${{ matrix.use-configure }}' = 'use-configure' ] ; then
+          make -j5
+        else
+          make -j5 CFLAGS='-g -O3 -Wall -Werror'
+        fi
+
+    - name: Check
+      run: |
+        if [ '${{ matrix.use-configure }}' = 'use-configure' ] ; then
+          make check
+        else
+          make check CFLAGS='-g -O3 -Wall -Werror'
+        fi
+
+    - name: Extra checks
+      if: ${{ matrix.run-extra-checks == 'run-extra-checks' }}
+      run: |
+        make test-shlib-exports check-untracked maintainer-check
