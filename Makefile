@@ -714,7 +714,11 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	else \
 	  REF_PATH=: ./test.pl $(REF_CACHE_TEST_OPTS) $${TEST_OPTS:-} ; \
 	fi
-	test/test_hfile_libcurl
+	if test "x$(BUILT_PLUGINS)" != "x"; then \
+	  HTS_PATH=. ./test/with-shlib.sh test/test_hfile_libcurl ; \
+	else \
+	  test/test_hfile_libcurl ; \
+	fi
 
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
