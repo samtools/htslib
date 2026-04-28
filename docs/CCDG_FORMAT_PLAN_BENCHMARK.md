@@ -210,6 +210,50 @@ preserved byte identity, but it slowed these same parse-heavy cases, so it was
 not kept. The likely issue is that tracking ranges during parse adds enough
 per-value work to outweigh skipping `bcf_enc_vint`'s later range scan.
 
+## Follow-Up: Compiled Op Interpreter
+
+A second planned-parser tier was added to test whether a more general compiled
+FORMAT op interpreter can recover much of the exact-kernel benefit while
+covering more layouts.  The exact CCDG kernels still run for
+`HTS_VCF_FORMAT_PLAN=1`; `HTS_VCF_FORMAT_PLAN=interp` skips those kernels and
+uses only the compiled op interpreter.
+
+Correctness checks:
+
+```text
+./test/test_format_plan.sh
+HTS_VCF_FORMAT_PLAN=interp ./test/test_view -b -l 0 test/format-plan-edge.vcf
+/tmp/ccdg_chr22_10k.vcf -> uncompressed BCF
+```
+
+All planned outputs were compared against baseline with `cmp` and matched
+byte-for-byte.  The CCDG 10k VCF-input cases had 10,000 attempts, 10,000 hits,
+0 fallback, and 32,020,000 parsed samples for both exact and interpreter modes.
+
+Single-pass 10k CCDG conversion matrix, real seconds:
+
+| Conversion | Baseline | Exact kernels | Compiled interp | Exact vs baseline | Interp vs baseline |
+|---|---:|---:|---:|---:|---:|
+| VCF.gz -> BCF.gz | 9.11 | 7.97 | 8.79 | 12.5% faster | 3.5% faster |
+| BCF -> BCF.gz | 7.03 | 7.06 | 7.03 | neutral | neutral |
+| BCF -> VCF.gz | 11.20 | 11.32 | 11.21 | neutral | neutral |
+| VCF.gz -> VCF.gz | 13.18 | 12.01 | 12.92 | 8.9% faster | 2.0% faster |
+| VCF.gz -> uncompressed BCF | 2.79 | 1.64 | 2.61 | 41.2% faster | 6.5% faster |
+
+Parse-heavy uncompressed reference:
+
+| Conversion | Baseline | Exact kernels | Compiled interp | Exact vs baseline | Interp vs baseline |
+|---|---:|---:|---:|---:|---:|
+| VCF -> uncompressed BCF | 2.56 | 1.36 | 2.33 | 46.9% faster | 9.0% faster |
+
+The compiled interpreter is useful for validating the architecture, but it is
+not yet where the performance is.  Its per-sample dynamic dispatch, generic
+width pass, generic vector loops, and indirect per-op buffer handling leave it
+much closer to the baseline parser than to the exact CCDG kernels.  This argues
+for a hybrid approach: use the interpreter as a safe coverage layer and add
+small specialized op handlers for the very common shapes inside it, especially
+diploid GT, scalar ints, biallelic AD, biallelic PL, and fixed-width strings.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,

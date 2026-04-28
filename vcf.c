@@ -3160,14 +3160,19 @@ void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
     if (parsed_samples) *parsed_samples = vcf_format_plan_stats.parsed_samples;
 }
 
-static int vcf_format_plan_enabled(void)
+static int vcf_format_plan_mode(void)
 {
-    static int enabled = -1;
-    if (enabled < 0) {
+    static int mode = -1;
+    if (mode < 0) {
         const char *env = getenv("HTS_VCF_FORMAT_PLAN");
-        enabled = env && env[0] && strcmp(env, "0") != 0;
+        if (!env || !env[0] || strcmp(env, "0") == 0)
+            mode = 0;
+        else if (strcmp(env, "interp") == 0 || strcmp(env, "general") == 0)
+            mode = 2;
+        else
+            mode = 1;
     }
-    return enabled;
+    return mode;
 }
 
 typedef struct {
@@ -3837,13 +3842,17 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 	float *ab = NULL;
 	char *pgt = NULL, *pid = NULL;
 	const char *cur, *end;
+	int plan_mode;
 
-    if (!vcf_format_plan_enabled())
+    plan_mode = vcf_format_plan_mode();
+    if (!plan_mode)
         return -3;
     vcf_format_plan_stats.attempts++;
     if (h->keep_samples)
         goto fallback;
 
+    if (plan_mode == 2)
+        return vcf_parse_format_general_planned(s, h, v, p, q);
     plan = vcf_format_plan_get(h, p);
     if (!plan)
         return vcf_parse_format_general_planned(s, h, v, p, q);

@@ -88,7 +88,9 @@ Run:
 
 The script writes BCF through the generic parser and through
 `HTS_VCF_FORMAT_PLAN=1`, compares them with `cmp`, and prints plan hit/fallback
-statistics.
+statistics.  `HTS_VCF_FORMAT_PLAN=interp` or `HTS_VCF_FORMAT_PLAN=general`
+skips the exact kernels and runs the compiled op-list interpreter directly,
+which is useful for isolating interpreter performance.
 
 ## Next Work
 
