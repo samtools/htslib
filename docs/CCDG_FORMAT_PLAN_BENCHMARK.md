@@ -516,6 +516,60 @@ Post-cleanup parse-heavy 10k CCDG, VCF.gz to uncompressed BCF, real seconds:
 | Exact kernels | 1.85 | 1.89 | 1.86 |
 | Dynamic strict/interp | 1.86 | 1.83 | 1.83 |
 
+## Follow-Up: Broader Operation Checks
+
+After the dynamic strict executor cleanup, the 10k CCDG conversion matrix was
+rerun with `test/test_view`.  Outputs were compared byte-for-byte against the
+baseline output for every exact/interp cell.
+
+Single-run format conversion matrix, real seconds:
+
+| Conversion | Baseline | Exact kernels | Dynamic strict/interp |
+|---|---:|---:|---:|
+| VCF.gz -> BCF.gz | 8.73 | 7.78 | 8.58 |
+| BCF -> BCF.gz | 6.85 | 6.92 | 7.02 |
+| BCF -> VCF.gz | 11.18 | 11.22 | 11.15 |
+| VCF.gz -> VCF.gz | 13.26 | 12.34 | 13.01 |
+| VCF.gz -> uncompressed BCF | 2.83 | 1.85 | 2.58 |
+
+The `VCF.gz -> uncompressed BCF` interp cell above was a noisy outlier; a direct
+focused rerun of that same parse-heavy case reproduced exact-speed dynamic
+strict behavior:
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|---|---:|---:|---:|
+| Exact kernels | 1.84 | 1.82 | 1.85 |
+| Dynamic strict/interp | 1.84 | 1.84 | 1.85 |
+
+Read-only scan with `test_view -B` isolates input decode/parse without output
+formatting or compression:
+
+| Input | Mode | Run 1 | Run 2 | Run 3 |
+|---|---|---:|---:|---:|
+| VCF.gz | Baseline | 2.59 | 2.61 | 2.58 |
+| VCF.gz | Exact kernels | 1.62 | 1.62 | 1.65 |
+| VCF.gz | Dynamic strict/interp | 1.62 | 1.63 | 1.62 |
+| BCF | Baseline | 0.62 | 0.61 | 0.61 |
+| BCF | Exact kernels | 0.61 | 0.61 | 0.63 |
+| BCF | Dynamic strict/interp | 0.61 | 0.62 | 0.61 |
+
+Threaded compressed output with `test_view -@ 4` makes the parser win visible
+again even for compressed-to-compressed workflows:
+
+| Conversion | Baseline | Exact kernels | Dynamic strict/interp |
+|---|---:|---:|---:|
+| VCF.gz -> BCF.gz, `-@ 4` | 2.64 | 2.03 | 2.06 |
+| VCF.gz -> VCF.gz, `-@ 4` | 3.96 | 3.03 | 3.02 |
+
+BCF-input conversions and BCF read-only scans remain unchanged, as expected,
+because the optimization only affects VCF FORMAT parsing.
+
+An attempted bcftools rebuild against this htslib worktree failed at link time
+because the sibling bcftools checkout expects `bcf_write_take_ownership`, which
+is not present in this htslib worktree.  Operation-level bcftools timings should
+therefore be rerun only after pairing this htslib branch with a matching
+bcftools revision or porting that API.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,
