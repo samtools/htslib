@@ -83,6 +83,10 @@ Planned integer parsing must be overflow-safe.  If a value is outside the BCF
 int32 payload range, the planned parser falls back so the generic parser keeps
 its warning and missing-value behavior.
 
+Validated `GT2` payloads and exact-layout `AB` float payloads can be written
+directly into `v->indiv` instead of going through scratch arrays.  Any direct
+writer must save the entry length and roll back before returning fallback.
+
 ## Edge Fixture
 
 `test/format-plan-edge.vcf` is CCDG-shaped but includes records that exercise
@@ -115,8 +119,8 @@ which is useful for isolating interpreter performance.
   inputs.
 - Add plan- or shape-level executors for dominant opcode sequences so hot rows
   can also avoid the per-sample opcode switch.
-- Explore direct final-buffer output for validated fixed-width fields; this is
-  likely higher leverage than adding more switch-level shape executors.
+- Extend direct final-buffer output only where BCF type selection is
+  byte-identical, or where the direct writer can cheaply roll back.
 - Add overflow-compatible numeric parsing or force fallback before committing to
   the plan on extreme integer/float values.
 - Integrate the edge fixture into the standard htslib test runner once the

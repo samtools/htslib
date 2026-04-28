@@ -360,6 +360,45 @@ memory traffic by parsing validated fixed-width fields directly into final BCF
 payload buffers, or specialize complete row executors that combine parse,
 validation, and encode rather than only replacing the opcode switch.
 
+## Follow-Up: Direct Payload Sinks
+
+The next pass tested direct final-buffer output for fields whose BCF
+representation is known before parsing:
+
+- exact `GT2` writes directly to a final `INT8` payload instead of scratch
+  `int32_t` values plus `bcf_enc_vint()`;
+- exact `AB` writes directly to a final float payload;
+- strict shape executors direct-write `GT2` and optional leading `FLOAT1`
+  payloads, with rollback on fallback;
+- exact AD/DP/GQ/PL also carry integer range metadata into a known-range encoder
+  to avoid the range pass in `bcf_enc_vint()`.
+
+Correctness remained byte-identical for the edge fixture and 10k CCDG exact and
+interpreter modes.
+
+Parse-heavy 10k CCDG reference:
+
+| Conversion | Baseline | Exact kernels | Direct-sink interp |
+|---|---:|---:|---:|
+| VCF -> uncompressed BCF | 2.51-2.68 s | 1.57-1.58 s | 2.29-2.39 s |
+
+Full 10k CCDG compressed matrix, real seconds:
+
+| Conversion | Baseline | Exact kernels | Direct-sink interp |
+|---|---:|---:|---:|
+| VCF.gz -> BCF.gz | 9.51 | 8.53 | 9.28 |
+| BCF -> BCF.gz | 7.46 | 7.46 | 7.46 |
+| BCF -> VCF.gz | 11.95 | 12.00 | 12.02 |
+| VCF.gz -> VCF.gz | 14.16 | 12.95 | 13.62 |
+| VCF.gz -> uncompressed BCF | 2.95 | 1.92 | 2.67 |
+
+The direct sinks are safe but small on this dataset.  The known-range encoder
+was also byte-identical but did not produce a clear timing win, suggesting that
+range tracking during parse still mostly trades one cost for another.  Broader
+direct integer output likely needs either a cheap type-prediction/rollback
+strategy or complete fused row executors that avoid both scratch traffic and
+post-parse encoding for multiple fields at once.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,
