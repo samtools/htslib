@@ -3172,6 +3172,7 @@ static int vcf_format_plan_enabled(void)
 
 typedef struct {
     char format[64];
+	const bcf_hdr_t *hdr;
 	int supported;
 	int has_ab;
 	int has_phase;
@@ -3184,6 +3185,20 @@ typedef struct {
 	int key_pid;
 	int key_pl;
 } vcf_format_plan_t;
+
+typedef struct {
+	int key;
+	uint8_t htype;
+	uint8_t is_gt;
+} vcf_format_op_t;
+
+typedef struct {
+	char format[256];
+	const bcf_hdr_t *hdr;
+	int supported;
+	int n_ops;
+	vcf_format_op_t ops[MAX_N_FMT];
+} vcf_format_general_plan_t;
 
 #if defined(__GNUC__)
 #define VCF_PLAN_ALWAYS_INLINE static inline __attribute__((always_inline))
@@ -3198,6 +3213,7 @@ static int vcf_format_plan_compile(const bcf_hdr_t *h, const char *format,
     if (strlen(format) >= sizeof(plan->format))
         return 0;
     strcpy(plan->format, format);
+	plan->hdr = h;
 
 	if (strcmp(format, "GT:AB:AD:DP:GQ:PL") == 0) {
 		plan->supported = 1;
@@ -3240,12 +3256,73 @@ static vcf_format_plan_t *vcf_format_plan_get(const bcf_hdr_t *h, const char *fo
     int i;
 
     for (i = 0; i < ncache; i++)
-        if (strcmp(cache[i].format, format) == 0)
+        if (cache[i].hdr == h && strcmp(cache[i].format, format) == 0)
             return cache[i].supported ? &cache[i] : NULL;
 
     if (ncache == N_PLAN_CACHE)
         return NULL;
     vcf_format_plan_compile(h, format, &cache[ncache]);
+    return cache[ncache++].supported ? &cache[ncache-1] : NULL;
+}
+
+static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *format,
+                                           vcf_format_general_plan_t *plan)
+{
+    char tmp[256], *tok, *saveptr = NULL;
+    int i;
+
+    memset(plan, 0, sizeof(*plan));
+    if (strlen(format) >= sizeof(plan->format))
+        return 0;
+    strcpy(plan->format, format);
+    strcpy(tmp, format);
+	plan->hdr = h;
+
+    for (tok = strtok_r(tmp, ":", &saveptr); tok;
+         tok = strtok_r(NULL, ":", &saveptr)) {
+        int key, htype;
+
+        if (plan->n_ops >= MAX_N_FMT)
+            return 0;
+        key = bcf_hdr_id2int(h, BCF_DT_ID, tok);
+        if (key < 0 || !bcf_hdr_idinfo_exists(h, BCF_HL_FMT, key))
+            return 0;
+        for (i = 0; i < plan->n_ops; i++)
+            if (plan->ops[i].key == key)
+                return 0;
+
+        htype = bcf_hdr_id2type(h, BCF_HL_FMT, key);
+        if (htype != BCF_HT_STR && htype != BCF_HT_INT && htype != BCF_HT_REAL)
+            return 0;
+
+        plan->ops[plan->n_ops].key = key;
+        plan->ops[plan->n_ops].htype = htype;
+        plan->ops[plan->n_ops].is_gt = strcmp(tok, "GT") == 0;
+        plan->n_ops++;
+    }
+
+    if (!plan->n_ops)
+        return 0;
+
+    plan->supported = 1;
+    return 1;
+}
+
+static vcf_format_general_plan_t *vcf_format_general_plan_get(const bcf_hdr_t *h,
+                                                              const char *format)
+{
+    enum { N_GENERAL_PLAN_CACHE = 16 };
+    static vcf_format_general_plan_t cache[N_GENERAL_PLAN_CACHE];
+    static int ncache = 0;
+    int i;
+
+    for (i = 0; i < ncache; i++)
+        if (cache[i].hdr == h && strcmp(cache[i].format, format) == 0)
+            return cache[i].supported ? &cache[i] : NULL;
+
+    if (ncache == N_GENERAL_PLAN_CACHE)
+        return NULL;
+    vcf_format_general_plan_compile(h, format, &cache[ncache]);
     return cache[ncache++].supported ? &cache[ncache-1] : NULL;
 }
 
@@ -3439,6 +3516,279 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_copy_string(const char **sp, char *out, int 
 	return 0;
 }
 
+static int vcf_plan_measure_general(kstring_t *s, const bcf_hdr_t *h,
+                                    const vcf_format_general_plan_t *plan,
+                                    char *q, int *widths)
+{
+	const char *cur = q + 1, *end = s->s + s->l;
+	int sample, j, nsamples = bcf_hdr_nsamples(h);
+
+	for (j = 0; j < plan->n_ops; j++)
+		widths[j] = 0;
+
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		for (j = 0; j < plan->n_ops; j++) {
+			const char *field = cur;
+			const vcf_format_op_t *op = &plan->ops[j];
+			int w = 1;
+
+			while (cur < end && *cur && *cur != ':' && *cur != '\t') {
+				if (op->htype == BCF_HT_INT || op->htype == BCF_HT_REAL) {
+					if (*cur == ',')
+						w++;
+				} else if (op->is_gt) {
+					if (*cur == '/' || *cur == '|')
+						w++;
+				}
+				cur++;
+			}
+
+			if (op->htype == BCF_HT_STR && !op->is_gt) {
+				w = cur - field;
+				if (j > 0)
+					w++;
+			}
+			if (w <= 0)
+				w = 1;
+			if (widths[j] < w)
+				widths[j] = w;
+
+			if (j + 1 < plan->n_ops) {
+				if (*cur != ':')
+					return -1;
+				cur++;
+			} else {
+				if (*cur == '\t')
+					cur++;
+				else if (*cur == '\0' || cur >= end)
+					;
+				else
+					return -1;
+			}
+		}
+	}
+
+	return sample == nsamples ? 0 : -1;
+}
+
+static int vcf_plan_parse_gt_dynamic(const char **sp, int32_t *out, int width, int vcf44)
+{
+	const char *s = *sp;
+	int l = 0, ploidy = 0, anyunphased = 0, phasingprfx = 0, unknown1 = 0;
+	int32_t is_phased = 0;
+
+	if (vcf44 && (*s == '|' || *s == '/')) {
+		is_phased = *s++ == '|';
+		phasingprfx = 1;
+	}
+
+	for (;;) {
+		uint32_t val = 0;
+
+		if (l >= width)
+			return -1;
+		ploidy++;
+		if (*s == '.') {
+			s++;
+			out[l++] = is_phased;
+			if (l == 1)
+				unknown1 = 1;
+		} else if (*s >= '0' && *s <= '9') {
+			do {
+				if (val > ((uint32_t)INT32_MAX >> 1) - 1)
+					return -1;
+				val = val * 10 + (*s - '0');
+				s++;
+			} while (*s >= '0' && *s <= '9');
+			if (val > ((uint32_t)INT32_MAX >> 1) - 1)
+				return -1;
+			out[l++] = ((val + 1) << 1) | is_phased;
+		} else {
+			return -1;
+		}
+
+		anyunphased |= (ploidy != 1) && !is_phased;
+		is_phased = *s == '|';
+		if (*s != '|' && *s != '/')
+			break;
+		s++;
+	}
+
+	if (!phasingprfx) {
+		if (ploidy == 1) {
+			if (!unknown1)
+				out[0] |= 1;
+		} else {
+			out[0] |= anyunphased ? 0 : 1;
+		}
+	}
+	for (; l < width; l++)
+		out[l] = bcf_int32_vector_end;
+
+	*sp = s;
+	return 0;
+}
+
+static int vcf_plan_parse_int_vector_dynamic(const char **sp, int32_t *out, int width)
+{
+	const char *s = *sp;
+	int i = 0;
+
+	if (*s == ':' || *s == '\t' || *s == '\0') {
+		out[i++] = bcf_int32_missing;
+	} else {
+		for (;;) {
+			if (i >= width || vcf_plan_int_value(&s, &out[i]) < 0)
+				return -1;
+			i++;
+			if (*s != ',')
+				break;
+			s++;
+		}
+	}
+	for (; i < width; i++)
+		out[i] = bcf_int32_vector_end;
+	*sp = s;
+	return 0;
+}
+
+static int vcf_plan_parse_float_vector_dynamic(const char **sp, float *out, int width)
+{
+	const char *s = *sp;
+	int i = 0;
+
+	if (*s == ':' || *s == '\t' || *s == '\0') {
+		bcf_float_set_missing(out[i++]);
+	} else {
+		for (;;) {
+			if (i >= width || vcf_plan_float_value(&s, &out[i]) < 0)
+				return -1;
+			i++;
+			if (*s != ',')
+				break;
+			s++;
+		}
+	}
+	for (; i < width; i++)
+		bcf_float_set_vector_end(out[i]);
+	*sp = s;
+	return 0;
+}
+
+static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
+                                            bcf1_t *v, char *p, char *q)
+{
+	vcf_format_general_plan_t *plan;
+	kstring_t *mem;
+	int widths[MAX_N_FMT], sizes[MAX_N_FMT], offsets[MAX_N_FMT];
+	int nsamples, sample, j, vcf44;
+	const char *cur, *end;
+
+	plan = vcf_format_general_plan_get(h, p);
+	if (!plan)
+		goto fallback;
+
+	nsamples = bcf_hdr_nsamples(h);
+	if (!nsamples)
+		return 0;
+	if (vcf_plan_measure_general(s, h, plan, q, widths) < 0)
+		goto fallback;
+
+	mem = (kstring_t*)&h->mem;
+	mem->l = 0;
+	for (j = 0; j < plan->n_ops; j++) {
+		int size;
+		const vcf_format_op_t *op = &plan->ops[j];
+
+		if (widths[j] <= 0)
+			widths[j] = 1;
+		if (op->htype == BCF_HT_STR && !op->is_gt)
+			size = widths[j];
+		else
+			size = widths[j] * (int)sizeof(int32_t);
+		if (size < 0 || (uint64_t) mem->l + nsamples * (uint64_t) size > INT_MAX)
+			return -1;
+		if (align_mem(mem) < 0)
+			return -1;
+		offsets[j] = mem->l;
+		sizes[j] = size;
+		if (ks_resize(mem, mem->l + nsamples * (size_t) size) < 0)
+			return -1;
+		mem->l += nsamples * (size_t) size;
+	}
+
+	cur = q + 1;
+	end = s->s + s->l;
+	vcf44 = bcf_get_version(h, NULL) >= VCF44;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		for (j = 0; j < plan->n_ops; j++) {
+			const vcf_format_op_t *op = &plan->ops[j];
+			uint8_t *buf = (uint8_t*)mem->s + offsets[j] + sample * (size_t)sizes[j];
+
+			if (op->is_gt) {
+				if (vcf_plan_parse_gt_dynamic(&cur, (int32_t *)buf, widths[j], vcf44) < 0)
+					goto fallback;
+			} else if (op->htype == BCF_HT_STR) {
+				if (vcf_plan_copy_string(&cur, (char *)buf, widths[j]) < 0)
+					goto fallback;
+			} else if (op->htype == BCF_HT_INT) {
+				if (vcf_plan_parse_int_vector_dynamic(&cur, (int32_t *)buf, widths[j]) < 0)
+					goto fallback;
+			} else if (op->htype == BCF_HT_REAL) {
+				if (vcf_plan_parse_float_vector_dynamic(&cur, (float *)buf, widths[j]) < 0)
+					goto fallback;
+			} else {
+				goto fallback;
+			}
+
+			if (j + 1 < plan->n_ops) {
+				if (vcf_plan_expect_sep(&cur, ':') < 0)
+					goto fallback;
+			} else {
+				if (*cur == '\t')
+					cur++;
+				else if (*cur == '\0' || cur >= end)
+					;
+				else
+					goto fallback;
+			}
+		}
+	}
+	if (sample != nsamples)
+		goto fallback;
+
+	v->n_fmt = plan->n_ops;
+	v->n_sample = nsamples;
+	for (j = 0; j < plan->n_ops; j++) {
+		const vcf_format_op_t *op = &plan->ops[j];
+		uint8_t *buf = (uint8_t*)mem->s + offsets[j];
+
+		bcf_enc_int1(&v->indiv, op->key);
+		if (op->htype == BCF_HT_STR && !op->is_gt) {
+			if (bcf_enc_size(&v->indiv, widths[j], BCF_BT_CHAR) < 0)
+				return -1;
+			if (kputsn((char *)buf, nsamples * (size_t)widths[j], &v->indiv) < 0)
+				return -1;
+		} else if (op->htype == BCF_HT_INT || op->is_gt) {
+			if (bcf_enc_vint(&v->indiv, nsamples * widths[j], (int32_t *)buf, widths[j]) < 0)
+				return -1;
+		} else {
+			if (bcf_enc_size(&v->indiv, widths[j], BCF_BT_FLOAT) < 0)
+				return -1;
+			if (serialize_float_array(&v->indiv, nsamples * (size_t)widths[j], (float *)buf) < 0)
+				return -1;
+		}
+	}
+
+	vcf_format_plan_stats.hits++;
+	vcf_format_plan_stats.parsed_samples += nsamples;
+	return 0;
+
+fallback:
+	vcf_format_plan_stats.fallback++;
+	return -3;
+}
+
 static int vcf_plan_phase_widths(const bcf_hdr_t *h, const vcf_format_plan_t *plan,
                                  kstring_t *s, char *q, int *pgt_w, int *pid_w)
 {
@@ -3496,7 +3846,7 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 
     plan = vcf_format_plan_get(h, p);
     if (!plan)
-        goto fallback;
+        return vcf_parse_format_general_planned(s, h, v, p, q);
 
     nsamples = bcf_hdr_nsamples(h);
     if (!nsamples)
