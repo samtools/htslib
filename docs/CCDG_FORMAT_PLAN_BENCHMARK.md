@@ -177,6 +177,39 @@ This is a statistical sample, not exact cycle accounting, but it is useful
 directionally. The next parser-side targets are direct integer-vector parsing
 for AD/PL and reducing repeated `bcf_enc_vint` work in the planned path.
 
+## Follow-Up: Fixed-Width AD/PL Parsing
+
+The first follow-up optimization added fixed-width planned parsers for the most
+common biallelic case:
+
+```text
+AD width = 2
+PL width = 3
+```
+
+On the 10k subset, about 82% of records are biallelic, so this removes a large
+number of generic integer-vector loop iterations and helper calls while leaving
+multi-allelic rows on the generic planned-vector parser.
+
+Correctness checks remained byte-identical against baseline for:
+
+```text
+/tmp/ccdg_one_phase.vcf -> uncompressed BCF
+/tmp/ccdg_chr22_10k.vcf -> uncompressed BCF
+```
+
+Directional timings after the fixed-width parser change:
+
+| Dataset | Previous all-hit plan | Fixed-width AD/PL plan | Change |
+|---|---:|---:|---:|
+| 100k CCDG VCF -> uncompressed BCF | 14.95 s | 13.1-13.6 s | about 9-12% faster |
+| 100k CCDG VCF.gz -> uncompressed BCF | 18.12 s | 15.6-16.5 s | about 9-14% faster |
+
+An attempted range-tracked replacement for `bcf_enc_vint` was also tested. It
+preserved byte identity, but it slowed these same parse-heavy cases, so it was
+not kept. The likely issue is that tracking ranges during parse adds enough
+per-value work to outweigh skipping `bcf_enc_vint`'s later range scan.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,
@@ -196,6 +229,7 @@ the parse-heavy workload substantially.
 
 The next highest-value extension is not more FORMAT layout coverage for this
 CCDG benchmark, because coverage is already 100%. It is reducing the cost inside
-the planned path: AD/PL integer-vector parsing, BCF integer encoding, and then
-possibly pipelining decompression/parse/encode once the single-threaded parser
-work has been squeezed further.
+the planned path and then possibly pipelining decompression/parse/encode once
+the single-threaded parser work has been squeezed further. After the fixed-width
+AD/PL parser, `bcf_enc_vint` and input decompression remain the most obvious
+next bottlenecks.

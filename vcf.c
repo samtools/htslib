@@ -3185,6 +3185,12 @@ typedef struct {
 	int key_pl;
 } vcf_format_plan_t;
 
+#if defined(__GNUC__)
+#define VCF_PLAN_ALWAYS_INLINE static inline __attribute__((always_inline))
+#else
+#define VCF_PLAN_ALWAYS_INLINE static inline
+#endif
+
 static int vcf_format_plan_compile(const bcf_hdr_t *h, const char *format,
                                    vcf_format_plan_t *plan)
 {
@@ -3243,7 +3249,7 @@ static vcf_format_plan_t *vcf_format_plan_get(const bcf_hdr_t *h, const char *fo
     return cache[ncache++].supported ? &cache[ncache-1] : NULL;
 }
 
-static inline int vcf_plan_gt2(const char **sp, int32_t out[2])
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_gt2(const char **sp, int32_t out[2])
 {
     const char *s = *sp;
     int a0, a1, phased;
@@ -3267,7 +3273,7 @@ static inline int vcf_plan_gt2(const char **sp, int32_t out[2])
     return 0;
 }
 
-static inline int vcf_plan_int_value(const char **sp, int32_t *out)
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_value(const char **sp, int32_t *out)
 {
     const char *s = *sp;
     int sign = 1, val = 0;
@@ -3292,7 +3298,7 @@ static inline int vcf_plan_int_value(const char **sp, int32_t *out)
     return 0;
 }
 
-static inline int vcf_plan_float_value(const char **sp, float *out)
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_value(const char **sp, float *out)
 {
     const char *s = *sp;
     char *end = NULL;
@@ -3332,7 +3338,56 @@ static int vcf_plan_parse_int_vector(const char **sp, int32_t *out, int width)
     return 0;
 }
 
-static inline int vcf_plan_expect_sep(const char **sp, int sep)
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2(const char **sp, int32_t *out)
+{
+	const char *s = *sp;
+
+	if (vcf_plan_int_value(&s, &out[0]) < 0)
+		return -1;
+	if (*s != ',') {
+		out[1] = bcf_int32_vector_end;
+		*sp = s;
+		return 0;
+	}
+	s++;
+	if (vcf_plan_int_value(&s, &out[1]) < 0)
+		return -1;
+	if (*s == ',')
+		return -1;
+	*sp = s;
+	return 0;
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3(const char **sp, int32_t *out)
+{
+	const char *s = *sp;
+
+	if (vcf_plan_int_value(&s, &out[0]) < 0)
+		return -1;
+	if (*s != ',') {
+		out[1] = bcf_int32_vector_end;
+		out[2] = bcf_int32_vector_end;
+		*sp = s;
+		return 0;
+	}
+	s++;
+	if (vcf_plan_int_value(&s, &out[1]) < 0)
+		return -1;
+	if (*s != ',') {
+		out[2] = bcf_int32_vector_end;
+		*sp = s;
+		return 0;
+	}
+	s++;
+	if (vcf_plan_int_value(&s, &out[2]) < 0)
+		return -1;
+	if (*s == ',')
+		return -1;
+	*sp = s;
+	return 0;
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_expect_sep(const char **sp, int sep)
 {
 	if (**sp != sep)
 		return -1;
@@ -3340,7 +3395,7 @@ static inline int vcf_plan_expect_sep(const char **sp, int sep)
 	return 0;
 }
 
-static inline int vcf_plan_skip_field(const char **sp, int sep)
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_skip_field(const char **sp, int sep)
 {
 	const char *s = *sp;
 	while (*s && *s != sep && *s != '\t')
@@ -3351,7 +3406,7 @@ static inline int vcf_plan_skip_field(const char **sp, int sep)
 	return 0;
 }
 
-static inline int vcf_plan_measure_string(const char **sp, int sep, int *max_l)
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_measure_string(const char **sp, int sep, int *max_l)
 {
 	const char *s = *sp, *t = s;
 	int l;
@@ -3367,7 +3422,7 @@ static inline int vcf_plan_measure_string(const char **sp, int sep, int *max_l)
 	return 0;
 }
 
-static inline int vcf_plan_copy_string(const char **sp, char *out, int width)
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_copy_string(const char **sp, char *out, int width)
 {
 	const char *s = *sp, *t = s;
 	int l;
@@ -3494,29 +3549,33 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 
     cur = q + 1;
     end = s->s + s->l;
-    for (sample = 0; sample < nsamples && cur < end; sample++) {
-        if (vcf_plan_gt2(&cur, &gt[sample * 2]) < 0)
-            goto fallback;
-        if (vcf_plan_expect_sep(&cur, ':') < 0)
-            goto fallback;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+	        if (vcf_plan_gt2(&cur, &gt[sample * 2]) < 0)
+	            goto fallback;
+	        if (vcf_plan_expect_sep(&cur, ':') < 0)
+	            goto fallback;
         if (plan->has_ab) {
             if (vcf_plan_float_value(&cur, &ab[sample]) < 0)
                 goto fallback;
             if (vcf_plan_expect_sep(&cur, ':') < 0)
                 goto fallback;
         }
-        if (vcf_plan_parse_int_vector(&cur, &ad[sample * ad_w], ad_w) < 0)
-            goto fallback;
-        if (vcf_plan_expect_sep(&cur, ':') < 0)
-            goto fallback;
-        if (vcf_plan_int_value(&cur, &dp[sample]) < 0)
-            goto fallback;
-        if (vcf_plan_expect_sep(&cur, ':') < 0)
-            goto fallback;
-		if (vcf_plan_int_value(&cur, &gq[sample]) < 0)
+		if (ad_w == 2) {
+			if (vcf_plan_parse_int_vector2(&cur, &ad[sample * 2]) < 0)
+				goto fallback;
+		} else if (vcf_plan_parse_int_vector(&cur, &ad[sample * ad_w], ad_w) < 0) {
 			goto fallback;
-		if (vcf_plan_expect_sep(&cur, ':') < 0)
-			goto fallback;
+		}
+	        if (vcf_plan_expect_sep(&cur, ':') < 0)
+	            goto fallback;
+	        if (vcf_plan_int_value(&cur, &dp[sample]) < 0)
+	            goto fallback;
+	        if (vcf_plan_expect_sep(&cur, ':') < 0)
+	            goto fallback;
+			if (vcf_plan_int_value(&cur, &gq[sample]) < 0)
+				goto fallback;
+			if (vcf_plan_expect_sep(&cur, ':') < 0)
+				goto fallback;
 		if (plan->has_phase) {
 			if (vcf_plan_copy_string(&cur, &pgt[sample * pgt_w], pgt_w) < 0)
 				goto fallback;
@@ -3527,10 +3586,14 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 			if (vcf_plan_expect_sep(&cur, ':') < 0)
 				goto fallback;
 		}
-		if (vcf_plan_parse_int_vector(&cur, &pl[sample * pl_w], pl_w) < 0)
-			goto fallback;
-        if (*cur == '\t')
-            cur++;
+			if (pl_w == 3) {
+				if (vcf_plan_parse_int_vector3(&cur, &pl[sample * 3]) < 0)
+					goto fallback;
+			} else if (vcf_plan_parse_int_vector(&cur, &pl[sample * pl_w], pl_w) < 0) {
+				goto fallback;
+			}
+	        if (*cur == '\t')
+	            cur++;
         else if (*cur == '\0' || cur >= end)
             ;
         else
@@ -3543,20 +3606,20 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 	v->n_sample = nsamples;
 	bcf_enc_int1(&v->indiv, plan->key_gt);
     if (bcf_enc_vint(&v->indiv, nsamples * 2, gt, 2) < 0)
-        return -1;
+	        return -1;
     if (plan->has_ab) {
         bcf_enc_int1(&v->indiv, plan->key_ab);
         bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT);
         if (serialize_float_array(&v->indiv, nsamples, ab) < 0)
             return -1;
     }
-    bcf_enc_int1(&v->indiv, plan->key_ad);
-    nwords = nsamples * ad_w;
-    if (bcf_enc_vint(&v->indiv, nwords, ad, ad_w) < 0)
-        return -1;
-    bcf_enc_int1(&v->indiv, plan->key_dp);
-    if (bcf_enc_vint(&v->indiv, nsamples, dp, 1) < 0)
-        return -1;
+	    bcf_enc_int1(&v->indiv, plan->key_ad);
+	    nwords = nsamples * ad_w;
+	    if (bcf_enc_vint(&v->indiv, nwords, ad, ad_w) < 0)
+	        return -1;
+	    bcf_enc_int1(&v->indiv, plan->key_dp);
+	    if (bcf_enc_vint(&v->indiv, nsamples, dp, 1) < 0)
+	        return -1;
 	bcf_enc_int1(&v->indiv, plan->key_gq);
 	if (bcf_enc_vint(&v->indiv, nsamples, gq, 1) < 0)
 		return -1;
@@ -3573,9 +3636,9 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 			return -1;
 	}
 	bcf_enc_int1(&v->indiv, plan->key_pl);
-    nwords = nsamples * pl_w;
-    if (bcf_enc_vint(&v->indiv, nwords, pl, pl_w) < 0)
-        return -1;
+	    nwords = nsamples * pl_w;
+	    if (bcf_enc_vint(&v->indiv, nwords, pl, pl_w) < 0)
+	        return -1;
 
     vcf_format_plan_stats.hits++;
     vcf_format_plan_stats.parsed_samples += nsamples;
