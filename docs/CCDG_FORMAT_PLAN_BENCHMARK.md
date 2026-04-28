@@ -431,6 +431,67 @@ because the machine was under unrelated CPU load during the interrupted run.
 The parse-heavy 10k BCF outputs were re-compared byte-for-byte for exact and
 interpreter modes.
 
+## Follow-Up: Generic Strict Numeric Executor
+
+The next iteration removed the two hard-coded shape executors and replaced them
+with a generic strict fixed-numeric executor.  This is the dynamic-exact version
+of the FORMAT planner:
+
+- the executor is keyed by resolved row op kinds and widths, not FORMAT field
+  names;
+- any fixed-width numeric op sequence is eligible;
+- leading `GT2` and scalar float fields are written directly into the final BCF
+  `indiv` buffer;
+- integer fields carry min/max range metadata from parse into encode so
+  `bcf_enc_vint()` does not rescan scratch arrays;
+- any mismatch rolls back direct writes and falls back to the measured-width
+  general planner or legacy parser.
+
+Correctness checks:
+
+```text
+make -j4 test/test_view
+./test/test_format_plan.sh
+cmp baseline/exact/interp BCF outputs for /tmp/ccdg_chr22_10k.vcf.gz
+cmp baseline/exact/interp compressed BCF outputs for /tmp/ccdg_chr22_10k.vcf.gz
+```
+
+The mixed edge fixture remains byte-identical:
+
+```text
+vcf-format-plan attempts=10 hits=7 fallback=3 parsed_samples=21
+vcf-format-plan attempts=10 hits=10 fallback=0 parsed_samples=30
+```
+
+Parse-heavy 10k CCDG, VCF.gz to uncompressed BCF, real seconds:
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|---|---:|---:|---:|
+| Baseline | 2.86 | 2.87 | 2.85 |
+| Exact kernels | 1.85 | 1.85 | 1.86 |
+| Dynamic strict/interp | 1.87 | 1.88 | 1.88 |
+
+After removing the old shape-specific templates, a cleanup check still showed
+exact and dynamic strict essentially tied:
+
+| Mode | Real seconds |
+|---|---:|
+| Exact kernels | 1.89 |
+| Dynamic strict/interp | 1.87 |
+
+Single-run compressed VCF.gz to compressed BCF.gz, real seconds:
+
+| Mode | Real seconds |
+|---|---:|
+| Baseline | 10.08 |
+| Exact kernels | 9.01 |
+| Dynamic strict/interp | 8.58 |
+
+The compressed result should be read as directional because compression noise is
+larger, but the outputs were byte-identical and the main parse-heavy result is
+the key signal: the dynamic strict path is now within measurement noise of the
+hand-written exact CCDG kernel without matching on CCDG field names.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,

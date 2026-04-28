@@ -75,15 +75,21 @@ For rows whose widths can be predicted from the header and allele count, the
 interpreter can try a strict path before the observed-width pass.  The strict
 path validates the observed maximum width while parsing and falls back to the
 observed-width interpreter if the row is sparse, malformed, string-bearing, or
-otherwise not byte-identical.  Common numeric opcode tapes such as
-`GT2:INT2:INT1:INT1:INT3` and `GT2:FLOAT1:INT2:INT1:INT1:INT3` have
-shape-level executors that avoid the per-op switch.
+otherwise not byte-identical.
+
+Strict numeric rows now use a generic fixed-schema executor rather than
+FORMAT-name special cases.  It accepts any fixed-width numeric opcode sequence,
+direct-writes a leading `GT2`/`FLOAT1` prefix into `v->indiv`, parses remaining
+integer/float fields into row-local scratch, carries integer min/max metadata
+from parse to encode, and rolls back direct writes on the first mismatch.  This
+gives CCDG-like rows exact-kernel performance while keeping the executor keyed
+by dynamic row shape rather than field names.
 
 Planned integer parsing must be overflow-safe.  If a value is outside the BCF
 int32 payload range, the planned parser falls back so the generic parser keeps
 its warning and missing-value behavior.
 
-Validated `GT2` payloads and exact-layout `AB` float payloads can be written
+Validated `GT2` payloads and leading scalar float payloads can be written
 directly into `v->indiv` instead of going through scratch arrays.  Any direct
 writer must save the entry length and roll back before returning fallback.
 
