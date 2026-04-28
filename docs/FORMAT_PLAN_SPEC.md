@@ -71,6 +71,18 @@ row-specific opcode such as `GT2`, `GT`, `INT1`, `INT2`, `INT3`, `INTN`,
 `FLOAT1`, `FLOATN`, or `STR`.  This keeps layout coverage flexible while
 memoizing the common "muscle memory" for repeated shapes.
 
+For rows whose widths can be predicted from the header and allele count, the
+interpreter can try a strict path before the observed-width pass.  The strict
+path validates the observed maximum width while parsing and falls back to the
+observed-width interpreter if the row is sparse, malformed, string-bearing, or
+otherwise not byte-identical.  Common numeric opcode tapes such as
+`GT2:INT2:INT1:INT1:INT3` and `GT2:FLOAT1:INT2:INT1:INT1:INT3` have
+shape-level executors that avoid the per-op switch.
+
+Planned integer parsing must be overflow-safe.  If a value is outside the BCF
+int32 payload range, the planned parser falls back so the generic parser keeps
+its warning and missing-value behavior.
+
 ## Edge Fixture
 
 `test/format-plan-edge.vcf` is CCDG-shaped but includes records that exercise
@@ -103,6 +115,8 @@ which is useful for isolating interpreter performance.
   inputs.
 - Add plan- or shape-level executors for dominant opcode sequences so hot rows
   can also avoid the per-sample opcode switch.
+- Explore direct final-buffer output for validated fixed-width fields; this is
+  likely higher leverage than adding more switch-level shape executors.
 - Add overflow-compatible numeric parsing or force fallback before committing to
   the plan on extreme integer/float values.
 - Integrate the edge fixture into the standard htslib test runner once the

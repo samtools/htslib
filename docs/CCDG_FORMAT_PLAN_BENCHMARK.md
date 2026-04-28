@@ -301,6 +301,65 @@ uncompressed BCF from 2.61 s to 2.43 s.  That is real movement, but the exact
 kernels remain substantially faster because they also avoid the generic width
 measurement, per-op buffer indirection, and per-sample opcode switch.
 
+## Follow-Up: Strict Width and Shape Executors
+
+The next iteration hardened correctness and tested more aggressive FORMAT
+planning:
+
+- planned integer parsing now detects BCF int32 payload overflow and falls back,
+  avoiding undefined overflow and preserving generic warning/missing behavior;
+- exact AD/PL paths validate that the observed max vector width matches the
+  emitted width, falling back for sparse rows that generic htslib would encode
+  narrower;
+- the general interpreter can skip the observed-width pass for strict
+  header/allele-count-derived numeric rows;
+- common numeric opcode tapes `GT2:INT2:INT1:INT1:INT3` and
+  `GT2:FLOAT1:INT2:INT1:INT1:INT3` use shape-level executors;
+- validated `GT2` rows emit BCF int8 directly instead of calling
+  `bcf_enc_vint()`.
+
+`test/format-plan-edge.vcf` now includes an all-missing AD/PL row to verify that
+the exact path falls back when its expected vector width would not match generic
+observed-width BCF output.
+
+Correctness checks remained byte-identical:
+
+```text
+./test/test_format_plan.sh
+/tmp/ccdg_chr22_10k.vcf -> uncompressed BCF, exact mode
+/tmp/ccdg_chr22_10k.vcf -> uncompressed BCF, interpreter mode
+```
+
+Parse-heavy 10k CCDG reference after these changes:
+
+| Conversion | Baseline | Exact kernels | Strict/shape interp |
+|---|---:|---:|---:|
+| VCF -> uncompressed BCF | 2.63 s | 1.61 s | 2.31 s |
+
+Full 10k CCDG compressed matrix, real seconds:
+
+| Conversion | Baseline | Exact kernels | Strict/shape interp |
+|---|---:|---:|---:|
+| VCF.gz -> BCF.gz | 9.26 | 8.22 | 8.94 |
+| BCF -> BCF.gz | 7.18 | 7.20 | 7.16 |
+| BCF -> VCF.gz | 11.45 | 11.33 | 11.85 |
+| VCF.gz -> VCF.gz | 14.37 | 13.55 | 13.52 |
+| VCF.gz -> uncompressed BCF | 2.94 | 1.92 | 2.66 |
+
+On a 3k CCDG subset containing only non-phase FORMAT layouts, the strict/shape
+interpreter improved over baseline but still did not approach the exact kernel:
+
+| Dataset | Baseline | Exact kernels | Strict/shape interp |
+|---|---:|---:|---:|
+| 3k non-phase VCF -> uncompressed BCF | 0.68 s | 0.34 s | 0.58 s |
+
+The takeaway is mixed.  The hardening is worth keeping, and direct `GT2`
+encoding is simple and safe.  However, shape-level dispatch alone does not close
+the remaining gap.  The next high-ROI parser-side experiment should reduce
+memory traffic by parsing validated fixed-width fields directly into final BCF
+payload buffers, or specialize complete row executors that combine parse,
+validation, and encode rather than only replacing the opcode switch.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,
