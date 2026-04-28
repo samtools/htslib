@@ -36,9 +36,18 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 #include "fuzz_settings.h"
+#endif
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
+#if defined(__AVX2__)
+#include <immintrin.h>
 #endif
 
 #include "htslib/vcf.h"
@@ -3133,6 +3142,450 @@ static inline int align_mem(kstring_t *s)
 
 #define MAX_N_FMT 255   /* Limited by size of bcf1_t n_fmt field */
 
+typedef struct {
+    uint64_t attempts;
+    uint64_t hits;
+    uint64_t fallback;
+    uint64_t parsed_samples;
+} vcf_format_plan_stats_t;
+
+static vcf_format_plan_stats_t vcf_format_plan_stats;
+
+void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
+                               uint64_t *fallback, uint64_t *parsed_samples)
+{
+    if (attempts) *attempts = vcf_format_plan_stats.attempts;
+    if (hits) *hits = vcf_format_plan_stats.hits;
+    if (fallback) *fallback = vcf_format_plan_stats.fallback;
+    if (parsed_samples) *parsed_samples = vcf_format_plan_stats.parsed_samples;
+}
+
+static int vcf_format_plan_enabled(void)
+{
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *env = getenv("HTS_VCF_FORMAT_PLAN");
+        enabled = env && env[0] && strcmp(env, "0") != 0;
+    }
+    return enabled;
+}
+
+typedef struct {
+    char format[64];
+	int supported;
+	int has_ab;
+	int has_phase;
+	int key_gt;
+	int key_ab;
+	int key_ad;
+	int key_dp;
+	int key_gq;
+	int key_pgt;
+	int key_pid;
+	int key_pl;
+} vcf_format_plan_t;
+
+static int vcf_format_plan_compile(const bcf_hdr_t *h, const char *format,
+                                   vcf_format_plan_t *plan)
+{
+    memset(plan, 0, sizeof(*plan));
+    if (strlen(format) >= sizeof(plan->format))
+        return 0;
+    strcpy(plan->format, format);
+
+	if (strcmp(format, "GT:AB:AD:DP:GQ:PL") == 0) {
+		plan->supported = 1;
+		plan->has_ab = 1;
+	} else if (strcmp(format, "GT:AD:DP:GQ:PL") == 0) {
+		plan->supported = 1;
+	} else if (strcmp(format, "GT:AB:AD:DP:GQ:PGT:PID:PL") == 0) {
+		plan->supported = 1;
+		plan->has_ab = 1;
+		plan->has_phase = 1;
+	} else if (strcmp(format, "GT:AD:DP:GQ:PGT:PID:PL") == 0) {
+		plan->supported = 1;
+		plan->has_phase = 1;
+	} else {
+		return 0;
+	}
+
+    plan->key_gt = bcf_hdr_id2int(h, BCF_DT_ID, "GT");
+    plan->key_ad = bcf_hdr_id2int(h, BCF_DT_ID, "AD");
+    plan->key_dp = bcf_hdr_id2int(h, BCF_DT_ID, "DP");
+	plan->key_gq = bcf_hdr_id2int(h, BCF_DT_ID, "GQ");
+	plan->key_pl = bcf_hdr_id2int(h, BCF_DT_ID, "PL");
+	plan->key_ab = plan->has_ab ? bcf_hdr_id2int(h, BCF_DT_ID, "AB") : -1;
+	plan->key_pgt = plan->has_phase ? bcf_hdr_id2int(h, BCF_DT_ID, "PGT") : -1;
+	plan->key_pid = plan->has_phase ? bcf_hdr_id2int(h, BCF_DT_ID, "PID") : -1;
+	if (plan->key_gt < 0 || plan->key_ad < 0 || plan->key_dp < 0 ||
+	    plan->key_gq < 0 || plan->key_pl < 0 ||
+	    (plan->has_ab && plan->key_ab < 0) ||
+	    (plan->has_phase && (plan->key_pgt < 0 || plan->key_pid < 0)))
+		plan->supported = 0;
+
+	return plan->supported;
+}
+
+static vcf_format_plan_t *vcf_format_plan_get(const bcf_hdr_t *h, const char *format)
+{
+    enum { N_PLAN_CACHE = 8 };
+    static vcf_format_plan_t cache[N_PLAN_CACHE];
+    static int ncache = 0;
+    int i;
+
+    for (i = 0; i < ncache; i++)
+        if (strcmp(cache[i].format, format) == 0)
+            return cache[i].supported ? &cache[i] : NULL;
+
+    if (ncache == N_PLAN_CACHE)
+        return NULL;
+    vcf_format_plan_compile(h, format, &cache[ncache]);
+    return cache[ncache++].supported ? &cache[ncache-1] : NULL;
+}
+
+static inline int vcf_plan_gt2(const char **sp, int32_t out[2])
+{
+    const char *s = *sp;
+    int a0, a1, phased;
+
+    if (s[0] == '.' && (s[1] == '/' || s[1] == '|') && s[2] == '.') {
+        out[0] = 0;
+        out[1] = 0;
+        *sp = s + 3;
+        return 0;
+    }
+    if (!(s[0] >= '0' && s[0] <= '9') || (s[1] != '/' && s[1] != '|') ||
+        !(s[2] >= '0' && s[2] <= '9'))
+        return -1;
+
+    a0 = s[0] - '0';
+    a1 = s[2] - '0';
+    phased = s[1] == '|';
+    out[0] = ((a0 + 1) << 1) | phased;
+    out[1] = ((a1 + 1) << 1) | phased;
+    *sp = s + 3;
+    return 0;
+}
+
+static inline int vcf_plan_int_value(const char **sp, int32_t *out)
+{
+    const char *s = *sp;
+    int sign = 1, val = 0;
+
+    if (*s == '.') {
+        *out = bcf_int32_missing;
+        *sp = s + 1;
+        return 0;
+    }
+    if (*s == '-') {
+        sign = -1;
+        s++;
+    }
+    if (!(*s >= '0' && *s <= '9'))
+        return -1;
+    while (*s >= '0' && *s <= '9') {
+        val = val * 10 + (*s - '0');
+        s++;
+    }
+    *out = sign * val;
+    *sp = s;
+    return 0;
+}
+
+static inline int vcf_plan_float_value(const char **sp, float *out)
+{
+    const char *s = *sp;
+    char *end = NULL;
+    int failed = 0;
+
+    if (*s == '.') {
+        bcf_float_set_missing(*out);
+        *sp = s + 1;
+        return 0;
+    }
+    *out = hts_str2dbl(s, &end, &failed);
+    if (failed || end == s)
+        return -1;
+    *sp = end;
+    return 0;
+}
+
+static int vcf_plan_parse_int_vector(const char **sp, int32_t *out, int width)
+{
+    const char *s = *sp;
+    int i;
+
+    for (i = 0; i < width; i++) {
+        if (vcf_plan_int_value(&s, &out[i]) < 0)
+            return -1;
+        if (*s != ',') {
+            i++;
+            break;
+        }
+        s++;
+    }
+    for (; i < width; i++)
+        out[i] = bcf_int32_vector_end;
+    if (*s == ',')
+        return -1;
+    *sp = s;
+    return 0;
+}
+
+static inline int vcf_plan_expect_sep(const char **sp, int sep)
+{
+	if (**sp != sep)
+		return -1;
+	(*sp)++;
+	return 0;
+}
+
+static inline int vcf_plan_skip_field(const char **sp, int sep)
+{
+	const char *s = *sp;
+	while (*s && *s != sep && *s != '\t')
+		s++;
+	if (*s != sep)
+		return -1;
+	*sp = s + 1;
+	return 0;
+}
+
+static inline int vcf_plan_measure_string(const char **sp, int sep, int *max_l)
+{
+	const char *s = *sp, *t = s;
+	int l;
+
+	while (*t && *t != sep && *t != '\t')
+		t++;
+	if (*t != sep)
+		return -1;
+	l = t - s;
+	if (*max_l < l)
+		*max_l = l;
+	*sp = t + 1;
+	return 0;
+}
+
+static inline int vcf_plan_copy_string(const char **sp, char *out, int width)
+{
+	const char *s = *sp, *t = s;
+	int l;
+
+	while (*t && *t != ':' && *t != '\t')
+		t++;
+	l = t - s;
+	if (l > width)
+		return -1;
+	memcpy(out, s, l);
+	if (l < width)
+		memset(out + l, 0, width - l);
+	*sp = t;
+	return 0;
+}
+
+static int vcf_plan_phase_widths(const bcf_hdr_t *h, const vcf_format_plan_t *plan,
+                                 kstring_t *s, char *q, int *pgt_w, int *pid_w)
+{
+	const char *cur = q + 1, *end = s->s + s->l;
+	int sample, nsamples = bcf_hdr_nsamples(h);
+
+	*pgt_w = 0;
+	*pid_w = 0;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -1;
+		if (plan->has_ab && vcf_plan_skip_field(&cur, ':') < 0)
+			return -1;
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -1;
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -1;
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -1;
+		if (vcf_plan_measure_string(&cur, ':', pgt_w) < 0)
+			return -1;
+		if (vcf_plan_measure_string(&cur, ':', pid_w) < 0)
+			return -1;
+		while (cur < end && *cur && *cur != '\t')
+			cur++;
+		if (*cur == '\t')
+			cur++;
+	}
+	if (sample != nsamples)
+		return -1;
+	// The generic FORMAT max-length pass includes the preceding ':' in
+	// non-GT string widths, leaving one byte of padding per sample.
+	(*pgt_w)++;
+	(*pid_w)++;
+	return 0;
+}
+
+static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                                    char *p, char *q)
+{
+	vcf_format_plan_t *plan;
+	kstring_t *mem;
+	int nsamples, ad_w, pl_w, sample, nwords, pgt_w = 0, pid_w = 0;
+	size_t gt_off, ab_off = 0, ad_off, dp_off, gq_off, pgt_off = 0, pid_off = 0, pl_off, total_bytes;
+	int32_t *gt, *ad, *dp, *gq, *pl;
+	float *ab = NULL;
+	char *pgt = NULL, *pid = NULL;
+	const char *cur, *end;
+
+    if (!vcf_format_plan_enabled())
+        return -3;
+    vcf_format_plan_stats.attempts++;
+    if (h->keep_samples)
+        goto fallback;
+
+    plan = vcf_format_plan_get(h, p);
+    if (!plan)
+        goto fallback;
+
+    nsamples = bcf_hdr_nsamples(h);
+    if (!nsamples)
+        return 0;
+    if (v->n_allele < 1 || v->n_allele > 8)
+        goto fallback;
+    ad_w = v->n_allele;
+	pl_w = v->n_allele * (v->n_allele + 1) / 2;
+	if (pl_w < 1 || pl_w > 36)
+		goto fallback;
+	if (plan->has_phase && vcf_plan_phase_widths(h, plan, s, q, &pgt_w, &pid_w) < 0)
+		goto fallback;
+
+	mem = (kstring_t*)&h->mem;
+	mem->l = 0;
+	if (align_mem(mem) < 0)
+		return -1;
+
+	total_bytes = (size_t) nsamples * (2 + ad_w + 1 + 1 + pl_w + plan->has_ab) * sizeof(int32_t);
+	total_bytes += (size_t) nsamples * (pgt_w + pid_w);
+	if (total_bytes > INT_MAX)
+		return -1;
+	if (ks_resize(mem, mem->l + total_bytes) < 0)
+		return -1;
+
+	gt_off = mem->l; mem->l += (size_t) nsamples * 2 * sizeof(int32_t);
+    if (plan->has_ab) {
+        ab_off = mem->l; mem->l += (size_t) nsamples * sizeof(float);
+    }
+    ad_off = mem->l; mem->l += (size_t) nsamples * ad_w * sizeof(int32_t);
+	dp_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
+	gq_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
+	if (plan->has_phase) {
+		pgt_off = mem->l; mem->l += (size_t) nsamples * pgt_w;
+		pid_off = mem->l; mem->l += (size_t) nsamples * pid_w;
+	}
+	pl_off = mem->l; mem->l += (size_t) nsamples * pl_w * sizeof(int32_t);
+
+	gt = (int32_t *) (mem->s + gt_off);
+    if (plan->has_ab)
+        ab = (float *) (mem->s + ab_off);
+    ad = (int32_t *) (mem->s + ad_off);
+	dp = (int32_t *) (mem->s + dp_off);
+	gq = (int32_t *) (mem->s + gq_off);
+	if (plan->has_phase) {
+		pgt = mem->s + pgt_off;
+		pid = mem->s + pid_off;
+	}
+	pl = (int32_t *) (mem->s + pl_off);
+
+    cur = q + 1;
+    end = s->s + s->l;
+    for (sample = 0; sample < nsamples && cur < end; sample++) {
+        if (vcf_plan_gt2(&cur, &gt[sample * 2]) < 0)
+            goto fallback;
+        if (vcf_plan_expect_sep(&cur, ':') < 0)
+            goto fallback;
+        if (plan->has_ab) {
+            if (vcf_plan_float_value(&cur, &ab[sample]) < 0)
+                goto fallback;
+            if (vcf_plan_expect_sep(&cur, ':') < 0)
+                goto fallback;
+        }
+        if (vcf_plan_parse_int_vector(&cur, &ad[sample * ad_w], ad_w) < 0)
+            goto fallback;
+        if (vcf_plan_expect_sep(&cur, ':') < 0)
+            goto fallback;
+        if (vcf_plan_int_value(&cur, &dp[sample]) < 0)
+            goto fallback;
+        if (vcf_plan_expect_sep(&cur, ':') < 0)
+            goto fallback;
+		if (vcf_plan_int_value(&cur, &gq[sample]) < 0)
+			goto fallback;
+		if (vcf_plan_expect_sep(&cur, ':') < 0)
+			goto fallback;
+		if (plan->has_phase) {
+			if (vcf_plan_copy_string(&cur, &pgt[sample * pgt_w], pgt_w) < 0)
+				goto fallback;
+			if (vcf_plan_expect_sep(&cur, ':') < 0)
+				goto fallback;
+			if (vcf_plan_copy_string(&cur, &pid[sample * pid_w], pid_w) < 0)
+				goto fallback;
+			if (vcf_plan_expect_sep(&cur, ':') < 0)
+				goto fallback;
+		}
+		if (vcf_plan_parse_int_vector(&cur, &pl[sample * pl_w], pl_w) < 0)
+			goto fallback;
+        if (*cur == '\t')
+            cur++;
+        else if (*cur == '\0' || cur >= end)
+            ;
+        else
+            goto fallback;
+    }
+    if (sample != nsamples)
+        goto fallback;
+
+	v->n_fmt = plan->has_phase ? (plan->has_ab ? 8 : 7) : (plan->has_ab ? 6 : 5);
+	v->n_sample = nsamples;
+	bcf_enc_int1(&v->indiv, plan->key_gt);
+    if (bcf_enc_vint(&v->indiv, nsamples * 2, gt, 2) < 0)
+        return -1;
+    if (plan->has_ab) {
+        bcf_enc_int1(&v->indiv, plan->key_ab);
+        bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT);
+        if (serialize_float_array(&v->indiv, nsamples, ab) < 0)
+            return -1;
+    }
+    bcf_enc_int1(&v->indiv, plan->key_ad);
+    nwords = nsamples * ad_w;
+    if (bcf_enc_vint(&v->indiv, nwords, ad, ad_w) < 0)
+        return -1;
+    bcf_enc_int1(&v->indiv, plan->key_dp);
+    if (bcf_enc_vint(&v->indiv, nsamples, dp, 1) < 0)
+        return -1;
+	bcf_enc_int1(&v->indiv, plan->key_gq);
+	if (bcf_enc_vint(&v->indiv, nsamples, gq, 1) < 0)
+		return -1;
+	if (plan->has_phase) {
+		bcf_enc_int1(&v->indiv, plan->key_pgt);
+		if (bcf_enc_size(&v->indiv, pgt_w, BCF_BT_CHAR) < 0)
+			return -1;
+		if (kputsn(pgt, (size_t) nsamples * pgt_w, &v->indiv) < 0)
+			return -1;
+		bcf_enc_int1(&v->indiv, plan->key_pid);
+		if (bcf_enc_size(&v->indiv, pid_w, BCF_BT_CHAR) < 0)
+			return -1;
+		if (kputsn(pid, (size_t) nsamples * pid_w, &v->indiv) < 0)
+			return -1;
+	}
+	bcf_enc_int1(&v->indiv, plan->key_pl);
+    nwords = nsamples * pl_w;
+    if (bcf_enc_vint(&v->indiv, nwords, pl, pl_w) < 0)
+        return -1;
+
+    vcf_format_plan_stats.hits++;
+    vcf_format_plan_stats.parsed_samples += nsamples;
+    return 0;
+
+fallback:
+    vcf_format_plan_stats.fallback++;
+    return -3;
+}
+
 // detect FORMAT "."
 static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                                    const char *p, const char *q) {
@@ -3686,7 +4139,13 @@ static int vcf_parse_format_check7(const bcf_hdr_t *h, bcf1_t *v) {
 static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                             char *p, char *q)
 {
+    int pret;
     if ( !bcf_hdr_nsamples(h) ) return 0;
+
+    pret = vcf_parse_format_planned(s, h, v, p, q);
+    if (pret != -3)
+        return pret;
+
     kstring_t *mem = (kstring_t*)&h->mem;
     mem->l = 0;
 
@@ -3984,6 +4443,230 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
     return -1;
 }
 
+typedef struct {
+    uint64_t attempts;
+    uint64_t hits;
+    uint64_t fallback;
+    uint64_t tabs;
+} vcf_simd_probe_stats_t;
+
+static vcf_simd_probe_stats_t vcf_simd_probe_stats;
+
+static int vcf_simd_tabs_enabled(void)
+{
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *env = getenv("HTS_VCF_SIMD_TABS");
+        enabled = env && env[0] && strcmp(env, "0") != 0;
+    }
+    return enabled;
+}
+
+void hts_vcf_simd_probe_stats(uint64_t *attempts, uint64_t *hits,
+                              uint64_t *fallback, uint64_t *tabs)
+{
+    if (attempts) *attempts = vcf_simd_probe_stats.attempts;
+    if (hits) *hits = vcf_simd_probe_stats.hits;
+    if (fallback) *fallback = vcf_simd_probe_stats.fallback;
+    if (tabs) *tabs = vcf_simd_probe_stats.tabs;
+}
+
+static int vcf_find_tabs_scalar(const char *s, size_t len,
+                                size_t *tabs, int max_tabs)
+{
+    int n = 0;
+    size_t i;
+    for (i = 0; i < len && n < max_tabs; i++) {
+        if (s[i] == '\t')
+            tabs[n++] = i;
+    }
+    return n;
+}
+
+static int vcf_find_tabs_simd(const char *s, size_t len,
+                              size_t *tabs, int max_tabs)
+{
+    int n = 0;
+    size_t i = 0;
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    const uint8x16_t tab = vdupq_n_u8('\t');
+    for (; i + 16 <= len && n < max_tabs; i += 16) {
+        uint8x16_t bytes = vld1q_u8((const uint8_t *) s + i);
+        uint8x16_t eq = vceqq_u8(bytes, tab);
+        uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(eq), 0);
+        uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(eq), 1);
+        uint32_t mask = 0;
+        int j;
+
+        for (j = 0; j < 8; j++) mask |= ((lo >> (j * 8)) & 0x80) ? 1u << j : 0;
+        for (j = 0; j < 8; j++) mask |= ((hi >> (j * 8)) & 0x80) ? 1u << (j + 8) : 0;
+
+        while (mask && n < max_tabs) {
+            unsigned bit = (unsigned) __builtin_ctz(mask);
+            tabs[n++] = i + bit;
+            mask &= mask - 1;
+        }
+    }
+#elif defined(__AVX2__)
+    const __m256i tab = _mm256_set1_epi8('\t');
+    for (; i + 32 <= len && n < max_tabs; i += 32) {
+        __m256i bytes = _mm256_loadu_si256((const __m256i *) (s + i));
+        uint32_t mask = (uint32_t) _mm256_movemask_epi8(_mm256_cmpeq_epi8(bytes, tab));
+        while (mask && n < max_tabs) {
+            unsigned bit = (unsigned) __builtin_ctz(mask);
+            tabs[n++] = i + bit;
+            mask &= mask - 1;
+        }
+    }
+#endif
+
+    for (; i < len && n < max_tabs; i++) {
+        if (s[i] == '\t')
+            tabs[n++] = i;
+    }
+
+    return n;
+}
+
+#define VCF_NOT_DOT_FIELD(p) (memcmp((p), ".\0", 2))
+
+static int vcf_parse_simd_tabs(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
+{
+    int ret = -2, overflow = 0, ntabs, i;
+    size_t tabs[9], line_end;
+    char *base, *p, *q, *r, *t;
+    kstring_t *str;
+    khint_t k;
+    vdict_t *d;
+
+    if (!vcf_simd_tabs_enabled())
+        return -3;
+
+    vcf_simd_probe_stats.attempts++;
+    if (!s || !h || !v || !(s->s))
+        return -3;
+    if (ks_resize(s, s->l + 4) < 0)
+        return -2;
+
+    base = s->s;
+    line_end = s->l;
+    ntabs = vcf_find_tabs_simd(base, line_end, tabs, 9);
+    vcf_simd_probe_stats.tabs += ntabs;
+    if (ntabs < 7) {
+        vcf_simd_probe_stats.fallback++;
+        return -3;
+    }
+
+    s->s[s->l + 0] = 0;
+    s->s[s->l + 1] = 0;
+    s->s[s->l + 2] = 0;
+    s->s[s->l + 3] = 0;
+
+    bcf_clear1(v);
+    str = &v->shared;
+    for (i = 0; i < 7; i++)
+        base[tabs[i]] = 0;
+
+    p = base;
+    d = (vdict_t*)h->dict[BCF_DT_CTG];
+    k = kh_get(vdict, d, p);
+    if (k == kh_end(d)) {
+        hts_log_warning("Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
+        v->errcode = BCF_ERR_CTG_UNDEF;
+        if ((k = fix_chromosome(h, d, p)) == kh_end(d)) {
+            hts_log_error("Could not add dummy header for contig '%s'", p);
+            v->errcode |= BCF_ERR_CTG_INVALID;
+            goto err;
+        }
+    }
+    v->rid = kh_val(d, k).id;
+
+    p = base + tabs[0] + 1;
+    overflow = 0;
+    t = p;
+    v->pos = hts_str2uint(p, &p, 62, &overflow);
+    if (overflow) {
+        hts_log_error("Position value '%s' is too large", t);
+        goto err;
+    } else if (*p) {
+        hts_log_error("Could not parse the position '%s'", t);
+        goto err;
+    } else {
+        v->pos -= 1;
+    }
+    if (v->pos >= INT32_MAX)
+        v->unpacked |= BCF_IS_64BIT;
+
+    p = base + tabs[1] + 1;
+    q = base + tabs[2];
+    if (VCF_NOT_DOT_FIELD(p)) bcf_enc_vchar(str, q - p, p);
+    else bcf_enc_size(str, 0, BCF_BT_CHAR);
+
+    p = base + tabs[2] + 1;
+    q = base + tabs[3];
+    bcf_enc_vchar(str, q - p, p);
+    v->n_allele = 1, v->rlen = q - p;
+
+    p = base + tabs[3] + 1;
+    q = base + tabs[4];
+    if (VCF_NOT_DOT_FIELD(p)) {
+        for (r = t = p;; ++r) {
+            if (*r == ',' || *r == 0) {
+                if (v->n_allele == UINT16_MAX) {
+                    hts_log_error("Too many ALT alleles at %s:%"PRIhts_pos,
+                                  bcf_seqname_safe(h,v), v->pos+1);
+                    v->errcode |= BCF_ERR_LIMITS;
+                    goto err;
+                }
+                bcf_enc_vchar(str, r - t, t);
+                t = r + 1;
+                ++v->n_allele;
+            }
+            if (r == q) break;
+        }
+    }
+
+    p = base + tabs[4] + 1;
+    if (VCF_NOT_DOT_FIELD(p)) v->qual = atof(p);
+    else bcf_float_set_missing(v->qual);
+    if (v->max_unpack && !(v->max_unpack>>1)) goto end;
+
+    p = base + tabs[5] + 1;
+    q = base + tabs[6];
+    if (VCF_NOT_DOT_FIELD(p)) {
+        if (vcf_parse_filter(str, h, v, p, q))
+            goto err;
+    } else bcf_enc_vint(str, 0, 0, -1);
+    if (v->max_unpack && !(v->max_unpack>>2)) goto end;
+
+    p = base + tabs[6] + 1;
+    q = ntabs > 7 ? base + tabs[7] : base + line_end;
+    if (ntabs > 7)
+        *q = 0;
+    if (VCF_NOT_DOT_FIELD(p)) {
+        if (vcf_parse_info(str, h, v, p, q))
+            goto err;
+    }
+    if (v->max_unpack && !(v->max_unpack>>3)) goto end;
+
+    if (ntabs > 7) {
+        p = base + tabs[7] + 1;
+        q = ntabs > 8 ? base + tabs[8] : base + line_end;
+        *q = 0;
+        if (vcf_parse_format(s, h, v, p, q))
+            goto err;
+    }
+
+ end:
+    v->rlen = get_rlen(h, v);
+    ret = 0;
+    vcf_simd_probe_stats.hits++;
+
+ err:
+    return ret;
+}
+
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret = -2, overflow = 0;
@@ -4000,6 +4683,11 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 
     if (!s || !h || !v || !(s->s))
         return ret;
+
+    ret = vcf_parse_simd_tabs(s, h, v);
+    if (ret != -3)
+        return ret;
+    ret = -2;
 
     // Assumed in lots of places, but we may as well spot this early
     assert(sizeof(float) == sizeof(int32_t));
