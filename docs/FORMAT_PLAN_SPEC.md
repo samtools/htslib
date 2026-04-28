@@ -124,6 +124,10 @@ common awkward cases:
 
 - the exact CCDG layouts,
 - reordered fields,
+- reordered numeric fields with `GT` and scalar floats away from the first
+  FORMAT position,
+- non-CCDG numeric tag names with fixed widths,
+- integer values around BCF int8/int16 type boundaries,
 - multiallelic AD/PL and GL,
 - haploid GT,
 - multidigit allele indexes,

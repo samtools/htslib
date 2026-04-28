@@ -2934,6 +2934,8 @@ static int bcf_enc_vint_known_range(kstring_t *s, int n, int32_t *a, int wsize,
                                     int32_t min, int32_t max)
 {
     int i;
+    // min/max must match bcf_enc_vint()'s scan: missing and vector-end values
+    // may affect max, but are excluded from min.
     if (n <= 0) {
         return bcf_enc_size(s, 0, BCF_BT_NULL);
     } else if (n == 1) {
@@ -3677,10 +3679,8 @@ static int vcf_plan_parse_int_vector_counted_range(const char **sp, int32_t *out
 	nvals = i;
 	if (nread)
 		*nread = nvals;
-	for (; i < width; i++) {
+	for (; i < width; i++)
 		out[i] = bcf_int32_vector_end;
-		vcf_plan_int_range_add(range, out[i]);
-	}
 	if (*s == ',')
 		return -1;
 	*sp = s;
@@ -3725,7 +3725,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_counted_range(const char *
 		return -1;
 	if (*s != ',') {
 		out[1] = bcf_int32_vector_end;
-		vcf_plan_int_range_add(range, out[1]);
 		*sp = s;
 		if (nread)
 			*nread = 1;
@@ -3792,8 +3791,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted_range(const char *
 	if (*s != ',') {
 		out[1] = bcf_int32_vector_end;
 		out[2] = bcf_int32_vector_end;
-		vcf_plan_int_range_add(range, out[1]);
-		vcf_plan_int_range_add(range, out[2]);
 		*sp = s;
 		if (nread)
 			*nread = 1;
@@ -3804,7 +3801,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted_range(const char *
 		return -1;
 	if (*s != ',') {
 		out[2] = bcf_int32_vector_end;
-		vcf_plan_int_range_add(range, out[2]);
 		*sp = s;
 		if (nread)
 			*nread = 2;
@@ -4087,7 +4083,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible_counted_range(con
 		out[0] = bcf_int32_missing;
 		out[1] = bcf_int32_vector_end;
 		vcf_plan_int_range_add(range, out[0]);
-		vcf_plan_int_range_add(range, out[1]);
 		if (nread)
 			*nread = 1;
 		return 0;
@@ -4123,8 +4118,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible_counted_range(con
 		out[1] = bcf_int32_vector_end;
 		out[2] = bcf_int32_vector_end;
 		vcf_plan_int_range_add(range, out[0]);
-		vcf_plan_int_range_add(range, out[1]);
-		vcf_plan_int_range_add(range, out[2]);
 		if (nread)
 			*nread = 1;
 		return 0;
@@ -4203,39 +4196,6 @@ static int vcf_format_general_encode_row_ops(kstring_t *dst, kstring_t *mem,
 	int j;
 
 	for (j = 0; j < n_ops; j++) {
-		const vcf_format_row_op_t *op = &row_ops[j];
-		uint8_t *buf = (uint8_t*)mem->s + op->offset;
-
-		bcf_enc_int1(dst, op->key);
-		if (op->kind == VCF_FORMAT_ROW_GT2) {
-			if (vcf_enc_gt2_int8(dst, nsamples, (int32_t *)buf) < 0)
-				return -1;
-		} else if (op->kind == VCF_FORMAT_ROW_STR) {
-			if (bcf_enc_size(dst, op->width, BCF_BT_CHAR) < 0)
-				return -1;
-			if (kputsn((char *)buf, nsamples * (size_t)op->width, dst) < 0)
-				return -1;
-		} else if (op->kind == VCF_FORMAT_ROW_FLOAT1 || op->kind == VCF_FORMAT_ROW_FLOATN) {
-			if (bcf_enc_size(dst, op->width, BCF_BT_FLOAT) < 0)
-				return -1;
-			if (serialize_float_array(dst, nsamples * (size_t)op->width, (float *)buf) < 0)
-				return -1;
-		} else {
-			if (bcf_enc_vint(dst, nsamples * op->width, (int32_t *)buf, op->width) < 0)
-				return -1;
-		}
-	}
-	return 0;
-}
-
-static int vcf_format_general_encode_row_ops_from(kstring_t *dst, kstring_t *mem,
-                                                  int nsamples, int n_ops,
-                                                  const vcf_format_row_op_t *row_ops,
-                                                  int first_op)
-{
-	int j;
-
-	for (j = first_op; j < n_ops; j++) {
 		const vcf_format_row_op_t *op = &row_ops[j];
 		uint8_t *buf = (uint8_t*)mem->s + op->offset;
 
@@ -4364,6 +4324,8 @@ static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t 
 	vcf_plan_int_range_t ranges[MAX_N_FMT];
 	size_t indiv_l0 = v->indiv.l;
 	size_t direct_offsets[MAX_N_FMT];
+	uint8_t *op_base[MAX_N_FMT];
+	size_t op_stride[MAX_N_FMT];
 	const char *cur = q + 1, *end = s->s + s->l;
 
 	if (!vcf_format_general_fixed_numeric_supported(row_ops, plan->n_ops))
@@ -4382,13 +4344,13 @@ static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t 
 		if (op->kind == VCF_FORMAT_ROW_GT2) {
 			if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
 			    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
-				return -1;
+				goto error;
 			direct_offsets[j] = v->indiv.l;
 			v->indiv.l += (size_t)nsamples * 2;
 		} else {
 			if (bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT) < 0 ||
 			    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * sizeof(float)) < 0)
-				return -1;
+				goto error;
 			direct_offsets[j] = v->indiv.l;
 			v->indiv.l += (size_t)nsamples * sizeof(float);
 		}
@@ -4399,22 +4361,29 @@ static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t 
 		vcf_format_row_op_t *op = &row_ops[j];
 
 		if ((uint64_t) mem->l + nsamples * (uint64_t) op->size > INT_MAX)
-			return -1;
+			goto error;
 		if (align_mem(mem) < 0)
-			return -1;
+			goto error;
 		op->offset = mem->l;
 		if (ks_resize(mem, mem->l + nsamples * (size_t) op->size) < 0)
-			return -1;
+			goto error;
 		mem->l += nsamples * (size_t) op->size;
+	}
+	for (j = 0; j < plan->n_ops; j++) {
+		vcf_format_row_op_t *op = &row_ops[j];
+		if (j < direct_ops) {
+			op_base[j] = (uint8_t *)v->indiv.s + direct_offsets[j];
+			op_stride[j] = op->kind == VCF_FORMAT_ROW_GT2 ? 2 : (size_t)op->size;
+		} else {
+			op_base[j] = (uint8_t *)mem->s + op->offset;
+			op_stride[j] = (size_t)op->size;
+		}
 	}
 
 	for (sample = 0; sample < nsamples && cur < end; sample++) {
 		for (j = 0; j < plan->n_ops; j++) {
 			vcf_format_row_op_t *op = &row_ops[j];
-			uint8_t *buf = j < direct_ops
-				? (uint8_t *)v->indiv.s + direct_offsets[j] +
-				  sample * (size_t)(op->kind == VCF_FORMAT_ROW_GT2 ? 2 : op->size)
-				: (uint8_t *)mem->s + op->offset + sample * (size_t)op->size;
+			uint8_t *buf = op_base[j] + sample * op_stride[j];
 			int n = op->width;
 
 			switch (op->kind) {
@@ -4487,7 +4456,7 @@ static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t 
 	if (vcf_format_general_encode_row_ops_from_ranges(&v->indiv, mem, nsamples,
 	                                                  plan->n_ops, row_ops,
 	                                                  ranges, direct_ops) < 0)
-		return -1;
+		goto error;
 	vcf_format_plan_stats.hits++;
 	vcf_format_plan_stats.parsed_samples += nsamples;
 	return 0;
@@ -4495,6 +4464,9 @@ static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t 
 fallback:
 	v->indiv.l = indiv_l0;
 	return -4;
+error:
+	v->indiv.l = indiv_l0;
+	return -1;
 }
 
 static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,

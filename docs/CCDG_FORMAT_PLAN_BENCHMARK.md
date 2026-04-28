@@ -422,8 +422,8 @@ the expected mixed behavior:
 
 ```text
 ./test/test_format_plan.sh
-vcf-format-plan attempts=10 hits=7 fallback=3 parsed_samples=21
-vcf-format-plan attempts=10 hits=10 fallback=0 parsed_samples=30
+vcf-format-plan attempts=14 hits=11 fallback=3 parsed_samples=33
+vcf-format-plan attempts=14 hits=14 fallback=0 parsed_samples=42
 ```
 
 The full compressed matrix was not re-recorded for this guard-only change
@@ -456,11 +456,14 @@ cmp baseline/exact/interp BCF outputs for /tmp/ccdg_chr22_10k.vcf.gz
 cmp baseline/exact/interp compressed BCF outputs for /tmp/ccdg_chr22_10k.vcf.gz
 ```
 
-The mixed edge fixture remains byte-identical:
+The mixed edge fixture remains byte-identical.  It now includes reordered
+numeric FORMAT fields, a scalar float away from the first FORMAT positions,
+non-CCDG fixed-width numeric tags, and integer values that cross BCF int8/int16
+encoding thresholds:
 
 ```text
-vcf-format-plan attempts=10 hits=7 fallback=3 parsed_samples=21
-vcf-format-plan attempts=10 hits=10 fallback=0 parsed_samples=30
+vcf-format-plan attempts=14 hits=11 fallback=3 parsed_samples=33
+vcf-format-plan attempts=14 hits=14 fallback=0 parsed_samples=42
 ```
 
 Parse-heavy 10k CCDG, VCF.gz to uncompressed BCF, real seconds:
@@ -491,6 +494,27 @@ The compressed result should be read as directional because compression noise is
 larger, but the outputs were byte-identical and the main parse-heavy result is
 the key signal: the dynamic strict path is now within measurement noise of the
 hand-written exact CCDG kernel without matching on CCDG field names.
+
+## Follow-Up: Subagent Review Cleanup
+
+Three review passes suggested tightening the generic executor rather than adding
+more field-name cases.  The resulting cleanup:
+
+- rolls back `v->indiv` on hard errors after direct writes, not only on shape
+  fallback;
+- skips range updates for padding vector-end sentinels while preserving the
+  `bcf_enc_vint()` min/max contract;
+- precomputes per-op base pointers and strides before the sample loop;
+- removes the stale non-range encoder variant;
+- expands the edge fixture with reordered and non-CCDG numeric FORMAT rows.
+
+Post-cleanup parse-heavy 10k CCDG, VCF.gz to uncompressed BCF, real seconds:
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|---|---:|---:|---:|
+| Baseline | 2.83 | 2.84 | 2.86 |
+| Exact kernels | 1.85 | 1.89 | 1.86 |
+| Dynamic strict/interp | 1.86 | 1.83 | 1.83 |
 
 ## Findings
 
