@@ -66,6 +66,11 @@ adds a general compiled op-list tier for defined FORMAT fields with type
 The MVP intentionally falls back for sample subsetting, duplicate tags,
 undefined tags, unsupported header types, and malformed values.
 
+After the row width pass, the interpreter resolves each cached FORMAT op to a
+row-specific opcode such as `GT2`, `GT`, `INT1`, `INT2`, `INT3`, `INTN`,
+`FLOAT1`, `FLOATN`, or `STR`.  This keeps layout coverage flexible while
+memoizing the common "muscle memory" for repeated shapes.
+
 ## Edge Fixture
 
 `test/format-plan-edge.vcf` is CCDG-shaped but includes records that exercise
@@ -96,9 +101,8 @@ which is useful for isolating interpreter performance.
 
 - Add more exact kernels only after coverage data shows that they dominate real
   inputs.
-- Split the op-list interpreter into smaller specialized op handlers so common
-  shapes like scalar int, fixed-width int vector, biallelic AD, and biallelic PL
-  can avoid generic vector loops.
+- Add plan- or shape-level executors for dominant opcode sequences so hot rows
+  can also avoid the per-sample opcode switch.
 - Add overflow-compatible numeric parsing or force fallback before committing to
   the plan on extreme integer/float values.
 - Integrate the edge fixture into the standard htslib test runner once the

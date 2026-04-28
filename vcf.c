@@ -3205,6 +3205,26 @@ typedef struct {
 	vcf_format_op_t ops[MAX_N_FMT];
 } vcf_format_general_plan_t;
 
+typedef enum {
+	VCF_FORMAT_ROW_GT,
+	VCF_FORMAT_ROW_GT2,
+	VCF_FORMAT_ROW_INT1,
+	VCF_FORMAT_ROW_INT2,
+	VCF_FORMAT_ROW_INT3,
+	VCF_FORMAT_ROW_INTN,
+	VCF_FORMAT_ROW_FLOAT1,
+	VCF_FORMAT_ROW_FLOATN,
+	VCF_FORMAT_ROW_STR
+} vcf_format_row_kind_t;
+
+typedef struct {
+	int key;
+	int width;
+	int size;
+	int offset;
+	vcf_format_row_kind_t kind;
+} vcf_format_row_op_t;
+
 #if defined(__GNUC__)
 #define VCF_PLAN_ALWAYS_INLINE static inline __attribute__((always_inline))
 #else
@@ -3680,12 +3700,88 @@ static int vcf_plan_parse_float_vector_dynamic(const char **sp, float *out, int 
 	return 0;
 }
 
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_scalar_flexible(const char **sp, int32_t *out)
+{
+	if (**sp == ':' || **sp == '\t' || **sp == '\0') {
+		*out = bcf_int32_missing;
+		return 0;
+	}
+	return vcf_plan_int_value(sp, out);
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_scalar_flexible(const char **sp, float *out)
+{
+	if (**sp == ':' || **sp == '\t' || **sp == '\0') {
+		bcf_float_set_missing(*out);
+		return 0;
+	}
+	return vcf_plan_float_value(sp, out);
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible(const char **sp, int32_t *out)
+{
+	if (**sp == ':' || **sp == '\t' || **sp == '\0') {
+		out[0] = bcf_int32_missing;
+		out[1] = bcf_int32_vector_end;
+		return 0;
+	}
+	return vcf_plan_parse_int_vector2(sp, out);
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible(const char **sp, int32_t *out)
+{
+	if (**sp == ':' || **sp == '\t' || **sp == '\0') {
+		out[0] = bcf_int32_missing;
+		out[1] = bcf_int32_vector_end;
+		out[2] = bcf_int32_vector_end;
+		return 0;
+	}
+	return vcf_plan_parse_int_vector3(sp, out);
+}
+
+static void vcf_format_general_resolve_ops(const vcf_format_general_plan_t *plan,
+                                           bcf1_t *v, int *widths,
+                                           vcf_format_row_op_t *row_ops)
+{
+	int j;
+
+	for (j = 0; j < plan->n_ops; j++) {
+		const vcf_format_op_t *op = &plan->ops[j];
+		vcf_format_row_op_t *row = &row_ops[j];
+
+		row->key = op->key;
+		row->width = widths[j] > 0 ? widths[j] : 1;
+		row->offset = 0;
+		if (op->is_gt) {
+			row->kind = row->width == 2 && v->n_allele <= 10 ? VCF_FORMAT_ROW_GT2 : VCF_FORMAT_ROW_GT;
+			row->size = row->width * (int)sizeof(int32_t);
+		} else if (op->htype == BCF_HT_INT) {
+			if (row->width == 1)
+				row->kind = VCF_FORMAT_ROW_INT1;
+			else if (row->width == 2)
+				row->kind = VCF_FORMAT_ROW_INT2;
+			else if (row->width == 3)
+				row->kind = VCF_FORMAT_ROW_INT3;
+			else
+				row->kind = VCF_FORMAT_ROW_INTN;
+			row->size = row->width * (int)sizeof(int32_t);
+		} else if (op->htype == BCF_HT_REAL) {
+			row->kind = row->width == 1 ? VCF_FORMAT_ROW_FLOAT1 : VCF_FORMAT_ROW_FLOATN;
+			row->size = row->width * (int)sizeof(float);
+		} else {
+			row->kind = VCF_FORMAT_ROW_STR;
+			row->size = row->width;
+		}
+	}
+}
+
 static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
                                             bcf1_t *v, char *p, char *q)
 {
 	vcf_format_general_plan_t *plan;
 	kstring_t *mem;
-	int widths[MAX_N_FMT], sizes[MAX_N_FMT], offsets[MAX_N_FMT];
+	int widths[MAX_N_FMT];
+	vcf_format_row_op_t row_ops[MAX_N_FMT];
 	int nsamples, sample, j, vcf44;
 	const char *cur, *end;
 
@@ -3698,28 +3794,21 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 		return 0;
 	if (vcf_plan_measure_general(s, h, plan, q, widths) < 0)
 		goto fallback;
+	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
 
 	mem = (kstring_t*)&h->mem;
 	mem->l = 0;
 	for (j = 0; j < plan->n_ops; j++) {
-		int size;
-		const vcf_format_op_t *op = &plan->ops[j];
+		vcf_format_row_op_t *op = &row_ops[j];
 
-		if (widths[j] <= 0)
-			widths[j] = 1;
-		if (op->htype == BCF_HT_STR && !op->is_gt)
-			size = widths[j];
-		else
-			size = widths[j] * (int)sizeof(int32_t);
-		if (size < 0 || (uint64_t) mem->l + nsamples * (uint64_t) size > INT_MAX)
+		if (op->size < 0 || (uint64_t) mem->l + nsamples * (uint64_t) op->size > INT_MAX)
 			return -1;
 		if (align_mem(mem) < 0)
 			return -1;
-		offsets[j] = mem->l;
-		sizes[j] = size;
-		if (ks_resize(mem, mem->l + nsamples * (size_t) size) < 0)
+		op->offset = mem->l;
+		if (ks_resize(mem, mem->l + nsamples * (size_t) op->size) < 0)
 			return -1;
-		mem->l += nsamples * (size_t) size;
+		mem->l += nsamples * (size_t) op->size;
 	}
 
 	cur = q + 1;
@@ -3727,23 +3816,46 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	vcf44 = bcf_get_version(h, NULL) >= VCF44;
 	for (sample = 0; sample < nsamples && cur < end; sample++) {
 		for (j = 0; j < plan->n_ops; j++) {
-			const vcf_format_op_t *op = &plan->ops[j];
-			uint8_t *buf = (uint8_t*)mem->s + offsets[j] + sample * (size_t)sizes[j];
+			const vcf_format_row_op_t *op = &row_ops[j];
+			uint8_t *buf = (uint8_t*)mem->s + op->offset + sample * (size_t)op->size;
 
-			if (op->is_gt) {
-				if (vcf_plan_parse_gt_dynamic(&cur, (int32_t *)buf, widths[j], vcf44) < 0)
+			switch (op->kind) {
+			case VCF_FORMAT_ROW_GT2:
+				if (vcf_plan_gt2(&cur, (int32_t *)buf) < 0)
 					goto fallback;
-			} else if (op->htype == BCF_HT_STR) {
-				if (vcf_plan_copy_string(&cur, (char *)buf, widths[j]) < 0)
+				break;
+			case VCF_FORMAT_ROW_GT:
+				if (vcf_plan_parse_gt_dynamic(&cur, (int32_t *)buf, op->width, vcf44) < 0)
 					goto fallback;
-			} else if (op->htype == BCF_HT_INT) {
-				if (vcf_plan_parse_int_vector_dynamic(&cur, (int32_t *)buf, widths[j]) < 0)
+				break;
+			case VCF_FORMAT_ROW_INT1:
+				if (vcf_plan_int_scalar_flexible(&cur, (int32_t *)buf) < 0)
 					goto fallback;
-			} else if (op->htype == BCF_HT_REAL) {
-				if (vcf_plan_parse_float_vector_dynamic(&cur, (float *)buf, widths[j]) < 0)
+				break;
+			case VCF_FORMAT_ROW_INT2:
+				if (vcf_plan_parse_int_vector2_flexible(&cur, (int32_t *)buf) < 0)
 					goto fallback;
-			} else {
-				goto fallback;
+				break;
+			case VCF_FORMAT_ROW_INT3:
+				if (vcf_plan_parse_int_vector3_flexible(&cur, (int32_t *)buf) < 0)
+					goto fallback;
+				break;
+			case VCF_FORMAT_ROW_INTN:
+				if (vcf_plan_parse_int_vector_dynamic(&cur, (int32_t *)buf, op->width) < 0)
+					goto fallback;
+				break;
+			case VCF_FORMAT_ROW_FLOAT1:
+				if (vcf_plan_float_scalar_flexible(&cur, (float *)buf) < 0)
+					goto fallback;
+				break;
+			case VCF_FORMAT_ROW_FLOATN:
+				if (vcf_plan_parse_float_vector_dynamic(&cur, (float *)buf, op->width) < 0)
+					goto fallback;
+				break;
+			case VCF_FORMAT_ROW_STR:
+				if (vcf_plan_copy_string(&cur, (char *)buf, op->width) < 0)
+					goto fallback;
+				break;
 			}
 
 			if (j + 1 < plan->n_ops) {
@@ -3765,22 +3877,22 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	v->n_fmt = plan->n_ops;
 	v->n_sample = nsamples;
 	for (j = 0; j < plan->n_ops; j++) {
-		const vcf_format_op_t *op = &plan->ops[j];
-		uint8_t *buf = (uint8_t*)mem->s + offsets[j];
+		const vcf_format_row_op_t *op = &row_ops[j];
+		uint8_t *buf = (uint8_t*)mem->s + op->offset;
 
 		bcf_enc_int1(&v->indiv, op->key);
-		if (op->htype == BCF_HT_STR && !op->is_gt) {
-			if (bcf_enc_size(&v->indiv, widths[j], BCF_BT_CHAR) < 0)
+		if (op->kind == VCF_FORMAT_ROW_STR) {
+			if (bcf_enc_size(&v->indiv, op->width, BCF_BT_CHAR) < 0)
 				return -1;
-			if (kputsn((char *)buf, nsamples * (size_t)widths[j], &v->indiv) < 0)
+			if (kputsn((char *)buf, nsamples * (size_t)op->width, &v->indiv) < 0)
 				return -1;
-		} else if (op->htype == BCF_HT_INT || op->is_gt) {
-			if (bcf_enc_vint(&v->indiv, nsamples * widths[j], (int32_t *)buf, widths[j]) < 0)
+		} else if (op->kind == VCF_FORMAT_ROW_FLOAT1 || op->kind == VCF_FORMAT_ROW_FLOATN) {
+			if (bcf_enc_size(&v->indiv, op->width, BCF_BT_FLOAT) < 0)
+				return -1;
+			if (serialize_float_array(&v->indiv, nsamples * (size_t)op->width, (float *)buf) < 0)
 				return -1;
 		} else {
-			if (bcf_enc_size(&v->indiv, widths[j], BCF_BT_FLOAT) < 0)
-				return -1;
-			if (serialize_float_array(&v->indiv, nsamples * (size_t)widths[j], (float *)buf) < 0)
+			if (bcf_enc_vint(&v->indiv, nsamples * op->width, (int32_t *)buf, op->width) < 0)
 				return -1;
 		}
 	}

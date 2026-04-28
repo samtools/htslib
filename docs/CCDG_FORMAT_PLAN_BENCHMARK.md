@@ -254,6 +254,53 @@ for a hybrid approach: use the interpreter as a safe coverage layer and add
 small specialized op handlers for the very common shapes inside it, especially
 diploid GT, scalar ints, biallelic AD, biallelic PL, and fixed-width strings.
 
+## Follow-Up: Opcode Tape Specialization
+
+The compiled interpreter was then changed from "inspect each op type while
+parsing" to a row-specific opcode tape.  The FORMAT string is still cached as a
+flexible op list, but after the row width pass each op is resolved to a narrower
+handler:
+
+```text
+GT2, GT-dynamic, INT1, INT2, INT3, INTN, FLOAT1, FLOATN, STR
+```
+
+This preserves the flexible interpreter path for arbitrary defined
+String/Integer/Float FORMAT layouts, while avoiding repeated `is_gt` / type
+checks and using the same fixed-width integer helpers as the exact CCDG kernel
+when the observed row width permits it.
+
+Correctness checks remained byte-identical against baseline for:
+
+```text
+./test/test_format_plan.sh
+HTS_VCF_FORMAT_PLAN=interp ./test/test_view -b -l 0 test/format-plan-edge.vcf
+/tmp/ccdg_chr22_10k.vcf -> uncompressed BCF
+```
+
+Single-pass 10k CCDG conversion matrix after opcode specialization, real
+seconds:
+
+| Conversion | Baseline | Exact kernels | Opcode interp | Exact vs baseline | Interp vs baseline |
+|---|---:|---:|---:|---:|---:|
+| VCF.gz -> BCF.gz | 9.19 | 7.99 | 9.28 | 13.1% faster | neutral/noisy |
+| BCF -> BCF.gz | 8.04 | 8.22 | 8.10 | neutral | neutral |
+| BCF -> VCF.gz | 12.71 | 12.04 | 12.99 | neutral/noisy | neutral/noisy |
+| VCF.gz -> VCF.gz | 13.76 | 12.33 | 13.88 | 10.4% faster | neutral/noisy |
+| VCF.gz -> uncompressed BCF | 2.87 | 1.68 | 2.43 | 41.5% faster | 15.3% faster |
+
+Parse-heavy uncompressed reference:
+
+| Conversion | Baseline | Exact kernels | Opcode interp | Exact vs baseline | Interp vs baseline |
+|---|---:|---:|---:|---:|---:|
+| VCF -> uncompressed BCF | 2.57 | 1.42 | 2.12 | 44.7% faster | 17.5% faster |
+
+Relative to the first compiled interpreter measurement, opcode specialization
+improved the parse-heavy uncompressed case from 2.33 s to 2.12 s and VCF.gz to
+uncompressed BCF from 2.61 s to 2.43 s.  That is real movement, but the exact
+kernels remain substantially faster because they also avoid the generic width
+measurement, per-op buffer indirection, and per-sample opcode switch.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,
