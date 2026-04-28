@@ -87,6 +87,30 @@ Validated `GT2` payloads and exact-layout `AB` float payloads can be written
 directly into `v->indiv` instead of going through scratch arrays.  Any direct
 writer must save the entry length and roll back before returning fallback.
 
+## Guard Policy
+
+Planned FORMAT parsing is optimistic and self-validating: parsing each field is
+also the shape check.  When a guard fails, the parser rolls back any direct
+`v->indiv` writes and falls back to the more general parser.
+
+Each cached exact/general FORMAT plan keeps small runtime guard state:
+
+- attempts, hits, fallbacks,
+- consecutive miss streak,
+- a temporary cooldown flag.
+
+The guard is tuned for piecewise fixed-format VCFs with infrequent weird rows.
+An isolated fallback does not disable the fast path; the next success resets the
+miss streak.  A fast path is paused only after eight consecutive misses, or
+after at least 128 attempts with more than 10% fallbacks.  Paused plans are not
+blacklisted forever: after 256 skipped records, the plan probes the fast path
+again so later fixed-format regions can recover the optimized path.
+
+For exact CCDG kernels, a paused exact guard routes the row to the compiled
+general planner.  For general plans, a paused strict guard skips directly to the
+measured-width general planner, and a paused general guard returns to legacy
+htslib parsing.
+
 ## Edge Fixture
 
 `test/format-plan-edge.vcf` is CCDG-shaped but includes records that exercise

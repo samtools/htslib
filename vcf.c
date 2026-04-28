@@ -3231,6 +3231,69 @@ static int vcf_format_plan_mode(void)
 }
 
 typedef struct {
+	uint32_t attempts;
+	uint32_t hits;
+	uint32_t fallbacks;
+	uint16_t miss_streak;
+	uint16_t cooldown;
+	uint8_t disabled;
+} vcf_format_fast_guard_t;
+
+enum {
+	VCF_FORMAT_FAST_DISABLE_STREAK = 8,
+	VCF_FORMAT_FAST_PROBE_ATTEMPTS = 128,
+	VCF_FORMAT_FAST_MAX_FALLBACK_PCT = 10,
+	VCF_FORMAT_FAST_COOLDOWN_RECORDS = 256
+};
+
+static inline int vcf_format_fast_guard_enabled(vcf_format_fast_guard_t *guard)
+{
+	if (!guard->disabled)
+		return 1;
+	if (guard->cooldown) {
+		guard->cooldown--;
+		return 0;
+	}
+	guard->attempts = 0;
+	guard->hits = 0;
+	guard->fallbacks = 0;
+	guard->miss_streak = 0;
+	guard->disabled = 0;
+	return 1;
+}
+
+static inline void vcf_format_fast_guard_success(vcf_format_fast_guard_t *guard)
+{
+	if (guard->attempts != UINT32_MAX)
+		guard->attempts++;
+	if (guard->hits != UINT32_MAX)
+		guard->hits++;
+	guard->miss_streak = 0;
+}
+
+static inline void vcf_format_fast_guard_fallback(vcf_format_fast_guard_t *guard)
+{
+	if (guard->attempts != UINT32_MAX)
+		guard->attempts++;
+	if (guard->fallbacks != UINT32_MAX)
+		guard->fallbacks++;
+	if (guard->miss_streak != UINT16_MAX)
+		guard->miss_streak++;
+
+	if (guard->miss_streak >= VCF_FORMAT_FAST_DISABLE_STREAK) {
+		guard->disabled = 1;
+		guard->cooldown = VCF_FORMAT_FAST_COOLDOWN_RECORDS;
+		return;
+	}
+	if (guard->attempts >= VCF_FORMAT_FAST_PROBE_ATTEMPTS &&
+	    (uint64_t) guard->fallbacks * 100 >
+	    (uint64_t) guard->attempts * VCF_FORMAT_FAST_MAX_FALLBACK_PCT) {
+		guard->disabled = 1;
+		guard->cooldown = VCF_FORMAT_FAST_COOLDOWN_RECORDS;
+	}
+}
+
+typedef struct {
     char format[64];
 	const bcf_hdr_t *hdr;
 	int supported;
@@ -3244,6 +3307,7 @@ typedef struct {
 	int key_pgt;
 	int key_pid;
 	int key_pl;
+	vcf_format_fast_guard_t guard;
 } vcf_format_plan_t;
 
 typedef struct {
@@ -3261,6 +3325,8 @@ typedef struct {
 	int strict_supported;
 	int n_ops;
 	vcf_format_op_t ops[MAX_N_FMT];
+	vcf_format_fast_guard_t strict_guard;
+	vcf_format_fast_guard_t general_guard;
 } vcf_format_general_plan_t;
 
 typedef enum {
@@ -4426,14 +4492,24 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	plan = vcf_format_general_plan_get(h, p);
 	if (!plan)
 		goto fallback;
+	if (!vcf_format_fast_guard_enabled(&plan->general_guard)) {
+		vcf_format_plan_stats.fallback++;
+		return -3;
+	}
 
 	nsamples = bcf_hdr_nsamples(h);
 	if (!nsamples)
 		return 0;
-	if (plan->strict_supported) {
+	if (plan->strict_supported &&
+	    vcf_format_fast_guard_enabled(&plan->strict_guard)) {
 		ret = vcf_parse_format_general_strict(s, h, v, plan, q);
+		if (ret == 0) {
+			vcf_format_fast_guard_success(&plan->strict_guard);
+			return ret;
+		}
 		if (ret != -4)
 			return ret;
+		vcf_format_fast_guard_fallback(&plan->strict_guard);
 	}
 	if (vcf_plan_measure_general(s, h, plan, q, widths) < 0)
 		goto fallback;
@@ -4524,9 +4600,12 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 
 	vcf_format_plan_stats.hits++;
 	vcf_format_plan_stats.parsed_samples += nsamples;
+	vcf_format_fast_guard_success(&plan->general_guard);
 	return 0;
 
 fallback:
+	if (plan)
+		vcf_format_fast_guard_fallback(&plan->general_guard);
 	vcf_format_plan_stats.fallback++;
 	return -3;
 }
@@ -4571,7 +4650,7 @@ static int vcf_plan_phase_widths(const bcf_hdr_t *h, const vcf_format_plan_t *pl
 static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                                     char *p, char *q)
 {
-	vcf_format_plan_t *plan;
+	vcf_format_plan_t *plan = NULL;
 	kstring_t *mem;
 	int nsamples, ad_w, pl_w, sample, nwords, pgt_w = 0, pid_w = 0;
 	int max_ad_count = 0, max_pl_count = 0;
@@ -4597,6 +4676,8 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     plan = vcf_format_plan_get(h, p);
     if (!plan)
         return vcf_parse_format_general_planned(s, h, v, p, q);
+	if (!vcf_format_fast_guard_enabled(&plan->guard))
+		return vcf_parse_format_general_planned(s, h, v, p, q);
 
     nsamples = bcf_hdr_nsamples(h);
     if (!nsamples)
@@ -4757,10 +4838,13 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 
     vcf_format_plan_stats.hits++;
     vcf_format_plan_stats.parsed_samples += nsamples;
+	vcf_format_fast_guard_success(&plan->guard);
     return 0;
 
 fallback:
 	v->indiv.l = indiv_l0;
+	if (plan)
+		vcf_format_fast_guard_fallback(&plan->guard);
     vcf_format_plan_stats.fallback++;
     return -3;
 }

@@ -399,6 +399,38 @@ direct integer output likely needs either a cheap type-prediction/rollback
 strategy or complete fused row executors that avoid both scratch traffic and
 post-parse encoding for multiple fields at once.
 
+## Follow-Up: Optimistic Guards
+
+The fast paths now have a small circuit breaker in the cached plan state.  This
+is tuned for the practical expectation that files are piecewise fixed-format,
+with occasional weird rows rather than uniformly weird records.
+
+The fast parser still validates as it parses and immediately rolls back on any
+mismatch.  The new guard only decides whether to keep trying that fast parser on
+later records:
+
+- a success resets the consecutive-miss streak;
+- isolated weird rows fall back once and do not disable the fast path;
+- eight consecutive misses pause the fast path;
+- after 128 attempts, more than 10% fallbacks also pauses it;
+- paused paths cool down for 256 skipped records, then re-probe so later
+  fixed-format regions can recover.
+
+The clean CCDG path is unchanged: on the 10k subset, exact mode still reports
+`10000 hits / 0 fallbacks`.  The edge fixture remains byte-identical and keeps
+the expected mixed behavior:
+
+```text
+./test/test_format_plan.sh
+vcf-format-plan attempts=10 hits=7 fallback=3 parsed_samples=21
+vcf-format-plan attempts=10 hits=10 fallback=0 parsed_samples=30
+```
+
+The full compressed matrix was not re-recorded for this guard-only change
+because the machine was under unrelated CPU load during the interrupted run.
+The parse-heavy 10k BCF outputs were re-compared byte-for-byte for exact and
+interpreter modes.
+
 ## Findings
 
 The planned FORMAT parser is viable. With all four dominant CCDG layouts covered,
