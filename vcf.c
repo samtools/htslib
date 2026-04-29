@@ -3918,6 +3918,148 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted_range(const char *
 	return 0;
 }
 
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector4_counted_range(const char **sp, int32_t *out, int *nread,
+                                                                    vcf_plan_int_range_t *range)
+{
+	const char *s = *sp;
+	int i = 4;
+
+	if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
+		return -1;
+	if (*s != ',') {
+		out[1] = bcf_int32_vector_end;
+		out[2] = bcf_int32_vector_end;
+		out[3] = bcf_int32_vector_end;
+		i = 1;
+		goto done;
+	}
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
+		return -1;
+	if (*s != ',') {
+		out[2] = bcf_int32_vector_end;
+		out[3] = bcf_int32_vector_end;
+		i = 2;
+		goto done;
+	}
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
+		return -1;
+	if (*s != ',') {
+		out[3] = bcf_int32_vector_end;
+		i = 3;
+		goto done;
+	}
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[3], range) < 0)
+		return -1;
+	if (*s == ',')
+		return -1;
+done:
+	*sp = s;
+	if (nread)
+		*nread = i;
+	return 0;
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector6_counted_range(const char **sp, int32_t *out, int *nread,
+                                                                    vcf_plan_int_range_t *range)
+{
+	const char *s = *sp;
+	int i = 6, j;
+
+	if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
+		return -1;
+	if (*s != ',') { i = 1; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
+		return -1;
+	if (*s != ',') { i = 2; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
+		return -1;
+	if (*s != ',') { i = 3; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[3], range) < 0)
+		return -1;
+	if (*s != ',') { i = 4; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[4], range) < 0)
+		return -1;
+	if (*s != ',') { i = 5; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[5], range) < 0)
+		return -1;
+	if (*s == ',')
+		return -1;
+	goto done;
+fill:
+	for (j = i; j < 6; j++)
+		out[j] = bcf_int32_vector_end;
+done:
+	*sp = s;
+	if (nread)
+		*nread = i;
+	return 0;
+}
+
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector10_counted_range(const char **sp, int32_t *out, int *nread,
+                                                                     vcf_plan_int_range_t *range)
+{
+	const char *s = *sp;
+	int i = 10, j;
+
+	if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
+		return -1;
+	if (*s != ',') { i = 1; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
+		return -1;
+	if (*s != ',') { i = 2; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
+		return -1;
+	if (*s != ',') { i = 3; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[3], range) < 0)
+		return -1;
+	if (*s != ',') { i = 4; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[4], range) < 0)
+		return -1;
+	if (*s != ',') { i = 5; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[5], range) < 0)
+		return -1;
+	if (*s != ',') { i = 6; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[6], range) < 0)
+		return -1;
+	if (*s != ',') { i = 7; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[7], range) < 0)
+		return -1;
+	if (*s != ',') { i = 8; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[8], range) < 0)
+		return -1;
+	if (*s != ',') { i = 9; goto fill; }
+	s++;
+	if (vcf_plan_int_value_range(&s, &out[9], range) < 0)
+		return -1;
+	if (*s == ',')
+		return -1;
+	goto done;
+fill:
+	for (j = i; j < 10; j++)
+		out[j] = bcf_int32_vector_end;
+done:
+	*sp = s;
+	if (nread)
+		*nread = i;
+	return 0;
+}
+
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3(const char **sp, int32_t *out)
 {
 	return vcf_plan_parse_int_vector3_counted(sp, out, NULL);
@@ -4898,6 +5040,9 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 		} else if (ad_w == 3) {
 			if (vcf_plan_parse_int_vector3_counted_range(&cur, &ad[sample * 3], &nread, &ad_range) < 0)
 				goto fallback;
+		} else if (ad_w == 4) {
+			if (vcf_plan_parse_int_vector4_counted_range(&cur, &ad[sample * 4], &nread, &ad_range) < 0)
+				goto fallback;
 		} else if (vcf_plan_parse_int_vector_counted_range(&cur, &ad[sample * ad_w], ad_w, &nread, &ad_range) < 0) {
 			goto fallback;
 		}
@@ -4927,6 +5072,12 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 		}
 		if (pl_w == 3) {
 			if (vcf_plan_parse_int_vector3_counted_range(&cur, &pl[sample * 3], &nread, &pl_range) < 0)
+				goto fallback;
+		} else if (pl_w == 6) {
+			if (vcf_plan_parse_int_vector6_counted_range(&cur, &pl[sample * 6], &nread, &pl_range) < 0)
+				goto fallback;
+		} else if (pl_w == 10) {
+			if (vcf_plan_parse_int_vector10_counted_range(&cur, &pl[sample * 10], &nread, &pl_range) < 0)
 				goto fallback;
 		} else if (vcf_plan_parse_int_vector_counted_range(&cur, &pl[sample * pl_w], pl_w, &nread, &pl_range) < 0) {
 			goto fallback;
@@ -4990,21 +5141,25 @@ static int vcf_parse_format_general_likelihood_strict(kstring_t *s,
                                                       const bcf_hdr_t *h,
                                                       bcf1_t *v,
                                                       const vcf_format_general_plan_t *plan,
-                                                      char *q)
+                                                      char *q, int *attempted_shape)
 {
 	int widths[MAX_N_FMT];
 	vcf_format_row_op_t row_ops[MAX_N_FMT];
 
+	if (attempted_shape)
+		*attempted_shape = 0;
 	if (vcf_format_general_likelihood_widths(s, h, plan, v, q, widths) < 0)
 		return -4;
 	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
+	if (attempted_shape)
+		*attempted_shape = 1;
 	return vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops);
 }
 
 static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
                                            bcf1_t *v,
                                            const vcf_format_general_plan_t *plan,
-                                           char *q)
+                                           char *q, int try_likelihood)
 {
 	kstring_t *mem;
 	int widths[MAX_N_FMT], max_counts[MAX_N_FMT];
@@ -5020,7 +5175,7 @@ static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
 		vcf_plan_int_range_init(&ranges[j]);
 	}
 	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
-	if (plan->likelihood_supported &&
+	if (try_likelihood && plan->likelihood_supported &&
 	    (ret = vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops)) != -4)
 		return ret;
 	if (vcf_format_general_fixed_numeric_supported(row_ops, plan->n_ops))
@@ -5128,7 +5283,7 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	kstring_t *mem;
 	int widths[MAX_N_FMT];
 	vcf_format_row_op_t row_ops[MAX_N_FMT];
-	int nsamples, sample, j, vcf44, ret, strict_enabled;
+	int nsamples, sample, j, vcf44, ret, strict_enabled, likelihood_tried;
 	const char *cur, *end;
 
 	plan = vcf_format_general_plan_get(h, p);
@@ -5143,6 +5298,7 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	if (!nsamples)
 		return 0;
 	strict_enabled = vcf_format_fast_guard_enabled(&plan->strict_guard);
+	likelihood_tried = 0;
 	if (strict_enabled && plan->n_ops == 1 && plan->ops[0].is_gt) {
 		ret = vcf_parse_format_general_gt2_only(s, h, v, plan, q);
 		if (ret == 0) {
@@ -5153,7 +5309,7 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 			return ret;
 	}
 	if (plan->likelihood_supported && strict_enabled) {
-		ret = vcf_parse_format_general_likelihood_strict(s, h, v, plan, q);
+		ret = vcf_parse_format_general_likelihood_strict(s, h, v, plan, q, &likelihood_tried);
 		if (ret == 0) {
 			vcf_format_fast_guard_success(&plan->strict_guard);
 			return ret;
@@ -5162,7 +5318,7 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 			return ret;
 	}
 	if (plan->strict_supported && strict_enabled) {
-		ret = vcf_parse_format_general_strict(s, h, v, plan, q);
+		ret = vcf_parse_format_general_strict(s, h, v, plan, q, !likelihood_tried);
 		if (ret == 0) {
 			vcf_format_fast_guard_success(&plan->strict_guard);
 			return ret;

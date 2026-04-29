@@ -309,6 +309,35 @@ The previous cached-shape run was about 9.1 s user in dynamic mode on this
 input, so the direct GT-only executor removes roughly 39% of the remaining
 planned-parser CPU for this large real workload.
 
+## 2026-04-29 Multiallelic Parse Tightening
+
+Added two small low-risk likelihood executor refinements:
+
+- avoid retrying the likelihood shape executor inside the strict path when the
+  same row already reached the likelihood executor and failed row-local checks;
+- add fixed-width integer vector parsers for AD width 4 and PL widths 6/10,
+  covering common triallelic and quad-allelic `Number=G` likelihood rows.
+
+The fixed-width parsers still use the same scalar integer parser and range
+tracking, and they preserve short-vector padding and trailing-comma fallback
+behavior.
+
+Small edge coverage now includes:
+
+- row-local likelihood fallback from short AD/PL in individual samples,
+- missing AD/PL with another sample proving full row width,
+- GT-only fast-path hits plus haploid and multidigit GT fallbacks.
+
+Latest full large-corpus run remained byte-identical to baseline.  Timings were
+noisier overall than the previous pass, but the important rows were:
+
+| Input | Exact user | Dynamic interp user | Notes |
+|---|---:|---:|---|
+| CCDG 10k | 1.59 s | 1.56 s | likelihood shape parity |
+| 1000G chr22 full GT | 5.64 s | 5.68 s | GT-only fast path retained |
+| Large multiallelic likelihood | 2.26 s | 2.07 s | dynamic ahead of exact |
+| Mixed row-local fallbacks | 1.72 s | 1.74 s | byte-clean fallback path |
+
 ## Open Questions
 
 - How much of the gap is parse-loop dispatch versus generic encode cost?
