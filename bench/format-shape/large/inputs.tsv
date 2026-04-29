@@ -1,0 +1,7 @@
+name	path	source
+ccdg_10k	bench/format-shape/public/ccdg_chr22_10k.vcf.gz	local CCDG subset, 10k records x 3,202 samples
+1000g_chr22_full_genotypes	bench/format-shape/large/public/1000g_chr22_full_genotypes.vcf.gz	1000 Genomes Phase 3 full chr22 genotype VCF
+large_ccdg_likelihood_2048s	bench/format-shape/large/synthetic/large_ccdg_likelihood_2048s.vcf.gz	synthetic CCDG-like likelihood FORMAT, 20k records x 2,048 samples
+large_reordered_likelihood_2048s	bench/format-shape/large/synthetic/large_reordered_likelihood_2048s.vcf.gz	synthetic reordered likelihood FORMAT, 20k records x 2,048 samples
+large_multiallelic_likelihood_2048s	bench/format-shape/large/synthetic/large_multiallelic_likelihood_2048s.vcf.gz	synthetic multiallelic likelihood FORMAT, 16k records x 2,048 samples
+large_float_string_2048s	bench/format-shape/large/synthetic/large_float_string_2048s.vcf.gz	synthetic float/string FORMAT, 16k records x 2,048 samples

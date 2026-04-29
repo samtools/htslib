@@ -4409,6 +4409,7 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 {
 	const char *cur, *end;
 	int ad_w, pl_w, idx, sample, j, nsamples = bcf_hdr_nsamples(h);
+	int has_float = 0;
 	int str1_idx = -1, str2_idx = -1;
 
 	if (plan->n_ops != 5 && plan->n_ops != 6 &&
@@ -4429,8 +4430,10 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 
 	idx = 1;
 	if (idx < plan->n_ops && plan->ops[idx].htype == BCF_HT_REAL &&
-	    plan->ops[idx].number == 1)
+	    plan->ops[idx].number == 1) {
+		has_float = 1;
 		widths[idx++] = 1;
+	}
 	if (idx + 3 >= plan->n_ops)
 		return -4;
 	if (plan->ops[idx].htype != BCF_HT_INT)
@@ -4463,33 +4466,24 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 	cur = q + 1;
 	end = s->s + s->l;
 	for (sample = 0; sample < nsamples && cur < end; sample++) {
-		for (j = 0; j < plan->n_ops; j++) {
-			const char *field = cur;
-
-			while (cur < end && *cur && *cur != ':' && *cur != '\t')
-				cur++;
-			if (j == str1_idx || j == str2_idx) {
-				int w = cur - field;
-				if (j > 0)
-					w++;
-				if (w <= 0)
-					w = 1;
-				if (widths[j] < w)
-					widths[j] = w;
-			}
-			if (j + 1 < plan->n_ops) {
-				if (*cur != ':')
-					return -4;
-				cur++;
-			} else {
-				if (*cur == '\t')
-					cur++;
-				else if (*cur == '\0' || cur >= end)
-					;
-				else
-					return -4;
-			}
-		}
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -4;
+		if (has_float && vcf_plan_skip_field(&cur, ':') < 0)
+			return -4;
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -4;
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -4;
+		if (vcf_plan_skip_field(&cur, ':') < 0)
+			return -4;
+		if (vcf_plan_measure_string(&cur, ':', &widths[str1_idx]) < 0)
+			return -4;
+		if (vcf_plan_measure_string(&cur, ':', &widths[str2_idx]) < 0)
+			return -4;
+		while (cur < end && *cur && *cur != '\t')
+			cur++;
+		if (*cur == '\t')
+			cur++;
 	}
 	if (sample != nsamples)
 		return -4;
@@ -4497,6 +4491,8 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 		widths[str1_idx] = 1;
 	if (widths[str2_idx] <= 0)
 		widths[str2_idx] = 1;
+	widths[str1_idx]++;
+	widths[str2_idx]++;
 
 	return 0;
 }

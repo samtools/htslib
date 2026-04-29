@@ -1,7 +1,15 @@
 public/*.vcf.gz
 public/remote-indexes/*.tbi
 synthetic/*.vcf.gz
+large/**/*.vcf.gz
+large/**/*.vcf.bgz
+large/**/*.tbi
+large/results/*.bcf
+large/results/*.stderr
+large/results/*.tmp
 results/*.bcf
 results/*.stderr
 !results/timings.tsv
 !results/checks.tsv
+!large/results/timings.tsv
+!large/results/checks.tsv

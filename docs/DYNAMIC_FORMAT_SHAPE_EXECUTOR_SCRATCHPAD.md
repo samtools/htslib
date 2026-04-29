@@ -207,6 +207,37 @@ Next likely cuts:
 - Once dynamic shape is consistently at parity, demote the exact CCDG kernels to
   oracle-only or remove them.
 
+## 2026-04-29 Large-Corpus Check
+
+The small public/synthetic slices were too short to provide timing signal, so
+the meaningful benchmark set moved to `bench/format-shape/large/inputs.tsv`.
+The large corpus includes the CCDG 10k subset, full 1000 Genomes chr22
+genotypes, and 2,048-sample generated FORMAT workloads.
+
+Latest large run used:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results \
+  bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
+```
+
+All exact/interp outputs compared byte-identical to baseline.  Timing summary:
+
+| Input | Baseline user | Exact user | Dynamic interp user | Shape hits |
+|---|---:|---:|---:|---:|
+| CCDG 10k | 2.60 s | 1.64 s | 1.63 s | 10,000 |
+| 1000G chr22 full GT | 26.76 s | 9.32 s | 9.32 s | 0 |
+| Large CCDG-like synthetic | 4.10 s | 2.77 s | 2.87 s | 20,000 |
+| Large reordered likelihood | 2.97 s | 2.65 s | 2.62 s | 0 |
+| Large multiallelic likelihood | 3.22 s | 2.09 s | 2.05 s | 16,000 |
+| Large float/string | 2.95 s | 2.84 s | 2.84 s | 0 |
+
+The dynamic likelihood shape path is now at parity or close enough on the
+meaningful workloads.  The remaining visible gap is the generated CCDG-like
+phase-heavy synthetic case, where dynamic-only is about 3-4% slower than exact.
+That looks acceptable for this checkpoint; the next optimization target remains
+cached shape classification to remove repeated deterministic row-level checks.
+
 ## Open Questions
 
 - How much of the gap is parse-loop dispatch versus generic encode cost?

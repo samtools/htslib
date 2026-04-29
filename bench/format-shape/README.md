@@ -1,8 +1,8 @@
 # VCF FORMAT Shape Benchmark Corpus
 
-This directory is a local benchmark corpus for the experimental VCF FORMAT
-planner in `vcf.c`.  It is intentionally kept under the repository worktree
-instead of `/tmp` so the inputs survive restarts.
+This directory is a local test and benchmark corpus for the experimental VCF
+FORMAT planner in `vcf.c`.  It is intentionally kept under the repository
+worktree instead of `/tmp` so the inputs survive restarts.
 
 ## Layout
 
@@ -11,7 +11,9 @@ bench/format-shape/
   inputs.tsv                 input manifest used by the benchmark script
   public/                    downloaded public VCF slices
   synthetic/                 generated VCFs covering targeted FORMAT shapes
+  large/                     meaningful multi-second benchmark inputs/results
   scripts/make_synthetic.pl  deterministic synthetic VCF generator
+  scripts/make_large_synthetic.pl
   scripts/run_bench.sh       baseline/exact/interp timing and cmp runner
   results/                   generated timing logs and BCF outputs
 ```
@@ -26,6 +28,10 @@ keeps BCF outputs locally so `cmp` checks are inspectable, but `.gitignore`
 excludes those large files.
 
 ## Public Inputs
+
+The small `public/` and `synthetic/` inputs are smoke/correctness fixtures.  They
+are not large enough to provide stable timing signal except for the CCDG 10k
+subset.  Use `large/inputs.tsv` for optimization decisions.
 
 The public files were sliced with `tabix -h URL REGION | ./bgzip -c > file`.
 They are small enough to keep in the worktree but diverse enough to catch
@@ -79,6 +85,16 @@ Run all inputs:
 bench/format-shape/scripts/run_bench.sh
 ```
 
+Run only the meaningful large corpus:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results \
+  bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
+```
+
+`KEEP_OUTPUTS=0` still writes temporary BCF files and compares them with `cmp`,
+but deletes the large BCF outputs after each input is checked.
+
 The script runs each input in three modes:
 
 ```text
@@ -95,3 +111,22 @@ bench/format-shape/results/checks.tsv
 ```
 
 `checks.tsv` compares exact and interp BCF output against baseline with `cmp`.
+
+## Large Corpus
+
+`large/inputs.tsv` currently contains:
+
+- the CCDG 10k subset,
+- the full 1000 Genomes chr22 Phase 3 genotype VCF,
+- four generated 2,048-sample synthetic FORMAT workloads:
+  CCDG-like likelihood, reordered likelihood, multiallelic likelihood, and
+  float/string FORMAT.
+
+The latest large run is summarized in:
+
+```text
+bench/format-shape/large/results/timings.tsv
+bench/format-shape/large/results/checks.tsv
+```
+
+All exact and interp outputs in that run compared byte-identical to baseline.

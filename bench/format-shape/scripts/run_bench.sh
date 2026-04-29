@@ -4,6 +4,7 @@ set -eu
 test_view=${TEST_VIEW:-./test/test_view}
 inputs=${1:-bench/format-shape/inputs.tsv}
 outdir=${OUTDIR:-bench/format-shape/results}
+keep_outputs=${KEEP_OUTPUTS:-1}
 mkdir -p "$outdir"
 
 timings="$outdir/timings.tsv"
@@ -75,6 +76,9 @@ do
         printf '%s\tbaseline_vs_interp\tok\n' "$name" >> "$checks"
     else
         printf '%s\tbaseline_vs_interp\tDIFF\n' "$name" >> "$checks"
+    fi
+    if [ "$keep_outputs" = 0 ]; then
+        rm -f "$base_out" "$exact_out" "$interp_out"
     fi
 done
 

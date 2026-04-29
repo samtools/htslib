@@ -1,0 +1,13 @@
+name	comparison	status
+ccdg_10k	baseline_vs_exact	ok
+ccdg_10k	baseline_vs_interp	ok
+1000g_chr22_full_genotypes	baseline_vs_exact	ok
+1000g_chr22_full_genotypes	baseline_vs_interp	ok
+large_ccdg_likelihood_2048s	baseline_vs_exact	ok
+large_ccdg_likelihood_2048s	baseline_vs_interp	ok
+large_reordered_likelihood_2048s	baseline_vs_exact	ok
+large_reordered_likelihood_2048s	baseline_vs_interp	ok
+large_multiallelic_likelihood_2048s	baseline_vs_exact	ok
+large_multiallelic_likelihood_2048s	baseline_vs_interp	ok
+large_float_string_2048s	baseline_vs_exact	ok
+large_float_string_2048s	baseline_vs_interp	ok
