@@ -4313,6 +4313,33 @@ static int vcf_format_general_composable_supported(const vcf_format_row_op_t *ro
 	return 1;
 }
 
+static int vcf_format_row_can_compact(const vcf_format_row_op_t *op)
+{
+	return op->kind == VCF_FORMAT_ROW_INT2 ||
+	       op->kind == VCF_FORMAT_ROW_INT3 ||
+	       op->kind == VCF_FORMAT_ROW_INTN ||
+	       op->kind == VCF_FORMAT_ROW_FLOATN;
+}
+
+static void vcf_format_compact_row_op(kstring_t *mem, int nsamples,
+                                      vcf_format_row_op_t *op, int width)
+{
+	size_t elem_size = op->kind == VCF_FORMAT_ROW_FLOATN ? sizeof(float) : sizeof(int32_t);
+	size_t old_stride = (size_t) op->width * elem_size;
+	size_t new_stride = (size_t) width * elem_size;
+	char *base = mem->s + op->offset;
+	int sample;
+
+	for (sample = 1; sample < nsamples; sample++)
+		memmove(base + sample * new_stride, base + sample * old_stride, new_stride);
+	op->width = width;
+	op->size = (int)new_stride;
+	if (op->kind == VCF_FORMAT_ROW_INT2 || op->kind == VCF_FORMAT_ROW_INT3)
+		op->kind = width == 1 ? VCF_FORMAT_ROW_INT1 :
+		           width == 2 ? VCF_FORMAT_ROW_INT2 :
+		           width == 3 ? VCF_FORMAT_ROW_INT3 : VCF_FORMAT_ROW_INTN;
+}
+
 static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
                                             const vcf_format_general_plan_t *plan,
                                             bcf1_t *v, char *q, int *widths)
@@ -4527,9 +4554,15 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 	}
 	if (sample != nsamples)
 		goto fallback;
-	for (j = 0; j < plan->n_ops; j++)
-		if (max_counts[j] != row_ops[j].width)
+	for (j = 0; j < plan->n_ops; j++) {
+		if (max_counts[j] <= 0 || max_counts[j] > row_ops[j].width)
 			goto fallback;
+		if (max_counts[j] < row_ops[j].width) {
+			if (!vcf_format_row_can_compact(&row_ops[j]))
+				goto fallback;
+			vcf_format_compact_row_op(mem, nsamples, &row_ops[j], max_counts[j]);
+		}
+	}
 
 	v->n_fmt = plan->n_ops;
 	v->n_sample = nsamples;

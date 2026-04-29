@@ -496,3 +496,32 @@ All exact and interp outputs compared byte-identical to baseline.
 | Mixed row-local fallbacks | 2.25 s | 1.76 s | 1.94 s | byte-clean fallback path |
 | GT-first reordered negative | 1.77 s | 1.47 s | 1.44 s | composable path slightly ahead |
 | Two-string float negative | 2.29 s | 2.55 s | 2.55 s | planned path still slower than baseline |
+
+## 2026-04-29 Underfilled Vector Compaction
+
+Added a composable per-op fallback reduction for fixed-width vector fields.  If
+an `INT2`/`INT3`/`INTN`/`FLOATN` op was parsed into the conservative
+header-derived width, but the row's observed maximum vector count is smaller,
+the executor now compacts that field's scratch buffer to the observed row width
+and encodes it directly instead of falling back for the whole row.
+
+This keeps the fallback boundary for unsupported/malformed data, but avoids
+production fallback for byte-identical rows where the production parser would
+also emit a narrower BCF vector width.
+
+Latest full large-corpus run remained byte-identical to baseline.  The main
+effect is fallback reduction on mixed row-local cases:
+
+| Input | Exact user | Dynamic interp user | Dynamic hits/fallback |
+|---|---:|---:|---:|
+| CCDG 10k | 1.50 s | 2.28 s | 8,396 / 1,604 |
+| 1000G chr22 full GT | 9.08 s | 8.89 s | 1,103,547 / 0 |
+| Large CCDG-like synthetic | 2.66 s | 3.76 s | 20,000 / 0 |
+| Large multiallelic likelihood | 1.90 s | 2.78 s | 16,000 / 0 |
+| Variable phase widths | 1.97 s | 2.50 s | 12,000 / 0 |
+| Mixed row-local fallbacks | 1.75 s | 1.86 s | 12,000 / 0 |
+| GT-first reordered negative | 1.43 s | 1.41 s | 12,000 / 0 |
+
+The attempted pointer-increment / reduced-bookkeeping hot-loop rewrite was
+tested separately and reverted because it slowed the targeted likelihood-heavy
+benchmarks despite remaining byte-correct.
