@@ -14,7 +14,7 @@ bench/format-shape/
   large/                     meaningful multi-second benchmark inputs/results
   scripts/make_synthetic.pl  deterministic synthetic VCF generator
   scripts/make_large_synthetic.pl
-  scripts/run_bench.sh       baseline/exact/interp timing and cmp runner
+  scripts/run_bench.sh       baseline/plan/interp timing and cmp runner
   results/                   generated timing logs and BCF outputs
 ```
 
@@ -95,11 +95,13 @@ KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results \
 `KEEP_OUTPUTS=0` still writes temporary BCF files and compares them with `cmp`,
 but deletes the large BCF outputs after each input is checked.
 
-The script runs each input in three modes:
+The script runs each input in three modes.  `plan` and `interp` both use the
+dynamic per-tag FORMAT planner; both are kept so old comparisons can still check
+the `HTS_VCF_FORMAT_PLAN=1` spelling against the explicit dynamic spelling.
 
 ```text
 baseline: HTS_VCF_FORMAT_PLAN=0
-exact:    HTS_VCF_FORMAT_PLAN=1
+plan:     HTS_VCF_FORMAT_PLAN=1
 interp:   HTS_VCF_FORMAT_PLAN=interp
 ```
 
@@ -110,7 +112,7 @@ bench/format-shape/results/timings.tsv
 bench/format-shape/results/checks.tsv
 ```
 
-`checks.tsv` compares exact and interp BCF output against baseline with `cmp`.
+`checks.tsv` compares plan and interp BCF output against baseline with `cmp`.
 
 ## Large Corpus
 
@@ -140,4 +142,4 @@ bench/format-shape/large/results/timings.tsv
 bench/format-shape/large/results/checks.tsv
 ```
 
-All exact and interp outputs in that run compared byte-identical to baseline.
+All plan and interp outputs in that run compared byte-identical to baseline.

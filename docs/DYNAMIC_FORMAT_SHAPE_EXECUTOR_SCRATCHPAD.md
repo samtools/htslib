@@ -6,36 +6,35 @@ Branch: `codex/vcf-avx-sanity`
 
 ## Goal
 
-Make the general-purpose VCF FORMAT planned parser approach the handwritten
-exact CCDG kernel speed without matching on field names.  The planner should stay
-general, but the hot executor should become shape-specialized once a repeated
-FORMAT layout proves stable.
+Make the general-purpose VCF FORMAT planned parser as fast as possible without
+matching on field names.  The planner should stay general and tag-composable,
+while suspicious rows continue to fall back to the production parser.
 
 The production htslib parser remains the source of truth.  Any optimized path
 must either emit byte-identical BCF or return `-3` and fall back.
 
 ## Current Baseline
 
-Known modes:
+Current modes after the dynamic-only production trim:
 
 ```sh
 HTS_VCF_FORMAT_PLAN=0       # existing generic parser
-HTS_VCF_FORMAT_PLAN=1       # exact CCDG kernels, then dynamic fallback
-HTS_VCF_FORMAT_PLAN=interp  # dynamic planner only
+HTS_VCF_FORMAT_PLAN=1       # dynamic planner, then production fallback
+HTS_VCF_FORMAT_PLAN=interp  # same dynamic planner, explicit spelling
 HTS_VCF_FORMAT_PLAN_STATS=1 # counters from test/test_view
 ```
 
-Current 10k CCDG sanity timing:
+Latest 10k CCDG timing from the large-corpus run:
 
-| Mode | VCF.gz read-only | VCF.gz -> uncompressed BCF |
-|---|---:|---:|
-| Baseline | 2.58 s | 2.83 s |
-| Exact + dynamic fallback | 1.61 s | 1.86 s |
-| Dynamic general only | 2.34 s | 2.55 s |
+| Mode | User time |
+|---|---:|
+| Baseline | 2.62 s |
+| Dynamic `1` | 2.25 s |
+| Dynamic `interp` | 2.24 s |
 
-The performance target is the exact CCDG tier.  The first milestone is not to
-delete exact kernels, but to make a dynamic shape executor selected without tag
-name special cases reach the same neighborhood.
+Older sections below record the experimental path through exact kernels and a
+dynamic shape tier.  Those paths have been removed from live code; the final
+section is the current production-trim state.
 
 ## Working Hypothesis
 
@@ -149,9 +148,10 @@ test/format-plan-edge.vcf
 
 ## Current Scratch Notes
 
-- `HTS_VCF_FORMAT_PLAN=interp` is the key mode for dynamic executor progress.
-- Exact kernels should remain until dynamic-only is close enough to make them
-  redundant.
+- `HTS_VCF_FORMAT_PLAN=1` and `HTS_VCF_FORMAT_PLAN=interp` now exercise the same
+  dynamic executor.
+- Historical exact-kernel numbers remain useful only as a performance reference
+  in older benchmark notes.
 - Avoid hardcoding `AD`, `PL`, `DP`, `GQ`, `AB`, `PGT`, or `PID`; use their
   header-derived type/number/width instead.
 - CCDG-like FORMAT distributions are still the first target because they provide
@@ -163,8 +163,8 @@ Implemented the first dynamic likelihood-shape executor in `vcf.c`.
 
 What changed:
 
-- Added an optional `HTS_VCF_FORMAT_PLAN_SHAPE_STATS` counter path in
-  `test/test_view`.
+- Added a temporary shape counter path in `test/test_view`; it was later removed
+  with the dynamic-only production trim.
 - Relaxed strict string handling so `Type=String,Number=1` FORMAT fields can be
   handled by planned parsing with row-local byte-width measurement.
 - Added a shape-specific width derivation for CCDG-like layouts where `AD` may
@@ -525,3 +525,45 @@ effect is fallback reduction on mixed row-local cases:
 The attempted pointer-increment / reduced-bookkeeping hot-loop rewrite was
 tested separately and reverted because it slowed the targeted likelihood-heavy
 benchmarks despite remaining byte-correct.
+
+## 2026-04-29 Dynamic-Only Production Trim
+
+Removed the optional SIMD tab-scanning front-end and the old hardcoded exact
+FORMAT kernels.  The optimized FORMAT entry point is now:
+
+```text
+HTS_VCF_FORMAT_PLAN enabled -> dynamic per-tag plan -> composable executor -> production fallback
+```
+
+`HTS_VCF_FORMAT_PLAN=1`, `interp`, and `general` all route through the same
+dynamic executor.  The benchmark harness now labels `HTS_VCF_FORMAT_PLAN=1` as
+`plan`; older result directories may still contain a historical `exact` label,
+but that is no longer a separate hardcoded kernel path.
+
+Source cleanup removed the SIMD probe/stat plumbing, SIMD intrinsics includes,
+shape-stat plumbing, exact shape compiler/cache, exact phase-width pass, and
+exact GT/AB/AD/DP/GQ/PL microkernel.  Relative to `origin/develop`, the live
+source delta after adding inline docs is 1,467 added lines in `vcf.c` plus 14
+added lines in `test/test_view.c`.
+
+Latest full large-corpus run:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-dynamic-trim-plan \
+  bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
+```
+
+All output comparisons remained byte-identical to baseline.
+
+| Input | Baseline user | Dynamic `1` user | Dynamic `interp` user | Hits/fallback |
+|---|---:|---:|---:|---:|
+| CCDG 10k | 2.62 s | 2.25 s | 2.24 s | 8,396 / 1,604 |
+| 1000G chr22 full GT | 26.05 s | 7.98 s | 8.01 s | 1,103,547 / 0 |
+| Large CCDG-like synthetic | 4.24 s | 3.78 s | 3.77 s | 20,000 / 0 |
+| Large reordered likelihood | 3.00 s | 2.42 s | 2.44 s | 20,000 / 0 |
+| Large multiallelic likelihood | 3.16 s | 2.73 s | 2.73 s | 16,000 / 0 |
+| Large float/string | 2.93 s | 2.97 s | 2.97 s | 16,000 / 0 |
+| Variable phase widths | 2.61 s | 2.50 s | 2.48 s | 12,000 / 0 |
+| Mixed row-local fallbacks | 2.22 s | 1.87 s | 1.86 s | 12,000 / 0 |
+| GT-first reordered negative | 1.75 s | 1.44 s | 1.45 s | 12,000 / 0 |
+| Two-string float negative | 2.28 s | 2.56 s | 2.54 s | 12,000 / 0 |
