@@ -4,6 +4,13 @@ This directory is a local test and benchmark corpus for the experimental VCF
 FORMAT planner in `vcf.c`.  It is intentionally kept under the repository
 worktree instead of `/tmp` so the inputs survive restarts.
 
+The canonical feature docs are:
+
+- `docs/FORMAT_PLAN_OVERVIEW.md` for the high-level feature summary;
+- `docs/FORMAT_PLAN_CURRENT.md` for the current implementation and benchmark
+  tables;
+- `docs/FORMAT_PLAN_EXPERIMENT_LOG.md` for the historical experiment log.
+
 ## Layout
 
 ```text
