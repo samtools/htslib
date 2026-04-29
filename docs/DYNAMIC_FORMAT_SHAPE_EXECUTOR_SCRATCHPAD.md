@@ -400,3 +400,60 @@ Latest full large-corpus run stayed byte-identical to baseline.  Highlights:
   fixed-shape executor with parse-function pointers?
 - Do temporary fallback reason counters pay for themselves during iteration, or
   should they stay under an explicit debug environment variable?
+
+## 2026-04-29 Composable MVP Pivot
+
+The planned parser has been refactored toward the MVP design:
+
+```text
+FORMAT/header -> per-tag compiled ops -> one composable executor -> fallback
+```
+
+The dynamic `interp` path no longer routes through separate GT-only,
+likelihood-shape, fixed-numeric, and measured-general executor ladders.  It
+builds one row-local op list from header `Type`/`Number` metadata, parses all
+supported ops in FORMAT order, and falls back to the production parser for the
+whole row when compile-time support or row-local validation fails.
+
+Supported per-tag MVP ops include:
+
+- `GT`, with fast `GT2` storage when the row is diploid/simple;
+- `Integer` and `Float` with fixed `Number=N`, `Number=A`, `Number=R`,
+  `Number=G`, or bounded measured `Number=.`;
+- `String,Number=1` with row-local width measurement.
+
+This intentionally trades the previous likelihood-family microkernel speed for
+broader composability.  Rows such as `GT:AD`, `GT:AD:DP:XX:PL`, reordered
+numeric/string tags, and supersets with normal header-described tags can now use
+the same planned executor without a full-row shape match.
+
+Added `test/format-plan-composable.vcf` to cover subsets, supersets,
+reordered fields, measured numeric fields, strings, and a deliberate row-local
+fallback.  `./test/test_format_plan.sh` compares baseline, exact, and interp
+outputs byte-for-byte.
+
+Latest full large-corpus composable MVP run:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-composable-mvp \
+  bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
+```
+
+All exact and interp outputs compared byte-identical to baseline.
+
+| Input | Baseline user | Exact user | Dynamic interp user | Notes |
+|---|---:|---:|---:|---|
+| CCDG 10k | 2.61 s | 1.66 s | 2.35 s | broader MVP, some row fallback |
+| 1000G chr22 full GT | 25.88 s | 8.70 s | 8.70 s | composable GT path parity with exact |
+| Large CCDG-like synthetic | 4.17 s | 2.78 s | 3.84 s | lost likelihood microkernel speed |
+| Large reordered likelihood | 3.01 s | 2.49 s | 2.49 s | parity; no special likelihood shape needed |
+| Large multiallelic likelihood | 3.23 s | 2.20 s | 3.11 s | generic op loop slower than microkernel |
+| Large float/string | 2.97 s | 3.01 s | 3.01 s | parity with exact/general |
+| Variable phase widths | 2.68 s | 2.07 s | 2.54 s | string measurement still row-local |
+| Mixed row-local fallbacks | 2.25 s | 1.90 s | 2.06 s | byte-clean fallback path |
+| GT-first reordered negative | 1.79 s | 1.47 s | 1.45 s | composable path slightly ahead |
+| Two-string float negative | 2.28 s | 2.61 s | 2.58 s | planned path slower than baseline here |
+
+Takeaway: the MVP architecture is much less brittle and supports tag-level
+composition, but parity with the removed likelihood-shape executor will require
+generic per-op optimizations or a later optional executor-generation layer.
