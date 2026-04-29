@@ -67,6 +67,14 @@ GT workload improved from 26.51 s to 9.77 s unthreaded and from 25.99 s to
 8.84 s at 4 threads.  Selected-sample likelihood-heavy rows are still faster,
 but the gains are smaller because much less FORMAT payload is emitted.
 
+Broader bcftools commands follow the same pattern.  `bcftools view`,
+`bcftools query` of FORMAT values, and genotype filters benefit when they expose
+sample FORMAT parsing.  Site-only queries, `stats`, and `merge` are mostly
+neutral because their runtime is dominated by non-FORMAT work, output writing,
+or command-level bookkeeping.  A controlled `bcftools merge` self-merge check
+produced byte-identical output and was neutral-to-positive across the small
+merge manifest.
+
 ## Drawbacks
 
 The MVP intentionally keeps fallback whole-row.  It does not parse supported

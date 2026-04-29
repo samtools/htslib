@@ -291,12 +291,75 @@ has samples; sites-only inputs naturally run without `-s`.
 | Two-string float negative | 4 | 0.99x | 0.98x |
 | Two-string float negative | 8 | 1.03x | 1.01x |
 
+## bcftools Command Benchmark
+
+The broader command runner exercises bcftools paths that either consume FORMAT
+records, discard FORMAT records, or mostly operate on site-level data:
+
+```sh
+BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-commands \
+  bench/format-shape/scripts/run_bcftools_command_bench.sh \
+  bench/format-shape/large/bcftools-command-inputs.tsv
+```
+
+All applicable planned outputs compared byte-identical to baseline.  FORMAT
+commands were skipped for the sites-only gnomAD input as expected.
+
+| Input | Command | Real speedup | User speedup |
+|---|---|---:|---:|
+| CCDG 10k | view_bcf | 1.11x | 1.12x |
+| CCDG 10k | view_sites | 1.12x | 1.13x |
+| CCDG 10k | query_format | 1.51x | 1.56x |
+| CCDG 10k | filter_gt | 1.11x | 1.12x |
+| 1000G chr22 full GT | view_bcf | 2.79x | 2.94x |
+| 1000G chr22 full GT | view_sites | 2.98x | 3.02x |
+| 1000G chr22 full GT | query_format | 1.94x | 1.94x |
+| 1000G chr22 full GT | filter_gt | 1.57x | 1.58x |
+| Large reordered likelihood | view_bcf | 1.21x | 1.22x |
+| Large reordered likelihood | view_sites | 1.20x | 1.20x |
+| Large reordered likelihood | query_format | 1.39x | 1.42x |
+| Large reordered likelihood | filter_gt | 1.14x | 1.14x |
+| Large float/string | view_bcf | 1.02x | 1.02x |
+| Large float/string | query_format | 1.01x | 1.00x |
+| gnomAD sites chr22 | view_bcf | 0.98x | 1.00x |
+| gnomAD sites chr22 | query_sites | 1.00x | 1.08x |
+
+`query_sites` and `stats` were generally neutral because they do little or no
+FORMAT work.  The small negative rows, such as CCDG `stats` at 0.94x real and
+float/string `stats` at 0.93x real, are still within the area to watch for
+planner overhead in workloads that do not benefit from FORMAT decoding.
+
+## bcftools Merge Benchmark
+
+`merge_self` is kept out of the default command list because merge output can
+grow quickly.  It was run against the smaller merge manifest:
+
+```sh
+BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+COMMANDS=merge_self KEEP_OUTPUTS=0 \
+OUTDIR=bench/format-shape/large/results-bcftools-merge \
+  bench/format-shape/scripts/run_bcftools_command_bench.sh \
+  bench/format-shape/large/bcftools-merge-inputs.tsv
+```
+
+All planned merge outputs compared byte-identical to baseline.
+
+| Input | Baseline real | Plan real | Real speedup | Baseline user | Plan user |
+|---|---:|---:|---:|---:|---:|
+| Small 1000G genotypes | 0.14 s | 0.10 s | 1.40x | 0.13 s | 0.08 s |
+| Large CCDG likelihood 1024s | 4.50 s | 4.33 s | 1.04x | 4.05 s | 3.91 s |
+| Large float/string 1024s | 2.69 s | 2.69 s | 1.00x | 2.40 s | 2.41 s |
+
 ## Interpretation
 
 The dynamic path gives a large production-visible win for sample-rich GT-only
 VCFs.  On likelihood-heavy rows, it is consistently faster but still limited by
 generic per-op work, string/width handling, and IO/compression costs.  Some
 float/string-heavy layouts remain near parity or slightly slower than baseline.
+The broader bcftools command run supports the same story: commands that expose
+FORMAT parsing benefit; commands dominated by site-only logic, stats, merge
+bookkeeping, or compression are neutral.
 
 ## Remaining Work
 

@@ -24,6 +24,7 @@ bench/format-shape/
   scripts/run_bench.sh       baseline/plan timing and cmp runner
   scripts/run_thread_bench.sh threaded timing and cmp runner
   scripts/run_bcftools_bench.sh bcftools threaded timing runner
+  scripts/run_bcftools_command_bench.sh broader bcftools command runner
   results/                   generated timing logs and BCF outputs
 ```
 
@@ -162,6 +163,82 @@ KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-keep2 \
   bench/format-shape/large/threaded-inputs.tsv
 ```
 
+Run broader bcftools command shapes:
+
+```sh
+BCFTOOLS=/path/to/bcftools \
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-commands \
+  bench/format-shape/scripts/run_bcftools_command_bench.sh \
+  bench/format-shape/large/bcftools-command-inputs.tsv
+```
+
+This runner is intended to be a bridge toward future tests.  It runs each
+command once with `HTS_VCF_FORMAT_PLAN=0` and once with
+`HTS_VCF_FORMAT_PLAN=1`, then compares outputs with `cmp`.
+
+The default command set is:
+
+| Command | Purpose | Output check |
+|---|---|---|
+| `view_bcf` | Full `bcftools view --no-version -Ob -l 0` conversion. | Binary BCF `cmp`. |
+| `view_sites` | `bcftools view -G` after dropping genotypes. | Binary BCF `cmp`. |
+| `query_sites` | Fixed-column query that should not benefit from FORMAT parsing. | Text `cmp`. |
+| `query_format` | Query `%GT` for the first `QUERY_SAMPLE_COUNT` samples. | Text `cmp`. |
+| `stats` | `bcftools stats` over the input. | Text `cmp`. |
+| `filter_gt` | `bcftools view -i 'GT="alt"'` for the first `QUERY_SAMPLE_COUNT` samples. | Binary BCF `cmp`. |
+| `merge_self` | `bcftools merge --no-index --force-samples` of the input with itself. | Binary BCF `cmp`. |
+
+`query_format`, `filter_gt`, and `merge_self` are skipped for sites-only inputs.
+By default the query/filter commands select two samples
+(`QUERY_SAMPLE_COUNT=2`) to avoid generating enormous text output on cohort-scale
+VCFs.  Override with:
+
+```sh
+COMMANDS="query_format stats" QUERY_SAMPLE_COUNT=8 THREADS_LIST="0 4" \
+  bench/format-shape/scripts/run_bcftools_command_bench.sh \
+  bench/format-shape/large/bcftools-command-inputs.tsv
+```
+
+The runner writes:
+
+```text
+timings.tsv   name, command, threads, mode, real/user/sys
+checks.tsv    baseline-vs-plan cmp status, including skipped_no_samples
+commands.tsv  command descriptions captured with the result directory
+```
+
+For CI, the likely future shape is to keep one or two tiny inputs per command
+and assert `checks.tsv` has only `ok` or expected `skipped_no_samples` rows.
+The large corpus should remain a performance benchmark rather than a normal
+test-suite dependency.
+
+`merge_self` is intentionally not in the default `COMMANDS` list because it can
+produce very large outputs on cohort-scale inputs.  Run it against the smaller
+merge manifest:
+
+```sh
+BCFTOOLS=/path/to/bcftools COMMANDS=merge_self \
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-merge \
+  bench/format-shape/scripts/run_bcftools_command_bench.sh \
+  bench/format-shape/large/bcftools-merge-inputs.tsv
+```
+
+This is not a semantic recommendation to merge a file with itself in production;
+it is a controlled benchmark shape.  `--force-samples` creates distinct sample
+names and `--no-index` avoids needing local tabix indexes for generated slices.
+
+The latest local merge run wrote:
+
+```text
+bench/format-shape/large/results-bcftools-merge/timings.tsv
+bench/format-shape/large/results-bcftools-merge/checks.tsv
+```
+
+All planned merge outputs compared byte-identical to baseline.  The small 1000G
+genotype input improved from 0.14 s to 0.10 s, the 1024-sample CCDG-like input
+improved from 4.50 s to 4.33 s, and the 1024-sample float/string input was
+unchanged at 2.69 s.
+
 ## Large Corpus
 
 `large/inputs.tsv` currently contains:
@@ -175,6 +252,11 @@ KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-keep2 \
 	  float rows.
 
 `large/threaded-inputs.tsv` mirrors this full corpus for `-@` scaling checks.
+`large/bcftools-command-inputs.tsv` is a smaller representative set for the
+broader command benchmark: GT-only, real CCDG-like FORMAT, reordered FORMAT,
+string/float negative control, and an INFO-heavy sites-only gnomAD slice.
+`large/bcftools-merge-inputs.tsv` is smaller still, so merge output does not
+explode during routine local benchmarks.
 
 To refresh only the newer cache-regression synthetic files without rewriting the
 older large VCFs:

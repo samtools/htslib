@@ -236,6 +236,30 @@ All planned outputs compared byte-identical to baseline.
 | Large CCDG-like synthetic | 0 | 4.43 s | 3.94 s | 1.12x |
 | Large CCDG-like synthetic | 4 | 3.47 s | 3.02 s | 1.15x |
 
+## Broader bcftools Command Check
+
+Added `bench/format-shape/scripts/run_bcftools_command_bench.sh` so the branch
+can exercise more than `bcftools view`.  The runner currently covers full BCF
+conversion, genotype-dropping conversion, site queries, small FORMAT queries,
+`stats`, genotype filters, and an opt-in merge benchmark.  Every command runs
+once with `HTS_VCF_FORMAT_PLAN=0` and once with `HTS_VCF_FORMAT_PLAN=1`, then
+compares outputs with `cmp`.
+
+Result: retained.  All applicable planned outputs compared byte-identical to
+baseline.  FORMAT-heavy commands showed the expected gains: 1000G full GT was
+2.79x faster for `view_bcf`, 2.98x faster for `view_sites`, 1.94x faster for
+`query_format`, and 1.57x faster for `filter_gt`.  CCDG and reordered
+likelihood workloads were smaller but positive.  Site-only queries and `stats`
+were mostly neutral, with a few small negative rows that remain useful overhead
+watchpoints.
+
+`bcftools merge` was tested through the opt-in `merge_self` command against a
+smaller manifest to avoid excessive duplicated-sample output.  All planned merge
+outputs compared byte-identical to baseline.  Merge was neutral-to-positive:
+small 1000G genotype input improved from 0.14 s to 0.10 s, large CCDG
+likelihood improved from 4.50 s to 4.33 s, and large float/string remained
+unchanged at 2.69 s.
+
 ## Main Lessons
 
 - Tag-level composition is the right MVP boundary; exact full FORMAT strings are
