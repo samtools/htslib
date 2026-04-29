@@ -14,7 +14,9 @@ bench/format-shape/
   large/                     meaningful multi-second benchmark inputs/results
   scripts/make_synthetic.pl  deterministic synthetic VCF generator
   scripts/make_large_synthetic.pl
-  scripts/run_bench.sh       baseline/plan/interp timing and cmp runner
+  scripts/run_bench.sh       baseline/plan timing and cmp runner
+  scripts/run_thread_bench.sh representative threaded timing and cmp runner
+  scripts/run_bcftools_bench.sh representative bcftools timing runner
   results/                   generated timing logs and BCF outputs
 ```
 
@@ -95,14 +97,26 @@ KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results \
 `KEEP_OUTPUTS=0` still writes temporary BCF files and compares them with `cmp`,
 but deletes the large BCF outputs after each input is checked.
 
-The script runs each input in three modes.  `plan` and `interp` both use the
-dynamic per-tag FORMAT planner; both are kept so old comparisons can still check
-the `HTS_VCF_FORMAT_PLAN=1` spelling against the explicit dynamic spelling.
+Run the representative threaded scaling corpus:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-threaded \
+  bench/format-shape/scripts/run_thread_bench.sh \
+  bench/format-shape/large/threaded-inputs.tsv
+```
+
+By default this runs unthreaded plus `-@ 2`, `-@ 4`, and `-@ 8`.  Override with
+`THREADS_LIST="2 4 8"` or a similar space-separated list.  The current threaded
+manifest intentionally uses a small representative subset of the large corpus:
+one real GT-only workload and one FORMAT-heavy CCDG-like likelihood workload.
+
+The script runs each input in two modes.  `interp` remains accepted by
+`HTS_VCF_FORMAT_PLAN`, but it aliases the same dynamic parser as `plan`, so the
+benchmark harness does not run it as a separate timing row.
 
 ```text
 baseline: HTS_VCF_FORMAT_PLAN=0
 plan:     HTS_VCF_FORMAT_PLAN=1
-interp:   HTS_VCF_FORMAT_PLAN=interp
 ```
 
 It writes:
@@ -112,7 +126,23 @@ bench/format-shape/results/timings.tsv
 bench/format-shape/results/checks.tsv
 ```
 
-`checks.tsv` compares plan and interp BCF output against baseline with `cmp`.
+`checks.tsv` compares plan BCF output against baseline with `cmp`.
+The threaded runner writes the same files under its selected output directory,
+with an additional `threads` column.
+
+Run the same representative threaded corpus through bcftools:
+
+```sh
+BCFTOOLS=/path/to/bcftools \
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools \
+  bench/format-shape/scripts/run_bcftools_bench.sh \
+  bench/format-shape/large/threaded-inputs.tsv
+```
+
+This uses `bcftools view --no-version -Ob -l 0`, compares planned output against
+baseline with `cmp`, and records the same `0 2 4 8` thread counts by default.
+It does not report planner counters because bcftools does not expose the
+`test/test_view` stats hook.
 
 ## Large Corpus
 
@@ -123,8 +153,14 @@ bench/format-shape/results/checks.tsv
 - eight generated 2,048-sample synthetic FORMAT workloads:
   CCDG-like likelihood, reordered likelihood, multiallelic likelihood,
   float/string FORMAT, variable phase-string widths, row-local likelihood
-  fallbacks, GT-first wrong-order likelihood-like rows, and two-string
-  float rows.
+	  fallbacks, GT-first wrong-order likelihood-like rows, and two-string
+	  float rows.
+
+`large/threaded-inputs.tsv` currently selects two representative inputs from the
+same corpus for `-@` scaling checks:
+
+- full 1000 Genomes chr22 genotype VCF,
+- large CCDG-like synthetic likelihood VCF.
 
 To refresh only the newer cache-regression synthetic files without rewriting the
 older large VCFs:
@@ -142,4 +178,4 @@ bench/format-shape/large/results/timings.tsv
 bench/format-shape/large/results/checks.tsv
 ```
 
-All plan and interp outputs in that run compared byte-identical to baseline.
+All plan outputs in that run compared byte-identical to baseline.

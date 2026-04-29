@@ -65,9 +65,19 @@ comparisons between production parsing and planned parsing on edge-case FORMAT
 fixtures.
 
 The larger benchmark corpus lives under `bench/format-shape/large/`.  The
-benchmark script runs `baseline`, `plan`, and `interp` modes.  `plan` is
-`HTS_VCF_FORMAT_PLAN=1`; `interp` is the explicit dynamic spelling.  After the
-dynamic-only trim both enabled modes use the same dynamic executor.
+benchmark script runs `baseline` and `plan` modes.  `plan` is
+`HTS_VCF_FORMAT_PLAN=1`; `interp` and `general` remain accepted aliases, but
+they use the same dynamic executor and are not emitted as separate timing rows.
+
+Threaded scaling checks use `bench/format-shape/scripts/run_thread_bench.sh`.
+That runner exercises representative large inputs with unthreaded execution plus
+`test/test_view -@ 2`, `-@ 4`, and `-@ 8`, and writes a `threads` column in its
+timing output.
+
+Production-style checks use `bench/format-shape/scripts/run_bcftools_bench.sh`
+with a bcftools binary built against this htslib tree.  It runs
+`bcftools view --no-version -Ob -l 0` in baseline and planned modes over the same
+representative threaded manifest.
 
 Latest documented results are in
 `docs/DYNAMIC_FORMAT_SHAPE_EXECUTOR_SCRATCHPAD.md`.

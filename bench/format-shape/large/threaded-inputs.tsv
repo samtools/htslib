@@ -1,0 +1,3 @@
+name	path	source
+1000g_chr22_full_genotypes	bench/format-shape/large/public/1000g_chr22_full_genotypes.vcf.gz	1000 Genomes Phase 3 full chr22 genotype VCF; real GT-only scaling case
+large_ccdg_likelihood_2048s	bench/format-shape/large/synthetic/large_ccdg_likelihood_2048s.vcf.gz	synthetic CCDG-like likelihood FORMAT, 20k records x 2,048 samples; FORMAT-heavy scaling case

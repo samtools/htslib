@@ -23,8 +23,8 @@ interp/general same dynamic per-tag planner, then production fallback
 ```
 
 All enabled spellings now use the same implementation.  The benchmark harness
-may still run both `1` and `interp` as separate modes, but they are intended to
-match except for normal timing noise.
+reports only `HTS_VCF_FORMAT_PLAN=1` as `plan`; `interp`/`general` remain useful
+manual aliases but are not distinct timing modes.
 
 The planned parser has four stages:
 

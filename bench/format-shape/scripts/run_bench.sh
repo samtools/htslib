@@ -17,9 +17,8 @@ tail -n +2 "$inputs" | while IFS='	' read -r name path source
 do
     base_out="$outdir/$name.baseline.bcf"
     plan_out="$outdir/$name.plan.bcf"
-    interp_out="$outdir/$name.interp.bcf"
 
-    for mode in baseline plan interp
+    for mode in baseline plan
     do
         err="$outdir/$name.$mode.stderr"
         out="$outdir/$name.$mode.bcf"
@@ -29,10 +28,6 @@ do
                 ;;
             plan)
                 env HTS_VCF_FORMAT_PLAN=1 HTS_VCF_FORMAT_PLAN_STATS=1 \
-                    /usr/bin/time -p "$test_view" -b -l 0 "$path" > "$out" 2> "$err"
-                ;;
-            interp)
-                env HTS_VCF_FORMAT_PLAN=interp HTS_VCF_FORMAT_PLAN_STATS=1 \
                     /usr/bin/time -p "$test_view" -b -l 0 "$path" > "$out" 2> "$err"
                 ;;
         esac
@@ -63,13 +58,8 @@ do
     else
         printf '%s\tbaseline_vs_plan\tDIFF\n' "$name" >> "$checks"
     fi
-    if cmp "$base_out" "$interp_out" >/dev/null 2>&1; then
-        printf '%s\tbaseline_vs_interp\tok\n' "$name" >> "$checks"
-    else
-        printf '%s\tbaseline_vs_interp\tDIFF\n' "$name" >> "$checks"
-    fi
     if [ "$keep_outputs" = 0 ]; then
-        rm -f "$base_out" "$plan_out" "$interp_out"
+        rm -f "$base_out" "$plan_out"
     fi
 done
 
