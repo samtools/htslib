@@ -1,139 +1,121 @@
 # FORMAT Plan Parser Spec
 
-This document describes the intended direction for the experimental
-`HTS_VCF_FORMAT_PLAN=1` VCF FORMAT parser.
+This document describes the current experimental `HTS_VCF_FORMAT_PLAN` VCF
+FORMAT parser and the direction for making it more general.
 
 ## Goal
 
-Keep the existing parser as the source of truth, but add a runtime-compiled
-fast path for common FORMAT layouts.  The fast path should be opportunistic:
-compile a plan for repeated FORMAT strings, execute known-safe operations
-directly, and fall back to the generic parser whenever the record leaves the
-supported subset.
+Keep the existing htslib FORMAT parser as the source of truth, but add
+opportunistic fast paths for repeated FORMAT layouts.  A fast path may only claim
+a record when it can produce byte-identical BCF.  Otherwise it must return `-3`
+and let the existing parser handle the row.
 
-## Architecture
+## Current Architecture
 
-The parser is tiered:
+`HTS_VCF_FORMAT_PLAN=1` enables a tiered parser:
 
-1. Exact kernels for dominant production layouts.  The current CCDG kernels cover
+1. Handwritten exact kernels for the four dominant CCDG FORMAT layouts:
    `GT:AB:AD:DP:GQ:PL`, `GT:AD:DP:GQ:PL`,
    `GT:AB:AD:DP:GQ:PGT:PID:PL`, and `GT:AD:DP:GQ:PGT:PID:PL`.
-2. A compiled op-list interpreter for regular FORMAT layouts.  It caches the
-   FORMAT string, resolves header IDs once, then executes per-field operations
-   for GT, integer vectors, float vectors, and strings.
-3. Generic htslib parsing for everything else, including sample subsetting,
-   duplicate FORMAT tags, undefined tags that require dummy header insertion,
-   unsupported header types, malformed values, or future VCF constructs.
+2. A dynamic general FORMAT planner keyed by the literal FORMAT column and
+   header pointer.  It resolves field IDs/types once and executes row-specific
+   operations for GT, integer vectors, float vectors, and strings.
+3. The existing generic htslib FORMAT parser for unsupported or suspicious
+   rows.
 
-The cache key is the literal FORMAT column.  Record-specific widths are still
-computed per row because BCF stores each FORMAT field as a rectangular
-sample-by-value array, and the width depends on observed ploidy, vector length,
-string length, and allele count.
+`HTS_VCF_FORMAT_PLAN=interp` or `HTS_VCF_FORMAT_PLAN=general` skips the exact
+CCDG kernels and runs only the dynamic general planner.  This mode is useful for
+isolating how much performance the general approach has captured.
+
+## Measured State
+
+On the 10k CCDG subset, the exact tier is currently the large win.  A clean
+sanity rerun on 2026-04-29 showed:
+
+| Mode | VCF.gz read-only | VCF.gz -> uncompressed BCF |
+|---|---:|---:|
+| Baseline | 2.58 s | 2.83 s |
+| `HTS_VCF_FORMAT_PLAN=1` | 1.61 s | 1.86 s |
+| `HTS_VCF_FORMAT_PLAN=interp` | 2.34 s | 2.55 s |
+
+The earlier docs overstated the dynamic strict/interpreter result.  The dynamic
+planner is correct and modestly faster than baseline, but it does not yet match
+the handwritten CCDG kernels.
+
+The next development target is to move the exact-kernel advantages into a
+dynamic shape executor so common fixed-format regions can get exact-like speed
+without field-name-specific kernels.
 
 ## Correctness Rules
 
-The planned parser must produce byte-identical BCF to the generic parser for any
-record it claims.  If it cannot prove that, it must return `-3` so the existing
-parser handles the record.
-
-Required invariants:
+The planned parser must preserve these invariants:
 
 - No planned parsing while `h->keep_samples` is active.
 - Header IDs and types are resolved before execution.
-- Duplicate tags use the generic parser.
+- Duplicate FORMAT tags use the generic parser.
 - Undefined tags use the generic parser, preserving current dummy-header
   behavior and warnings.
 - GT encoding must match generic htslib phasing semantics, including haploid
-  genotypes and VCF 4.4 prefix phasing.
-- Numeric vectors use observed row width and pad shorter samples with vector-end
-  sentinels.
+  genotypes, missing alleles, multidigit allele indexes, and VCF 4.4 prefix
+  phasing.
+- Numeric vectors use observed or provably fixed row width and pad shorter
+  samples with vector-end sentinels.
 - Strings use observed maximum byte length and zero-pad shorter samples.
-- Integer and float overflow/error behavior should either match generic htslib
-  or force fallback.
+- Integer and float overflow/error behavior must either match generic htslib or
+  force fallback.
+- Any fast path that writes directly into `v->indiv` must save the original
+  length and roll back before fallback.
 
-## Current MVP
+## Dynamic Planner
 
-The current implementation keeps the CCDG exact kernels as the first tier and
-adds a general compiled op-list tier for defined FORMAT fields with type
-`String`, `Integer`, or `Float`.  The op-list tier handles:
-
-- arbitrary field order,
-- haploid, diploid, multidigit, missing, and phased GT values,
-- integer and float vectors with row-local observed widths,
-- string fields with row-local observed widths,
-- multiallelic `Number=R` and `Number=G` rows by using observed vector width.
-
-The MVP intentionally falls back for sample subsetting, duplicate tags,
-undefined tags, unsupported header types, and malformed values.
-
-After the row width pass, the interpreter resolves each cached FORMAT op to a
-row-specific opcode such as `GT2`, `GT`, `INT1`, `INT2`, `INT3`, `INTN`,
-`FLOAT1`, `FLOATN`, or `STR`.  This keeps layout coverage flexible while
-memoizing the common "muscle memory" for repeated shapes.
+The general planner compiles the literal FORMAT string into a cached op list.
+After seeing a record, it resolves the ops to row-local opcodes such as `GT2`,
+`GT`, `INT1`, `INT2`, `INT3`, `INTN`, `FLOAT1`, `FLOATN`, and `STR`.
 
 For rows whose widths can be predicted from the header and allele count, the
-interpreter can try a strict path before the observed-width pass.  The strict
-path validates the observed maximum width while parsing and falls back to the
-observed-width interpreter if the row is sparse, malformed, string-bearing, or
-otherwise not byte-identical.
+planner first tries a strict numeric executor.  That path validates shape while
+parsing, carries integer min/max metadata into BCF integer encoding, and can
+direct-write a leading `GT2`/`FLOAT1` prefix.  If the row is sparse, stringy,
+malformed, or otherwise not byte-identical, it falls back to the measured-width
+general planner.
 
-Strict numeric rows now use a generic fixed-schema executor rather than
-FORMAT-name special cases.  It accepts any fixed-width numeric opcode sequence,
-direct-writes a leading `GT2`/`FLOAT1` prefix into `v->indiv`, parses remaining
-integer/float fields into row-local scratch, carries integer min/max metadata
-from parse to encode, and rolls back direct writes on the first mismatch.  This
-gives CCDG-like rows exact-kernel performance while keeping the executor keyed
-by dynamic row shape rather than field names.
-
-Planned integer parsing must be overflow-safe.  If a value is outside the BCF
-int32 payload range, the planned parser falls back so the generic parser keeps
-its warning and missing-value behavior.
-
-Validated `GT2` payloads and leading scalar float payloads can be written
-directly into `v->indiv` instead of going through scratch arrays.  Any direct
-writer must save the entry length and roll back before returning fallback.
+Today, the strict/general path still has enough overhead that it trails the
+handwritten CCDG kernels on the CCDG benchmark.  Likely remaining gaps include
+per-field dispatch, measured-width/string handling for `PGT/PID`, scratch-buffer
+traffic, and generic encode costs.
 
 ## Guard Policy
 
-Planned FORMAT parsing is optimistic and self-validating: parsing each field is
-also the shape check.  When a guard fails, the parser rolls back any direct
-`v->indiv` writes and falls back to the more general parser.
-
-Each cached exact/general FORMAT plan keeps small runtime guard state:
+Each cached exact/general plan has a small runtime guard:
 
 - attempts, hits, fallbacks,
 - consecutive miss streak,
-- a temporary cooldown flag.
+- temporary cooldown.
 
-The guard is tuned for piecewise fixed-format VCFs with infrequent weird rows.
-An isolated fallback does not disable the fast path; the next success resets the
-miss streak.  A fast path is paused only after eight consecutive misses, or
-after at least 128 attempts with more than 10% fallbacks.  Paused plans are not
-blacklisted forever: after 256 skipped records, the plan probes the fast path
-again so later fixed-format regions can recover the optimized path.
+An isolated fallback does not disable the fast path.  A plan is paused only
+after eight consecutive misses, or after at least 128 attempts with more than
+10% fallbacks.  After 256 skipped records, the plan probes again so later
+fixed-format regions can recover the optimized path.
 
-For exact CCDG kernels, a paused exact guard routes the row to the compiled
+For exact CCDG kernels, a paused exact guard routes the row to the dynamic
 general planner.  For general plans, a paused strict guard skips directly to the
-measured-width general planner, and a paused general guard returns to legacy
-htslib parsing.
+measured-width planner, and a paused general guard returns to legacy htslib
+parsing.
 
 ## Edge Fixture
 
-`test/format-plan-edge.vcf` is CCDG-shaped but includes records that exercise
-common awkward cases:
+`test/format-plan-edge.vcf` is CCDG-shaped but includes awkward realistic rows:
 
 - the exact CCDG layouts,
-- reordered fields,
-- reordered numeric fields with `GT` and scalar floats away from the first
-  FORMAT position,
+- reordered FORMAT fields,
 - non-CCDG numeric tag names with fixed widths,
-- integer values around BCF int8/int16 type boundaries,
+- integer values around BCF int8/int16 boundaries,
 - multiallelic AD/PL and GL,
 - haploid GT,
 - multidigit allele indexes,
 - fixed integer vectors,
 - string FORMAT fields,
-- exact-kernel fallbacks such as haploid GT and multidigit allele indexes.
+- exact-kernel fallbacks that the dynamic planner can still handle.
 
 Run:
 
@@ -141,21 +123,17 @@ Run:
 ./test/test_format_plan.sh
 ```
 
-The script writes BCF through the generic parser and through
-`HTS_VCF_FORMAT_PLAN=1`, compares them with `cmp`, and prints plan hit/fallback
-statistics.  `HTS_VCF_FORMAT_PLAN=interp` or `HTS_VCF_FORMAT_PLAN=general`
-skips the exact kernels and runs the compiled op-list interpreter directly,
-which is useful for isolating interpreter performance.
+The script writes BCF through the generic parser, `HTS_VCF_FORMAT_PLAN=1`, and
+`HTS_VCF_FORMAT_PLAN=interp`, then compares the outputs with `cmp`.
 
 ## Next Work
 
-- Add more exact kernels only after coverage data shows that they dominate real
-  inputs.
-- Add plan- or shape-level executors for dominant opcode sequences so hot rows
-  can also avoid the per-sample opcode switch.
-- Extend direct final-buffer output only where BCF type selection is
-  byte-identical, or where the direct writer can cheaply roll back.
-- Add overflow-compatible numeric parsing or force fallback before committing to
-  the plan on extreme integer/float values.
-- Integrate the edge fixture into the standard htslib test runner once the
-  experimental flag graduates beyond local benchmarking.
+- Make a dynamic fixed-shape executor that captures the CCDG exact-kernel wins
+  without matching on field names.
+- Specialize common string-bearing shapes such as `PGT/PID` without baking in
+  CCDG tag names.
+- Reduce per-sample opcode dispatch in hot FORMAT shapes.
+- Expand direct final-buffer output only where BCF type selection remains
+  byte-identical or can cheaply roll back.
+- Keep the exact kernels as a performance oracle while iterating, then remove
+  or demote them once the dynamic executor catches up.
