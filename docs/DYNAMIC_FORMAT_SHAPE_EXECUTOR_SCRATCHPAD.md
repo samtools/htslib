@@ -338,6 +338,35 @@ noisier overall than the previous pass, but the important rows were:
 | Large multiallelic likelihood | 2.26 s | 2.07 s | dynamic ahead of exact |
 | Mixed row-local fallbacks | 1.72 s | 1.74 s | byte-clean fallback path |
 
+## 2026-04-29 No-Special Integer Encode
+
+Added a conservative `has_special` bit to planned integer range tracking.  The
+parser now records when it has observed `bcf_int32_missing` or
+`bcf_int32_vector_end`, including vector-end padding from short fixed-width
+vectors.  The known-range encoder uses that proof to skip per-value sentinel
+checks in int8/int16 output only when the row contains no missing/vector-end
+values.
+
+Safety rule: min/max alone never proves this.  Missing and vector-end sentinels
+can still select int8/int16 BCF encodings, so the fast loop is gated only by the
+parser-maintained flag.
+
+Small edge coverage now includes integer boundary rows spanning int8/int16/int32
+choices, plus existing rows with scalar missing values, short fixed vectors, and
+explicit vector missing values.
+
+Latest full large-corpus run:
+
+| Input | Exact user | Dynamic interp user | Notes |
+|---|---:|---:|---|
+| CCDG 10k | 1.74 s | 1.73 s | real likelihood parity |
+| 1000G chr22 full GT | 6.02 s | 6.09 s | GT-only path retained |
+| Large CCDG-like synthetic | 3.03 s | 2.98 s | dynamic slightly ahead |
+| Large multiallelic likelihood | 2.29 s | 2.12 s | dynamic ahead |
+| Mixed row-local fallbacks | 1.71 s | 1.72 s | byte-clean fallback path |
+
+All exact and interp outputs compared byte-identical to baseline.
+
 ## Open Questions
 
 - How much of the gap is parse-loop dispatch versus generic encode cost?

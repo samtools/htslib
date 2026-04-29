@@ -2930,8 +2930,8 @@ int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
     return 0;
 }
 
-static int bcf_enc_vint_known_range(kstring_t *s, int n, int32_t *a, int wsize,
-                                    int32_t min, int32_t max)
+static int bcf_enc_vint_known_range_special(kstring_t *s, int n, int32_t *a, int wsize,
+                                            int32_t min, int32_t max, int has_special)
 {
     int i;
     // min/max must match bcf_enc_vint()'s scan: missing and vector-end values
@@ -2948,10 +2948,15 @@ static int bcf_enc_vint_known_range(kstring_t *s, int n, int32_t *a, int wsize,
                 ks_resize(s, s->l + n) < 0)
                 return -1;
             uint8_t *p = (uint8_t *) s->s + s->l;
-            for (i = 0; i < n; ++i, p++) {
-                if ( a[i]==bcf_int32_vector_end )   *p = bcf_int8_vector_end;
-                else if ( a[i]==bcf_int32_missing ) *p = bcf_int8_missing;
-                else *p = a[i];
+            if (has_special) {
+                for (i = 0; i < n; ++i, p++) {
+                    if ( a[i]==bcf_int32_vector_end )   *p = bcf_int8_vector_end;
+                    else if ( a[i]==bcf_int32_missing ) *p = bcf_int8_missing;
+                    else *p = a[i];
+                }
+            } else {
+                for (i = 0; i < n; ++i, p++)
+                    *p = a[i];
             }
             s->l += n;
         } else if (max <= BCF_MAX_BT_INT16 && min >= BCF_MIN_BT_INT16) {
@@ -2960,14 +2965,22 @@ static int bcf_enc_vint_known_range(kstring_t *s, int n, int32_t *a, int wsize,
                 ks_resize(s, s->l + n * sizeof(int16_t)) < 0)
                 return -1;
             p = (uint8_t *) s->s + s->l;
-            for (i = 0; i < n; ++i)
-            {
-                int16_t x;
-                if ( a[i]==bcf_int32_vector_end ) x = bcf_int16_vector_end;
-                else if ( a[i]==bcf_int32_missing ) x = bcf_int16_missing;
-                else x = a[i];
-                i16_to_le(x, p);
-                p += sizeof(int16_t);
+            if (has_special) {
+                for (i = 0; i < n; ++i)
+                {
+                    int16_t x;
+                    if ( a[i]==bcf_int32_vector_end ) x = bcf_int16_vector_end;
+                    else if ( a[i]==bcf_int32_missing ) x = bcf_int16_missing;
+                    else x = a[i];
+                    i16_to_le(x, p);
+                    p += sizeof(int16_t);
+                }
+            } else {
+                for (i = 0; i < n; ++i)
+                {
+                    i16_to_le((int16_t)a[i], p);
+                    p += sizeof(int16_t);
+                }
             }
             s->l += n * sizeof(int16_t);
         } else {
@@ -2985,6 +2998,12 @@ static int bcf_enc_vint_known_range(kstring_t *s, int n, int32_t *a, int wsize,
     }
 
     return 0;
+}
+
+static int bcf_enc_vint_known_range(kstring_t *s, int n, int32_t *a, int wsize,
+                                    int32_t min, int32_t max)
+{
+    return bcf_enc_vint_known_range_special(s, n, a, wsize, min, max, 1);
 }
 
 #ifdef VCF_ALLOW_INT64
@@ -3375,6 +3394,7 @@ typedef struct {
 typedef struct {
 	int32_t min;
 	int32_t max;
+	int has_special;
 } vcf_plan_int_range_t;
 
 #if defined(__GNUC__)
@@ -3689,10 +3709,13 @@ VCF_PLAN_ALWAYS_INLINE void vcf_plan_int_range_init(vcf_plan_int_range_t *range)
 {
 	range->min = INT32_MAX;
 	range->max = INT32_MIN;
+	range->has_special = 0;
 }
 
 VCF_PLAN_ALWAYS_INLINE void vcf_plan_int_range_add(vcf_plan_int_range_t *range, int32_t val)
 {
+	if (val == bcf_int32_missing || val == bcf_int32_vector_end)
+		range->has_special = 1;
 	if (range->max < val)
 		range->max = val;
 	if (range->min > val && val > INT32_MIN + 1)
@@ -3780,6 +3803,8 @@ static int vcf_plan_parse_int_vector_counted_range(const char **sp, int32_t *out
 	nvals = i;
 	if (nread)
 		*nread = nvals;
+	if (i < width)
+		range->has_special = 1;
 	for (; i < width; i++)
 		out[i] = bcf_int32_vector_end;
 	if (*s == ',')
@@ -3827,6 +3852,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_counted_range(const char *
 	if (*s != ',') {
 		out[1] = bcf_int32_vector_end;
 		*sp = s;
+		range->has_special = 1;
 		if (nread)
 			*nread = 1;
 		return 0;
@@ -3893,6 +3919,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted_range(const char *
 		out[1] = bcf_int32_vector_end;
 		out[2] = bcf_int32_vector_end;
 		*sp = s;
+		range->has_special = 1;
 		if (nread)
 			*nread = 1;
 		return 0;
@@ -3903,6 +3930,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted_range(const char *
 	if (*s != ',') {
 		out[2] = bcf_int32_vector_end;
 		*sp = s;
+		range->has_special = 1;
 		if (nread)
 			*nread = 2;
 		return 0;
@@ -3930,6 +3958,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector4_counted_range(const char *
 		out[1] = bcf_int32_vector_end;
 		out[2] = bcf_int32_vector_end;
 		out[3] = bcf_int32_vector_end;
+		range->has_special = 1;
 		i = 1;
 		goto done;
 	}
@@ -3939,6 +3968,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector4_counted_range(const char *
 	if (*s != ',') {
 		out[2] = bcf_int32_vector_end;
 		out[3] = bcf_int32_vector_end;
+		range->has_special = 1;
 		i = 2;
 		goto done;
 	}
@@ -3947,6 +3977,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector4_counted_range(const char *
 		return -1;
 	if (*s != ',') {
 		out[3] = bcf_int32_vector_end;
+		range->has_special = 1;
 		i = 3;
 		goto done;
 	}
@@ -3994,6 +4025,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector6_counted_range(const char *
 		return -1;
 	goto done;
 fill:
+	range->has_special = 1;
 	for (j = i; j < 6; j++)
 		out[j] = bcf_int32_vector_end;
 done:
@@ -4051,6 +4083,7 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector10_counted_range(const char 
 		return -1;
 	goto done;
 fill:
+	range->has_special = 1;
 	for (j = i; j < 10; j++)
 		out[j] = bcf_int32_vector_end;
 done:
@@ -4494,8 +4527,9 @@ static int vcf_format_general_encode_row_ops_from_ranges(kstring_t *dst, kstring
 		           op->kind == VCF_FORMAT_ROW_INT2 ||
 		           op->kind == VCF_FORMAT_ROW_INT3 ||
 		           op->kind == VCF_FORMAT_ROW_INTN) {
-			if (bcf_enc_vint_known_range(dst, nsamples * op->width, (int32_t *)buf,
-			                             op->width, ranges[j].min, ranges[j].max) < 0)
+			if (bcf_enc_vint_known_range_special(dst, nsamples * op->width, (int32_t *)buf,
+			                                     op->width, ranges[j].min, ranges[j].max,
+			                                     ranges[j].has_special) < 0)
 				return -1;
 		} else {
 			if (bcf_enc_vint(dst, nsamples * op->width, (int32_t *)buf, op->width) < 0)
@@ -5100,13 +5134,16 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	v->n_sample = nsamples;
 	bcf_enc_int1(&v->indiv, row_ops[ad_idx].key);
 	nwords = nsamples * ad_w;
-	if (bcf_enc_vint_known_range(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max) < 0)
+	if (bcf_enc_vint_known_range_special(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max,
+	                                     ad_range.has_special) < 0)
 		goto error;
 	bcf_enc_int1(&v->indiv, row_ops[dp_idx].key);
-	if (bcf_enc_vint_known_range(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max) < 0)
+	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max,
+	                                     dp_range.has_special) < 0)
 		goto error;
 	bcf_enc_int1(&v->indiv, row_ops[gq_idx].key);
-	if (bcf_enc_vint_known_range(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max) < 0)
+	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max,
+	                                     gq_range.has_special) < 0)
 		goto error;
 	if (has_phase) {
 		bcf_enc_int1(&v->indiv, row_ops[str1_idx].key);
@@ -5120,7 +5157,8 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	}
 	bcf_enc_int1(&v->indiv, row_ops[pl_idx].key);
 	nwords = nsamples * pl_w;
-	if (bcf_enc_vint_known_range(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max) < 0)
+	if (bcf_enc_vint_known_range_special(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max,
+	                                     pl_range.has_special) < 0)
 		goto error;
 
 	vcf_format_plan_stats.hits++;
@@ -5627,13 +5665,16 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 	v->n_sample = nsamples;
 	    bcf_enc_int1(&v->indiv, plan->key_ad);
 	    nwords = nsamples * ad_w;
-	    if (bcf_enc_vint_known_range(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max) < 0)
+	    if (bcf_enc_vint_known_range_special(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max,
+	                                         ad_range.has_special) < 0)
 	        return -1;
 	    bcf_enc_int1(&v->indiv, plan->key_dp);
-	    if (bcf_enc_vint_known_range(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max) < 0)
+	    if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max,
+	                                         dp_range.has_special) < 0)
 	        return -1;
 	bcf_enc_int1(&v->indiv, plan->key_gq);
-	if (bcf_enc_vint_known_range(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max) < 0)
+	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max,
+	                                     gq_range.has_special) < 0)
 		return -1;
 	if (plan->has_phase) {
 		bcf_enc_int1(&v->indiv, plan->key_pgt);
@@ -5649,7 +5690,8 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 	}
 	bcf_enc_int1(&v->indiv, plan->key_pl);
 	    nwords = nsamples * pl_w;
-	    if (bcf_enc_vint_known_range(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max) < 0)
+	    if (bcf_enc_vint_known_range_special(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max,
+	                                         pl_range.has_special) < 0)
 	        return -1;
 
     vcf_format_plan_stats.hits++;
