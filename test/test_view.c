@@ -42,6 +42,8 @@ extern void hts_vcf_simd_probe_stats(uint64_t *attempts, uint64_t *hits,
 extern void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
                                       uint64_t *fallback,
                                       uint64_t *parsed_samples);
+extern void hts_vcf_format_plan_shape_stats(uint64_t *attempts, uint64_t *hits,
+                                            uint64_t *fallback);
 
 struct opts {
     char *fn_ref;
@@ -454,6 +456,15 @@ int main(int argc, char *argv[])
                 (unsigned long long) attempts, (unsigned long long) hits,
                 (unsigned long long) fallback,
                 (unsigned long long) parsed_samples);
+    }
+
+    if (getenv("HTS_VCF_FORMAT_PLAN_SHAPE_STATS")) {
+        uint64_t attempts = 0, hits = 0, fallback = 0;
+        hts_vcf_format_plan_shape_stats(&attempts, &hits, &fallback);
+        fprintf(stderr,
+                "vcf-format-likelihood-shape attempts=%llu hits=%llu fallback=%llu\n",
+                (unsigned long long) attempts, (unsigned long long) hits,
+                (unsigned long long) fallback);
     }
 
     if (fclose(stdout) != 0 && errno != EBADF) {

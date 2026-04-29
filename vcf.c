@@ -3207,6 +3207,9 @@ typedef struct {
 } vcf_format_plan_stats_t;
 
 static vcf_format_plan_stats_t vcf_format_plan_stats;
+static uint64_t vcf_format_likelihood_shape_attempts;
+static uint64_t vcf_format_likelihood_shape_hits;
+static uint64_t vcf_format_likelihood_shape_fallback;
 
 void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
                                uint64_t *fallback, uint64_t *parsed_samples)
@@ -3215,6 +3218,14 @@ void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
     if (hits) *hits = vcf_format_plan_stats.hits;
     if (fallback) *fallback = vcf_format_plan_stats.fallback;
     if (parsed_samples) *parsed_samples = vcf_format_plan_stats.parsed_samples;
+}
+
+void hts_vcf_format_plan_shape_stats(uint64_t *attempts, uint64_t *hits,
+                                     uint64_t *fallback)
+{
+    if (attempts) *attempts = vcf_format_likelihood_shape_attempts;
+    if (hits) *hits = vcf_format_likelihood_shape_hits;
+    if (fallback) *fallback = vcf_format_likelihood_shape_fallback;
 }
 
 static int vcf_format_plan_mode(void)
@@ -3459,9 +3470,13 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
         plan->ops[plan->n_ops].vl_type = bcf_hdr_id2length(h, BCF_HL_FMT, key);
         if (!plan->ops[plan->n_ops].is_gt) {
             int vl = plan->ops[plan->n_ops].vl_type;
-            if (htype == BCF_HT_STR ||
-                (vl != BCF_VL_FIXED && vl != BCF_VL_A && vl != BCF_VL_R && vl != BCF_VL_G))
+            if (htype == BCF_HT_STR) {
+                if (plan->ops[plan->n_ops].number != 1)
+                    plan->strict_supported = 0;
+            } else if (vl != BCF_VL_FIXED && vl != BCF_VL_A &&
+                       vl != BCF_VL_R && vl != BCF_VL_G) {
                 plan->strict_supported = 0;
+            }
         }
         plan->n_ops++;
     }
@@ -4303,12 +4318,187 @@ static int vcf_format_general_fixed_numeric_supported(const vcf_format_row_op_t 
 		case VCF_FORMAT_ROW_INTN:
 		case VCF_FORMAT_ROW_FLOAT1:
 		case VCF_FORMAT_ROW_FLOATN:
+		case VCF_FORMAT_ROW_STR:
 			break;
 		default:
 			return 0;
 		}
 	}
 	return 1;
+}
+
+static inline int vcf_format_row_is_int(const vcf_format_row_op_t *op)
+{
+	return op->kind == VCF_FORMAT_ROW_INT1 ||
+	       op->kind == VCF_FORMAT_ROW_INT2 ||
+	       op->kind == VCF_FORMAT_ROW_INT3 ||
+	       op->kind == VCF_FORMAT_ROW_INTN;
+}
+
+static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
+                                            const vcf_format_general_plan_t *plan,
+                                            bcf1_t *v, char *q, int *widths)
+{
+	const char *cur, *end;
+	int has_string = 0, sample, j, nsamples = bcf_hdr_nsamples(h);
+
+	for (j = 0; j < plan->n_ops; j++) {
+		const vcf_format_op_t *op = &plan->ops[j];
+
+		if (!op->is_gt && op->htype == BCF_HT_STR) {
+			if (op->number != 1)
+				return -4;
+			widths[j] = 0;
+			has_string = 1;
+		} else {
+			widths[j] = vcf_format_general_expected_width(op, v);
+			if (widths[j] <= 0 || widths[j] > 64)
+				return -4;
+		}
+	}
+
+	if (!has_string)
+		return 0;
+
+	cur = q + 1;
+	end = s->s + s->l;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		for (j = 0; j < plan->n_ops; j++) {
+			const vcf_format_op_t *op = &plan->ops[j];
+			const char *field = cur;
+
+			while (cur < end && *cur && *cur != ':' && *cur != '\t')
+				cur++;
+			if (!op->is_gt && op->htype == BCF_HT_STR) {
+				int w = cur - field;
+				if (j > 0)
+					w++;
+				if (w <= 0)
+					w = 1;
+				if (widths[j] < w)
+					widths[j] = w;
+			}
+
+			if (j + 1 < plan->n_ops) {
+				if (*cur != ':')
+					return -4;
+				cur++;
+			} else {
+				if (*cur == '\t')
+					cur++;
+				else if (*cur == '\0' || cur >= end)
+					;
+				else
+					return -4;
+			}
+		}
+	}
+	if (sample != nsamples)
+		return -4;
+	for (j = 0; j < plan->n_ops; j++)
+		if (!plan->ops[j].is_gt && plan->ops[j].htype == BCF_HT_STR &&
+		    widths[j] <= 0)
+			widths[j] = 1;
+
+	return 0;
+}
+
+static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h,
+                                                const vcf_format_general_plan_t *plan,
+                                                bcf1_t *v, char *q, int *widths)
+{
+	const char *cur, *end;
+	int ad_w, pl_w, idx, sample, j, nsamples = bcf_hdr_nsamples(h);
+	int str1_idx = -1, str2_idx = -1;
+
+	if (plan->n_ops != 5 && plan->n_ops != 6 &&
+	    plan->n_ops != 7 && plan->n_ops != 8)
+		return -4;
+	if (!plan->ops[0].is_gt)
+		return -4;
+	if (v->n_allele < 1 || v->n_allele > 8)
+		return -4;
+	ad_w = v->n_allele;
+	pl_w = v->n_allele * (v->n_allele + 1) / 2;
+	if (pl_w < 1 || pl_w > 36)
+		return -4;
+
+	for (j = 0; j < plan->n_ops; j++)
+		widths[j] = 0;
+	widths[0] = 2;
+
+	idx = 1;
+	if (idx < plan->n_ops && plan->ops[idx].htype == BCF_HT_REAL &&
+	    plan->ops[idx].number == 1)
+		widths[idx++] = 1;
+	if (idx + 3 >= plan->n_ops)
+		return -4;
+	if (plan->ops[idx].htype != BCF_HT_INT)
+		return -4;
+	widths[idx++] = ad_w;
+	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
+		return -4;
+	widths[idx++] = 1;
+	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
+		return -4;
+	widths[idx++] = 1;
+	if (plan->n_ops - idx == 3) {
+		if (plan->ops[idx].htype != BCF_HT_STR || plan->ops[idx].number != 1 ||
+		    plan->ops[idx + 1].htype != BCF_HT_STR || plan->ops[idx + 1].number != 1)
+			return -4;
+		str1_idx = idx++;
+		str2_idx = idx++;
+	} else if (plan->n_ops - idx != 1) {
+		return -4;
+	}
+	if (plan->ops[idx].htype != BCF_HT_INT)
+		return -4;
+	widths[idx++] = pl_w;
+	if (idx != plan->n_ops)
+		return -4;
+
+	if (str1_idx < 0)
+		return 0;
+
+	cur = q + 1;
+	end = s->s + s->l;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		for (j = 0; j < plan->n_ops; j++) {
+			const char *field = cur;
+
+			while (cur < end && *cur && *cur != ':' && *cur != '\t')
+				cur++;
+			if (j == str1_idx || j == str2_idx) {
+				int w = cur - field;
+				if (j > 0)
+					w++;
+				if (w <= 0)
+					w = 1;
+				if (widths[j] < w)
+					widths[j] = w;
+			}
+			if (j + 1 < plan->n_ops) {
+				if (*cur != ':')
+					return -4;
+				cur++;
+			} else {
+				if (*cur == '\t')
+					cur++;
+				else if (*cur == '\0' || cur >= end)
+					;
+				else
+					return -4;
+			}
+		}
+	}
+	if (sample != nsamples)
+		return -4;
+	if (widths[str1_idx] <= 0)
+		widths[str1_idx] = 1;
+	if (widths[str2_idx] <= 0)
+		widths[str2_idx] = 1;
+
+	return 0;
 }
 
 static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t *h,
@@ -4426,6 +4616,10 @@ static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t 
 					goto fallback;
 				n = vcf_plan_float_vector_count((float *)buf, op->width);
 				break;
+			case VCF_FORMAT_ROW_STR:
+				if (vcf_plan_copy_string(&cur, (char *)buf, op->width) < 0)
+					goto fallback;
+				break;
 			default:
 				goto fallback;
 			}
@@ -4469,6 +4663,252 @@ error:
 	return -1;
 }
 
+static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
+                                                     const bcf_hdr_t *h,
+                                                     bcf1_t *v,
+                                                     const vcf_format_general_plan_t *plan,
+                                                     char *q,
+                                                     vcf_format_row_op_t *row_ops)
+{
+	kstring_t *mem = (kstring_t*)&h->mem;
+	int nsamples = bcf_hdr_nsamples(h);
+	int ad_w, pl_w, sample, idx, ad_idx, dp_idx, gq_idx, pl_idx;
+	int has_float = 0, has_phase = 0, float_idx = -1, str1_idx = -1, str2_idx = -1;
+	int max_ad_count = 0, max_pl_count = 0, nwords;
+	vcf_plan_int_range_t ad_range, dp_range, gq_range, pl_range;
+	size_t indiv_l0 = v->indiv.l;
+	size_t gt8_off, float_le_off = 0;
+	size_t ad_off, dp_off, gq_off, str1_off = 0, str2_off = 0, pl_off, total_bytes;
+	uint8_t *gt8, *float_le = NULL;
+	int32_t *ad, *dp, *gq, *pl;
+	char *str1 = NULL, *str2 = NULL;
+	const char *cur, *end;
+
+	vcf_format_likelihood_shape_attempts++;
+	if (plan->n_ops != 5 && plan->n_ops != 6 &&
+	    plan->n_ops != 7 && plan->n_ops != 8)
+		return -4;
+	if (row_ops[0].kind != VCF_FORMAT_ROW_GT2)
+		return -4;
+	if (v->n_allele < 1 || v->n_allele > 8)
+		return -4;
+
+	ad_w = v->n_allele;
+	pl_w = v->n_allele * (v->n_allele + 1) / 2;
+	if (pl_w < 1 || pl_w > 36)
+		return -4;
+
+	idx = 1;
+	if (idx < plan->n_ops && row_ops[idx].kind == VCF_FORMAT_ROW_FLOAT1) {
+		has_float = 1;
+		float_idx = idx++;
+	}
+	if (idx + 3 >= plan->n_ops)
+		return -4;
+	ad_idx = idx++;
+	dp_idx = idx++;
+	gq_idx = idx++;
+	if (plan->n_ops - idx == 3) {
+		if (row_ops[idx].kind != VCF_FORMAT_ROW_STR ||
+		    row_ops[idx + 1].kind != VCF_FORMAT_ROW_STR)
+			return -4;
+		has_phase = 1;
+		str1_idx = idx++;
+		str2_idx = idx++;
+	} else if (plan->n_ops - idx != 1) {
+		return -4;
+	}
+	pl_idx = idx++;
+	if (idx != plan->n_ops)
+		return -4;
+
+	if (!vcf_format_row_is_int(&row_ops[ad_idx]) ||
+	    row_ops[ad_idx].width != ad_w ||
+	    row_ops[dp_idx].kind != VCF_FORMAT_ROW_INT1 ||
+	    row_ops[gq_idx].kind != VCF_FORMAT_ROW_INT1 ||
+	    !vcf_format_row_is_int(&row_ops[pl_idx]) ||
+	    row_ops[pl_idx].width != pl_w)
+		return -4;
+
+	vcf_plan_int_range_init(&ad_range);
+	vcf_plan_int_range_init(&dp_range);
+	vcf_plan_int_range_init(&gq_range);
+	vcf_plan_int_range_init(&pl_range);
+
+	bcf_enc_int1(&v->indiv, row_ops[0].key);
+	if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
+	    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
+		goto error;
+	gt8_off = v->indiv.l;
+	v->indiv.l += (size_t)nsamples * 2;
+	if (has_float) {
+		bcf_enc_int1(&v->indiv, row_ops[float_idx].key);
+		if (bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT) < 0 ||
+		    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * sizeof(float)) < 0)
+			goto error;
+		float_le_off = v->indiv.l;
+		v->indiv.l += (size_t)nsamples * sizeof(float);
+	}
+	gt8 = (uint8_t *)v->indiv.s + gt8_off;
+	if (has_float)
+		float_le = (uint8_t *)v->indiv.s + float_le_off;
+
+	mem->l = 0;
+	if (align_mem(mem) < 0)
+		goto error;
+	total_bytes = (size_t) nsamples * (ad_w + 1 + 1 + pl_w) * sizeof(int32_t);
+	if (has_phase)
+		total_bytes += (size_t) nsamples *
+		               (row_ops[str1_idx].width + row_ops[str2_idx].width);
+	if (total_bytes > INT_MAX)
+		goto error;
+	if (ks_resize(mem, mem->l + total_bytes) < 0)
+		goto error;
+
+	ad_off = mem->l; mem->l += (size_t) nsamples * ad_w * sizeof(int32_t);
+	dp_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
+	gq_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
+	if (has_phase) {
+		str1_off = mem->l; mem->l += (size_t) nsamples * row_ops[str1_idx].width;
+		str2_off = mem->l; mem->l += (size_t) nsamples * row_ops[str2_idx].width;
+	}
+	pl_off = mem->l; mem->l += (size_t) nsamples * pl_w * sizeof(int32_t);
+
+	ad = (int32_t *) (mem->s + ad_off);
+	dp = (int32_t *) (mem->s + dp_off);
+	gq = (int32_t *) (mem->s + gq_off);
+	if (has_phase) {
+		str1 = mem->s + str1_off;
+		str2 = mem->s + str2_off;
+	}
+	pl = (int32_t *) (mem->s + pl_off);
+
+	cur = q + 1;
+	end = s->s + s->l;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		int nread;
+
+		if (vcf_plan_gt2_u8(&cur, &gt8[sample * 2]) < 0)
+			goto fallback;
+		if (vcf_plan_expect_sep(&cur, ':') < 0)
+			goto fallback;
+		if (has_float) {
+			float f;
+			if (vcf_plan_float_value(&cur, &f) < 0)
+				goto fallback;
+			float_to_le(f, float_le + (size_t)sample * sizeof(float));
+			if (vcf_plan_expect_sep(&cur, ':') < 0)
+				goto fallback;
+		}
+		if (ad_w == 2) {
+			if (vcf_plan_parse_int_vector2_counted_range(&cur, &ad[sample * 2], &nread, &ad_range) < 0)
+				goto fallback;
+		} else if (ad_w == 3) {
+			if (vcf_plan_parse_int_vector3_counted_range(&cur, &ad[sample * 3], &nread, &ad_range) < 0)
+				goto fallback;
+		} else if (vcf_plan_parse_int_vector_counted_range(&cur, &ad[sample * ad_w], ad_w, &nread, &ad_range) < 0) {
+			goto fallback;
+		}
+		if (max_ad_count < nread)
+			max_ad_count = nread;
+		if (vcf_plan_expect_sep(&cur, ':') < 0)
+			goto fallback;
+		if (vcf_plan_int_value_range(&cur, &dp[sample], &dp_range) < 0)
+			goto fallback;
+		if (vcf_plan_expect_sep(&cur, ':') < 0)
+			goto fallback;
+		if (vcf_plan_int_value_range(&cur, &gq[sample], &gq_range) < 0)
+			goto fallback;
+		if (vcf_plan_expect_sep(&cur, ':') < 0)
+			goto fallback;
+		if (has_phase) {
+			if (vcf_plan_copy_string(&cur, &str1[sample * row_ops[str1_idx].width],
+			                         row_ops[str1_idx].width) < 0)
+				goto fallback;
+			if (vcf_plan_expect_sep(&cur, ':') < 0)
+				goto fallback;
+			if (vcf_plan_copy_string(&cur, &str2[sample * row_ops[str2_idx].width],
+			                         row_ops[str2_idx].width) < 0)
+				goto fallback;
+			if (vcf_plan_expect_sep(&cur, ':') < 0)
+				goto fallback;
+		}
+		if (pl_w == 3) {
+			if (vcf_plan_parse_int_vector3_counted_range(&cur, &pl[sample * 3], &nread, &pl_range) < 0)
+				goto fallback;
+		} else if (vcf_plan_parse_int_vector_counted_range(&cur, &pl[sample * pl_w], pl_w, &nread, &pl_range) < 0) {
+			goto fallback;
+		}
+		if (max_pl_count < nread)
+			max_pl_count = nread;
+		if (*cur == '\t')
+			cur++;
+		else if (*cur == '\0' || cur >= end)
+			;
+		else
+			goto fallback;
+	}
+	if (sample != nsamples)
+		goto fallback;
+	if (max_ad_count != ad_w || max_pl_count != pl_w)
+		goto fallback;
+
+	v->n_fmt = plan->n_ops;
+	v->n_sample = nsamples;
+	bcf_enc_int1(&v->indiv, row_ops[ad_idx].key);
+	nwords = nsamples * ad_w;
+	if (bcf_enc_vint_known_range(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max) < 0)
+		goto error;
+	bcf_enc_int1(&v->indiv, row_ops[dp_idx].key);
+	if (bcf_enc_vint_known_range(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max) < 0)
+		goto error;
+	bcf_enc_int1(&v->indiv, row_ops[gq_idx].key);
+	if (bcf_enc_vint_known_range(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max) < 0)
+		goto error;
+	if (has_phase) {
+		bcf_enc_int1(&v->indiv, row_ops[str1_idx].key);
+		if (bcf_enc_size(&v->indiv, row_ops[str1_idx].width, BCF_BT_CHAR) < 0 ||
+		    kputsn(str1, (size_t) nsamples * row_ops[str1_idx].width, &v->indiv) < 0)
+			goto error;
+		bcf_enc_int1(&v->indiv, row_ops[str2_idx].key);
+		if (bcf_enc_size(&v->indiv, row_ops[str2_idx].width, BCF_BT_CHAR) < 0 ||
+		    kputsn(str2, (size_t) nsamples * row_ops[str2_idx].width, &v->indiv) < 0)
+			goto error;
+	}
+	bcf_enc_int1(&v->indiv, row_ops[pl_idx].key);
+	nwords = nsamples * pl_w;
+	if (bcf_enc_vint_known_range(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max) < 0)
+		goto error;
+
+	vcf_format_plan_stats.hits++;
+	vcf_format_plan_stats.parsed_samples += nsamples;
+	vcf_format_likelihood_shape_hits++;
+	return 0;
+
+fallback:
+	v->indiv.l = indiv_l0;
+	vcf_format_likelihood_shape_fallback++;
+	return -4;
+error:
+	v->indiv.l = indiv_l0;
+	return -1;
+}
+
+static int vcf_parse_format_general_likelihood_strict(kstring_t *s,
+                                                      const bcf_hdr_t *h,
+                                                      bcf1_t *v,
+                                                      const vcf_format_general_plan_t *plan,
+                                                      char *q)
+{
+	int widths[MAX_N_FMT];
+	vcf_format_row_op_t row_ops[MAX_N_FMT];
+
+	if (vcf_format_general_likelihood_widths(s, h, plan, v, q, widths) < 0)
+		return -4;
+	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
+	return vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops);
+}
+
 static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
                                            bcf1_t *v,
                                            const vcf_format_general_plan_t *plan,
@@ -4478,17 +4918,18 @@ static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
 	int widths[MAX_N_FMT], max_counts[MAX_N_FMT];
 	vcf_format_row_op_t row_ops[MAX_N_FMT];
 	vcf_plan_int_range_t ranges[MAX_N_FMT];
-	int nsamples = bcf_hdr_nsamples(h), sample, j, vcf44;
+	int nsamples = bcf_hdr_nsamples(h), sample, j, vcf44, ret;
 	const char *cur, *end;
 
+	if (vcf_format_general_strict_widths(s, h, plan, v, q, widths) < 0)
+		return -4;
 	for (j = 0; j < plan->n_ops; j++) {
-		widths[j] = vcf_format_general_expected_width(&plan->ops[j], v);
-		if (widths[j] <= 0 || widths[j] > 64)
-			return -4;
 		max_counts[j] = 0;
 		vcf_plan_int_range_init(&ranges[j]);
 	}
 	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
+	if ((ret = vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops)) != -4)
+		return ret;
 	if (vcf_format_general_fixed_numeric_supported(row_ops, plan->n_ops))
 		return vcf_parse_format_general_fixed_numeric(s, h, v, plan, q, row_ops);
 
@@ -4594,7 +5035,7 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	kstring_t *mem;
 	int widths[MAX_N_FMT];
 	vcf_format_row_op_t row_ops[MAX_N_FMT];
-	int nsamples, sample, j, vcf44, ret;
+	int nsamples, sample, j, vcf44, ret, strict_enabled;
 	const char *cur, *end;
 
 	plan = vcf_format_general_plan_get(h, p);
@@ -4608,8 +5049,17 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	nsamples = bcf_hdr_nsamples(h);
 	if (!nsamples)
 		return 0;
-	if (plan->strict_supported &&
-	    vcf_format_fast_guard_enabled(&plan->strict_guard)) {
+	strict_enabled = vcf_format_fast_guard_enabled(&plan->strict_guard);
+	if (strict_enabled) {
+		ret = vcf_parse_format_general_likelihood_strict(s, h, v, plan, q);
+		if (ret == 0) {
+			vcf_format_fast_guard_success(&plan->strict_guard);
+			return ret;
+		}
+		if (ret != -4)
+			return ret;
+	}
+	if (plan->strict_supported && strict_enabled) {
 		ret = vcf_parse_format_general_strict(s, h, v, plan, q);
 		if (ret == 0) {
 			vcf_format_fast_guard_success(&plan->strict_guard);
