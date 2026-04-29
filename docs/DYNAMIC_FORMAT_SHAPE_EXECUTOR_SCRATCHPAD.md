@@ -367,6 +367,30 @@ Latest full large-corpus run:
 
 All exact and interp outputs compared byte-identical to baseline.
 
+## 2026-04-29 Likelihood Row-Op Elision
+
+Removed `row_ops` construction from the dynamic likelihood strict path.  The
+likelihood executor now consumes cached plan indices and row-local widths
+directly; generic strict still builds row ops only after the likelihood attempt
+fails and it needs fixed-numeric/general parsing.
+
+This keeps row-local validation unchanged:
+
+- allele count remains limited per row,
+- AD/PL counts still must prove the expected width,
+- phase string widths are still measured for the current row,
+- malformed GT/separators/sample counts still fall back.
+
+Latest full large-corpus run stayed byte-identical to baseline.  Highlights:
+
+| Input | Exact user | Dynamic interp user | Notes |
+|---|---:|---:|---|
+| CCDG 10k | 1.73 s | 1.70 s | real likelihood slightly ahead |
+| Large CCDG-like synthetic | 2.77 s | 2.74 s | dynamic slightly ahead |
+| Large multiallelic likelihood | 2.13 s | 1.92 s | dynamic ahead |
+| Variable phase widths | 2.04 s | 2.05 s | phase widths still row-local |
+| Mixed row-local fallbacks | 1.58 s | 1.59 s | fallback path byte-clean |
+
 ## Open Questions
 
 - How much of the gap is parse-loop dispatch versus generic encode cost?

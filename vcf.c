@@ -4946,7 +4946,7 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
                                                      bcf1_t *v,
                                                      const vcf_format_general_plan_t *plan,
                                                      char *q,
-                                                     vcf_format_row_op_t *row_ops)
+                                                     int *widths)
 {
 	kstring_t *mem = (kstring_t*)&h->mem;
 	int nsamples = bcf_hdr_nsamples(h);
@@ -4967,7 +4967,7 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 		return -4;
 
 	vcf_format_likelihood_shape_attempts++;
-	if (row_ops[0].kind != VCF_FORMAT_ROW_GT2)
+	if (widths[0] != 2)
 		return -4;
 	if (v->n_allele < 1 || v->n_allele > 8)
 		return -4;
@@ -4987,15 +4987,13 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	str2_idx = plan->likelihood_str2_idx;
 	pl_idx = plan->likelihood_pl_idx;
 
-	if (!vcf_format_row_is_int(&row_ops[ad_idx]) ||
-	    row_ops[ad_idx].width != ad_w ||
-	    row_ops[dp_idx].kind != VCF_FORMAT_ROW_INT1 ||
-	    row_ops[gq_idx].kind != VCF_FORMAT_ROW_INT1 ||
-	    (has_float && row_ops[float_idx].kind != VCF_FORMAT_ROW_FLOAT1) ||
-	    (has_phase && (row_ops[str1_idx].kind != VCF_FORMAT_ROW_STR ||
-	                   row_ops[str2_idx].kind != VCF_FORMAT_ROW_STR)) ||
-	    !vcf_format_row_is_int(&row_ops[pl_idx]) ||
-	    row_ops[pl_idx].width != pl_w)
+	if (widths[ad_idx] != ad_w ||
+	    widths[dp_idx] != 1 ||
+	    widths[gq_idx] != 1 ||
+	    (has_float && widths[float_idx] != 1) ||
+	    (has_phase && (widths[str1_idx] <= 0 ||
+	                   widths[str2_idx] <= 0)) ||
+	    widths[pl_idx] != pl_w)
 		return -4;
 
 	vcf_plan_int_range_init(&ad_range);
@@ -5003,14 +5001,14 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	vcf_plan_int_range_init(&gq_range);
 	vcf_plan_int_range_init(&pl_range);
 
-	bcf_enc_int1(&v->indiv, row_ops[0].key);
+	bcf_enc_int1(&v->indiv, plan->ops[0].key);
 	if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
 	    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
 		goto error;
 	gt8_off = v->indiv.l;
 	v->indiv.l += (size_t)nsamples * 2;
 	if (has_float) {
-		bcf_enc_int1(&v->indiv, row_ops[float_idx].key);
+		bcf_enc_int1(&v->indiv, plan->ops[float_idx].key);
 		if (bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT) < 0 ||
 		    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * sizeof(float)) < 0)
 			goto error;
@@ -5027,7 +5025,7 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	total_bytes = (size_t) nsamples * (ad_w + 1 + 1 + pl_w) * sizeof(int32_t);
 	if (has_phase)
 		total_bytes += (size_t) nsamples *
-		               (row_ops[str1_idx].width + row_ops[str2_idx].width);
+		               (widths[str1_idx] + widths[str2_idx]);
 	if (total_bytes > INT_MAX)
 		goto error;
 	if (ks_resize(mem, mem->l + total_bytes) < 0)
@@ -5037,8 +5035,8 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	dp_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
 	gq_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
 	if (has_phase) {
-		str1_off = mem->l; mem->l += (size_t) nsamples * row_ops[str1_idx].width;
-		str2_off = mem->l; mem->l += (size_t) nsamples * row_ops[str2_idx].width;
+		str1_off = mem->l; mem->l += (size_t) nsamples * widths[str1_idx];
+		str2_off = mem->l; mem->l += (size_t) nsamples * widths[str2_idx];
 	}
 	pl_off = mem->l; mem->l += (size_t) nsamples * pl_w * sizeof(int32_t);
 
@@ -5093,13 +5091,13 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 		if (vcf_plan_expect_sep(&cur, ':') < 0)
 			goto fallback;
 		if (has_phase) {
-			if (vcf_plan_copy_string(&cur, &str1[sample * row_ops[str1_idx].width],
-			                         row_ops[str1_idx].width) < 0)
+			if (vcf_plan_copy_string(&cur, &str1[sample * widths[str1_idx]],
+			                         widths[str1_idx]) < 0)
 				goto fallback;
 			if (vcf_plan_expect_sep(&cur, ':') < 0)
 				goto fallback;
-			if (vcf_plan_copy_string(&cur, &str2[sample * row_ops[str2_idx].width],
-			                         row_ops[str2_idx].width) < 0)
+			if (vcf_plan_copy_string(&cur, &str2[sample * widths[str2_idx]],
+			                         widths[str2_idx]) < 0)
 				goto fallback;
 			if (vcf_plan_expect_sep(&cur, ':') < 0)
 				goto fallback;
@@ -5132,30 +5130,30 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 
 	v->n_fmt = plan->n_ops;
 	v->n_sample = nsamples;
-	bcf_enc_int1(&v->indiv, row_ops[ad_idx].key);
+	bcf_enc_int1(&v->indiv, plan->ops[ad_idx].key);
 	nwords = nsamples * ad_w;
 	if (bcf_enc_vint_known_range_special(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max,
 	                                     ad_range.has_special) < 0)
 		goto error;
-	bcf_enc_int1(&v->indiv, row_ops[dp_idx].key);
+	bcf_enc_int1(&v->indiv, plan->ops[dp_idx].key);
 	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max,
 	                                     dp_range.has_special) < 0)
 		goto error;
-	bcf_enc_int1(&v->indiv, row_ops[gq_idx].key);
+	bcf_enc_int1(&v->indiv, plan->ops[gq_idx].key);
 	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max,
 	                                     gq_range.has_special) < 0)
 		goto error;
 	if (has_phase) {
-		bcf_enc_int1(&v->indiv, row_ops[str1_idx].key);
-		if (bcf_enc_size(&v->indiv, row_ops[str1_idx].width, BCF_BT_CHAR) < 0 ||
-		    kputsn(str1, (size_t) nsamples * row_ops[str1_idx].width, &v->indiv) < 0)
+		bcf_enc_int1(&v->indiv, plan->ops[str1_idx].key);
+		if (bcf_enc_size(&v->indiv, widths[str1_idx], BCF_BT_CHAR) < 0 ||
+		    kputsn(str1, (size_t) nsamples * widths[str1_idx], &v->indiv) < 0)
 			goto error;
-		bcf_enc_int1(&v->indiv, row_ops[str2_idx].key);
-		if (bcf_enc_size(&v->indiv, row_ops[str2_idx].width, BCF_BT_CHAR) < 0 ||
-		    kputsn(str2, (size_t) nsamples * row_ops[str2_idx].width, &v->indiv) < 0)
+		bcf_enc_int1(&v->indiv, plan->ops[str2_idx].key);
+		if (bcf_enc_size(&v->indiv, widths[str2_idx], BCF_BT_CHAR) < 0 ||
+		    kputsn(str2, (size_t) nsamples * widths[str2_idx], &v->indiv) < 0)
 			goto error;
 	}
-	bcf_enc_int1(&v->indiv, row_ops[pl_idx].key);
+	bcf_enc_int1(&v->indiv, plan->ops[pl_idx].key);
 	nwords = nsamples * pl_w;
 	if (bcf_enc_vint_known_range_special(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max,
 	                                     pl_range.has_special) < 0)
@@ -5182,16 +5180,14 @@ static int vcf_parse_format_general_likelihood_strict(kstring_t *s,
                                                       char *q, int *attempted_shape)
 {
 	int widths[MAX_N_FMT];
-	vcf_format_row_op_t row_ops[MAX_N_FMT];
 
 	if (attempted_shape)
 		*attempted_shape = 0;
 	if (vcf_format_general_likelihood_widths(s, h, plan, v, q, widths) < 0)
 		return -4;
-	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
 	if (attempted_shape)
 		*attempted_shape = 1;
-	return vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops);
+	return vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, widths);
 }
 
 static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
@@ -5212,10 +5208,10 @@ static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
 		max_counts[j] = 0;
 		vcf_plan_int_range_init(&ranges[j]);
 	}
-	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
 	if (try_likelihood && plan->likelihood_supported &&
-	    (ret = vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops)) != -4)
+	    (ret = vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, widths)) != -4)
 		return ret;
+	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
 	if (vcf_format_general_fixed_numeric_supported(row_ops, plan->n_ops))
 		return vcf_parse_format_general_fixed_numeric(s, h, v, plan, q, row_ops);
 
