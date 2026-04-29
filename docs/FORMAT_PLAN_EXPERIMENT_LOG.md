@@ -118,6 +118,9 @@ Several hardening passes made the composable MVP safer and faster:
 - routed generic `INTN` widths 4, 6, and 10 through fixed-width counted parsers;
 - removed unused dynamic likelihood-shape scaffolding;
 - added underfilled vector compaction for fixed-width vector fields.
+- replaced the original process-global 16-entry FORMAT plan cache with a
+  header-owned, generation-aware, dynamically sized cache that stores both
+  supported and unsupported compile results.
 
 Result: retained.  The dynamic path became broader and reduced unnecessary
 whole-row fallback while preserving byte-identical output.
@@ -157,6 +160,67 @@ Large-corpus post-trim user-time highlights:
 | Large CCDG-like synthetic | 4.24 s | 3.78 s | modest win |
 | Large float/string | 2.93 s | 2.97 s | near parity/slightly slower |
 | Two-string float negative | 2.28 s | 2.56 s | slower |
+
+## Header-Owned Cache Hardening
+
+The static FORMAT plan cache was replaced with private `bcf_hdr_aux_t` state.
+The hardened cache:
+
+- grows from 16 to 128 entries;
+- stores literal FORMAT strings on the heap, so long schemas are no longer
+  rejected by the old fixed key buffer;
+- caches unsupported compile results to avoid repeated work;
+- clears on `bcf_hdr_sync()` and records a private header generation;
+- declines fast planning while `h->dirty` is set.
+
+Result: retained.  `test/format-plan-cache.vcf` now asserts 21/21 planned hits
+across more than 16 distinct FORMAT schemas, including one long schema.  The
+new `test/test_format_plan_cache` helper verifies that a plan compiled before a
+header metadata change is not reused after `bcf_hdr_sync()`.  The large corpus
+remained byte-identical after the rewrite, with the same broad performance
+profile: 1000G chr22 GT user time at 26.06 s baseline versus 7.96 s planned,
+and CCDG 10k at 2.55 s baseline versus 2.24 s planned.
+
+## Profitability Gate For String/Float Shapes
+
+The expanded threaded benchmark exposed two regressions:
+
+- `GT:GL:FT:DP:GQ`
+- `GT:FT:PID:GL:DP`
+
+Both schemas were syntactically supported and had zero row-local fallback, but
+they were dominated by measured strings plus `Number=G` float vectors.  The
+dynamic path had to measure string widths over every sample before parsing, then
+still use the general float conversion path, while there were no integer vectors
+to amortize that setup.
+
+Result: retained.  The compiler now negative-caches these low-profit schemas and
+sends only those FORMAT rows to the production parser.  The full threaded corpus
+remained byte-identical.  The two-string float case improved from a consistent
+slowdown, roughly 0.86-0.89x, to parity at 1.00-1.01x.  Other integer-heavy
+likelihood rows stayed on the dynamic path.
+
+## Selected-Sample Support
+
+The planner originally rejected `h->keep_samples` because sample subsetting
+changes the relationship between input sample columns and output BCF sample
+slots.  That was conservative but would have made the optimized path invisible
+for common `bcftools view -s/-S` style workflows.
+
+The executor now treats the input and output counts separately.  It scans
+`h->nsamples_ori` columns when `h->keep_samples` is active, skips unselected
+columns with the header bitset, writes retained samples densely, and sets
+`v->n_sample` to the retained sample count.  The width-measurement pass follows
+the same rule, so measured strings and variable numeric widths are based only on
+the samples that will be emitted, matching production htslib's selected-sample
+behavior.
+
+Result: retained.  `test/test_format_plan.sh` now compares explicit inclusion
+and exclusion sample lists byte-for-byte against production parsing.  A
+bcftools run selecting the first two samples from every input completed 40/40
+byte-identical comparisons.  The 1000G chr22 GT workload still showed a large
+real-time win, from 26.51 s to 9.77 s unthreaded and from 25.99 s to 8.84 s at
+4 threads; string/float-heavy negative rows remained near parity.
 
 ## bcftools Production Check
 

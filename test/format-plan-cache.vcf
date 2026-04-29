@@ -1,0 +1,61 @@
+##fileformat=VCFv4.3
+##contig=<ID=1>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=F01,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F02,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F03,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F04,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F05,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F06,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F07,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F08,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F09,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F10,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F11,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F12,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F13,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F14,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F15,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F16,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F17,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F18,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F19,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=F20,Number=1,Type=Integer,Description="Cache test field">
+##FORMAT=<ID=LONGFORMATFIELD01,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD02,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD03,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD04,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD05,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD06,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD07,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD08,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD09,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD10,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD11,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD12,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD13,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD14,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD15,Number=1,Type=Integer,Description="Long cache test field">
+##FORMAT=<ID=LONGFORMATFIELD16,Number=1,Type=Integer,Description="Long cache test field">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2
+1	1	.	A	C	.	PASS	.	GT:F01	0/1:1	1/1:2
+1	2	.	A	C	.	PASS	.	GT:F02	0/1:2	1/1:3
+1	3	.	A	C	.	PASS	.	GT:F03	0/1:3	1/1:4
+1	4	.	A	C	.	PASS	.	GT:F04	0/1:4	1/1:5
+1	5	.	A	C	.	PASS	.	GT:F05	0/1:5	1/1:6
+1	6	.	A	C	.	PASS	.	GT:F06	0/1:6	1/1:7
+1	7	.	A	C	.	PASS	.	GT:F07	0/1:7	1/1:8
+1	8	.	A	C	.	PASS	.	GT:F08	0/1:8	1/1:9
+1	9	.	A	C	.	PASS	.	GT:F09	0/1:9	1/1:10
+1	10	.	A	C	.	PASS	.	GT:F10	0/1:10	1/1:11
+1	11	.	A	C	.	PASS	.	GT:F11	0/1:11	1/1:12
+1	12	.	A	C	.	PASS	.	GT:F12	0/1:12	1/1:13
+1	13	.	A	C	.	PASS	.	GT:F13	0/1:13	1/1:14
+1	14	.	A	C	.	PASS	.	GT:F14	0/1:14	1/1:15
+1	15	.	A	C	.	PASS	.	GT:F15	0/1:15	1/1:16
+1	16	.	A	C	.	PASS	.	GT:F16	0/1:16	1/1:17
+1	17	.	A	C	.	PASS	.	GT:F17	0/1:17	1/1:18
+1	18	.	A	C	.	PASS	.	GT:F18	0/1:18	1/1:19
+1	19	.	A	C	.	PASS	.	GT:F19	0/1:19	1/1:20
+1	20	.	A	C	.	PASS	.	GT:F20	0/1:20	1/1:21
+1	21	.	A	C	.	PASS	.	GT:LONGFORMATFIELD01:LONGFORMATFIELD02:LONGFORMATFIELD03:LONGFORMATFIELD04:LONGFORMATFIELD05:LONGFORMATFIELD06:LONGFORMATFIELD07:LONGFORMATFIELD08:LONGFORMATFIELD09:LONGFORMATFIELD10:LONGFORMATFIELD11:LONGFORMATFIELD12:LONGFORMATFIELD13:LONGFORMATFIELD14:LONGFORMATFIELD15:LONGFORMATFIELD16	0/1:1:2:3:4:5:6:7:8:9:10:11:12:13:14:15:16	1/1:2:3:4:5:6:7:8:9:10:11:12:13:14:15:16:17

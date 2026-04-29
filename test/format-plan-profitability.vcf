@@ -1,0 +1,8 @@
+##fileformat=VCFv4.3
+##contig=<ID=1>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods">
+##FORMAT=<ID=FT,Number=1,Type=String,Description="Sample filter">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2
+1	1	.	A	C,G	.	PASS	.	GT:GL:FT:DP	0/1:-0.25,-0.50,-0.75,-1.00,-1.25,-1.50:PASS:12	1/2:-0.50,-0.75,-1.00,-1.25,-1.50,-1.75:LowQual:8

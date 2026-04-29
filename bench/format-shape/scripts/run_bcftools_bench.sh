@@ -6,6 +6,7 @@ inputs=${1:-bench/format-shape/large/threaded-inputs.tsv}
 outdir=${OUTDIR:-bench/format-shape/large/results-bcftools}
 keep_outputs=${KEEP_OUTPUTS:-1}
 threads_list=${THREADS_LIST:-0 2 4 8}
+sample_count=${SAMPLE_COUNT:-0}
 mkdir -p "$outdir"
 
 timings="$outdir/timings.tsv"
@@ -16,6 +17,16 @@ printf 'name\tthreads\tcomparison\tstatus\n' > "$checks"
 
 tail -n +2 "$inputs" | while IFS='	' read -r name path source
 do
+    sample_args=
+    if [ "$sample_count" != 0 ]; then
+        samples=$("$bcftools" query -l "$path" | awk -v n="$sample_count" '
+            NR <= n { if (s) s = s "," $0; else s = $0 }
+            END { print s }
+        ')
+        if [ -n "$samples" ]; then
+            sample_args="-s $samples"
+        fi
+    fi
     for threads in $threads_list
     do
         base_out="$outdir/$name.t$threads.baseline.bcf"
@@ -31,10 +42,10 @@ do
             out="$outdir/$name.t$threads.$mode.bcf"
             case "$mode" in
                 baseline)
-                    env HTS_VCF_FORMAT_PLAN=0 /usr/bin/time -p "$bcftools" view --no-version -Ob -l 0 $thread_args -o "$out" "$path" 2> "$err"
+                    env HTS_VCF_FORMAT_PLAN=0 /usr/bin/time -p "$bcftools" view --no-version -Ob -l 0 $thread_args $sample_args -o "$out" "$path" 2> "$err"
                     ;;
                 plan)
-                    env HTS_VCF_FORMAT_PLAN=1 /usr/bin/time -p "$bcftools" view --no-version -Ob -l 0 $thread_args -o "$out" "$path" 2> "$err"
+                    env HTS_VCF_FORMAT_PLAN=1 /usr/bin/time -p "$bcftools" view --no-version -Ob -l 0 $thread_args $sample_args -o "$out" "$path" 2> "$err"
                     ;;
             esac
 

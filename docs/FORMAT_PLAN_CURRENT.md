@@ -12,7 +12,7 @@ column unchanged.
 
 ```text
 HTS_VCF_FORMAT_PLAN enabled
-  -> compile FORMAT/header to per-tag plan
+  -> fetch or compile header-owned FORMAT/header plan
   -> resolve row-local widths
   -> composable executor
   -> production fallback on unsupported or suspicious rows
@@ -23,9 +23,21 @@ dynamic executor.
 
 ## Plan Compilation
 
-Plans are cached by header pointer plus literal FORMAT string.  This is
-important because VCF header IDs, declared types, and number models are
-header-local.
+Plans are cached in private `bcf_hdr_aux_t` state by literal FORMAT string plus
+the header's private FORMAT-plan generation.  This is important because VCF
+header IDs, declared types, and number models are header-local.  The cache grows
+from 16 entries up to 128 entries, uses heap storage for long FORMAT strings,
+and also caches unsupported schemas so repeated odd rows do not repeatedly pay
+compile cost.
+
+`bcf_hdr_sync()` clears the header-owned plan cache and increments the private
+generation after header dictionaries are rebuilt.  The planner also refuses to
+compile while `h->dirty` is set, leaving unsynced or header-repair cases on the
+production parser.
+
+The cache and per-plan guard counters are mutable header-owned state, like other
+htslib header scratch storage.  Callers should not concurrently parse through
+the same `bcf_hdr_t` from multiple threads.
 
 The compile step rejects:
 
@@ -34,6 +46,8 @@ The compile step rejects:
 - unsupported header types;
 - unsupported number models;
 - `GT` declarations that are not `Type=String,Number=1`.
+- string-plus-float-vector schemas with too little integer-vector work to repay
+  the dynamic path's width-measurement cost.
 
 Undefined tags intentionally fall back to the production parser so existing
 dummy-header repair and warning behavior is preserved.
@@ -47,6 +61,8 @@ The current executor supports:
   bounded measured `Number=.` row widths;
 - float fields with the same number models as integer fields;
 - string fields declared as `Type=String,Number=1`, measured per row.
+- `bcf_hdr_set_samples()` / `keep_samples`, by scanning the original sample
+  columns and writing only retained samples densely into the planned BCF output.
 
 Header-derived widths are resolved per record.  `Number=A`, `Number=R`, and
 `Number=G` depend on the current allele count.  String and `Number=.` numeric
@@ -83,9 +99,12 @@ regions can recover the optimized path.
 
 The planned parser must preserve these invariants:
 
-- no planned parsing while `h->keep_samples` is active;
+- no planned parsing while the header has unsynced dictionary changes;
 - header IDs, types, and number models are resolved before execution;
+- selected-sample parsing must honor `h->keep_samples`, use `h->nsamples_ori`
+  for input-column scans, and set `v->n_sample` to the retained sample count;
 - duplicate or undefined tags use the production parser;
+- unprofitable string/float-heavy schemas use the production parser;
 - unsupported GT encodings force fallback;
 - numeric vectors preserve observed width and vector-end padding;
 - strings use observed maximum byte length and zero-pad shorter samples;
@@ -95,24 +114,34 @@ The planned parser must preserve these invariants:
 
 Focused validation lives in `./test/test_format_plan.sh`.  It compares
 production parsing, `HTS_VCF_FORMAT_PLAN=1`, and the `interp` alias byte-for-byte
-with `cmp`.
+with `cmp`.  The script also checks selected-sample parsing for explicit
+inclusion and exclusion lists (`S1,S3`, `S2`, and `^S2`).  `test/format-plan-cache.vcf`
+additionally exercises more than 16 distinct FORMAT schemas and a literal FORMAT
+string longer than the old fixed cache key.  `test/test_format_plan_cache`
+mutates and resyncs a header after a plan has been compiled for the same FORMAT
+string, then verifies the row is planned again with the new metadata.
 
 ## Current Source Delta
 
-After removing the old exact kernels and SIMD tab scanner, the live parser/test
-hook delta relative to `origin/develop` is:
+After removing the old exact kernels and SIMD tab scanner, then hardening the
+dynamic cache, the live parser/test hook delta relative to `origin/develop` is:
 
 | File | Added lines |
 |---|---:|
-| `vcf.c` | 1,467 |
-| `test/test_view.c` | 14 |
+| `vcf.c` | 1,703 |
+| `Makefile` | 6 |
+| `test/test_format_plan.sh` | 48 |
+| `test/test_format_plan_cache.c` | 130 |
+| `test/test_view.c` | 23 |
+| `test/format-plan-cache.vcf` | 61 |
+| `test/format-plan-profitability.vcf` | 8 |
 
 ## Large Corpus Benchmark
 
 Command:
 
 ```sh
-KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-dynamic-trim-plan \
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-profit-gate \
   bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
 ```
 
@@ -120,16 +149,43 @@ All planned outputs compared byte-identical to baseline.
 
 | Input | Baseline user | Plan user | Hits/fallback |
 |---|---:|---:|---:|
-| CCDG 10k | 2.62 s | 2.25 s | 8,396 / 1,604 |
-| 1000G chr22 full GT | 26.05 s | 7.98 s | 1,103,547 / 0 |
-| Large CCDG-like synthetic | 4.24 s | 3.78 s | 20,000 / 0 |
-| Large reordered likelihood | 3.00 s | 2.42 s | 20,000 / 0 |
-| Large multiallelic likelihood | 3.16 s | 2.73 s | 16,000 / 0 |
-| Large float/string | 2.93 s | 2.97 s | 16,000 / 0 |
-| Variable phase widths | 2.61 s | 2.50 s | 12,000 / 0 |
-| Mixed row-local fallbacks | 2.22 s | 1.87 s | 12,000 / 0 |
-| GT-first reordered negative | 1.75 s | 1.44 s | 12,000 / 0 |
-| Two-string float negative | 2.28 s | 2.56 s | 12,000 / 0 |
+| CCDG 10k | 2.47 s | 2.15 s | 8,396 / 1,604 |
+| 1000G chr22 full GT | 25.25 s | 7.82 s | 1,103,547 / 0 |
+| Large CCDG-like synthetic | 4.02 s | 3.64 s | 20,000 / 0 |
+| Large reordered likelihood | 2.95 s | 2.40 s | 20,000 / 0 |
+| Large multiallelic likelihood | 3.15 s | 2.76 s | 16,000 / 0 |
+| Large float/string | 2.96 s | 2.89 s | 0 / 16,000 |
+| Variable phase widths | 2.60 s | 2.46 s | 12,000 / 0 |
+| Mixed row-local fallbacks | 2.19 s | 1.84 s | 12,000 / 0 |
+| GT-first reordered negative | 1.72 s | 1.37 s | 12,000 / 0 |
+| Two-string float negative | 2.29 s | 2.26 s | 0 / 12,000 |
+
+## Full Threaded Corpus Benchmark
+
+Command:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-threaded-profit-gate \
+  bench/format-shape/scripts/run_thread_bench.sh \
+  bench/format-shape/large/threaded-inputs.tsv
+```
+
+All 40 planned outputs compared byte-identical to baseline.  Detailed timings
+are in `bench/format-shape/large/results-threaded-profit-gate/timings.tsv`; the
+table below summarizes real-time speedup.
+
+| Input | 0 threads | 2 threads | 4 threads | 8 threads |
+|---|---:|---:|---:|---:|
+| CCDG 10k | 1.13x | 1.15x | 1.16x | 1.15x |
+| 1000G chr22 full GT | 3.10x | 3.73x | 4.34x | 3.88x |
+| Large CCDG-like synthetic | 1.12x | 1.14x | 1.13x | 1.13x |
+| Large reordered likelihood | 1.23x | 1.33x | 1.32x | 1.29x |
+| Large multiallelic likelihood | 1.16x | 1.22x | 1.22x | 1.22x |
+| Large float/string | 1.01x | 0.97x | 1.04x | 1.00x |
+| Variable phase widths | 1.06x | 1.10x | 1.11x | 1.09x |
+| Mixed row-local fallbacks | 1.18x | 1.25x | 1.31x | 1.23x |
+| GT-first reordered negative | 1.22x | 1.31x | 1.32x | 1.32x |
+| Two-string float negative | 1.00x | 1.00x | 1.01x | 1.00x |
 
 ## bcftools Production-Style Benchmark
 
@@ -154,6 +210,10 @@ KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools \
   bench/format-shape/large/threaded-inputs.tsv
 ```
 
+`bench/format-shape/large/threaded-inputs.tsv` now mirrors the full large
+corpus from `large/inputs.tsv`, so threaded runs cover all real and synthetic
+workload shapes rather than only the earlier two representative rows.
+
 The runner uses `bcftools view --no-version -Ob -l 0 [--threads N]`.  All
 planned outputs compared byte-identical to baseline.
 
@@ -168,6 +228,69 @@ planned outputs compared byte-identical to baseline.
 | Large CCDG-like synthetic | 4 | 3.47 s | 3.02 s | 1.15x | 4.51 s | 4.09 s |
 | Large CCDG-like synthetic | 8 | 3.46 s | 3.00 s | 1.15x | 4.50 s | 4.05 s |
 
+## bcftools Selected-Sample Benchmark
+
+The same bcftools runner can select the first N samples from each input with
+`SAMPLE_COUNT=N`.  This exercises the `bcf_hdr_set_samples()` / `keep_samples`
+path through bcftools rather than only through the test harness.
+
+Command:
+
+```sh
+BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+SAMPLE_COUNT=2 KEEP_OUTPUTS=0 \
+OUTDIR=bench/format-shape/large/results-bcftools-keep2 \
+  bench/format-shape/scripts/run_bcftools_bench.sh \
+  bench/format-shape/large/threaded-inputs.tsv
+```
+
+All 40 planned outputs compared byte-identical to baseline.  The table shows
+real-time and user-time speedup for selecting two samples from every input that
+has samples; sites-only inputs naturally run without `-s`.
+
+| Input | Threads | Real speedup | User speedup |
+|---|---:|---:|---:|
+| CCDG 10k | 0 | 1.12x | 1.12x |
+| CCDG 10k | 2 | 1.12x | 1.11x |
+| CCDG 10k | 4 | 1.13x | 1.12x |
+| CCDG 10k | 8 | 1.11x | 1.10x |
+| 1000G chr22 full GT | 0 | 2.71x | 2.73x |
+| 1000G chr22 full GT | 2 | 2.83x | 2.44x |
+| 1000G chr22 full GT | 4 | 2.94x | 2.52x |
+| 1000G chr22 full GT | 8 | 3.06x | 2.61x |
+| Large CCDG-like synthetic | 0 | 1.07x | 1.08x |
+| Large CCDG-like synthetic | 2 | 1.10x | 1.07x |
+| Large CCDG-like synthetic | 4 | 1.09x | 1.07x |
+| Large CCDG-like synthetic | 8 | 1.09x | 1.07x |
+| Large reordered likelihood | 0 | 1.15x | 1.17x |
+| Large reordered likelihood | 2 | 1.22x | 1.15x |
+| Large reordered likelihood | 4 | 1.23x | 1.17x |
+| Large reordered likelihood | 8 | 1.22x | 1.16x |
+| Large multiallelic likelihood | 0 | 1.13x | 1.13x |
+| Large multiallelic likelihood | 2 | 1.14x | 1.11x |
+| Large multiallelic likelihood | 4 | 1.16x | 1.12x |
+| Large multiallelic likelihood | 8 | 1.18x | 1.13x |
+| Large float/string | 0 | 1.02x | 1.01x |
+| Large float/string | 2 | 0.99x | 0.99x |
+| Large float/string | 4 | 1.01x | 1.00x |
+| Large float/string | 8 | 0.97x | 0.98x |
+| Variable phase widths | 0 | 1.04x | 1.05x |
+| Variable phase widths | 2 | 1.05x | 1.05x |
+| Variable phase widths | 4 | 1.05x | 1.04x |
+| Variable phase widths | 8 | 1.06x | 1.05x |
+| Mixed row-local fallbacks | 0 | 1.14x | 1.16x |
+| Mixed row-local fallbacks | 2 | 1.17x | 1.14x |
+| Mixed row-local fallbacks | 4 | 1.18x | 1.14x |
+| Mixed row-local fallbacks | 8 | 1.17x | 1.14x |
+| GT-first reordered negative | 0 | 1.21x | 1.22x |
+| GT-first reordered negative | 2 | 1.25x | 1.19x |
+| GT-first reordered negative | 4 | 1.26x | 1.19x |
+| GT-first reordered negative | 8 | 1.22x | 1.18x |
+| Two-string float negative | 0 | 0.96x | 0.98x |
+| Two-string float negative | 2 | 1.00x | 0.99x |
+| Two-string float negative | 4 | 0.99x | 0.98x |
+| Two-string float negative | 8 | 1.03x | 1.01x |
+
 ## Interpretation
 
 The dynamic path gives a large production-visible win for sample-rich GT-only
@@ -177,7 +300,6 @@ float/string-heavy layouts remain near parity or slightly slower than baseline.
 
 ## Remaining Work
 
-- Add selected-sample support so `keep_samples` does not force fallback.
 - Reduce per-sample opcode dispatch in hot FORMAT layouts.
 - Improve string and measured-width handling without losing byte identity.
 - Consider a later executor-generation layer if generic per-op dispatch remains

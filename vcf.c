@@ -113,11 +113,17 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
 // Note that this preserving API and ABI requires that the first element is vdict_t struct
 // rather than a pointer, as user programs may (and in some cases do) access the dictionary
 // directly as (vdict_t*)hdr->dict.
+typedef struct vcf_format_plan_cache_t vcf_format_plan_cache_t;
+static void vcf_format_plan_cache_clear(vcf_format_plan_cache_t *cache);
+static void vcf_format_plan_cache_destroy(vcf_format_plan_cache_t *cache);
+
 typedef struct
 {
     vdict_t dict;   // bcf_hdr_t.dict[0] vdict_t dictionary which keeps bcf_idinfo_t for BCF_HL_FLT,BCF_HL_INFO,BCF_HL_FMT
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
     size_t *key_len;// length of h->id[BCF_DT_ID] strings
+    vcf_format_plan_cache_t *format_plan_cache; // Header-local FORMAT planner cache
+    uint64_t format_plan_gen; // Incremented when header dictionaries are resynchronised
     int version;    //cached version
     uint32_t ref_count; // reference count, low bit indicates bcf_hdr_destroy() has been called
 }
@@ -344,6 +350,10 @@ int bcf_hdr_sync(bcf_hdr_t *h)
         free(aux->key_len);
         aux->key_len = NULL;
     }
+    if (aux && aux->format_plan_cache)
+        vcf_format_plan_cache_clear(aux->format_plan_cache);
+    if (aux)
+        aux->format_plan_gen++;
 
     h->dirty = 0;
     return 0;
@@ -1650,6 +1660,8 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     if ( !aux ) goto fail;
     if ( (aux->gen = kh_init(hdict))==NULL ) { free(aux); goto fail; }
     aux->key_len = NULL;
+    aux->format_plan_cache = NULL;
+    aux->format_plan_gen = 0;
     aux->dict = *((vdict_t*)h->dict[0]);
     aux->version = 0;
     aux->ref_count = 1;
@@ -1694,6 +1706,7 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
                 if ( kh_exist(aux->gen,k) ) free((char*)kh_key(aux->gen,k));
             kh_destroy(hdict, aux->gen);
             free(aux->key_len); // may exist for dict[0] only
+            vcf_format_plan_cache_destroy(aux->format_plan_cache);
         }
         kh_destroy(vdict, d);
         free(h->id[i]);
@@ -3334,17 +3347,30 @@ typedef struct {
 
 typedef struct {
 	/*
-	 * Cache key is the literal FORMAT string plus header pointer.  This keeps
-	 * repeated records on the same FORMAT layout from rebuilding the per-tag
-	 * op list while still respecting that key ids/types are header-local.
+	 * Cache key is the literal FORMAT string plus the private header
+	 * generation.  FORMAT key ids/types are header-local, so plans are owned by
+	 * the header aux block and invalidated whenever bcf_hdr_sync() rebuilds the
+	 * dictionaries.  Unsupported plans are cached too; repeated uncommon or
+	 * undefined FORMAT strings should pay the compile cost once, then fall back
+	 * directly to the production parser.
 	 */
-	char format[256];
-	const bcf_hdr_t *hdr;
+	char *format;
+	size_t format_len;
+	uint64_t format_hash;
+	uint64_t hdr_gen;
 	int supported;
 	int n_ops;
 	vcf_format_op_t ops[MAX_N_FMT];
 	vcf_format_fast_guard_t general_guard;
 } vcf_format_general_plan_t;
+
+struct vcf_format_plan_cache_t {
+	vcf_format_general_plan_t *plans;
+	int n;
+	int m;
+	int next_evict;
+	uint64_t hdr_gen;
+};
 
 typedef enum {
 	VCF_FORMAT_ROW_GT,
@@ -3382,18 +3408,163 @@ typedef struct {
 #define VCF_PLAN_ALWAYS_INLINE static inline
 #endif
 
+static uint64_t vcf_format_plan_hash(const char *format, size_t len)
+{
+	size_t i;
+	uint64_t hash = 1469598103934665603ULL;
+
+	for (i = 0; i < len; i++) {
+		hash ^= (unsigned char) format[i];
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+static void vcf_format_general_plan_destroy(vcf_format_general_plan_t *plan)
+{
+	if (!plan)
+		return;
+	free(plan->format);
+	memset(plan, 0, sizeof(*plan));
+}
+
+static void vcf_format_plan_cache_clear(vcf_format_plan_cache_t *cache)
+{
+	int i;
+
+	if (!cache)
+		return;
+	for (i = 0; i < cache->n; i++)
+		vcf_format_general_plan_destroy(&cache->plans[i]);
+	cache->n = 0;
+	cache->next_evict = 0;
+}
+
+static void vcf_format_plan_cache_destroy(vcf_format_plan_cache_t *cache)
+{
+	if (!cache)
+		return;
+	vcf_format_plan_cache_clear(cache);
+	free(cache->plans);
+	free(cache);
+}
+
+static vcf_format_plan_cache_t *vcf_format_plan_cache_get(const bcf_hdr_t *h)
+{
+	bcf_hdr_aux_t *aux = get_hdr_aux(h);
+
+	if (!aux)
+		return NULL;
+	if (!aux->format_plan_cache) {
+		aux->format_plan_cache = (vcf_format_plan_cache_t *)
+			calloc(1, sizeof(*aux->format_plan_cache));
+		if (!aux->format_plan_cache)
+			return NULL;
+		aux->format_plan_cache->hdr_gen = aux->format_plan_gen;
+	}
+	if (aux->format_plan_cache->hdr_gen != aux->format_plan_gen) {
+		vcf_format_plan_cache_clear(aux->format_plan_cache);
+		aux->format_plan_cache->hdr_gen = aux->format_plan_gen;
+	}
+	return aux->format_plan_cache;
+}
+
+static int vcf_format_plan_cache_slot(vcf_format_plan_cache_t *cache)
+{
+	enum { VCF_FORMAT_PLAN_CACHE_INIT = 16, VCF_FORMAT_PLAN_CACHE_MAX = 128 };
+	int i, idx, new_m;
+	vcf_format_general_plan_t *plans;
+
+	if (cache->n < cache->m)
+		return cache->n++;
+
+	if (cache->m < VCF_FORMAT_PLAN_CACHE_MAX) {
+		new_m = cache->m ? cache->m * 2 : VCF_FORMAT_PLAN_CACHE_INIT;
+		if (new_m > VCF_FORMAT_PLAN_CACHE_MAX)
+			new_m = VCF_FORMAT_PLAN_CACHE_MAX;
+		if ((size_t) new_m > SIZE_MAX / sizeof(*cache->plans))
+			return -1;
+		plans = (vcf_format_general_plan_t *)
+			realloc(cache->plans, (size_t) new_m * sizeof(*cache->plans));
+		if (!plans)
+			return -1;
+		memset(plans + cache->m, 0,
+		       (size_t) (new_m - cache->m) * sizeof(*plans));
+		cache->plans = plans;
+		cache->m = new_m;
+		return cache->n++;
+	}
+
+	for (i = 0; i < cache->n; i++) {
+		idx = (cache->next_evict + i) % cache->n;
+		if (!cache->plans[idx].supported)
+			goto found;
+	}
+	idx = cache->next_evict;
+
+found:
+	vcf_format_general_plan_destroy(&cache->plans[idx]);
+	cache->next_evict = (idx + 1) % cache->n;
+	return idx;
+}
+
+static int vcf_format_general_plan_profitable(const vcf_format_general_plan_t *plan)
+{
+	int j, string_ops = 0, float_vector_ops = 0, int_ops = 0, int_vector_ops = 0;
+
+	for (j = 0; j < plan->n_ops; j++) {
+		const vcf_format_op_t *op = &plan->ops[j];
+		if (op->is_gt)
+			continue;
+		if (op->htype == BCF_HT_STR) {
+			string_ops++;
+		} else if (op->htype == BCF_HT_REAL) {
+			if (op->vl_type == BCF_VL_FIXED && op->number == 1)
+				;
+			else
+				float_vector_ops++;
+		} else if (op->htype == BCF_HT_INT) {
+			int_ops++;
+			if (op->vl_type != BCF_VL_FIXED || op->number != 1)
+				int_vector_ops++;
+		}
+	}
+
+	/*
+	 * FORMAT rows with measured strings plus float vectors have to pay the
+	 * dynamic executor's full width-measurement pass and then still use the
+	 * general float conversion path.  Without integer vectors to amortize that
+	 * setup, production parsing has been consistently faster on the large
+	 * corpus (for example GT:GL:FT:DP:GQ and GT:FT:PID:GL:DP).
+	 */
+	if (string_ops > 0 && float_vector_ops > 0 &&
+	    int_vector_ops == 0 && int_ops <= 2)
+		return 0;
+	return 1;
+}
+
 static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *format,
+                                           size_t format_len, uint64_t format_hash,
+                                           uint64_t hdr_gen,
                                            vcf_format_general_plan_t *plan)
 {
-    char tmp[256], *tok, *saveptr = NULL;
-    int i;
+	char *tmp, *tok, *saveptr = NULL;
+	int i, ret = 0;
 
 	memset(plan, 0, sizeof(*plan));
-	if (strlen(format) >= sizeof(plan->format))
-		return 0;
-	strcpy(plan->format, format);
-	strcpy(tmp, format);
-	plan->hdr = h;
+	plan->format = (char *) malloc(format_len + 1);
+	tmp = (char *) malloc(format_len + 1);
+	if (!plan->format || !tmp) {
+		free(tmp);
+		free(plan->format);
+		memset(plan, 0, sizeof(*plan));
+		return -1;
+	}
+	memcpy(plan->format, format, format_len + 1);
+	memcpy(tmp, format, format_len + 1);
+	plan->format_len = format_len;
+	plan->format_hash = format_hash;
+	plan->hdr_gen = hdr_gen;
 
 	/*
 	 * Compile at tag granularity, not full FORMAT-shape granularity.  This is
@@ -3406,17 +3577,17 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
         int key, htype;
 
         if (plan->n_ops >= MAX_N_FMT)
-            return 0;
+            goto done;
         key = bcf_hdr_id2int(h, BCF_DT_ID, tok);
         if (key < 0 || !bcf_hdr_idinfo_exists(h, BCF_HL_FMT, key))
-            return 0;
+            goto done;
         for (i = 0; i < plan->n_ops; i++)
             if (plan->ops[i].key == key)
-                return 0;
+                goto done;
 
 		htype = bcf_hdr_id2type(h, BCF_HL_FMT, key);
 		if (htype != BCF_HT_STR && htype != BCF_HT_INT && htype != BCF_HT_REAL)
-			return 0;
+			goto done;
 
 		/*
 		 * Only compile tags with enough header information to reproduce the
@@ -3433,17 +3604,17 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
         if (plan->ops[plan->n_ops].is_gt) {
             if (htype != BCF_HT_STR || plan->ops[plan->n_ops].number != 1 ||
                 plan->ops[plan->n_ops].vl_type != BCF_VL_FIXED)
-                return 0;
+                goto done;
         } else {
             int vl = plan->ops[plan->n_ops].vl_type;
             if (htype == BCF_HT_STR) {
                 if (plan->ops[plan->n_ops].number != 1)
-                    return 0;
+                    goto done;
                 plan->ops[plan->n_ops].measured_width = 1;
             } else if (vl != BCF_VL_FIXED && vl != BCF_VL_A &&
                        vl != BCF_VL_R && vl != BCF_VL_G &&
                        vl != BCF_VL_VAR) {
-                return 0;
+                goto done;
             } else if (vl == BCF_VL_VAR) {
                 plan->ops[plan->n_ops].measured_width = 1;
             }
@@ -3452,28 +3623,68 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
     }
 
     if (!plan->n_ops)
-        return 0;
+        goto done;
+	if (!vcf_format_general_plan_profitable(plan))
+		goto done;
 
     plan->supported = 1;
-    return 1;
+	ret = 1;
+
+done:
+	free(tmp);
+	return ret;
 }
 
 static vcf_format_general_plan_t *vcf_format_general_plan_get(const bcf_hdr_t *h,
                                                               const char *format)
 {
-    enum { N_GENERAL_PLAN_CACHE = 16 };
-    static vcf_format_general_plan_t cache[N_GENERAL_PLAN_CACHE];
-    static int ncache = 0;
-    int i;
+	bcf_hdr_aux_t *aux;
+	vcf_format_plan_cache_t *cache;
+	vcf_format_general_plan_t *plan;
+	size_t format_len;
+	uint64_t format_hash, hdr_gen;
+	int i, idx, ret;
 
-    for (i = 0; i < ncache; i++)
-        if (cache[i].hdr == h && strcmp(cache[i].format, format) == 0)
-            return cache[i].supported ? &cache[i] : NULL;
+	/*
+	 * The compiler reads h->id[] and header metadata directly.  If a caller has
+	 * mutated the header but not synced it yet, the production parser is the
+	 * only safe path because it already owns all header-repair semantics.
+	 */
+	if (h->dirty)
+		return NULL;
 
-    if (ncache == N_GENERAL_PLAN_CACHE)
-        return NULL;
-    vcf_format_general_plan_compile(h, format, &cache[ncache]);
-    return cache[ncache++].supported ? &cache[ncache-1] : NULL;
+	aux = get_hdr_aux(h);
+	if (!aux)
+		return NULL;
+	cache = vcf_format_plan_cache_get(h);
+	if (!cache)
+		return NULL;
+
+	format_len = strlen(format);
+	format_hash = vcf_format_plan_hash(format, format_len);
+	hdr_gen = aux->format_plan_gen;
+	for (i = 0; i < cache->n; i++) {
+		plan = &cache->plans[i];
+		if (plan->format && plan->hdr_gen == hdr_gen &&
+		    plan->format_len == format_len &&
+		    plan->format_hash == format_hash &&
+		    memcmp(plan->format, format, format_len) == 0)
+			return plan->supported ? plan : NULL;
+	}
+
+	idx = vcf_format_plan_cache_slot(cache);
+	if (idx < 0)
+		return NULL;
+	plan = &cache->plans[idx];
+	ret = vcf_format_general_plan_compile(h, format, format_len, format_hash,
+	                                      hdr_gen, plan);
+	if (ret < 0) {
+		vcf_format_general_plan_destroy(plan);
+		if (idx == cache->n - 1)
+			cache->n--;
+		return NULL;
+	}
+	return plan->supported ? plan : NULL;
 }
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_gt2_u8(const char **sp, uint8_t out[2])
@@ -4106,6 +4317,15 @@ static void vcf_format_general_resolve_ops(const vcf_format_general_plan_t *plan
 	}
 }
 
+static const char *vcf_format_skip_sample_column(const char *cur, const char *end)
+{
+	while (cur < end && *cur && *cur != '\t')
+		cur++;
+	if (cur < end && *cur == '\t')
+		cur++;
+	return cur;
+}
+
 static int vcf_format_general_expected_width(const vcf_format_op_t *op, bcf1_t *v)
 {
 	if (op->is_gt)
@@ -4247,8 +4467,16 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
                                             bcf1_t *v, char *q, int *widths)
 {
 	const char *cur, *end;
-	int has_measured = 0, sample, j, nsamples = bcf_hdr_nsamples(h);
+	int has_measured = 0, sample, kept = 0, j;
+	int nsamples = h->keep_samples ? h->nsamples_ori : bcf_hdr_nsamples(h);
+	int output_nsamples = bcf_hdr_nsamples(h);
 
+	/*
+	 * With bcf_hdr_set_samples(), the text line still contains the original
+	 * sample columns but BCF output must contain only the retained samples.  The
+	 * measurement pass therefore scans original columns and updates row-local
+	 * widths only for samples that will be emitted.
+	 */
 	for (j = 0; j < plan->n_ops; j++) {
 		const vcf_format_op_t *op = &plan->ops[j];
 
@@ -4275,6 +4503,10 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
 	cur = q + 1;
 	end = s->s + s->l;
 	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		if (h->keep_samples && !bit_array_test(h->keep_samples, sample)) {
+			cur = vcf_format_skip_sample_column(cur, end);
+			continue;
+		}
 		for (j = 0; j < plan->n_ops; j++) {
 			const vcf_format_op_t *op = &plan->ops[j];
 			const char *field = cur;
@@ -4318,8 +4550,10 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
 					return -4;
 			}
 		}
+		if (++kept == output_nsamples)
+			break;
 	}
-	if (sample != nsamples)
+	if (kept != output_nsamples)
 		return -4;
 	for (j = 0; j < plan->n_ops; j++)
 		if (plan->ops[j].measured_width) {
@@ -4339,7 +4573,8 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                                                vcf_format_row_op_t *row_ops)
 {
 	kstring_t *mem = (kstring_t*)&h->mem;
-	int nsamples = bcf_hdr_nsamples(h), sample, j;
+	int nsamples = h->keep_samples ? h->nsamples_ori : bcf_hdr_nsamples(h);
+	int output_nsamples = bcf_hdr_nsamples(h), sample, kept = 0, j;
 	int direct_ops = vcf_format_direct_prefix_len(row_ops, plan->n_ops);
 	int max_counts[MAX_N_FMT];
 	vcf_plan_int_range_t ranges[MAX_N_FMT];
@@ -4358,6 +4593,11 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 	 * GT2/FLOAT1 rows can be written directly to v->indiv; the remaining rows
 	 * are staged in h->mem so they can be parsed sample-major and encoded
 	 * op-major once row-local ranges and widths are known.
+	 *
+	 * If keep_samples is active, nsamples is the number of columns to scan in
+	 * the input line and output_nsamples is the dense BCF sample count.  This
+	 * mirrors the production parser: unselected sample columns may influence
+	 * neither emitted widths nor output cardinality.
 	 */
 	for (j = 0; j < plan->n_ops; j++) {
 		max_counts[j] = 0;
@@ -4371,16 +4611,16 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 		bcf_enc_int1(&v->indiv, op->key);
 		if (op->kind == VCF_FORMAT_ROW_GT2) {
 			if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
-			    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
+			    ks_resize(&v->indiv, v->indiv.l + (size_t)output_nsamples * 2) < 0)
 				goto error;
 			direct_offsets[j] = v->indiv.l;
-			v->indiv.l += (size_t)nsamples * 2;
+			v->indiv.l += (size_t)output_nsamples * 2;
 		} else {
 			if (bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT) < 0 ||
-			    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * sizeof(float)) < 0)
+			    ks_resize(&v->indiv, v->indiv.l + (size_t)output_nsamples * sizeof(float)) < 0)
 				goto error;
 			direct_offsets[j] = v->indiv.l;
-			v->indiv.l += (size_t)nsamples * sizeof(float);
+			v->indiv.l += (size_t)output_nsamples * sizeof(float);
 		}
 	}
 
@@ -4388,14 +4628,14 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 	for (j = direct_ops; j < plan->n_ops; j++) {
 		vcf_format_row_op_t *op = &row_ops[j];
 
-		if ((uint64_t) mem->l + nsamples * (uint64_t) op->size > INT_MAX)
+		if ((uint64_t) mem->l + output_nsamples * (uint64_t) op->size > INT_MAX)
 			goto error;
 		if (align_mem(mem) < 0)
 			goto error;
 		op->offset = mem->l;
-		if (ks_resize(mem, mem->l + nsamples * (size_t) op->size) < 0)
+		if (ks_resize(mem, mem->l + output_nsamples * (size_t) op->size) < 0)
 			goto error;
-		mem->l += nsamples * (size_t) op->size;
+		mem->l += output_nsamples * (size_t) op->size;
 	}
 	for (j = 0; j < plan->n_ops; j++) {
 		vcf_format_row_op_t *op = &row_ops[j];
@@ -4409,9 +4649,13 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 	}
 
 	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		if (h->keep_samples && !bit_array_test(h->keep_samples, sample)) {
+			cur = vcf_format_skip_sample_column(cur, end);
+			continue;
+		}
 		for (j = 0; j < plan->n_ops; j++) {
 			vcf_format_row_op_t *op = &row_ops[j];
-			uint8_t *buf = op_base[j] + sample * op_stride[j];
+			uint8_t *buf = op_base[j] + kept * op_stride[j];
 			int n = op->width;
 
 			/*
@@ -4478,8 +4722,10 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 					goto fallback;
 			}
 		}
+		if (++kept == output_nsamples)
+			break;
 	}
-	if (sample != nsamples)
+	if (kept != output_nsamples)
 		goto fallback;
 	for (j = 0; j < plan->n_ops; j++) {
 		if (max_counts[j] <= 0 || max_counts[j] > row_ops[j].width)
@@ -4493,18 +4739,18 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 			 */
 			if (!vcf_format_row_can_compact(&row_ops[j]))
 				goto fallback;
-			vcf_format_compact_row_op(mem, nsamples, &row_ops[j], max_counts[j]);
+			vcf_format_compact_row_op(mem, output_nsamples, &row_ops[j], max_counts[j]);
 		}
 	}
 
 	v->n_fmt = plan->n_ops;
-	v->n_sample = nsamples;
-	if (vcf_format_general_encode_row_ops_from_ranges(&v->indiv, mem, nsamples,
+	v->n_sample = output_nsamples;
+	if (vcf_format_general_encode_row_ops_from_ranges(&v->indiv, mem, output_nsamples,
 	                                                  plan->n_ops, row_ops,
 	                                                  ranges, direct_ops) < 0)
 		goto error;
 	vcf_format_plan_stats.hits++;
-	vcf_format_plan_stats.parsed_samples += nsamples;
+	vcf_format_plan_stats.parsed_samples += output_nsamples;
 	return 0;
 
 fallback:
@@ -4579,16 +4825,6 @@ static int vcf_parse_format_planned(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 	if (!plan_mode)
 		return -3;
 	vcf_format_plan_stats.attempts++;
-	if (h->keep_samples) {
-		/*
-		 * Sample filtering/subsetting changes FORMAT column cardinality and
-		 * error handling in ways this MVP does not yet model.  Keep it on the
-		 * production parser until the dynamic executor has explicit support for
-		 * selected-sample writes.
-		 */
-		vcf_format_plan_stats.fallback++;
-		return -3;
-	}
 
 	/* All enabled modes now use the same dynamic per-tag plan. */
 	return vcf_parse_format_general_planned(s, h, v, p, q);

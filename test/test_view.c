@@ -53,6 +53,7 @@ struct opts {
     int multi_reg;
     char *index;
     int min_shift;
+    char *samples;
 };
 
 enum test_op {
@@ -208,6 +209,9 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     if (!b)
         return 1;
 
+    if (opts->samples && bcf_hdr_set_samples(h, opts->samples, 0) < 0)
+        return 1;
+
     if (!opts->benchmark && bcf_hdr_write(out, h) < 0)
         return 1;
 
@@ -301,8 +305,9 @@ int main(int argc, char *argv[])
     opts.multi_reg = 0;
     opts.index = NULL;
     opts.min_shift = 0;
+    opts.samples = NULL;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bzCfFul:o:N:BZ:@:Mx:m:p:v")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bzCfFul:o:N:BZ:@:Mx:m:p:vs:")) >= 0) {
         switch (c) {
         case 'D': opts.flag |= READ_CRAM; break;
         case 'S': opts.flag |= READ_COMPRESSED; break;
@@ -325,11 +330,12 @@ int main(int argc, char *argv[])
         case 'x': opts.index = optarg; break;
         case 'm': opts.min_shift = atoi(optarg); break;
         case 'p': out_fn = optarg; break;
+        case 's': opts.samples = optarg; break;
         case 'v': hts_verbose++; break;
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] [-x index_fn] [-m min_shift] [-p out] [-v] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] [-x index_fn] [-m min_shift] [-p out] [-s samples] [-v] <in.bam>|<in.sam>|<in.cram> [region]\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
         fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
@@ -352,6 +358,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-x fn: write index to fn\n");
         fprintf(stderr, "-m min_shift: specifies BAI/CSI bin size; 0 is BAI(BAM) or TBI(VCF), 14 is CSI default\n");
         fprintf(stderr, "-p out_fn: output to out_fn instead of stdout\n");
+        fprintf(stderr, "-s samples: select VCF samples, as a comma-separated bcf_hdr_set_samples list\n");
         fprintf(stderr, "-v: increase verbosity\n");
         fprintf(stderr, "The region list entries should be specified as 'reg:beg-end', with intervals of a region being disjunct and sorted by the starting coordinate.\n");
         return 1;
