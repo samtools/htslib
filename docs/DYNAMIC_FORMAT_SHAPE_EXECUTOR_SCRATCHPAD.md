@@ -238,6 +238,51 @@ phase-heavy synthetic case, where dynamic-only is about 3-4% slower than exact.
 That looks acceptable for this checkpoint; the next optimization target remains
 cached shape classification to remove repeated deterministic row-level checks.
 
+## 2026-04-29 Cached Shape Classification
+
+Added FORMAT-level likelihood-shape classification to the dynamic general plan.
+The cache only records deterministic facts from the FORMAT/header order and
+types:
+
+```text
+GT2, optional FLOAT1, INT[n_allele], INT1, INT1,
+optional STR1, optional STR1, INT[ploidy likelihood width]
+```
+
+Row-level facts remain uncached.  Each record still validates `n_allele`,
+AD/PL widths, GT syntax, observed vector counts, separators, sample count, and
+phase-string widths before using the likelihood executor.
+
+The large benchmark corpus now includes four extra cache-regression workloads:
+
+- variable-width `PGT/PID` likelihood rows,
+- likelihood rows with mixed row-local fallbacks and later positive hits,
+- GT-first but wrong-order likelihood-like rows,
+- non-likelihood rows with two strings plus float vectors.
+
+Latest full large-corpus run:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results \
+  bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
+```
+
+All exact and interp outputs compared byte-identical to baseline.  Highlights:
+
+| Input | Exact user | Dynamic interp user | Dynamic shape attempts | Dynamic shape hits |
+|---|---:|---:|---:|---:|
+| CCDG 10k | 1.61 s | 1.60 s | 10,000 | 10,000 |
+| 1000G chr22 full GT | 9.16 s | 9.11 s | 0 | 0 |
+| Large CCDG-like synthetic | 2.74 s | 2.69 s | 20,000 | 20,000 |
+| Large multiallelic likelihood | 2.05 s | 1.99 s | 16,000 | 16,000 |
+| Variable phase widths | 2.00 s | 1.99 s | 12,000 | 12,000 |
+| Mixed row-local fallbacks | 1.56 s | 1.58 s | 11,295 | 10,236 |
+| GT-first reordered negative | 1.50 s | 1.50 s | 0 | 0 |
+| Two-string float negative | 2.36 s | 2.32 s | 0 | 0 |
+
+The important negative-cache result is the full 1000G GT-only workload:
+dynamic mode no longer pays 1,103,547 failed likelihood-shape probes.
+
 ## Open Questions
 
 - How much of the gap is parse-loop dispatch versus generic encode cost?

@@ -131,7 +131,107 @@ sub write_float_string {
     close $fh;
 }
 
-write_ccdg_like("large_ccdg_likelihood_${nsamples}s", 20000 * $scale);
-write_reordered("large_reordered_likelihood_${nsamples}s", 20000 * $scale);
-write_multiallelic("large_multiallelic_likelihood_${nsamples}s", 16000 * $scale);
-write_float_string("large_float_string_${nsamples}s", 16000 * $scale);
+sub write_phase_width_variation {
+    my ($name, $records) = @_;
+    my $fh = open_vcf($name);
+    for my $i (1..$records) {
+        my $pos = 25000000 + $i;
+        my @vals;
+        for my $s (0..$#samples) {
+            my $gt = genotype($i, $s, 1);
+            my $pgt = (($i + $s) % 29) == 0 ? "." : ($gt =~ /\|/ ? $gt : "0|1");
+            my $pid;
+            if (($i + $s) % 31 == 0) {
+                $pid = ".";
+            } elsif (($i + $s) % 7 == 0) {
+                $pid = "${pos}_${s}_A_T_LONG_PHASE_SET";
+            } elsif (($i + $s) % 5 == 0) {
+                $pid = "${pos}_A_T";
+            } else {
+                $pid = "P" . (($i + $s) % 97);
+            }
+            push @vals, join(":", $gt, ad($i, $s, 2), (($i+$s)%160),
+                             (($i+$s)%99), $pgt, $pid, pl($i, $s, 2));
+        }
+        print $fh join("\t", "chr22", $pos, ".", "A", "T", 50, "PASS", ".",
+                       "GT:AD:DP:GQ:PGT:PID:PL", @vals), "\n";
+    }
+    close $fh;
+}
+
+sub write_mixed_likelihood {
+    my ($name, $records) = @_;
+    my $fh = open_vcf($name);
+    for my $i (1..$records) {
+        my $pos = 26000000 + $i;
+        my $n_alt = ($i % 17) == 0 ? 8 : (($i % 11) == 0 ? 2 : 1);
+        my @alts = qw(C G T AA AC AG AT GA);
+        my $alt = join(",", @alts[0..($n_alt - 1)]);
+        my $n_allele = $n_alt + 1;
+        my @vals;
+        for my $s (0..$#samples) {
+            my $ad = ad($i, $s, $n_allele);
+            my $pl = pl($i, $s, $n_allele);
+            if (($i % 19) == 0 && $ad ne ".") {
+                my @ad = split /,/, $ad;
+                pop @ad;
+                $ad = join(",", @ad);
+            }
+            if (($i % 23) == 0 && $pl ne ".") {
+                my @pl = split /,/, $pl;
+                pop @pl;
+                $pl = join(",", @pl);
+            }
+            push @vals, join(":", genotype($i, $s, $n_alt), $ad,
+                             (($i+$s)%160), (($i+$s)%99), $pl);
+        }
+        print $fh join("\t", "chr22", $pos, ".", "A", $alt, 50, "PASS", ".",
+                       "GT:AD:DP:GQ:PL", @vals), "\n";
+    }
+    close $fh;
+}
+
+sub write_gt_first_reordered {
+    my ($name, $records) = @_;
+    my $fh = open_vcf($name);
+    for my $i (1..$records) {
+        my $pos = 27000000 + $i;
+        my @vals;
+        for my $s (0..$#samples) {
+            push @vals, join(":", genotype($i, $s, 1), (($i+$s)%160),
+                             ad($i, $s, 2), (($i+$s)%99), pl($i, $s, 2));
+        }
+        print $fh join("\t", "chr22", $pos, ".", "G", "C", 50, "PASS", ".",
+                       "GT:DP:AD:GQ:PL", @vals), "\n";
+    }
+    close $fh;
+}
+
+sub write_two_string_float {
+    my ($name, $records) = @_;
+    my $fh = open_vcf($name);
+    for my $i (1..$records) {
+        my $pos = 28000000 + $i;
+        my @vals;
+        for my $s (0..$#samples) {
+            my $ft = (($i+$s)%17) == 0 ? "LowQual" : "PASS";
+            my $pid = (($i+$s)%13) == 0 ? "." : "PS" . (($i * 11 + $s) % 100000);
+            push @vals, join(":", genotype($i, $s, 2), $ft, $pid,
+                             gl($i, $s, 3), (($i+$s)%160));
+        }
+        print $fh join("\t", "chr22", $pos, ".", "A", "C,G", 50, "PASS", ".",
+                       "GT:FT:PID:GL:DP", @vals), "\n";
+    }
+    close $fh;
+}
+
+unless ($ENV{SYNTHETIC_ONLY_NEW}) {
+    write_ccdg_like("large_ccdg_likelihood_${nsamples}s", 20000 * $scale);
+    write_reordered("large_reordered_likelihood_${nsamples}s", 20000 * $scale);
+    write_multiallelic("large_multiallelic_likelihood_${nsamples}s", 16000 * $scale);
+    write_float_string("large_float_string_${nsamples}s", 16000 * $scale);
+}
+write_phase_width_variation("large_phase_width_variation_${nsamples}s", 12000 * $scale);
+write_mixed_likelihood("large_mixed_likelihood_${nsamples}s", 12000 * $scale);
+write_gt_first_reordered("large_gt_first_reordered_${nsamples}s", 12000 * $scale);
+write_two_string_float("large_two_string_float_${nsamples}s", 12000 * $scale);

@@ -3336,6 +3336,16 @@ typedef struct {
 	const bcf_hdr_t *hdr;
 	int supported;
 	int strict_supported;
+	int likelihood_supported;
+	int likelihood_has_float;
+	int likelihood_has_phase;
+	int likelihood_float_idx;
+	int likelihood_ad_idx;
+	int likelihood_dp_idx;
+	int likelihood_gq_idx;
+	int likelihood_str1_idx;
+	int likelihood_str2_idx;
+	int likelihood_pl_idx;
 	int n_ops;
 	vcf_format_op_t ops[MAX_N_FMT];
 	vcf_format_fast_guard_t strict_guard;
@@ -3415,6 +3425,64 @@ static int vcf_format_plan_compile(const bcf_hdr_t *h, const char *format,
 	return plan->supported;
 }
 
+static int vcf_format_general_classify_likelihood(vcf_format_general_plan_t *plan)
+{
+	int idx;
+
+	plan->likelihood_supported = 0;
+	plan->likelihood_has_float = 0;
+	plan->likelihood_has_phase = 0;
+	plan->likelihood_float_idx = -1;
+	plan->likelihood_ad_idx = -1;
+	plan->likelihood_dp_idx = -1;
+	plan->likelihood_gq_idx = -1;
+	plan->likelihood_str1_idx = -1;
+	plan->likelihood_str2_idx = -1;
+	plan->likelihood_pl_idx = -1;
+
+	if (plan->n_ops != 5 && plan->n_ops != 6 &&
+	    plan->n_ops != 7 && plan->n_ops != 8)
+		return 0;
+	if (!plan->ops[0].is_gt)
+		return 0;
+
+	idx = 1;
+	if (idx < plan->n_ops && plan->ops[idx].htype == BCF_HT_REAL &&
+	    plan->ops[idx].number == 1) {
+		plan->likelihood_has_float = 1;
+		plan->likelihood_float_idx = idx++;
+	}
+	if (idx + 3 >= plan->n_ops)
+		return 0;
+	if (plan->ops[idx].htype != BCF_HT_INT)
+		return 0;
+	plan->likelihood_ad_idx = idx++;
+	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
+		return 0;
+	plan->likelihood_dp_idx = idx++;
+	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
+		return 0;
+	plan->likelihood_gq_idx = idx++;
+	if (plan->n_ops - idx == 3) {
+		if (plan->ops[idx].htype != BCF_HT_STR || plan->ops[idx].number != 1 ||
+		    plan->ops[idx + 1].htype != BCF_HT_STR || plan->ops[idx + 1].number != 1)
+			return 0;
+		plan->likelihood_has_phase = 1;
+		plan->likelihood_str1_idx = idx++;
+		plan->likelihood_str2_idx = idx++;
+	} else if (plan->n_ops - idx != 1) {
+		return 0;
+	}
+	if (plan->ops[idx].htype != BCF_HT_INT)
+		return 0;
+	plan->likelihood_pl_idx = idx++;
+	if (idx != plan->n_ops)
+		return 0;
+
+	plan->likelihood_supported = 1;
+	return 1;
+}
+
 static vcf_format_plan_t *vcf_format_plan_get(const bcf_hdr_t *h, const char *format)
 {
     enum { N_PLAN_CACHE = 8 };
@@ -3484,6 +3552,7 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
     if (!plan->n_ops)
         return 0;
 
+	vcf_format_general_classify_likelihood(plan);
     plan->supported = 1;
     return 1;
 }
@@ -4408,14 +4477,11 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
                                                 bcf1_t *v, char *q, int *widths)
 {
 	const char *cur, *end;
-	int ad_w, pl_w, idx, sample, j, nsamples = bcf_hdr_nsamples(h);
-	int has_float = 0;
-	int str1_idx = -1, str2_idx = -1;
+	int ad_w, pl_w, sample, j, nsamples = bcf_hdr_nsamples(h);
+	int str1_idx = plan->likelihood_str1_idx;
+	int str2_idx = plan->likelihood_str2_idx;
 
-	if (plan->n_ops != 5 && plan->n_ops != 6 &&
-	    plan->n_ops != 7 && plan->n_ops != 8)
-		return -4;
-	if (!plan->ops[0].is_gt)
+	if (!plan->likelihood_supported)
 		return -4;
 	if (v->n_allele < 1 || v->n_allele > 8)
 		return -4;
@@ -4427,38 +4493,12 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 	for (j = 0; j < plan->n_ops; j++)
 		widths[j] = 0;
 	widths[0] = 2;
-
-	idx = 1;
-	if (idx < plan->n_ops && plan->ops[idx].htype == BCF_HT_REAL &&
-	    plan->ops[idx].number == 1) {
-		has_float = 1;
-		widths[idx++] = 1;
-	}
-	if (idx + 3 >= plan->n_ops)
-		return -4;
-	if (plan->ops[idx].htype != BCF_HT_INT)
-		return -4;
-	widths[idx++] = ad_w;
-	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
-		return -4;
-	widths[idx++] = 1;
-	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
-		return -4;
-	widths[idx++] = 1;
-	if (plan->n_ops - idx == 3) {
-		if (plan->ops[idx].htype != BCF_HT_STR || plan->ops[idx].number != 1 ||
-		    plan->ops[idx + 1].htype != BCF_HT_STR || plan->ops[idx + 1].number != 1)
-			return -4;
-		str1_idx = idx++;
-		str2_idx = idx++;
-	} else if (plan->n_ops - idx != 1) {
-		return -4;
-	}
-	if (plan->ops[idx].htype != BCF_HT_INT)
-		return -4;
-	widths[idx++] = pl_w;
-	if (idx != plan->n_ops)
-		return -4;
+	if (plan->likelihood_has_float)
+		widths[plan->likelihood_float_idx] = 1;
+	widths[plan->likelihood_ad_idx] = ad_w;
+	widths[plan->likelihood_dp_idx] = 1;
+	widths[plan->likelihood_gq_idx] = 1;
+	widths[plan->likelihood_pl_idx] = pl_w;
 
 	if (str1_idx < 0)
 		return 0;
@@ -4468,7 +4508,7 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 	for (sample = 0; sample < nsamples && cur < end; sample++) {
 		if (vcf_plan_skip_field(&cur, ':') < 0)
 			return -4;
-		if (has_float && vcf_plan_skip_field(&cur, ':') < 0)
+		if (plan->likelihood_has_float && vcf_plan_skip_field(&cur, ':') < 0)
 			return -4;
 		if (vcf_plan_skip_field(&cur, ':') < 0)
 			return -4;
@@ -4668,8 +4708,9 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 {
 	kstring_t *mem = (kstring_t*)&h->mem;
 	int nsamples = bcf_hdr_nsamples(h);
-	int ad_w, pl_w, sample, idx, ad_idx, dp_idx, gq_idx, pl_idx;
-	int has_float = 0, has_phase = 0, float_idx = -1, str1_idx = -1, str2_idx = -1;
+	int ad_w, pl_w, sample;
+	int ad_idx, dp_idx, gq_idx, pl_idx;
+	int has_float, has_phase, float_idx, str1_idx, str2_idx;
 	int max_ad_count = 0, max_pl_count = 0, nwords;
 	vcf_plan_int_range_t ad_range, dp_range, gq_range, pl_range;
 	size_t indiv_l0 = v->indiv.l;
@@ -4680,10 +4721,10 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	char *str1 = NULL, *str2 = NULL;
 	const char *cur, *end;
 
-	vcf_format_likelihood_shape_attempts++;
-	if (plan->n_ops != 5 && plan->n_ops != 6 &&
-	    plan->n_ops != 7 && plan->n_ops != 8)
+	if (!plan->likelihood_supported)
 		return -4;
+
+	vcf_format_likelihood_shape_attempts++;
 	if (row_ops[0].kind != VCF_FORMAT_ROW_GT2)
 		return -4;
 	if (v->n_allele < 1 || v->n_allele > 8)
@@ -4694,34 +4735,23 @@ static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
 	if (pl_w < 1 || pl_w > 36)
 		return -4;
 
-	idx = 1;
-	if (idx < plan->n_ops && row_ops[idx].kind == VCF_FORMAT_ROW_FLOAT1) {
-		has_float = 1;
-		float_idx = idx++;
-	}
-	if (idx + 3 >= plan->n_ops)
-		return -4;
-	ad_idx = idx++;
-	dp_idx = idx++;
-	gq_idx = idx++;
-	if (plan->n_ops - idx == 3) {
-		if (row_ops[idx].kind != VCF_FORMAT_ROW_STR ||
-		    row_ops[idx + 1].kind != VCF_FORMAT_ROW_STR)
-			return -4;
-		has_phase = 1;
-		str1_idx = idx++;
-		str2_idx = idx++;
-	} else if (plan->n_ops - idx != 1) {
-		return -4;
-	}
-	pl_idx = idx++;
-	if (idx != plan->n_ops)
-		return -4;
+	has_float = plan->likelihood_has_float;
+	has_phase = plan->likelihood_has_phase;
+	float_idx = plan->likelihood_float_idx;
+	ad_idx = plan->likelihood_ad_idx;
+	dp_idx = plan->likelihood_dp_idx;
+	gq_idx = plan->likelihood_gq_idx;
+	str1_idx = plan->likelihood_str1_idx;
+	str2_idx = plan->likelihood_str2_idx;
+	pl_idx = plan->likelihood_pl_idx;
 
 	if (!vcf_format_row_is_int(&row_ops[ad_idx]) ||
 	    row_ops[ad_idx].width != ad_w ||
 	    row_ops[dp_idx].kind != VCF_FORMAT_ROW_INT1 ||
 	    row_ops[gq_idx].kind != VCF_FORMAT_ROW_INT1 ||
+	    (has_float && row_ops[float_idx].kind != VCF_FORMAT_ROW_FLOAT1) ||
+	    (has_phase && (row_ops[str1_idx].kind != VCF_FORMAT_ROW_STR ||
+	                   row_ops[str2_idx].kind != VCF_FORMAT_ROW_STR)) ||
 	    !vcf_format_row_is_int(&row_ops[pl_idx]) ||
 	    row_ops[pl_idx].width != pl_w)
 		return -4;
@@ -4924,7 +4954,8 @@ static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
 		vcf_plan_int_range_init(&ranges[j]);
 	}
 	vcf_format_general_resolve_ops(plan, v, widths, row_ops);
-	if ((ret = vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops)) != -4)
+	if (plan->likelihood_supported &&
+	    (ret = vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, row_ops)) != -4)
 		return ret;
 	if (vcf_format_general_fixed_numeric_supported(row_ops, plan->n_ops))
 		return vcf_parse_format_general_fixed_numeric(s, h, v, plan, q, row_ops);
@@ -5046,7 +5077,7 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	if (!nsamples)
 		return 0;
 	strict_enabled = vcf_format_fast_guard_enabled(&plan->strict_guard);
-	if (strict_enabled) {
+	if (plan->likelihood_supported && strict_enabled) {
 		ret = vcf_parse_format_general_likelihood_strict(s, h, v, plan, q);
 		if (ret == 0) {
 			vcf_format_fast_guard_success(&plan->strict_guard);

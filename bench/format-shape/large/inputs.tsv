@@ -5,3 +5,7 @@ large_ccdg_likelihood_2048s	bench/format-shape/large/synthetic/large_ccdg_likeli
 large_reordered_likelihood_2048s	bench/format-shape/large/synthetic/large_reordered_likelihood_2048s.vcf.gz	synthetic reordered likelihood FORMAT, 20k records x 2,048 samples
 large_multiallelic_likelihood_2048s	bench/format-shape/large/synthetic/large_multiallelic_likelihood_2048s.vcf.gz	synthetic multiallelic likelihood FORMAT, 16k records x 2,048 samples
 large_float_string_2048s	bench/format-shape/large/synthetic/large_float_string_2048s.vcf.gz	synthetic float/string FORMAT, 16k records x 2,048 samples
+large_phase_width_variation_2048s	bench/format-shape/large/synthetic/large_phase_width_variation_2048s.vcf.gz	synthetic likelihood FORMAT with variable PGT/PID widths, 12k records x 2,048 samples
+large_mixed_likelihood_2048s	bench/format-shape/large/synthetic/large_mixed_likelihood_2048s.vcf.gz	synthetic likelihood FORMAT with row-local unsupported/wrong-width rows, 12k records x 2,048 samples
+large_gt_first_reordered_2048s	bench/format-shape/large/synthetic/large_gt_first_reordered_2048s.vcf.gz	synthetic GT-first reordered non-shape likelihood FORMAT, 12k records x 2,048 samples
+large_two_string_float_2048s	bench/format-shape/large/synthetic/large_two_string_float_2048s.vcf.gz	synthetic two-string float FORMAT, 12k records x 2,048 samples

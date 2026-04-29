@@ -118,9 +118,20 @@ bench/format-shape/results/checks.tsv
 
 - the CCDG 10k subset,
 - the full 1000 Genomes chr22 Phase 3 genotype VCF,
-- four generated 2,048-sample synthetic FORMAT workloads:
-  CCDG-like likelihood, reordered likelihood, multiallelic likelihood, and
-  float/string FORMAT.
+- eight generated 2,048-sample synthetic FORMAT workloads:
+  CCDG-like likelihood, reordered likelihood, multiallelic likelihood,
+  float/string FORMAT, variable phase-string widths, row-local likelihood
+  fallbacks, GT-first wrong-order likelihood-like rows, and two-string
+  float rows.
+
+To refresh only the newer cache-regression synthetic files without rewriting the
+older large VCFs:
+
+```sh
+SYNTHETIC_ONLY_NEW=1 \
+  bench/format-shape/scripts/make_large_synthetic.pl \
+  bench/format-shape/large/synthetic 2048
+```
 
 The latest large run is summarized in:
 
