@@ -1,0 +1,7 @@
+public/*.vcf.gz
+public/remote-indexes/*.tbi
+synthetic/*.vcf.gz
+results/*.bcf
+results/*.stderr
+!results/timings.tsv
+!results/checks.tsv

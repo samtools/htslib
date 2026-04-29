@@ -1,0 +1,11 @@
+name	path	source
+ccdg_10k	bench/format-shape/public/ccdg_chr22_10k.vcf.gz	local CCDG subset
+1000g_chr22_genotypes	bench/format-shape/public/1000g_chr22_genotypes_16050k_16150k.vcf.gz	1000 Genomes Phase 3 chr22 genotypes slice
+1000g_wgs_sites	bench/format-shape/public/1000g_wgs_sites_chr22_16050k_16300k.vcf.gz	1000 Genomes Phase 3 WGS sites-only slice
+clinvar_grch38_chr22	bench/format-shape/public/clinvar_grch38_chr22_16050k_20000k.vcf.gz	ClinVar GRCh38 chr22 slice
+gnomad_v4.1_exomes_sites	bench/format-shape/public/gnomad_v4.1_exomes_sites_chr22_20000k_20100k.vcf.gz	gnomAD v4.1 exomes sites chr22 slice
+synthetic_ccdg_likelihood	bench/format-shape/synthetic/synthetic_ccdg_likelihood.vcf.gz	synthetic CCDG-like likelihood FORMAT
+synthetic_reordered_likelihood	bench/format-shape/synthetic/synthetic_reordered_likelihood.vcf.gz	synthetic reordered likelihood FORMAT
+synthetic_fixed_numeric	bench/format-shape/synthetic/synthetic_fixed_numeric.vcf.gz	synthetic fixed numeric FORMAT
+synthetic_float_string	bench/format-shape/synthetic/synthetic_float_string.vcf.gz	synthetic float and string FORMAT
+synthetic_multiallelic_likelihood	bench/format-shape/synthetic/synthetic_multiallelic_likelihood.vcf.gz	synthetic multiallelic likelihood FORMAT
