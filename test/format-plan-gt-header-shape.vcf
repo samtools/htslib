@@ -1,0 +1,6 @@
+##fileformat=VCFv4.3
+##contig=<ID=chr22,length=50818468>
+##FORMAT=<ID=GT,Number=2,Type=String,Description="Malformed genotype header">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3
+chr22	10620000	.	A	T	50	PASS	.	GT:DP	0/1:7	0/0:5	./.:0

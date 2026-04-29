@@ -457,3 +457,42 @@ All exact and interp outputs compared byte-identical to baseline.
 Takeaway: the MVP architecture is much less brittle and supports tag-level
 composition, but parity with the removed likelihood-shape executor will require
 generic per-op optimizations or a later optional executor-generation layer.
+
+## 2026-04-29 Composable Production Hardening
+
+Follow-up productionizing pass:
+
+- tightened `GT` compile validation so the composable path only claims
+  `GT` when the header declares `Type=String,Number=1`;
+- added `test/format-plan-gt-header-shape.vcf` to prove malformed-but-readable
+  `GT` headers fall back instead of being planned;
+- restored direct writes for leading fixed-encoding ops (`GT2` and `FLOAT1`)
+  inside the composable executor;
+- added a positive integer fast path before falling back to the full signed /
+  missing integer parser;
+- routed generic `INTN` widths 4, 6, and 10 through the fixed-width counted
+  parsers;
+- trimmed the unused dynamic likelihood-shape executor scaffolding from the
+  general planned path now that `interp` uses the composable executor.
+
+Latest full large-corpus run:
+
+```sh
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-composable-prod \
+  bench/format-shape/scripts/run_bench.sh bench/format-shape/large/inputs.tsv
+```
+
+All exact and interp outputs compared byte-identical to baseline.
+
+| Input | Baseline user | Exact user | Dynamic interp user | Notes |
+|---|---:|---:|---:|---|
+| CCDG 10k | 2.62 s | 1.49 s | 2.29 s | partial fallback from row-local strictness |
+| 1000G chr22 full GT | 26.02 s | 8.70 s | 9.09 s | GT-only composable path; noisy/slower pass |
+| Large CCDG-like synthetic | 4.20 s | 2.68 s | 3.81 s | still behind old likelihood microkernel |
+| Large reordered likelihood | 3.02 s | 2.47 s | 2.44 s | composable path at parity |
+| Large multiallelic likelihood | 3.28 s | 1.95 s | 2.79 s | fixed-width INTN recovered part of gap |
+| Large float/string | 2.99 s | 2.99 s | 2.94 s | parity/slightly ahead |
+| Variable phase widths | 2.70 s | 2.01 s | 2.56 s | row-local string measurement remains cost |
+| Mixed row-local fallbacks | 2.25 s | 1.76 s | 1.94 s | byte-clean fallback path |
+| GT-first reordered negative | 1.77 s | 1.47 s | 1.44 s | composable path slightly ahead |
+| Two-string float negative | 2.29 s | 2.55 s | 2.55 s | planned path still slower than baseline |

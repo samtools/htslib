@@ -2,7 +2,7 @@
 set -eu
 
 test_view=${TEST_VIEW:-./test/test_view}
-inputs=${1:-"test/format-plan-edge.vcf test/format-plan-header-mismatch.vcf test/format-plan-composable.vcf"}
+inputs=${1:-"test/format-plan-edge.vcf test/format-plan-header-mismatch.vcf test/format-plan-composable.vcf test/format-plan-gt-header-shape.vcf"}
 tmpdir=${TMPDIR:-/tmp}
 base=${tmpdir}/hts-format-plan-base.$$
 plan=${tmpdir}/hts-format-plan-plan.$$

@@ -3226,9 +3226,6 @@ typedef struct {
 } vcf_format_plan_stats_t;
 
 static vcf_format_plan_stats_t vcf_format_plan_stats;
-static uint64_t vcf_format_likelihood_shape_attempts;
-static uint64_t vcf_format_likelihood_shape_hits;
-static uint64_t vcf_format_likelihood_shape_fallback;
 
 void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
                                uint64_t *fallback, uint64_t *parsed_samples)
@@ -3242,9 +3239,9 @@ void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
 void hts_vcf_format_plan_shape_stats(uint64_t *attempts, uint64_t *hits,
                                      uint64_t *fallback)
 {
-    if (attempts) *attempts = vcf_format_likelihood_shape_attempts;
-    if (hits) *hits = vcf_format_likelihood_shape_hits;
-    if (fallback) *fallback = vcf_format_likelihood_shape_fallback;
+    if (attempts) *attempts = 0;
+    if (hits) *hits = 0;
+    if (fallback) *fallback = 0;
 }
 
 static int vcf_format_plan_mode(void)
@@ -3355,20 +3352,8 @@ typedef struct {
 	char format[256];
 	const bcf_hdr_t *hdr;
 	int supported;
-	int strict_supported;
-	int likelihood_supported;
-	int likelihood_has_float;
-	int likelihood_has_phase;
-	int likelihood_float_idx;
-	int likelihood_ad_idx;
-	int likelihood_dp_idx;
-	int likelihood_gq_idx;
-	int likelihood_str1_idx;
-	int likelihood_str2_idx;
-	int likelihood_pl_idx;
 	int n_ops;
 	vcf_format_op_t ops[MAX_N_FMT];
-	vcf_format_fast_guard_t strict_guard;
 	vcf_format_fast_guard_t general_guard;
 } vcf_format_general_plan_t;
 
@@ -3463,64 +3448,6 @@ static int vcf_format_plan_compile(const bcf_hdr_t *h, const char *format,
 	return plan->supported;
 }
 
-static int vcf_format_general_classify_likelihood(vcf_format_general_plan_t *plan)
-{
-	int idx;
-
-	plan->likelihood_supported = 0;
-	plan->likelihood_has_float = 0;
-	plan->likelihood_has_phase = 0;
-	plan->likelihood_float_idx = -1;
-	plan->likelihood_ad_idx = -1;
-	plan->likelihood_dp_idx = -1;
-	plan->likelihood_gq_idx = -1;
-	plan->likelihood_str1_idx = -1;
-	plan->likelihood_str2_idx = -1;
-	plan->likelihood_pl_idx = -1;
-
-	if (plan->n_ops != 5 && plan->n_ops != 6 &&
-	    plan->n_ops != 7 && plan->n_ops != 8)
-		return 0;
-	if (!plan->ops[0].is_gt)
-		return 0;
-
-	idx = 1;
-	if (idx < plan->n_ops && plan->ops[idx].htype == BCF_HT_REAL &&
-	    plan->ops[idx].number == 1) {
-		plan->likelihood_has_float = 1;
-		plan->likelihood_float_idx = idx++;
-	}
-	if (idx + 3 >= plan->n_ops)
-		return 0;
-	if (plan->ops[idx].htype != BCF_HT_INT)
-		return 0;
-	plan->likelihood_ad_idx = idx++;
-	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
-		return 0;
-	plan->likelihood_dp_idx = idx++;
-	if (plan->ops[idx].htype != BCF_HT_INT || plan->ops[idx].number != 1)
-		return 0;
-	plan->likelihood_gq_idx = idx++;
-	if (plan->n_ops - idx == 3) {
-		if (plan->ops[idx].htype != BCF_HT_STR || plan->ops[idx].number != 1 ||
-		    plan->ops[idx + 1].htype != BCF_HT_STR || plan->ops[idx + 1].number != 1)
-			return 0;
-		plan->likelihood_has_phase = 1;
-		plan->likelihood_str1_idx = idx++;
-		plan->likelihood_str2_idx = idx++;
-	} else if (plan->n_ops - idx != 1) {
-		return 0;
-	}
-	if (plan->ops[idx].htype != BCF_HT_INT)
-		return 0;
-	plan->likelihood_pl_idx = idx++;
-	if (idx != plan->n_ops)
-		return 0;
-
-	plan->likelihood_supported = 1;
-	return 1;
-}
-
 static vcf_format_plan_t *vcf_format_plan_get(const bcf_hdr_t *h, const char *format)
 {
     enum { N_PLAN_CACHE = 8 };
@@ -3547,10 +3474,9 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
     memset(plan, 0, sizeof(*plan));
     if (strlen(format) >= sizeof(plan->format))
         return 0;
-    strcpy(plan->format, format);
-    strcpy(tmp, format);
+	strcpy(plan->format, format);
+	strcpy(tmp, format);
 	plan->hdr = h;
-	plan->strict_supported = 1;
 
     for (tok = strtok_r(tmp, ":", &saveptr); tok;
          tok = strtok_r(NULL, ":", &saveptr)) {
@@ -3575,7 +3501,11 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
         plan->ops[plan->n_ops].is_gt = strcmp(tok, "GT") == 0;
         plan->ops[plan->n_ops].vl_type = bcf_hdr_id2length(h, BCF_HL_FMT, key);
         plan->ops[plan->n_ops].measured_width = 0;
-        if (!plan->ops[plan->n_ops].is_gt) {
+        if (plan->ops[plan->n_ops].is_gt) {
+            if (htype != BCF_HT_STR || plan->ops[plan->n_ops].number != 1 ||
+                plan->ops[plan->n_ops].vl_type != BCF_VL_FIXED)
+                return 0;
+        } else {
             int vl = plan->ops[plan->n_ops].vl_type;
             if (htype == BCF_HT_STR) {
                 if (plan->ops[plan->n_ops].number != 1)
@@ -3595,7 +3525,6 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
     if (!plan->n_ops)
         return 0;
 
-	vcf_format_general_classify_likelihood(plan);
     plan->supported = 1;
     return 1;
 }
@@ -3616,30 +3545,6 @@ static vcf_format_general_plan_t *vcf_format_general_plan_get(const bcf_hdr_t *h
         return NULL;
     vcf_format_general_plan_compile(h, format, &cache[ncache]);
     return cache[ncache++].supported ? &cache[ncache-1] : NULL;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_gt2(const char **sp, int32_t out[2])
-{
-    const char *s = *sp;
-    int a0, a1, phased;
-
-    if (s[0] == '.' && (s[1] == '/' || s[1] == '|') && s[2] == '.') {
-        out[0] = 0;
-        out[1] = 0;
-        *sp = s + 3;
-        return 0;
-    }
-    if (!(s[0] >= '0' && s[0] <= '9') || (s[1] != '/' && s[1] != '|') ||
-        !(s[2] >= '0' && s[2] <= '9'))
-        return -1;
-
-    a0 = s[0] - '0';
-    a1 = s[2] - '0';
-    phased = s[1] == '|';
-    out[0] = ((a0 + 1) << 1) | phased;
-    out[1] = ((a1 + 1) << 1) | phased;
-    *sp = s + 3;
-    return 0;
 }
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_gt2_u8(const char **sp, uint8_t out[2])
@@ -3701,16 +3606,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_value(const char **sp, int32_t *out)
     return 0;
 }
 
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_vector_count(const int32_t *vals, int width)
-{
-	int i;
-
-	for (i = 0; i < width; i++)
-		if (vals[i] == bcf_int32_vector_end)
-			break;
-	return i;
-}
-
 VCF_PLAN_ALWAYS_INLINE void vcf_plan_int_range_init(vcf_plan_int_range_t *range)
 {
 	range->min = INT32_MAX;
@@ -3759,6 +3654,22 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_value(const char **sp, float *out)
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_value_range(const char **sp, int32_t *out,
                                                     vcf_plan_int_range_t *range)
 {
+	const char *s = *sp;
+	uint32_t val = 0, cutoff = BCF_MAX_BT_INT32 / 10, cutlim = BCF_MAX_BT_INT32 % 10;
+
+	if (*s >= '0' && *s <= '9') {
+		do {
+			uint32_t digit = *s - '0';
+			if (val > cutoff || (val == cutoff && digit > cutlim))
+				return -1;
+			val = val * 10 + digit;
+			s++;
+		} while (*s >= '0' && *s <= '9');
+		*out = (int32_t)val;
+		*sp = s;
+		vcf_plan_int_range_add(range, *out);
+		return 0;
+	}
 	if (vcf_plan_int_value(sp, out) < 0)
 		return -1;
 	vcf_plan_int_range_add(range, *out);
@@ -3819,11 +3730,6 @@ static int vcf_plan_parse_int_vector_counted_range(const char **sp, int32_t *out
 	return 0;
 }
 
-static int vcf_plan_parse_int_vector(const char **sp, int32_t *out, int width)
-{
-	return vcf_plan_parse_int_vector_counted(sp, out, width, NULL);
-}
-
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_counted(const char **sp, int32_t *out, int *nread)
 {
 	const char *s = *sp;
@@ -3872,11 +3778,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_counted_range(const char *
 	if (nread)
 		*nread = 2;
 	return 0;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2(const char **sp, int32_t *out)
-{
-	return vcf_plan_parse_int_vector2_counted(sp, out, NULL);
 }
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted(const char **sp, int32_t *out, int *nread)
@@ -4099,11 +4000,6 @@ done:
 	return 0;
 }
 
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3(const char **sp, int32_t *out)
-{
-	return vcf_plan_parse_int_vector3_counted(sp, out, NULL);
-}
-
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_expect_sep(const char **sp, int sep)
 {
 	if (**sp != sep)
@@ -4153,142 +4049,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_copy_string(const char **sp, char *out, int 
 	if (l < width)
 		memset(out + l, 0, width - l);
 	*sp = t;
-	return 0;
-}
-
-static int vcf_plan_measure_general(kstring_t *s, const bcf_hdr_t *h,
-                                    const vcf_format_general_plan_t *plan,
-                                    char *q, int *widths)
-{
-	const char *cur = q + 1, *end = s->s + s->l;
-	int sample, j, nsamples = bcf_hdr_nsamples(h);
-
-	for (j = 0; j < plan->n_ops; j++)
-		widths[j] = 0;
-
-	for (sample = 0; sample < nsamples && cur < end; sample++) {
-		for (j = 0; j < plan->n_ops; j++) {
-			const char *field = cur;
-			const vcf_format_op_t *op = &plan->ops[j];
-			int w = 1;
-
-			while (cur < end && *cur && *cur != ':' && *cur != '\t') {
-				if (op->htype == BCF_HT_INT || op->htype == BCF_HT_REAL) {
-					if (*cur == ',')
-						w++;
-				} else if (op->is_gt) {
-					if (*cur == '/' || *cur == '|')
-						w++;
-				}
-				cur++;
-			}
-
-			if (op->htype == BCF_HT_STR && !op->is_gt) {
-				w = cur - field;
-				if (j > 0)
-					w++;
-			}
-			if (w <= 0)
-				w = 1;
-			if (widths[j] < w)
-				widths[j] = w;
-
-			if (j + 1 < plan->n_ops) {
-				if (*cur != ':')
-					return -1;
-				cur++;
-			} else {
-				if (*cur == '\t')
-					cur++;
-				else if (*cur == '\0' || cur >= end)
-					;
-				else
-					return -1;
-			}
-		}
-	}
-
-	return sample == nsamples ? 0 : -1;
-}
-
-static int vcf_plan_parse_gt_dynamic(const char **sp, int32_t *out, int width, int vcf44)
-{
-	const char *s = *sp;
-	int l = 0, ploidy = 0, anyunphased = 0, phasingprfx = 0, unknown1 = 0;
-	int32_t is_phased = 0;
-
-	if (vcf44 && (*s == '|' || *s == '/')) {
-		is_phased = *s++ == '|';
-		phasingprfx = 1;
-	}
-
-	for (;;) {
-		uint32_t val = 0;
-
-		if (l >= width)
-			return -1;
-		ploidy++;
-		if (*s == '.') {
-			s++;
-			out[l++] = is_phased;
-			if (l == 1)
-				unknown1 = 1;
-		} else if (*s >= '0' && *s <= '9') {
-			do {
-				if (val > ((uint32_t)INT32_MAX >> 1) - 1)
-					return -1;
-				val = val * 10 + (*s - '0');
-				s++;
-			} while (*s >= '0' && *s <= '9');
-			if (val > ((uint32_t)INT32_MAX >> 1) - 1)
-				return -1;
-			out[l++] = ((val + 1) << 1) | is_phased;
-		} else {
-			return -1;
-		}
-
-		anyunphased |= (ploidy != 1) && !is_phased;
-		is_phased = *s == '|';
-		if (*s != '|' && *s != '/')
-			break;
-		s++;
-	}
-
-	if (!phasingprfx) {
-		if (ploidy == 1) {
-			if (!unknown1)
-				out[0] |= 1;
-		} else {
-			out[0] |= anyunphased ? 0 : 1;
-		}
-	}
-	for (; l < width; l++)
-		out[l] = bcf_int32_vector_end;
-
-	*sp = s;
-	return 0;
-}
-
-static int vcf_plan_parse_int_vector_dynamic(const char **sp, int32_t *out, int width)
-{
-	const char *s = *sp;
-	int i = 0;
-
-	if (*s == ':' || *s == '\t' || *s == '\0') {
-		out[i++] = bcf_int32_missing;
-	} else {
-		for (;;) {
-			if (i >= width || vcf_plan_int_value(&s, &out[i]) < 0)
-				return -1;
-			i++;
-			if (*s != ',')
-				break;
-			s++;
-		}
-	}
-	for (; i < width; i++)
-		out[i] = bcf_int32_vector_end;
-	*sp = s;
 	return 0;
 }
 
@@ -4344,18 +4104,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_scalar_flexible(const char **sp, float
 	return vcf_plan_float_value(sp, out);
 }
 
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible_counted(const char **sp, int32_t *out, int *nread)
-{
-	if (**sp == ':' || **sp == '\t' || **sp == '\0') {
-		out[0] = bcf_int32_missing;
-		out[1] = bcf_int32_vector_end;
-		if (nread)
-			*nread = 1;
-		return 0;
-	}
-	return vcf_plan_parse_int_vector2_counted(sp, out, nread);
-}
-
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible_counted_range(const char **sp,
                                                                              int32_t *out,
                                                                              int *nread,
@@ -4370,24 +4118,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible_counted_range(con
 		return 0;
 	}
 	return vcf_plan_parse_int_vector2_counted_range(sp, out, nread, range);
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible(const char **sp, int32_t *out)
-{
-	return vcf_plan_parse_int_vector2_flexible_counted(sp, out, NULL);
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible_counted(const char **sp, int32_t *out, int *nread)
-{
-	if (**sp == ':' || **sp == '\t' || **sp == '\0') {
-		out[0] = bcf_int32_missing;
-		out[1] = bcf_int32_vector_end;
-		out[2] = bcf_int32_vector_end;
-		if (nread)
-			*nread = 1;
-		return 0;
-	}
-	return vcf_plan_parse_int_vector3_counted(sp, out, nread);
 }
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible_counted_range(const char **sp,
@@ -4407,11 +4137,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible_counted_range(con
 	return vcf_plan_parse_int_vector3_counted_range(sp, out, nread, range);
 }
 
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible(const char **sp, int32_t *out)
-{
-	return vcf_plan_parse_int_vector3_flexible_counted(sp, out, NULL);
-}
-
 static int vcf_plan_parse_int_vector_flexible_counted_range(const char **sp,
                                                             int32_t *out,
                                                             int width,
@@ -4429,6 +4154,16 @@ static int vcf_plan_parse_int_vector_flexible_counted_range(const char **sp,
 		if (nread)
 			*nread = 1;
 		return 0;
+	}
+	switch (width) {
+	case 4:
+		return vcf_plan_parse_int_vector4_counted_range(sp, out, nread, range);
+	case 6:
+		return vcf_plan_parse_int_vector6_counted_range(sp, out, nread, range);
+	case 10:
+		return vcf_plan_parse_int_vector10_counted_range(sp, out, nread, range);
+	default:
+		break;
 	}
 	return vcf_plan_parse_int_vector_counted_range(sp, out, width, nread, range);
 }
@@ -4490,40 +4225,7 @@ static int vcf_format_general_expected_width(const vcf_format_op_t *op, bcf1_t *
 	}
 }
 
-static int vcf_enc_gt2_int8(kstring_t *dst, int nsamples, int32_t *gt);
 static int vcf_enc_gt2_u8(kstring_t *dst, int nsamples, const uint8_t *gt);
-
-static int vcf_format_general_encode_row_ops(kstring_t *dst, kstring_t *mem,
-                                             int nsamples, int n_ops,
-                                             const vcf_format_row_op_t *row_ops)
-{
-	int j;
-
-	for (j = 0; j < n_ops; j++) {
-		const vcf_format_row_op_t *op = &row_ops[j];
-		uint8_t *buf = (uint8_t*)mem->s + op->offset;
-
-		bcf_enc_int1(dst, op->key);
-		if (op->kind == VCF_FORMAT_ROW_GT2) {
-			if (vcf_enc_gt2_u8(dst, nsamples, buf) < 0)
-				return -1;
-		} else if (op->kind == VCF_FORMAT_ROW_STR) {
-			if (bcf_enc_size(dst, op->width, BCF_BT_CHAR) < 0)
-				return -1;
-			if (kputsn((char *)buf, nsamples * (size_t)op->width, dst) < 0)
-				return -1;
-		} else if (op->kind == VCF_FORMAT_ROW_FLOAT1 || op->kind == VCF_FORMAT_ROW_FLOATN) {
-			if (bcf_enc_size(dst, op->width, BCF_BT_FLOAT) < 0)
-				return -1;
-			if (serialize_float_array(dst, nsamples * (size_t)op->width, (float *)buf) < 0)
-				return -1;
-		} else {
-			if (bcf_enc_vint(dst, nsamples * op->width, (int32_t *)buf, op->width) < 0)
-				return -1;
-		}
-	}
-	return 0;
-}
 
 static int vcf_format_general_encode_row_ops_from_ranges(kstring_t *dst, kstring_t *mem,
                                                          int nsamples, int n_ops,
@@ -4564,21 +4266,6 @@ static int vcf_format_general_encode_row_ops_from_ranges(kstring_t *dst, kstring
 				return -1;
 		}
 	}
-	return 0;
-}
-
-static int vcf_enc_gt2_int8(kstring_t *dst, int nsamples, int32_t *gt)
-{
-	int i, n = nsamples * 2;
-	uint8_t *p;
-
-	if (bcf_enc_size(dst, 2, BCF_BT_INT8) < 0 ||
-	    ks_resize(dst, dst->l + n) < 0)
-		return -1;
-	p = (uint8_t *)dst->s + dst->l;
-	for (i = 0; i < n; i++)
-		p[i] = (uint8_t)gt[i];
-	dst->l += n;
 	return 0;
 }
 
@@ -4624,14 +4311,6 @@ static int vcf_format_general_composable_supported(const vcf_format_row_op_t *ro
 		}
 	}
 	return 1;
-}
-
-static inline int vcf_format_row_is_int(const vcf_format_row_op_t *op)
-{
-	return op->kind == VCF_FORMAT_ROW_INT1 ||
-	       op->kind == VCF_FORMAT_ROW_INT2 ||
-	       op->kind == VCF_FORMAT_ROW_INT3 ||
-	       op->kind == VCF_FORMAT_ROW_INTN;
 }
 
 static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
@@ -4711,120 +4390,6 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
 	return 0;
 }
 
-static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h,
-                                                const vcf_format_general_plan_t *plan,
-                                                bcf1_t *v, char *q, int *widths)
-{
-	const char *cur, *end;
-	int ad_w, pl_w, sample, j, nsamples = bcf_hdr_nsamples(h);
-	int str1_idx = plan->likelihood_str1_idx;
-	int str2_idx = plan->likelihood_str2_idx;
-
-	if (!plan->likelihood_supported)
-		return -4;
-	if (v->n_allele < 1 || v->n_allele > 8)
-		return -4;
-	ad_w = v->n_allele;
-	pl_w = v->n_allele * (v->n_allele + 1) / 2;
-	if (pl_w < 1 || pl_w > 36)
-		return -4;
-
-	for (j = 0; j < plan->n_ops; j++)
-		widths[j] = 0;
-	widths[0] = 2;
-	if (plan->likelihood_has_float)
-		widths[plan->likelihood_float_idx] = 1;
-	widths[plan->likelihood_ad_idx] = ad_w;
-	widths[plan->likelihood_dp_idx] = 1;
-	widths[plan->likelihood_gq_idx] = 1;
-	widths[plan->likelihood_pl_idx] = pl_w;
-
-	if (str1_idx < 0)
-		return 0;
-
-	cur = q + 1;
-	end = s->s + s->l;
-	for (sample = 0; sample < nsamples && cur < end; sample++) {
-		if (vcf_plan_skip_field(&cur, ':') < 0)
-			return -4;
-		if (plan->likelihood_has_float && vcf_plan_skip_field(&cur, ':') < 0)
-			return -4;
-		if (vcf_plan_skip_field(&cur, ':') < 0)
-			return -4;
-		if (vcf_plan_skip_field(&cur, ':') < 0)
-			return -4;
-		if (vcf_plan_skip_field(&cur, ':') < 0)
-			return -4;
-		if (vcf_plan_measure_string(&cur, ':', &widths[str1_idx]) < 0)
-			return -4;
-		if (vcf_plan_measure_string(&cur, ':', &widths[str2_idx]) < 0)
-			return -4;
-		while (cur < end && *cur && *cur != '\t')
-			cur++;
-		if (*cur == '\t')
-			cur++;
-	}
-	if (sample != nsamples)
-		return -4;
-	if (widths[str1_idx] <= 0)
-		widths[str1_idx] = 1;
-	if (widths[str2_idx] <= 0)
-		widths[str2_idx] = 1;
-	widths[str1_idx]++;
-	widths[str2_idx]++;
-
-	return 0;
-}
-
-static int vcf_parse_format_general_gt2_only(kstring_t *s, const bcf_hdr_t *h,
-                                             bcf1_t *v,
-                                             const vcf_format_general_plan_t *plan,
-                                             char *q)
-{
-	int nsamples = bcf_hdr_nsamples(h), sample;
-	size_t indiv_l0 = v->indiv.l;
-	uint8_t *gt8;
-	const char *cur, *end;
-
-	if (plan->n_ops != 1 || !plan->ops[0].is_gt || v->n_allele > 10)
-		return -4;
-
-	bcf_enc_int1(&v->indiv, plan->ops[0].key);
-	if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
-	    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
-		goto error;
-	gt8 = (uint8_t *)v->indiv.s + v->indiv.l;
-	v->indiv.l += (size_t)nsamples * 2;
-
-	cur = q + 1;
-	end = s->s + s->l;
-	for (sample = 0; sample < nsamples && cur < end; sample++) {
-		if (vcf_plan_gt2_u8(&cur, &gt8[sample * 2]) < 0)
-			goto fallback;
-		if (*cur == '\t')
-			cur++;
-		else if (*cur == '\0' || cur >= end)
-			;
-		else
-			goto fallback;
-	}
-	if (sample != nsamples)
-		goto fallback;
-
-	v->n_fmt = 1;
-	v->n_sample = nsamples;
-	vcf_format_plan_stats.hits++;
-	vcf_format_plan_stats.parsed_samples += nsamples;
-	return 0;
-
-fallback:
-	v->indiv.l = indiv_l0;
-	return -4;
-error:
-	v->indiv.l = indiv_l0;
-	return -1;
-}
-
 static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                                                bcf1_t *v,
                                                const vcf_format_general_plan_t *plan,
@@ -4833,7 +4398,7 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 {
 	kstring_t *mem = (kstring_t*)&h->mem;
 	int nsamples = bcf_hdr_nsamples(h), sample, j;
-	int direct_ops = 0;
+	int direct_ops = vcf_format_direct_prefix_len(row_ops, plan->n_ops);
 	int max_counts[MAX_N_FMT];
 	vcf_plan_int_range_t ranges[MAX_N_FMT];
 	size_t indiv_l0 = v->indiv.l;
@@ -4982,255 +4547,6 @@ fallback:
 error:
 	v->indiv.l = indiv_l0;
 	return -1;
-}
-
-static int vcf_parse_format_general_likelihood_shape(kstring_t *s,
-                                                     const bcf_hdr_t *h,
-                                                     bcf1_t *v,
-                                                     const vcf_format_general_plan_t *plan,
-                                                     char *q,
-                                                     int *widths)
-{
-	kstring_t *mem = (kstring_t*)&h->mem;
-	int nsamples = bcf_hdr_nsamples(h);
-	int ad_w, pl_w, sample;
-	int ad_idx, dp_idx, gq_idx, pl_idx;
-	int has_float, has_phase, float_idx, str1_idx, str2_idx;
-	int max_ad_count = 0, max_pl_count = 0, nwords;
-	vcf_plan_int_range_t ad_range, dp_range, gq_range, pl_range;
-	size_t indiv_l0 = v->indiv.l;
-	size_t gt8_off, float_le_off = 0;
-	size_t ad_off, dp_off, gq_off, str1_off = 0, str2_off = 0, pl_off, total_bytes;
-	uint8_t *gt8, *float_le = NULL;
-	int32_t *ad, *dp, *gq, *pl;
-	char *str1 = NULL, *str2 = NULL;
-	const char *cur, *end;
-
-	if (!plan->likelihood_supported)
-		return -4;
-
-	vcf_format_likelihood_shape_attempts++;
-	if (widths[0] != 2)
-		return -4;
-	if (v->n_allele < 1 || v->n_allele > 8)
-		return -4;
-
-	ad_w = v->n_allele;
-	pl_w = v->n_allele * (v->n_allele + 1) / 2;
-	if (pl_w < 1 || pl_w > 36)
-		return -4;
-
-	has_float = plan->likelihood_has_float;
-	has_phase = plan->likelihood_has_phase;
-	float_idx = plan->likelihood_float_idx;
-	ad_idx = plan->likelihood_ad_idx;
-	dp_idx = plan->likelihood_dp_idx;
-	gq_idx = plan->likelihood_gq_idx;
-	str1_idx = plan->likelihood_str1_idx;
-	str2_idx = plan->likelihood_str2_idx;
-	pl_idx = plan->likelihood_pl_idx;
-
-	if (widths[ad_idx] != ad_w ||
-	    widths[dp_idx] != 1 ||
-	    widths[gq_idx] != 1 ||
-	    (has_float && widths[float_idx] != 1) ||
-	    (has_phase && (widths[str1_idx] <= 0 ||
-	                   widths[str2_idx] <= 0)) ||
-	    widths[pl_idx] != pl_w)
-		return -4;
-
-	vcf_plan_int_range_init(&ad_range);
-	vcf_plan_int_range_init(&dp_range);
-	vcf_plan_int_range_init(&gq_range);
-	vcf_plan_int_range_init(&pl_range);
-
-	bcf_enc_int1(&v->indiv, plan->ops[0].key);
-	if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
-	    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
-		goto error;
-	gt8_off = v->indiv.l;
-	v->indiv.l += (size_t)nsamples * 2;
-	if (has_float) {
-		bcf_enc_int1(&v->indiv, plan->ops[float_idx].key);
-		if (bcf_enc_size(&v->indiv, 1, BCF_BT_FLOAT) < 0 ||
-		    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * sizeof(float)) < 0)
-			goto error;
-		float_le_off = v->indiv.l;
-		v->indiv.l += (size_t)nsamples * sizeof(float);
-	}
-	gt8 = (uint8_t *)v->indiv.s + gt8_off;
-	if (has_float)
-		float_le = (uint8_t *)v->indiv.s + float_le_off;
-
-	mem->l = 0;
-	if (align_mem(mem) < 0)
-		goto error;
-	total_bytes = (size_t) nsamples * (ad_w + 1 + 1 + pl_w) * sizeof(int32_t);
-	if (has_phase)
-		total_bytes += (size_t) nsamples *
-		               (widths[str1_idx] + widths[str2_idx]);
-	if (total_bytes > INT_MAX)
-		goto error;
-	if (ks_resize(mem, mem->l + total_bytes) < 0)
-		goto error;
-
-	ad_off = mem->l; mem->l += (size_t) nsamples * ad_w * sizeof(int32_t);
-	dp_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
-	gq_off = mem->l; mem->l += (size_t) nsamples * sizeof(int32_t);
-	if (has_phase) {
-		str1_off = mem->l; mem->l += (size_t) nsamples * widths[str1_idx];
-		str2_off = mem->l; mem->l += (size_t) nsamples * widths[str2_idx];
-	}
-	pl_off = mem->l; mem->l += (size_t) nsamples * pl_w * sizeof(int32_t);
-
-	ad = (int32_t *) (mem->s + ad_off);
-	dp = (int32_t *) (mem->s + dp_off);
-	gq = (int32_t *) (mem->s + gq_off);
-	if (has_phase) {
-		str1 = mem->s + str1_off;
-		str2 = mem->s + str2_off;
-	}
-	pl = (int32_t *) (mem->s + pl_off);
-
-	cur = q + 1;
-	end = s->s + s->l;
-	for (sample = 0; sample < nsamples && cur < end; sample++) {
-		int nread;
-
-		if (vcf_plan_gt2_u8(&cur, &gt8[sample * 2]) < 0)
-			goto fallback;
-		if (vcf_plan_expect_sep(&cur, ':') < 0)
-			goto fallback;
-		if (has_float) {
-			float f;
-			if (vcf_plan_float_value(&cur, &f) < 0)
-				goto fallback;
-			float_to_le(f, float_le + (size_t)sample * sizeof(float));
-			if (vcf_plan_expect_sep(&cur, ':') < 0)
-				goto fallback;
-		}
-		if (ad_w == 2) {
-			if (vcf_plan_parse_int_vector2_counted_range(&cur, &ad[sample * 2], &nread, &ad_range) < 0)
-				goto fallback;
-		} else if (ad_w == 3) {
-			if (vcf_plan_parse_int_vector3_counted_range(&cur, &ad[sample * 3], &nread, &ad_range) < 0)
-				goto fallback;
-		} else if (ad_w == 4) {
-			if (vcf_plan_parse_int_vector4_counted_range(&cur, &ad[sample * 4], &nread, &ad_range) < 0)
-				goto fallback;
-		} else if (vcf_plan_parse_int_vector_counted_range(&cur, &ad[sample * ad_w], ad_w, &nread, &ad_range) < 0) {
-			goto fallback;
-		}
-		if (max_ad_count < nread)
-			max_ad_count = nread;
-		if (vcf_plan_expect_sep(&cur, ':') < 0)
-			goto fallback;
-		if (vcf_plan_int_value_range(&cur, &dp[sample], &dp_range) < 0)
-			goto fallback;
-		if (vcf_plan_expect_sep(&cur, ':') < 0)
-			goto fallback;
-		if (vcf_plan_int_value_range(&cur, &gq[sample], &gq_range) < 0)
-			goto fallback;
-		if (vcf_plan_expect_sep(&cur, ':') < 0)
-			goto fallback;
-		if (has_phase) {
-			if (vcf_plan_copy_string(&cur, &str1[sample * widths[str1_idx]],
-			                         widths[str1_idx]) < 0)
-				goto fallback;
-			if (vcf_plan_expect_sep(&cur, ':') < 0)
-				goto fallback;
-			if (vcf_plan_copy_string(&cur, &str2[sample * widths[str2_idx]],
-			                         widths[str2_idx]) < 0)
-				goto fallback;
-			if (vcf_plan_expect_sep(&cur, ':') < 0)
-				goto fallback;
-		}
-		if (pl_w == 3) {
-			if (vcf_plan_parse_int_vector3_counted_range(&cur, &pl[sample * 3], &nread, &pl_range) < 0)
-				goto fallback;
-		} else if (pl_w == 6) {
-			if (vcf_plan_parse_int_vector6_counted_range(&cur, &pl[sample * 6], &nread, &pl_range) < 0)
-				goto fallback;
-		} else if (pl_w == 10) {
-			if (vcf_plan_parse_int_vector10_counted_range(&cur, &pl[sample * 10], &nread, &pl_range) < 0)
-				goto fallback;
-		} else if (vcf_plan_parse_int_vector_counted_range(&cur, &pl[sample * pl_w], pl_w, &nread, &pl_range) < 0) {
-			goto fallback;
-		}
-		if (max_pl_count < nread)
-			max_pl_count = nread;
-		if (*cur == '\t')
-			cur++;
-		else if (*cur == '\0' || cur >= end)
-			;
-		else
-			goto fallback;
-	}
-	if (sample != nsamples)
-		goto fallback;
-	if (max_ad_count != ad_w || max_pl_count != pl_w)
-		goto fallback;
-
-	v->n_fmt = plan->n_ops;
-	v->n_sample = nsamples;
-	bcf_enc_int1(&v->indiv, plan->ops[ad_idx].key);
-	nwords = nsamples * ad_w;
-	if (bcf_enc_vint_known_range_special(&v->indiv, nwords, ad, ad_w, ad_range.min, ad_range.max,
-	                                     ad_range.has_special) < 0)
-		goto error;
-	bcf_enc_int1(&v->indiv, plan->ops[dp_idx].key);
-	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, dp, 1, dp_range.min, dp_range.max,
-	                                     dp_range.has_special) < 0)
-		goto error;
-	bcf_enc_int1(&v->indiv, plan->ops[gq_idx].key);
-	if (bcf_enc_vint_known_range_special(&v->indiv, nsamples, gq, 1, gq_range.min, gq_range.max,
-	                                     gq_range.has_special) < 0)
-		goto error;
-	if (has_phase) {
-		bcf_enc_int1(&v->indiv, plan->ops[str1_idx].key);
-		if (bcf_enc_size(&v->indiv, widths[str1_idx], BCF_BT_CHAR) < 0 ||
-		    kputsn(str1, (size_t) nsamples * widths[str1_idx], &v->indiv) < 0)
-			goto error;
-		bcf_enc_int1(&v->indiv, plan->ops[str2_idx].key);
-		if (bcf_enc_size(&v->indiv, widths[str2_idx], BCF_BT_CHAR) < 0 ||
-		    kputsn(str2, (size_t) nsamples * widths[str2_idx], &v->indiv) < 0)
-			goto error;
-	}
-	bcf_enc_int1(&v->indiv, plan->ops[pl_idx].key);
-	nwords = nsamples * pl_w;
-	if (bcf_enc_vint_known_range_special(&v->indiv, nwords, pl, pl_w, pl_range.min, pl_range.max,
-	                                     pl_range.has_special) < 0)
-		goto error;
-
-	vcf_format_plan_stats.hits++;
-	vcf_format_plan_stats.parsed_samples += nsamples;
-	vcf_format_likelihood_shape_hits++;
-	return 0;
-
-fallback:
-	v->indiv.l = indiv_l0;
-	vcf_format_likelihood_shape_fallback++;
-	return -4;
-error:
-	v->indiv.l = indiv_l0;
-	return -1;
-}
-
-static int vcf_parse_format_general_likelihood_strict(kstring_t *s,
-                                                      const bcf_hdr_t *h,
-                                                      bcf1_t *v,
-                                                      const vcf_format_general_plan_t *plan,
-                                                      char *q, int *attempted_shape)
-{
-	int widths[MAX_N_FMT];
-
-	if (attempted_shape)
-		*attempted_shape = 0;
-	if (vcf_format_general_likelihood_widths(s, h, plan, v, q, widths) < 0)
-		return -4;
-	if (attempted_shape)
-		*attempted_shape = 1;
-	return vcf_parse_format_general_likelihood_shape(s, h, v, plan, q, widths);
 }
 
 static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
