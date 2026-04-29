@@ -283,6 +283,32 @@ All exact and interp outputs compared byte-identical to baseline.  Highlights:
 The important negative-cache result is the full 1000G GT-only workload:
 dynamic mode no longer pays 1,103,547 failed likelihood-shape probes.
 
+## 2026-04-29 GT-Only Fast Path
+
+Added a tiny general-plan executor for the common `FORMAT=GT` / diploid `GT2`
+shape.  This is still shape-based rather than data-set specific:
+
+- requires a single FORMAT op and that op must be `GT`,
+- requires allele indexes that fit the existing one-digit `GT2` parser,
+- falls through to the existing strict/measured paths for haploid, dynamic GT,
+  malformed rows, or any unsupported row-local detail.
+
+Also tightened the older exact-name CCDG kernels so they only claim a FORMAT
+after checking the relevant header types and scalar counts.  A new
+`format-plan-header-mismatch.vcf` fixture keeps this honest by using CCDG-shaped
+names with `AD` declared as a string.
+
+Latest full large-corpus run remained byte-identical to baseline for exact and
+interp.  The main win is the full 1000G chr22 GT-only workload:
+
+| Input | Baseline user | Exact user | Dynamic interp user |
+|---|---:|---:|---:|
+| 1000G chr22 full GT | 24.86 s | 5.77 s | 5.61 s |
+
+The previous cached-shape run was about 9.1 s user in dynamic mode on this
+input, so the direct GT-only executor removes roughly 39% of the remaining
+planned-parser CPU for this large real workload.
+
 ## Open Questions
 
 - How much of the gap is parse-loop dispatch versus generic encode cost?

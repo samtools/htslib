@@ -3421,6 +3421,23 @@ static int vcf_format_plan_compile(const bcf_hdr_t *h, const char *format,
 	    (plan->has_ab && plan->key_ab < 0) ||
 	    (plan->has_phase && (plan->key_pgt < 0 || plan->key_pid < 0)))
 		plan->supported = 0;
+	if (plan->supported &&
+	    (bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_gt) != BCF_HT_STR ||
+	     bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_ad) != BCF_HT_INT ||
+	     bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_dp) != BCF_HT_INT ||
+	     bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_gq) != BCF_HT_INT ||
+	     bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_pl) != BCF_HT_INT ||
+	     bcf_hdr_id2number(h, BCF_HL_FMT, plan->key_dp) != 1 ||
+	     bcf_hdr_id2number(h, BCF_HL_FMT, plan->key_gq) != 1 ||
+	     (plan->has_ab &&
+	      (bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_ab) != BCF_HT_REAL ||
+	       bcf_hdr_id2number(h, BCF_HL_FMT, plan->key_ab) != 1)) ||
+	     (plan->has_phase &&
+	      (bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_pgt) != BCF_HT_STR ||
+	       bcf_hdr_id2type(h, BCF_HL_FMT, plan->key_pid) != BCF_HT_STR ||
+	       bcf_hdr_id2number(h, BCF_HL_FMT, plan->key_pgt) != 1 ||
+	       bcf_hdr_id2number(h, BCF_HL_FMT, plan->key_pid) != 1))))
+		plan->supported = 0;
 
 	return plan->supported;
 }
@@ -4537,6 +4554,55 @@ static int vcf_format_general_likelihood_widths(kstring_t *s, const bcf_hdr_t *h
 	return 0;
 }
 
+static int vcf_parse_format_general_gt2_only(kstring_t *s, const bcf_hdr_t *h,
+                                             bcf1_t *v,
+                                             const vcf_format_general_plan_t *plan,
+                                             char *q)
+{
+	int nsamples = bcf_hdr_nsamples(h), sample;
+	size_t indiv_l0 = v->indiv.l;
+	uint8_t *gt8;
+	const char *cur, *end;
+
+	if (plan->n_ops != 1 || !plan->ops[0].is_gt || v->n_allele > 10)
+		return -4;
+
+	bcf_enc_int1(&v->indiv, plan->ops[0].key);
+	if (bcf_enc_size(&v->indiv, 2, BCF_BT_INT8) < 0 ||
+	    ks_resize(&v->indiv, v->indiv.l + (size_t)nsamples * 2) < 0)
+		goto error;
+	gt8 = (uint8_t *)v->indiv.s + v->indiv.l;
+	v->indiv.l += (size_t)nsamples * 2;
+
+	cur = q + 1;
+	end = s->s + s->l;
+	for (sample = 0; sample < nsamples && cur < end; sample++) {
+		if (vcf_plan_gt2_u8(&cur, &gt8[sample * 2]) < 0)
+			goto fallback;
+		if (*cur == '\t')
+			cur++;
+		else if (*cur == '\0' || cur >= end)
+			;
+		else
+			goto fallback;
+	}
+	if (sample != nsamples)
+		goto fallback;
+
+	v->n_fmt = 1;
+	v->n_sample = nsamples;
+	vcf_format_plan_stats.hits++;
+	vcf_format_plan_stats.parsed_samples += nsamples;
+	return 0;
+
+fallback:
+	v->indiv.l = indiv_l0;
+	return -4;
+error:
+	v->indiv.l = indiv_l0;
+	return -1;
+}
+
 static int vcf_parse_format_general_fixed_numeric(kstring_t *s, const bcf_hdr_t *h,
                                                   bcf1_t *v,
                                                   const vcf_format_general_plan_t *plan,
@@ -5077,6 +5143,15 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
 	if (!nsamples)
 		return 0;
 	strict_enabled = vcf_format_fast_guard_enabled(&plan->strict_guard);
+	if (strict_enabled && plan->n_ops == 1 && plan->ops[0].is_gt) {
+		ret = vcf_parse_format_general_gt2_only(s, h, v, plan, q);
+		if (ret == 0) {
+			vcf_format_fast_guard_success(&plan->strict_guard);
+			return ret;
+		}
+		if (ret != -4)
+			return ret;
+	}
 	if (plan->likelihood_supported && strict_enabled) {
 		ret = vcf_parse_format_general_likelihood_strict(s, h, v, plan, q);
 		if (ret == 0) {

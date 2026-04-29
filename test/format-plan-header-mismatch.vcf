@@ -1,0 +1,9 @@
+##fileformat=VCFv4.3
+##contig=<ID=chr22,length=50818468>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=1,Type=String,Description="Allelic depths as a string">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Likelihoods">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3
+chr22	10600000	.	A	T	50	PASS	.	GT:AD:DP:GQ:PL	0/1:3,4:7:42:90,0,120	0/0:5,0:5:15:0,15,200	./.:.:0:.:.

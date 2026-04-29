@@ -7,6 +7,7 @@ large/**/*.tbi
 large/results/*.bcf
 large/results/*.stderr
 large/results/*.tmp
+large/results-*/*
 results/*.bcf
 results/*.stderr
 !results/timings.tsv
