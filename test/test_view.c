@@ -30,23 +30,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 #include "../cram/cram.h"
 #include "../htslib/sam.h"
 #include "../htslib/vcf.h"
 #include "../htslib/hts_log.h"
-
-extern void vcf_format_plan_stats_for_test(uint64_t *attempts, uint64_t *hits,
-                                           uint64_t *fallback,
-                                           uint64_t *parsed_samples);
-extern void vcf_format_plan_fallback_stats_for_test(uint64_t *unsupported,
-                                                    uint64_t *numeric_width,
-                                                    uint64_t *string_width,
-                                                    uint64_t *gt_shape,
-                                                    uint64_t *parse,
-                                                    uint64_t *separator,
-                                                    uint64_t *sample_count);
 
 struct opts {
     char *fn_ref;
@@ -448,30 +436,6 @@ int main(int argc, char *argv[])
 
     if (p.pool)
         hts_tpool_destroy(p.pool);
-
-    const char *format_plan_stats = getenv("HTS_VCF_FORMAT_PLAN_STATS");
-    if (format_plan_stats && strcmp(format_plan_stats, "1") == 0) {
-        uint64_t attempts = 0, hits = 0, fallback = 0, parsed_samples = 0;
-        uint64_t unsupported = 0;
-        uint64_t numeric_width = 0, string_width = 0, gt_shape = 0, parse = 0;
-        uint64_t separator = 0, sample_count = 0;
-        vcf_format_plan_stats_for_test(&attempts, &hits, &fallback, &parsed_samples);
-        vcf_format_plan_fallback_stats_for_test(&unsupported, &numeric_width,
-                                                &string_width, &gt_shape,
-                                                &parse, &separator,
-                                                &sample_count);
-        fprintf(stderr,
-                "vcf-format-plan attempts=%llu hits=%llu fallback=%llu parsed_samples=%llu\n",
-                (unsigned long long) attempts, (unsigned long long) hits,
-                (unsigned long long) fallback,
-                (unsigned long long) parsed_samples);
-        fprintf(stderr,
-                "vcf-format-plan-fallback unsupported=%llu numeric_width=%llu string_width=%llu gt_shape=%llu parse=%llu separator=%llu sample_count=%llu\n",
-                (unsigned long long) unsupported,
-                (unsigned long long) numeric_width, (unsigned long long) string_width,
-                (unsigned long long) gt_shape, (unsigned long long) parse,
-                (unsigned long long) separator, (unsigned long long) sample_count);
-    }
 
     if (fclose(stdout) != 0 && errno != EBADF) {
         fprintf(stderr, "Error closing standard output.\n");

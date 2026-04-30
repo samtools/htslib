@@ -3242,59 +3242,52 @@ typedef enum {
 static uint64_t vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_N];
 
 /*
- * Dynamic FORMAT fast path.
+ * Planned FORMAT parser.
  *
- * The existing FORMAT parser below is intentionally very permissive: it can
- * repair missing header declarations, deal with sample subsetting, and recover
- * from many odd row shapes.  The fast path here only claims rows that can be
- * described by the existing FORMAT header metadata and parsed as a fixed list
- * of per-tag operations.  If any compile-time or row-local invariant fails, it
- * returns -3 to let the generic parser handle the whole FORMAT column.
+ * The generic FORMAT parser below is deliberately permissive: it can repair
+ * missing header declarations, handle sample subsetting, and recover from many
+ * irregular row shapes.  The planned parser only handles rows that can be
+ * described by existing FORMAT header metadata and parsed as a fixed list of
+ * per-tag operations.  If any compile-time or row-local invariant fails, it
+ * returns -3 so the generic parser handles the whole FORMAT column.
  *
  * HTS_VCF_FORMAT_PLAN controls the feature:
  *   unset/0        use the generic parser only
- *   1              try the dynamic per-tag plan, with generic fallback
+ *   1              enable the planned per-tag parser, with generic fallback
+ *
+ * HTS_VCF_FORMAT_PLAN_STATS=1 emits aggregate plan counters at process exit.
  */
-void vcf_format_plan_stats_for_test(uint64_t *attempts, uint64_t *hits,
-                                    uint64_t *fallback, uint64_t *parsed_samples)
+static void vcf_format_plan_report_stats(void)
 {
-    if (attempts) *attempts = vcf_format_plan_stats.attempts;
-    if (hits) *hits = vcf_format_plan_stats.hits;
-    if (fallback) *fallback = vcf_format_plan_stats.fallback;
-    if (parsed_samples) *parsed_samples = vcf_format_plan_stats.parsed_samples;
-}
-
-void vcf_format_plan_fallback_stats_for_test(uint64_t *unsupported,
-                                             uint64_t *numeric_width,
-                                             uint64_t *string_width,
-                                             uint64_t *gt_shape,
-                                             uint64_t *parse,
-                                             uint64_t *separator,
-                                             uint64_t *sample_count)
-{
-    if (unsupported)
-        *unsupported = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_UNSUPPORTED];
-    if (numeric_width)
-        *numeric_width = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH];
-    if (string_width)
-        *string_width = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_STRING_WIDTH];
-    if (gt_shape)
-        *gt_shape = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_GT_SHAPE];
-    if (parse)
-        *parse = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_PARSE];
-    if (separator)
-        *separator = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_SEPARATOR];
-    if (sample_count)
-        *sample_count = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_SAMPLE_COUNT];
+    fprintf(stderr,
+            "vcf-format-plan attempts=%llu hits=%llu fallback=%llu parsed_samples=%llu\n",
+            (unsigned long long) vcf_format_plan_stats.attempts,
+            (unsigned long long) vcf_format_plan_stats.hits,
+            (unsigned long long) vcf_format_plan_stats.fallback,
+            (unsigned long long) vcf_format_plan_stats.parsed_samples);
+    fprintf(stderr,
+            "vcf-format-plan-fallback unsupported=%llu numeric_width=%llu string_width=%llu gt_shape=%llu parse=%llu separator=%llu sample_count=%llu\n",
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_UNSUPPORTED],
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH],
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_STRING_WIDTH],
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_GT_SHAPE],
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_PARSE],
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_SEPARATOR],
+            (unsigned long long) vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_SAMPLE_COUNT]);
 }
 
 static int vcf_format_plan_stats_enabled(void)
 {
     static int enabled = -1;
+    static int registered = 0;
 
     if (enabled < 0) {
         const char *env = getenv("HTS_VCF_FORMAT_PLAN_STATS");
         enabled = env && strcmp(env, "1") == 0;
+        if (enabled && !registered) {
+            if (atexit(vcf_format_plan_report_stats) == 0)
+                registered = 1;
+        }
     }
     return enabled;
 }
@@ -3350,9 +3343,9 @@ typedef struct {
      * Cache key is the literal FORMAT string plus the private header
      * generation.  FORMAT key ids/types are header-local, so plans are owned by
      * the header aux block and invalidated whenever bcf_hdr_sync() rebuilds the
-     * dictionaries.  Unsupported plans are cached too; repeated uncommon or
-     * undefined FORMAT strings should pay the compile cost once, then fall back
-     * directly to the generic parser.
+     * dictionaries.  Unsupported FORMAT strings are cached too, so repeated
+     * fallback cases pay the compile cost once and then go directly to the
+     * generic parser.
      */
     char *format;
     size_t format_len;
@@ -3526,11 +3519,10 @@ static inline int vcf_format_op_is_vector(const vcf_format_op_t *op)
 }
 
 /*
- * Return whether this FORMAT composition is inside the current planned
- * executor's supported shape set.  This is a support boundary, not a learned
- * runtime heuristic: mixed measured-string plus float-vector rows are kept on
- * the generic parser unless there is also integer-vector work for the planner
- * to accelerate.
+ * Return whether this FORMAT composition is within the planned executor's
+ * supported shape set.  Mixed measured-string plus float-vector rows require an
+ * extra measurement pass and stay on the generic parser unless the row also
+ * contains integer-vector work that benefits from the planned encoding path.
  */
 static int vcf_format_general_plan_shape_supported(const vcf_format_general_plan_t *plan)
 {
@@ -3549,11 +3541,6 @@ static int vcf_format_general_plan_shape_supported(const vcf_format_general_plan
         }
     }
 
-    /*
-     * Examples intentionally left on generic: GT:GL:FT:DP:GQ and
-     * GT:FT:PID:GL:DP.  Both are valid FORMAT schemas, but this executor has no
-     * cheap integer-vector encoding work to offset the measured-string pass.
-     */
     if (has_measured_string && has_float_vector && !has_int_vector)
         return 0;
     return 1;
@@ -3619,9 +3606,8 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
 
         /*
          * Only compile tags with enough header information to reproduce the
-         * production BCF layout.  Undefined tags and exotic types intentionally
-         * stay on the generic parser, which can emit warnings and install
-         * dummy header records where appropriate.
+         * generic parser's BCF layout.  Undefined tags and exotic types stay on
+         * the generic parser, which owns warning and header-repair behavior.
          */
         plan->ops[plan->n_ops].key = key;
         plan->ops[plan->n_ops].number = bcf_hdr_id2number(h, BCF_HL_FMT, key);
@@ -4489,8 +4475,8 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
             /*
              * This pass validates the sample field separators at the same time
              * as measuring widths.  A single unexpected ':' or tab position is
-             * enough to reject the fast path, preserving production behavior for
-             * odd FORMAT/sample cardinality cases.
+             * enough to reject the planned path, preserving generic-parser
+             * behavior for odd FORMAT/sample cardinality cases.
              */
             while (cur < end && *cur && *cur != ':' && *cur != '\t') {
                 if (op->measured_width &&
@@ -4672,8 +4658,9 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
 
             /*
              * Each op parser consumes exactly one sample subfield and leaves cur
-             * on the following ':' or tab.  Values that require production-only
-             * handling, such as non-simple GT encodings, return -4 via fallback.
+             * on the following ':' or tab.  Values outside this executor's
+             * supported subset, such as non-simple GT encodings, trigger
+             * generic fallback.
              */
             switch (op->kind) {
             case VCF_FORMAT_ROW_GT2:
@@ -4780,10 +4767,10 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
         }
         if (max_counts[j] < row_ops[j].width) {
             /*
-             * Production encodes fixed-width vector rows at the observed row
-             * maximum, not necessarily the conservative header-derived width.
-             * Compacting here avoids unnecessary whole-row fallback while
-             * keeping byte-identical BCF output.
+             * The generic parser encodes fixed-width vector rows at the
+             * observed row maximum, not necessarily the conservative
+             * header-derived width.  Compacting here avoids unnecessary
+             * whole-row fallback while keeping byte-identical BCF output.
              */
             vcf_format_compact_row_op(mem, output_nsamples, &row_ops[j], max_counts[j]);
         }

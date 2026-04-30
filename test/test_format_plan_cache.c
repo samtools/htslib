@@ -38,6 +38,12 @@ static void fail(const char *msg)
 #define check0(expr) do { if ((expr) != 0) fail("check failed: " #expr); } while (0)
 #define check1(expr) do { if (!(expr)) fail("check failed: " #expr); } while (0)
 
+static int enable_format_plan(void)
+{
+    static char env[] = "HTS_VCF_FORMAT_PLAN=1";
+    return putenv(env);
+}
+
 static void parse_line(bcf_hdr_t *hdr, bcf1_t *rec, kstring_t *line,
                        const char *text)
 {
@@ -105,7 +111,7 @@ int main(void)
     bcf1_t *rec;
     kstring_t line = KS_INITIALIZE;
 
-    check0(setenv("HTS_VCF_FORMAT_PLAN", "1", 1));
+    check0(enable_format_plan());
     hdr = bcf_hdr_init("r");
     rec = bcf_init();
     check1(hdr);
