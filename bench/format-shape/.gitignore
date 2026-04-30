@@ -1,9 +1,0 @@
-public/*.vcf.gz
-public/remote-indexes/*.tbi
-synthetic/*.vcf.gz
-large/**/*.vcf.gz
-large/**/*.vcf.bgz
-large/**/*.tbi
-large/results/*
-large/results-*/*
-results/*

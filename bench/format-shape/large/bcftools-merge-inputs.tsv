@@ -1,4 +1,0 @@
-name	path	source
-small_1000g_genotypes	bench/format-shape/public/1000g_chr22_genotypes_16050k_16150k.vcf.gz	small 1000 Genomes GT slice used as a quick merge smoke case
-large_ccdg_likelihood_1024s	bench/format-shape/large/synthetic/large_ccdg_likelihood_1024s.vcf.gz	synthetic CCDG-like likelihood FORMAT, 20k records x 1,024 samples
-large_float_string_1024s	bench/format-shape/large/synthetic/large_float_string_1024s.vcf.gz	synthetic float/string FORMAT negative-control shape, 16k records x 1,024 samples
