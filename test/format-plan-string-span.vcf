@@ -1,0 +1,12 @@
+##fileformat=VCFv4.3
+##contig=<ID=1>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=FT,Number=1,Type=String,Description="Sample filter">
+##FORMAT=<ID=HP,Number=1,Type=String,Description="Haplotype token">
+##FORMAT=<ID=PID,Number=1,Type=String,Description="Physical phasing ID">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3
+1	1	.	A	C	.	PASS	.	GT:FT:PID:DP	0/1:PASS:P1:12	0/0:LowQual:PHASESET_WITH_A_MEDIUM_LENGTH_IDENTIFIER:8	./.:.:.:0
+1	2	.	A	C	.	PASS	.	FT:GT:PID:DP	PASS:0/1:P1:12	q10:1/1:PHASESET_WITH_A_MEDIUM_LENGTH_IDENTIFIER:4	.:./.:.:0
+1	3	.	A	C	.	PASS	.	PID:HP:GT:DP	P1:H1:0|1:10	.:H2:1|1:5	PHASESET_WITH_A_MEDIUM_LENGTH_IDENTIFIER:H3:./.:0
+1	4	.	A	C	.	PASS	.	GT:PID:FT:HP:DP	0/1:SHORT:PASS:A:20	0/0:PHASESET_WITH_A_MEDIUM_LENGTH_IDENTIFIER:LowQual:hap-two:9	./.:.:.:.:0

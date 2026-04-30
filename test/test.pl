@@ -1212,14 +1212,55 @@ sub test_vcf_44
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf44_1.vcf");
 }
 
+sub test_vcf_format_plan_check_stats
+{
+    my ($stats_file, $expected) = @_;
+    return if !defined($expected);
+
+    open(my $fh, '<', $stats_file)
+        or return "failed to open planner stats file $stats_file: $!";
+    local $/;
+    my $stats = <$fh>;
+    close($fh) or return "failed to close planner stats file $stats_file: $!";
+
+    my %observed;
+    if ($stats =~ /vcf-format-plan attempts=(\d+) hits=(\d+) fallback=(\d+) parsed_samples=(\d+)/) {
+        @observed{qw(attempts hits fallback parsed_samples)} = ($1, $2, $3, $4);
+    } else {
+        return "missing planner stats in $stats_file\n$stats";
+    }
+
+    if ($stats =~ /vcf-format-plan-fallback unsupported=(\d+) numeric_width=(\d+) string_width=(\d+) gt_shape=(\d+) parse=(\d+) separator=(\d+) sample_count=(\d+)/) {
+        @observed{qw(unsupported numeric_width string_width gt_shape parse separator sample_count)}
+            = ($1, $2, $3, $4, $5, $6, $7);
+    } else {
+        return "missing planner fallback stats in $stats_file\n$stats";
+    }
+
+    for my $key (sort keys %$expected) {
+        return "planner stat $key: expected $$expected{$key}, got $observed{$key}\n$stats"
+            if !exists($observed{$key}) || $observed{$key} != $$expected{$key};
+    }
+
+    return;
+}
+
 sub test_vcf_format_plan_one
 {
-    my ($opts, $input, $label, $extra_args) = @_;
+    my ($opts, $input, $label, $extra_args, $expected_stats) = @_;
     my $base = "$$opts{tmp}/$label.base.bcf";
     my $plan = "$$opts{tmp}/$label.plan.bcf";
     my $disabled = "$$opts{tmp}/$label.disabled.bcf";
+    my $plan_stats = "$$opts{tmp}/$label.plan.stats";
     my $test = "VCF FORMAT planner: $label";
     my $args = defined($extra_args) ? $extra_args : "";
+    my $plan_env = "HTS_VCF_FORMAT_PLAN=1";
+    my $plan_stderr = "";
+
+    if (defined($expected_stats)) {
+        $plan_env .= " HTS_VCF_FORMAT_PLAN_STATS=1";
+        $plan_stderr = " 2>$plan_stats";
+    }
 
     print "$test:\n";
 
@@ -1231,12 +1272,20 @@ sub test_vcf_format_plan_one
         return;
     }
 
-    $cmd = "env HTS_VCF_FORMAT_PLAN=1 $$opts{path}/test_view -b -l 0 $args $$opts{path}/$input > $plan";
+    $cmd = "env $plan_env $$opts{path}/test_view -b -l 0 $args $$opts{path}/$input > $plan$plan_stderr";
     print "\t$cmd\n";
     ($ret, $out) = _cmd($cmd);
     if ($ret) {
         failed($opts, $test, "planned parser command failed\n$out");
         return;
+    }
+
+    if (defined($expected_stats)) {
+        my $stats_error = test_vcf_format_plan_check_stats($plan_stats, $expected_stats);
+        if ($stats_error) {
+            failed($opts, $test, $stats_error);
+            return;
+        }
     }
 
     $cmd = "cmp $base $plan";
@@ -1308,6 +1357,15 @@ sub test_vcf_format_plan
         test_vcf_format_plan_one($opts, $input, $label, "");
     }
 
+    test_vcf_format_plan_one($opts, "format-plan-string-span.vcf",
+                             "format-plan-string-span", "",
+                             { attempts => 4, hits => 4, fallback => 0,
+                               parsed_samples => 12,
+                               unsupported => 0, numeric_width => 0,
+                               string_width => 0, gt_shape => 0,
+                               parse => 0, separator => 0,
+                               sample_count => 0 });
+
     for my $samples ("S1,S3", "S2", "^S2") {
         for my $input ("format-plan-composable.vcf", "format-plan-edge.vcf") {
             (my $label = "$input.$samples") =~ s/[^A-Za-z0-9_.-]/_/g;
@@ -1316,7 +1374,13 @@ sub test_vcf_format_plan
     }
 
     test_vcf_format_plan_one($opts, "format-plan-sample-skip.vcf",
-                             "format-plan-sample-skip.S1_S3", "-s S1,S3");
+                             "format-plan-sample-skip.S1_S3", "-s S1,S3",
+                             { attempts => 1, hits => 1, fallback => 0,
+                               parsed_samples => 2,
+                               unsupported => 0, numeric_width => 0,
+                               string_width => 0, gt_shape => 0,
+                               parse => 0, separator => 0,
+                               sample_count => 0 });
     test_vcf_format_plan_failure($opts, "format-plan-sample-count.vcf",
                                  "format-plan-sample-count");
 }

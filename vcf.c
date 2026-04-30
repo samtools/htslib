@@ -3361,6 +3361,7 @@ typedef struct {
     int supported;
     vcf_format_plan_fallback_reason_t fallback_reason;
     int n_ops;
+    uint8_t has_string_spans;
     vcf_format_op_t ops[MAX_N_FMT];
 } vcf_format_general_plan_t;
 
@@ -3396,6 +3397,11 @@ typedef struct {
     vcf_format_row_kind_t kind;
     uint8_t can_compact;
 } vcf_format_row_op_t;
+
+typedef struct {
+    const char *ptr;
+    int len;
+} vcf_format_string_span_t;
 
 typedef struct {
     int32_t min;
@@ -3613,6 +3619,7 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
                 if (plan->ops[plan->n_ops].number != 1)
                     goto done;
                 plan->ops[plan->n_ops].measured_width = 1;
+                plan->has_string_spans = 1;
             } else if (vl != BCF_VL_FIXED && vl != BCF_VL_A &&
                        vl != BCF_VL_R && vl != BCF_VL_G &&
                        vl != BCF_VL_VAR) {
@@ -4087,6 +4094,21 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_copy_string(const char **sp, char *out, int 
     return 0;
 }
 
+VCF_PLAN_ALWAYS_INLINE int vcf_plan_copy_string_span(const vcf_format_string_span_t *span,
+                                                     const char **sp,
+                                                     char *out, int width)
+{
+    int l = span->len;
+
+    if (*sp != span->ptr || l > width)
+        return -1;
+    memcpy(out, span->ptr, l);
+    if (l < width)
+        memset(out + l, 0, width - l);
+    *sp = span->ptr + l;
+    return 0;
+}
+
 static int vcf_plan_parse_float_vector_dynamic(const char **sp, float *out, int width)
 {
     const char *s = *sp;
@@ -4355,12 +4377,18 @@ static void vcf_format_compact_row_op(kstring_t *mem, int nsamples,
 static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
                                             const vcf_format_general_plan_t *plan,
                                             bcf1_t *v, char *q, int *widths,
+                                            size_t *string_span_offsets,
+                                            size_t *string_spans_end,
                                             vcf_format_plan_fallback_reason_t *reason)
 {
+    kstring_t *mem = (kstring_t*)&h->mem;
     const char *cur, *end;
-    int has_measured = 0, sample, kept = 0, j;
+    int has_measured = 0, has_string_spans = 0, sample, kept = 0, j;
     int nsamples = h->keep_samples ? h->nsamples_ori : bcf_hdr_nsamples(h);
     int output_nsamples = bcf_hdr_nsamples(h);
+
+    if (string_spans_end)
+        *string_spans_end = 0;
 
     /*
      * With bcf_hdr_set_samples(), the text line still contains the original
@@ -4371,6 +4399,8 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
     for (j = 0; j < plan->n_ops; j++) {
         const vcf_format_op_t *op = &plan->ops[j];
 
+        if (string_span_offsets)
+            string_span_offsets[j] = (size_t)-1;
         if (op->measured_width) {
             /*
              * Strings and Number=. numeric vectors need a first pass so the
@@ -4382,6 +4412,8 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
              */
             widths[j] = 0;
             has_measured = 1;
+            if (!op->is_gt && op->htype == BCF_HT_STR)
+                has_string_spans = 1;
         } else {
             widths[j] = vcf_format_general_expected_width(op, v);
             if (widths[j] <= 0 || widths[j] > VCF_FORMAT_MAX_NUMERIC_WIDTH) {
@@ -4393,6 +4425,29 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
 
     if (!has_measured)
         return 0;
+
+    if (has_string_spans && string_span_offsets) {
+        mem->l = 0;
+        for (j = 0; j < plan->n_ops; j++) {
+            const vcf_format_op_t *op = &plan->ops[j];
+            size_t bytes;
+
+            if (!op->measured_width || op->is_gt || op->htype != BCF_HT_STR)
+                continue;
+            if (align_mem(mem) < 0)
+                return -1;
+            string_span_offsets[j] = mem->l;
+            bytes = (size_t) output_nsamples * sizeof(vcf_format_string_span_t);
+            if (output_nsamples < 0 ||
+                output_nsamples > INT_MAX / (int)sizeof(vcf_format_string_span_t) ||
+                (uint64_t) mem->l + (uint64_t) bytes > INT_MAX ||
+                ks_resize(mem, mem->l + bytes) < 0)
+                return -1;
+            mem->l += bytes;
+        }
+        if (string_spans_end)
+            *string_spans_end = mem->l;
+    }
 
     cur = q + 1;
     end = s->s + s->l;
@@ -4426,6 +4481,12 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
             }
             if (op->measured_width && !op->is_gt && op->htype == BCF_HT_STR) {
                 w = cur - field;
+                if (string_span_offsets && string_span_offsets[j] != (size_t)-1) {
+                    vcf_format_string_span_t *spans =
+                        (vcf_format_string_span_t *)(mem->s + string_span_offsets[j]);
+                    spans[kept].ptr = field;
+                    spans[kept].len = w;
+                }
                 if (j > 0)
                     w++;
                 if (w <= 0)
@@ -4487,6 +4548,8 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                                                const vcf_format_general_plan_t *plan,
                                                char *q,
                                                vcf_format_row_op_t *row_ops,
+                                               const size_t *string_span_offsets,
+                                               size_t string_spans_end,
                                                vcf_format_plan_fallback_reason_t *reason)
 {
     kstring_t *mem = (kstring_t*)&h->mem;
@@ -4538,7 +4601,7 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
         }
     }
 
-    mem->l = 0;
+    mem->l = string_spans_end;
     for (j = direct_ops; j < plan->n_ops; j++) {
         vcf_format_row_op_t *op = &row_ops[j];
 
@@ -4630,7 +4693,15 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                 n = vcf_plan_float_vector_count((float *)buf, op->width);
                 break;
             case VCF_FORMAT_ROW_STR:
-                if (vcf_plan_copy_string(&cur, (char *)buf, op->width) < 0) {
+                if (string_span_offsets && string_span_offsets[j] != (size_t)-1) {
+                    vcf_format_string_span_t *spans =
+                        (vcf_format_string_span_t *)(mem->s + string_span_offsets[j]);
+                    if (vcf_plan_copy_string_span(&spans[kept], &cur,
+                                                  (char *)buf, op->width) < 0) {
+                        vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_STRING_WIDTH);
+                        goto fallback;
+                    }
+                } else if (vcf_plan_copy_string(&cur, (char *)buf, op->width) < 0) {
                     vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_STRING_WIDTH);
                     goto fallback;
                 }
@@ -4717,12 +4788,21 @@ static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
 {
     int widths[MAX_N_FMT];
     vcf_format_row_op_t row_ops[MAX_N_FMT];
+    size_t string_span_offsets_buf[MAX_N_FMT];
+    size_t *string_span_offsets = plan->has_string_spans ? string_span_offsets_buf : NULL;
+    size_t string_spans_end = 0;
+    int ret;
 
-    if (vcf_format_general_strict_widths(s, h, plan, v, q, widths, reason) < 0)
-        return -4;
+    ret = vcf_format_general_strict_widths(s, h, plan, v, q, widths,
+                                           string_span_offsets,
+                                           &string_spans_end, reason);
+    if (ret < 0)
+        return ret;
     if (vcf_format_general_resolve_ops(plan, v, widths, row_ops, reason) < 0)
         return -4;
-    return vcf_parse_format_general_composable(s, h, v, plan, q, row_ops, reason);
+    return vcf_parse_format_general_composable(s, h, v, plan, q, row_ops,
+                                               string_span_offsets,
+                                               string_spans_end, reason);
 }
 
 static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
