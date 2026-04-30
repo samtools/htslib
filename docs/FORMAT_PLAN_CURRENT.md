@@ -34,18 +34,17 @@ compile cost.
 Planner statistics are collected only when `HTS_VCF_FORMAT_PLAN_STATS=1` is
 also set.  Normal production parsing therefore avoids touching the process-wide
 test counters.  The test hook reports both aggregate attempts/hits/fallbacks and
-fallback reason counters: unsupported schema, guard cooldown, numeric width,
-string width, GT shape, parse failure, separator mismatch, and sample-count
-mismatch.
+fallback reason counters: unsupported schema, numeric width, string width, GT
+shape, parse failure, separator mismatch, and sample-count mismatch.
 
 `bcf_hdr_sync()` clears the header-owned plan cache and increments the private
 generation after header dictionaries are rebuilt.  The planner also refuses to
 compile while `h->dirty` is set, leaving unsynced or header-repair cases on the
 generic parser.
 
-The cache and per-plan guard counters are mutable header-owned state, like other
-htslib header scratch storage.  Callers should not concurrently parse through
-the same `bcf_hdr_t` from multiple threads.
+The cache is mutable header-owned state, like other htslib header scratch
+storage.  Callers should not concurrently parse through the same `bcf_hdr_t`
+from multiple threads.
 
 The compile step rejects:
 
@@ -93,24 +92,17 @@ For fixed-width vector fields, the executor can compact underfilled rows to the
 observed row maximum before BCF encoding.  This avoids whole-row fallback when
 the generic parser would also emit a narrower byte-identical vector width.
 
-## Guard Policy
+## Fallback Policy
 
-Each cached dynamic plan has a small runtime guard:
+Supported cached plans are probed on every row.  If row-local validation fails,
+the executor rolls back its partial `v->indiv` writes and the generic parser
+handles the whole FORMAT column for that record.  The fallback does not disable
+or cool down the cached plan; nearby rows with the same FORMAT schema can still
+take the optimized path.
 
-- attempts, hits, fallbacks;
-- consecutive miss streak;
-- temporary cooldown.
-
-An isolated fallback does not disable the fast path.  A plan is paused after
-eight consecutive misses, or after at least 128 attempts with more than 10%
-guard-counted fallbacks.  Row-local numeric/string width misses are counted in
-diagnostics but do not poison the normal guard, because those rows can be sparse
-within an otherwise profitable schema.  A separate dense-width guard pauses a
-schema only after at least 128 width probes with more than 75% width misses; this
-catches pathological over-cap schemas without disabling CCDG-like layouts where
-only a small minority of rows have very long phase strings.  After 256 skipped
-records, the plan probes again so later stable regions can recover the optimized
-path.
+Compile-time unsupported schemas are still cached as unsupported, so repeated
+unoptimizable FORMAT strings pay the compile/classification cost once and then
+fall back directly to the generic parser.
 
 ## Correctness Rules
 
@@ -191,10 +183,9 @@ All planned outputs compared byte-identical to baseline.
 The CCDG 10k fallbacks are all `string_width=139`, meaning only rows with
 measured string fields wider than the 256-byte planned cap use the generic
 parser.  The float/string control fixtures still fall back as unsupported
-because the low-profit schema gate deliberately rejects those schemas.  A
-briefly tested consecutive-width guard regressed CCDG to 9,702 hits / 298
-fallbacks; the retained dense-width guard restores the expected sparse-fallback
-profile.
+because the low-profit schema gate deliberately rejects those schemas.  Briefly
+tested runtime guards regressed sparse-fallback CCDG-like layouts, so the current
+implementation leaves row-local fallbacks local to the record.
 
 ## Full Threaded Corpus Benchmark
 
@@ -511,7 +502,7 @@ into numeric and string limits:
 
 - numeric measured vectors remain capped at 64 values;
 - measured strings are capped at 256 bytes;
-- numeric/string width fallbacks are counted but do not disable the schema guard.
+- numeric/string width fallbacks are counted but do not disable the cached plan.
 
 A 512-byte string cap was tested first.  It recovered all CCDG 10k planner
 fallbacks, but the bcftools-level signal was mixed.  The retained 256-byte cap

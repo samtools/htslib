@@ -31,9 +31,8 @@ blocks.
 
 Fallbacks are whole-row, but they are now classified for diagnostics when
 `HTS_VCF_FORMAT_PLAN_STATS=1` is set.  The current reason counters distinguish
-unsupported schemas, guard cooldowns, numeric-width limits, string-width limits,
-GT shape misses, parse failures, separator mismatches, and sample-count
-mismatches.
+unsupported schemas, numeric-width limits, string-width limits, GT shape misses,
+parse failures, separator mismatches, and sample-count mismatches.
 
 ## Why This Shape
 

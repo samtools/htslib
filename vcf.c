@@ -3230,7 +3230,6 @@ static vcf_format_plan_stats_t vcf_format_plan_stats;
 
 typedef enum {
     VCF_FORMAT_PLAN_FB_UNSUPPORTED = 0,
-    VCF_FORMAT_PLAN_FB_GUARD,
     VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH,
     VCF_FORMAT_PLAN_FB_STRING_WIDTH,
     VCF_FORMAT_PLAN_FB_GT_SHAPE,
@@ -3266,7 +3265,6 @@ void vcf_format_plan_stats_for_test(uint64_t *attempts, uint64_t *hits,
 }
 
 void vcf_format_plan_fallback_stats_for_test(uint64_t *unsupported,
-                                             uint64_t *guard,
                                              uint64_t *numeric_width,
                                              uint64_t *string_width,
                                              uint64_t *gt_shape,
@@ -3276,8 +3274,6 @@ void vcf_format_plan_fallback_stats_for_test(uint64_t *unsupported,
 {
     if (unsupported)
         *unsupported = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_UNSUPPORTED];
-    if (guard)
-        *guard = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_GUARD];
     if (numeric_width)
         *numeric_width = vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH];
     if (string_width)
@@ -3314,25 +3310,7 @@ static int vcf_format_plan_enabled(void)
     return enabled;
 }
 
-typedef struct {
-    uint32_t attempts;
-    uint32_t hits;
-    uint32_t fallbacks;
-    uint32_t width_attempts;
-    uint32_t width_fallbacks;
-    uint16_t miss_streak;
-    uint16_t width_miss_streak;
-    uint16_t cooldown;
-    uint8_t disabled;
-} vcf_format_fast_guard_t;
-
 enum {
-    VCF_FORMAT_FAST_DISABLE_STREAK = 8,
-    VCF_FORMAT_FAST_PROBE_ATTEMPTS = 128,
-    VCF_FORMAT_FAST_MAX_FALLBACK_PCT = 10,
-    VCF_FORMAT_FAST_WIDTH_PROBE_ATTEMPTS = 128,
-    VCF_FORMAT_FAST_MAX_WIDTH_FALLBACK_PCT = 75,
-    VCF_FORMAT_FAST_COOLDOWN_RECORDS = 256,
     VCF_FORMAT_MAX_NUMERIC_WIDTH = 64,
     VCF_FORMAT_MAX_STRING_WIDTH = 256
 };
@@ -3351,98 +3329,6 @@ static inline void vcf_format_plan_set_reason(vcf_format_plan_fallback_reason_t 
 {
     if (dst)
         *dst = reason;
-}
-
-static inline int vcf_format_plan_width_reason(vcf_format_plan_fallback_reason_t reason)
-{
-    return reason == VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH ||
-           reason == VCF_FORMAT_PLAN_FB_STRING_WIDTH;
-}
-
-static inline int vcf_format_plan_guard_counts_reason(vcf_format_plan_fallback_reason_t reason)
-{
-    /*
-     * Row-local width limits are expected on mixed real-world files.  They are
-     * tracked by a separate dense-width guard so sparse long rows do not disable
-     * an otherwise useful schema.
-     */
-    return !vcf_format_plan_width_reason(reason);
-}
-
-static inline void vcf_format_fast_guard_reset(vcf_format_fast_guard_t *guard)
-{
-    guard->attempts = 0;
-    guard->hits = 0;
-    guard->fallbacks = 0;
-    guard->width_attempts = 0;
-    guard->width_fallbacks = 0;
-    guard->miss_streak = 0;
-    guard->width_miss_streak = 0;
-    guard->disabled = 0;
-}
-
-static inline int vcf_format_fast_guard_enabled(vcf_format_fast_guard_t *guard)
-{
-    if (!guard->disabled)
-        return 1;
-    if (guard->cooldown) {
-        guard->cooldown--;
-        return 0;
-    }
-    vcf_format_fast_guard_reset(guard);
-    return 1;
-}
-
-static inline void vcf_format_fast_guard_success(vcf_format_fast_guard_t *guard)
-{
-    if (guard->attempts != UINT32_MAX)
-        guard->attempts++;
-    if (guard->hits != UINT32_MAX)
-        guard->hits++;
-    if (guard->width_attempts != UINT32_MAX)
-        guard->width_attempts++;
-    guard->miss_streak = 0;
-    guard->width_miss_streak = 0;
-}
-
-static inline void vcf_format_fast_guard_fallback(vcf_format_fast_guard_t *guard)
-{
-    if (guard->attempts != UINT32_MAX)
-        guard->attempts++;
-    if (guard->fallbacks != UINT32_MAX)
-        guard->fallbacks++;
-    if (guard->miss_streak != UINT16_MAX)
-        guard->miss_streak++;
-    guard->width_miss_streak = 0;
-
-    if (guard->miss_streak >= VCF_FORMAT_FAST_DISABLE_STREAK) {
-        guard->disabled = 1;
-        guard->cooldown = VCF_FORMAT_FAST_COOLDOWN_RECORDS;
-        return;
-    }
-    if (guard->attempts >= VCF_FORMAT_FAST_PROBE_ATTEMPTS &&
-        (uint64_t) guard->fallbacks * 100 >
-        (uint64_t) guard->attempts * VCF_FORMAT_FAST_MAX_FALLBACK_PCT) {
-        guard->disabled = 1;
-        guard->cooldown = VCF_FORMAT_FAST_COOLDOWN_RECORDS;
-    }
-}
-
-static inline void vcf_format_fast_guard_width_fallback(vcf_format_fast_guard_t *guard)
-{
-    if (guard->width_attempts != UINT32_MAX)
-        guard->width_attempts++;
-    if (guard->width_fallbacks != UINT32_MAX)
-        guard->width_fallbacks++;
-    if (guard->width_miss_streak != UINT16_MAX)
-        guard->width_miss_streak++;
-
-    if (guard->width_attempts >= VCF_FORMAT_FAST_WIDTH_PROBE_ATTEMPTS &&
-        (uint64_t) guard->width_fallbacks * 100 >
-        (uint64_t) guard->width_attempts * VCF_FORMAT_FAST_MAX_WIDTH_FALLBACK_PCT) {
-        guard->disabled = 1;
-        guard->cooldown = VCF_FORMAT_FAST_COOLDOWN_RECORDS;
-    }
 }
 
 typedef struct {
@@ -3476,7 +3362,6 @@ typedef struct {
     vcf_format_plan_fallback_reason_t fallback_reason;
     int n_ops;
     vcf_format_op_t ops[MAX_N_FMT];
-    vcf_format_fast_guard_t general_guard;
 } vcf_format_general_plan_t;
 
 struct vcf_format_plan_cache_t {
@@ -4852,34 +4737,17 @@ static int vcf_parse_format_general_planned(kstring_t *s, const bcf_hdr_t *h,
         reason = VCF_FORMAT_PLAN_FB_UNSUPPORTED;
         goto fallback;
     }
-    if (!vcf_format_fast_guard_enabled(&plan->general_guard)) {
-        /*
-         * If this FORMAT string repeatedly fails row-local validation, stop
-         * probing it for a short cooldown.  This protects mixed or pathological
-         * files from paying fast-path setup cost on every record.
-         */
-        vcf_format_plan_note_fallback(VCF_FORMAT_PLAN_FB_GUARD);
-        return -3;
-    }
 
     nsamples = bcf_hdr_nsamples(h);
     if (!nsamples)
         return 0;
     ret = vcf_parse_format_general_strict(s, h, v, plan, q, &reason);
-    if (ret == 0) {
-        vcf_format_fast_guard_success(&plan->general_guard);
+    if (ret == 0)
         return ret;
-    }
     if (ret != -4)
         return ret;
 
 fallback:
-    if (plan) {
-        if (vcf_format_plan_width_reason(reason))
-            vcf_format_fast_guard_width_fallback(&plan->general_guard);
-        else if (vcf_format_plan_guard_counts_reason(reason))
-            vcf_format_fast_guard_fallback(&plan->general_guard);
-    }
     vcf_format_plan_note_fallback(reason);
     return -3;
 }

@@ -404,7 +404,6 @@ The implementation now reports fallback reasons under
 `HTS_VCF_FORMAT_PLAN_STATS=1`:
 
 - unsupported schema;
-- guard cooldown;
 - numeric width;
 - string width;
 - GT shape;
@@ -414,8 +413,7 @@ The implementation now reports fallback reasons under
 
 The single width cap was split into a 64-value numeric-vector cap and a
 256-byte measured-string cap.  Numeric and string width fallbacks are diagnostic
-only for the normal schema guard: they do not disable a schema that succeeds on
-nearby rows.
+only: they do not disable a schema that succeeds on nearby rows.
 
 Two string caps were benchmarked.  A 512-byte cap planned all CCDG 10k rows but
 had a mixed bcftools-level signal.  The retained 256-byte cap planned 9,861 of
@@ -423,7 +421,7 @@ had a mixed bcftools-level signal.  The retained 256-byte cap planned 9,861 of
 
 ```text
 vcf-format-plan attempts=10000 hits=9861 fallback=139 parsed_samples=31574922
-vcf-format-plan-fallback unsupported=0 guard=0 numeric_width=0 string_width=139 gt_shape=0 parse=0 separator=0 sample_count=0
+vcf-format-plan-fallback unsupported=0 numeric_width=0 string_width=139 gt_shape=0 parse=0 separator=0 sample_count=0
 ```
 
 Result: retained.  Focused tests passed, `git diff --check` was clean, and the
@@ -458,8 +456,8 @@ Retained changes:
 - new fixtures cover rollback after partial planned parsing, malformed
   unselected samples under `bcf_hdr_set_samples()`, repeated wide GT values, and
   malformed sample-count failures;
-- dense-width guard behavior was tightened so sparse over-cap string rows do not
-  poison CCDG-like schemas.
+- row-local width fallbacks remain record-local so sparse over-cap string rows
+  do not poison CCDG-like schemas.
 
 Result: retained.  `make check` passed with 377/377 tests.  `make
 maintainer-check` was attempted but failed before the whitespace/copyright
@@ -477,6 +475,32 @@ The latest bcftools GIAB/CCDG command corpus in
 compared byte-identical.  CCDG 10k user-time speedups were 1.14x for `view_bcf`,
 1.56x for `query_format`, and 1.12x for `filter_gt`; GIAB single-sample FORMAT
 rows remained modestly positive, as expected.
+
+## Runtime Cooldown Removal
+
+The per-plan runtime cooldown was removed after an A/B pass showed no practical
+benefit on realistic workloads.  The cooldown had paused a supported cached
+schema after repeated row-local fallbacks, but standard corpus hit/fallback
+counts were identical with and without it.  The remaining protection is simpler:
+compile-time unsupported schemas are negative-cached, low-profit schemas are
+rejected at compile time, and row-local misses fall back only for that record.
+
+The final no-cooldown parser corpus in
+`bench/format-shape/large/results-no-cooldown-final` compared byte-identical to
+baseline.  Representative planned user times:
+
+| Input | Baseline user | Planned user | Hits / fallback |
+|---|---:|---:|---:|
+| CCDG 10k | 2.46 s | 2.16 s | 9,861 / 139 |
+| 1000G chr22 full GT | 24.50 s | 9.34 s | 1,103,547 / 0 |
+| Large reordered likelihood | 2.89 s | 2.42 s | 20,000 / 0 |
+| Large float/string negative | 2.88 s | 2.86 s | 0 / 16,000 |
+| Mixed row-local fallbacks | 2.14 s | 1.83 s | 12,000 / 0 |
+| Two-string float negative | 2.21 s | 2.22 s | 0 / 12,000 |
+
+Result: retained.  Focused planner tests passed, `test/test_format_plan_cache`
+passed, all large parser-corpus outputs compared byte-identical, and
+`git diff --check` was clean.
 
 ## Main Lessons
 
