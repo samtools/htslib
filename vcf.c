@@ -3219,6 +3219,38 @@ static inline int align_mem(kstring_t *s)
 
 static int vcf_parse_format_check7(const bcf_hdr_t *h, bcf1_t *v);
 
+/*
+ * Planned FORMAT parser.
+ *
+ * The generic FORMAT parser below is deliberately permissive: it can repair
+ * missing header declarations, handle sample subsetting, and recover from many
+ * irregular row shapes.  The planned parser only handles rows that can be
+ * described by existing FORMAT header metadata and parsed as a fixed list of
+ * per-tag operations.  If any compile-time or row-local invariant fails, it
+ * returns -3 so the generic parser handles the whole FORMAT column.
+ *
+ * The implementation is organized as:
+ *
+ *   - controls and diagnostics;
+ *   - cached FORMAT plan data structures;
+ *   - plan cache management and FORMAT-string compilation;
+ *   - small value parsers used by the sample loop;
+ *   - row-local layout and BCF encoding helpers;
+ *   - width measurement for variable row shapes;
+ *   - execution and the generic-parser fallback entry point.
+ */
+
+/*
+ * Planned FORMAT parser: controls and diagnostics.
+ *
+ * HTS_VCF_FORMAT_PLAN controls the feature:
+ *   unset/0        use the generic parser only
+ *   1              enable the planned per-tag parser, with generic fallback
+ *
+ * HTS_VCF_FORMAT_PLAN_STATS=1 emits aggregate plan counters at process exit.
+ * These counters are intentionally diagnostic; normal parsing avoids touching
+ * them unless the stats environment variable is enabled.
+ */
 typedef struct {
     uint64_t attempts;
     uint64_t hits;
@@ -3241,22 +3273,6 @@ typedef enum {
 
 static uint64_t vcf_format_plan_fallback_reasons[VCF_FORMAT_PLAN_FB_N];
 
-/*
- * Planned FORMAT parser.
- *
- * The generic FORMAT parser below is deliberately permissive: it can repair
- * missing header declarations, handle sample subsetting, and recover from many
- * irregular row shapes.  The planned parser only handles rows that can be
- * described by existing FORMAT header metadata and parsed as a fixed list of
- * per-tag operations.  If any compile-time or row-local invariant fails, it
- * returns -3 so the generic parser handles the whole FORMAT column.
- *
- * HTS_VCF_FORMAT_PLAN controls the feature:
- *   unset/0        use the generic parser only
- *   1              enable the planned per-tag parser, with generic fallback
- *
- * HTS_VCF_FORMAT_PLAN_STATS=1 emits aggregate plan counters at process exit.
- */
 static void vcf_format_plan_report_stats(void)
 {
     fprintf(stderr,
@@ -3324,6 +3340,13 @@ static inline void vcf_format_plan_set_reason(vcf_format_plan_fallback_reason_t 
         *dst = reason;
 }
 
+/*
+ * Planned FORMAT parser: cached plan data model.
+ *
+ * A cached plan is the header-derived, record-independent description of the
+ * FORMAT string.  Row operations are derived later after allele-dependent and
+ * measured widths are known for the current record.
+ */
 typedef struct {
     /*
      * Header-derived operation for one FORMAT tag.  This is the reusable,
@@ -3407,12 +3430,14 @@ typedef struct {
     int has_special;
 } vcf_plan_int_range_t;
 
-#if defined(__GNUC__)
-#define VCF_PLAN_ALWAYS_INLINE static inline __attribute__((always_inline))
-#else
-#define VCF_PLAN_ALWAYS_INLINE static inline
-#endif
-
+/*
+ * Planned FORMAT parser: cache management and plan compilation.
+ *
+ * Plans are owned by bcf_hdr_aux_t because FORMAT ids, types, and Number
+ * declarations are header-local.  The cache stores both supported and
+ * unsupported FORMAT strings; unsupported entries let repeated odd schemas
+ * fall through to the generic parser without repeatedly recompiling.
+ */
 static uint64_t vcf_format_plan_hash(const char *format, size_t len)
 {
     size_t i;
@@ -3711,6 +3736,21 @@ static vcf_format_general_plan_t *vcf_format_general_plan_get(const bcf_hdr_t *h
         vcf_format_plan_set_reason(reason, plan->fallback_reason);
     return plan->supported ? plan : NULL;
 }
+
+/*
+ * Planned FORMAT parser: value parsers.
+ *
+ * These helpers consume one FORMAT subfield and leave the input pointer on the
+ * following ':' or tab.  They deliberately handle only the planned subset and
+ * report failure to the executor, which then rolls the whole row back to the
+ * generic parser.  Integer helpers maintain the observed min/max range while
+ * parsing so the final BCF encoder does not need a second range scan.
+ */
+#if defined(__GNUC__)
+#define VCF_PLAN_ALWAYS_INLINE static inline __attribute__((always_inline))
+#else
+#define VCF_PLAN_ALWAYS_INLINE static inline
+#endif
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_gt2_u8(const char **sp, uint8_t out[2])
 {
@@ -4215,6 +4255,14 @@ static int vcf_plan_parse_int_vector_flexible_counted_range(const char **sp,
     return vcf_plan_parse_int_vector_counted_range(sp, out, width, nread, range);
 }
 
+/*
+ * Planned FORMAT parser: row-local layout and encoding helpers.
+ *
+ * Once all widths are known for the current record, these helpers turn cached
+ * plan operations into concrete row operations, allocate/stage transposed
+ * FORMAT buffers, compact underfilled vectors when the generic parser would do
+ * the same, and encode staged rows into the final packed BCF FORMAT layout.
+ */
 static int vcf_format_general_resolve_ops(const vcf_format_general_plan_t *plan,
                                           bcf1_t *v, int *widths,
                                           vcf_format_row_op_t *row_ops,
@@ -4380,6 +4428,8 @@ static void vcf_format_compact_row_op(kstring_t *mem, int nsamples,
 }
 
 /*
+ * Planned FORMAT parser: row-local width measurement.
+ *
  * Resolve FORMAT widths before execution.  Fixed widths come from the header
  * and current allele count; Type=String and Number=. numeric rows require a
  * sample scan.  Returns 0 for a usable plan, -4 for generic fallback, and -1
@@ -4559,6 +4609,8 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
 }
 
 /*
+ * Planned FORMAT parser: execution.
+ *
  * Execute a row-local FORMAT plan.  Parsing proceeds sample-major because that
  * matches the VCF text, then staged rows are encoded op-major to match BCF
  * FORMAT layout.  Returns 0 on success, -4 for generic fallback, and -1 on hard
@@ -4802,6 +4854,13 @@ error:
     return -1;
 }
 
+/*
+ * Planned FORMAT parser: entry points and fallback contract.
+ *
+ * vcf_parse_format_planned() is called before the generic FORMAT pipeline.  It
+ * returns 0 after a successful planned parse, -3 when the caller should run the
+ * generic parser, and a hard error for allocation or consistency failures.
+ */
 static int vcf_parse_format_general_strict(kstring_t *s, const bcf_hdr_t *h,
                                            bcf1_t *v,
                                            const vcf_format_general_plan_t *plan,
