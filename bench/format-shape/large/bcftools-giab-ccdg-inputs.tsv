@@ -1,0 +1,6 @@
+name	path	source
+ccdg_10k	bench/format-shape/public/ccdg_chr22_10k.vcf.gz	local CCDG/1000G high-coverage chr22 slice, 10k records x 3,202 samples
+giab_hg002_grch38_v421	bench/format-shape/large/public/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz	GIAB HG002 NIST v4.2.1 GRCh38 benchmark small variants
+giab_hg002_grch38_v50q_smvar	bench/format-shape/large/public/giab/HG002_GRCh38_v5.0q_smvar.vcf.gz	GIAB HG002 v5.0q GRCh38 small variants
+giab_hg002_grch38_v50q_stvar	bench/format-shape/large/public/giab/HG002_GRCh38_v5.0q_stvar.vcf.gz	GIAB HG002 v5.0q GRCh38 structural variants
+giab_hg002_chm13_v50q_smvar	bench/format-shape/large/public/giab/HG002_CHM13v2.0_v5.0q_smvar.vcf.gz	GIAB HG002 v5.0q CHM13v2.0 small variants

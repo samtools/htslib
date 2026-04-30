@@ -1,0 +1,6 @@
+##fileformat=VCFv4.3
+##contig=<ID=1>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2
+1	1	.	A	C	.	PASS	.	GT:DP	0/1:7

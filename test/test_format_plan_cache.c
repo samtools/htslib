@@ -22,17 +22,12 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-#include <inttypes.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../htslib/kstring.h"
 #include "../htslib/vcf.h"
-
-void hts_vcf_format_plan_stats(uint64_t *attempts, uint64_t *hits,
-                               uint64_t *fallback, uint64_t *parsed_samples);
 
 static void fail(const char *msg)
 {
@@ -72,6 +67,31 @@ static void check_x_values(bcf_hdr_t *hdr, bcf1_t *rec,
     free(values);
 }
 
+static void check_x_float(bcf_hdr_t *hdr, bcf1_t *rec, float expected)
+{
+    bcf_fmt_t *fmt;
+    float *values = NULL;
+    int n_values = 0, ret;
+
+    check0(bcf_unpack(rec, BCF_UN_FMT));
+    fmt = bcf_get_fmt(hdr, rec, "X");
+    if (!fmt)
+        fail("missing X FORMAT field");
+    if (fmt->type != BCF_BT_FLOAT || fmt->n != 1)
+        fail("unexpected X FORMAT storage type");
+
+    ret = bcf_get_format_float(hdr, rec, "X", &values, &n_values);
+    if (ret != 1) {
+        free(values);
+        fail("unexpected X float vector length");
+    }
+    if (values[0] != expected) {
+        free(values);
+        fail("unexpected X float value");
+    }
+    free(values);
+}
+
 int main(void)
 {
     static char header[] =
@@ -81,11 +101,9 @@ int main(void)
         "##FORMAT=<ID=X,Number=1,Type=Integer,Description=\"cache generation test\">\n"
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n";
     static const int32_t x1[] = { 7 };
-    static const int32_t x2[] = { 11, 13 };
     bcf_hdr_t *hdr;
     bcf1_t *rec;
     kstring_t line = KS_INITIALIZE;
-    uint64_t attempts = 0, hits = 0, fallback = 0, parsed_samples = 0;
 
     check0(setenv("HTS_VCF_FORMAT_PLAN", "1", 1));
     hdr = bcf_hdr_init("r");
@@ -100,28 +118,18 @@ int main(void)
 
     /*
      * Rebuild the same FORMAT string against changed metadata.  A stale plan
-     * would still think X is Number=1 and would either fall back or encode the
-     * second row incorrectly.  The header-owned generation must force a fresh
-     * compile, preserving both correctness and fast-path coverage.
+     * would still think X is an integer and could encode the second row with
+     * integer storage even though the header now declares a float.  The
+     * header-owned generation must force a fresh compile.
      */
     bcf_hdr_remove(hdr, BCF_HL_FMT, "X");
     check0(bcf_hdr_append(hdr,
-                          "##FORMAT=<ID=X,Number=2,Type=Integer,Description=\"cache generation test\">"));
+                          "##FORMAT=<ID=X,Number=1,Type=Float,Description=\"cache generation test\">"));
     check0(bcf_hdr_sync(hdr));
     bcf_clear1(rec);
     parse_line(hdr, rec, &line,
-               "1\t2\t.\tA\tC\t.\tPASS\t.\tGT:X\t0/1:11,13");
-    check_x_values(hdr, rec, x2, 2);
-
-    hts_vcf_format_plan_stats(&attempts, &hits, &fallback, &parsed_samples);
-    if (attempts != 2 || hits != 2 || fallback != 0 || parsed_samples != 2) {
-        fprintf(stderr,
-                "unexpected planner stats: attempts=%" PRIu64
-                " hits=%" PRIu64 " fallback=%" PRIu64
-                " parsed_samples=%" PRIu64 "\n",
-                attempts, hits, fallback, parsed_samples);
-        return EXIT_FAILURE;
-    }
+               "1\t2\t.\tA\tC\t.\tPASS\t.\tGT:X\t0/1:2");
+    check_x_float(hdr, rec, 2.0f);
 
     bcf_destroy(rec);
     bcf_hdr_destroy(hdr);

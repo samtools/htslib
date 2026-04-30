@@ -55,6 +55,7 @@ run_test('test_bcf2vcf',$opts);
 run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
 run_test('test_vcf_various',$opts);
 run_test('test_vcf_44', $opts);
+run_test('test_vcf_format_plan', $opts);
 run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
 run_test('test_bcf_sr_range', $opts);
@@ -1209,6 +1210,115 @@ sub test_vcf_44
     # vcf4.4 with implicit and explicit phasing info combinations
     test_cmd($opts, %args, out => "vcf44_1.expected",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf44_1.vcf");
+}
+
+sub test_vcf_format_plan_one
+{
+    my ($opts, $input, $label, $extra_args) = @_;
+    my $base = "$$opts{tmp}/$label.base.bcf";
+    my $plan = "$$opts{tmp}/$label.plan.bcf";
+    my $disabled = "$$opts{tmp}/$label.disabled.bcf";
+    my $test = "VCF FORMAT planner: $label";
+    my $args = defined($extra_args) ? $extra_args : "";
+
+    print "$test:\n";
+
+    my $cmd = "env HTS_VCF_FORMAT_PLAN=0 $$opts{path}/test_view -b -l 0 $args $$opts{path}/$input > $base";
+    print "\t$cmd\n";
+    my ($ret, $out) = _cmd($cmd);
+    if ($ret) {
+        failed($opts, $test, "generic parser command failed\n$out");
+        return;
+    }
+
+    $cmd = "env HTS_VCF_FORMAT_PLAN=1 $$opts{path}/test_view -b -l 0 $args $$opts{path}/$input > $plan";
+    print "\t$cmd\n";
+    ($ret, $out) = _cmd($cmd);
+    if ($ret) {
+        failed($opts, $test, "planned parser command failed\n$out");
+        return;
+    }
+
+    $cmd = "cmp $base $plan";
+    print "\t$cmd\n";
+    ($ret, $out) = _cmd($cmd);
+    if ($ret) {
+        failed($opts, $test, $out ? $out : "planned output differs from generic output");
+        return;
+    }
+
+    $cmd = "env HTS_VCF_FORMAT_PLAN=off $$opts{path}/test_view -b -l 0 $args $$opts{path}/$input > $disabled";
+    print "\t$cmd\n";
+    ($ret, $out) = _cmd($cmd);
+    if ($ret) {
+        failed($opts, $test, "disabled-mode command failed\n$out");
+        return;
+    }
+
+    $cmd = "cmp $base $disabled";
+    print "\t$cmd\n";
+    ($ret, $out) = _cmd($cmd);
+    if ($ret) {
+        failed($opts, $test, $out ? $out : "disabled-mode output differs from generic output");
+        return;
+    }
+
+    passed($opts, $test);
+}
+
+sub test_vcf_format_plan_failure
+{
+    my ($opts, $input, $label) = @_;
+    my $base = "$$opts{tmp}/$label.base.bcf";
+    my $plan = "$$opts{tmp}/$label.plan.bcf";
+    my $test = "VCF FORMAT planner expected failure: $label";
+
+    print "$test:\n";
+
+    my $cmd = "env HTS_VCF_FORMAT_PLAN=0 $$opts{path}/test_view -b -l 0 $$opts{path}/$input > $base";
+    print "\t$cmd\n";
+    my ($base_ret, $base_out) = _cmd($cmd);
+
+    $cmd = "env HTS_VCF_FORMAT_PLAN=1 $$opts{path}/test_view -b -l 0 $$opts{path}/$input > $plan";
+    print "\t$cmd\n";
+    my ($plan_ret, $plan_out) = _cmd($cmd);
+
+    if ($base_ret == 0 || $plan_ret == 0) {
+        failed($opts, $test, "expected both parser modes to fail, got generic=$base_ret planned=$plan_ret");
+        return;
+    }
+
+    passed($opts, $test);
+}
+
+sub test_vcf_format_plan
+{
+    my ($opts) = @_;
+
+    for my $input (
+        "format-plan-edge.vcf",
+        "format-plan-header-mismatch.vcf",
+        "format-plan-composable.vcf",
+        "format-plan-gt-header-shape.vcf",
+        "format-plan-cache.vcf",
+        "format-plan-float-string.vcf",
+        "format-plan-fallback.vcf",
+        "format-plan-repeated-wide-gt.vcf") {
+        (my $label = $input) =~ s/\.vcf$//;
+        test_vcf_format_plan_one($opts, $input, $label, "");
+    }
+
+    for my $samples ("S1,S3", "S2", "^S2") {
+        for my $input ("format-plan-composable.vcf", "format-plan-edge.vcf") {
+            (my $label = "$input.$samples") =~ s/[^A-Za-z0-9_.-]/_/g;
+            test_vcf_format_plan_one($opts, $input, $label, "-s '$samples'");
+        }
+    }
+
+    test_vcf_format_plan_one($opts, "format-plan-sample-skip.vcf",
+                             "format-plan-sample-skip.S1_S3", "-s S1,S3");
+    test_vcf_format_plan_failure($opts, "format-plan-sample-count.vcf",
+                                 "format-plan-sample-count");
 }
 
 sub write_multiblock_bgzf {

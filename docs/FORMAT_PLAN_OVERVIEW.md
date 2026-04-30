@@ -18,16 +18,22 @@ unsupported decisions tied to the exact header metadata that produced them.
 
 If the row fits the supported operation set, the dynamic executor parses samples
 and writes BCF's transposed FORMAT layout directly.  If anything looks unsafe or
-unsupported, htslib falls back to the production parser for the whole FORMAT
+unsupported, htslib falls back to the generic parser for the whole FORMAT
 column.  The planner also keeps a small profitability gate: schemas dominated by
 measured strings plus float vectors, such as `GT:FT:PID:GL:DP`, currently use
-the production parser because the dynamic path's width-measurement work costs
+the generic parser because the dynamic path's width-measurement work costs
 more than it saves.
 
 The optimized path also supports selected-sample reads.  When
 `bcf_hdr_set_samples()` is active, it scans the original sample columns, skips
 unretained samples, and writes the retained samples densely into the BCF FORMAT
 blocks.
+
+Fallbacks are whole-row, but they are now classified for diagnostics when
+`HTS_VCF_FORMAT_PLAN_STATS=1` is set.  The current reason counters distinguish
+unsupported schemas, guard cooldowns, numeric-width limits, string-width limits,
+GT shape misses, parse failures, separator mismatches, and sample-count
+mismatches.
 
 ## Why This Shape
 
@@ -78,15 +84,15 @@ merge manifest.
 ## Drawbacks
 
 The MVP intentionally keeps fallback whole-row.  It does not parse supported
-tags dynamically while delegating only one unsupported tag to the production
+tags dynamically while delegating only one unsupported tag to the generic
 parser.  That makes correctness easier to reason about, but a single unsupported
-tag or malformed row means the entire FORMAT column uses the production parser.
+tag or malformed row means the entire FORMAT column uses the generic parser.
 
 Known fallback cases include:
 
 - undefined FORMAT tags that require production header repair;
 - unsupported header types or number models;
-- unprofitable string/float-heavy schemas;
+- low-profit string/float-heavy schemas;
 - duplicate FORMAT tags;
 - malformed separators or unexpected sample cardinality;
 - row-local widths above the bounded fast-path limit;
@@ -96,17 +102,25 @@ The path is also not always faster.  Some string/float-heavy layouts are roughly
 at parity or slightly slower than baseline because the dynamic path still pays
 measurement, dispatch, and scratch-buffer costs.
 
+The current planned width limits are intentionally conservative: measured
+numeric vectors are capped at 64 values, and measured strings are capped at
+256 bytes.  Rows above those limits use the generic parser; numeric/string width
+misses do not by themselves disable the schema for later rows.
+
+Correctness checks for this path now live in the normal htslib test harness, not
+only in the benchmark directory.  `make check` runs black-box byte-identity
+fixtures through `test/test.pl`, selected-sample checks, malformed-input checks,
+and focused header-cache generation coverage.
+
 ## User-Facing Controls
 
 ```text
-unset / 0       production parser only
-1              dynamic per-tag planner, then production fallback
-interp/general aliases for the same dynamic planner
+unset / 0       generic parser only
+1              dynamic per-tag planner, then generic fallback
 ```
 
 The benchmark harness reports only `HTS_VCF_FORMAT_PLAN=1` as `plan`.
-`interp` and `general` remain accepted aliases for manual debugging, but they are
-not distinct implementations.
+Other values are treated as disabled.
 
 ## Related Docs
 

@@ -25,6 +25,7 @@ bench/format-shape/
   scripts/run_thread_bench.sh threaded timing and cmp runner
   scripts/run_bcftools_bench.sh bcftools threaded timing runner
   scripts/run_bcftools_command_bench.sh broader bcftools command runner
+  scripts/run_bcftools_command_bench_stream.sh checksum-only large-output runner
   results/                   generated timing logs and BCF outputs
 ```
 
@@ -36,6 +37,21 @@ commands below.
 `results/` can be regenerated at any time and may become large.  The script
 keeps BCF outputs locally so `cmp` checks are inspectable, but `.gitignore`
 excludes those large files.
+
+## Repo Tests
+
+The small correctness cases that should travel with the implementation now live
+in the normal htslib test harness, not only in this benchmark directory.
+`make check` runs `test_vcf_format_plan` inside `test/test.pl` plus
+`test/test_format_plan_cache`.  Those tests assert byte-identical planned output
+at the parser-output level, selected-sample behavior, rollback after partial
+planned parsing, malformed-input failure behavior, and header-cache generation
+invalidation.  Fallback reason counters remain local diagnostics for benchmark
+analysis rather than production test assertions.
+
+The benchmark corpus remains for performance and production-shape coverage.  It
+should not become a normal test-suite dependency because several inputs are
+large public VCFs or generated multi-second workloads.
 
 ## Public Inputs
 
@@ -54,6 +70,10 @@ non-FORMAT and real-world INFO-heavy workloads.
 | `public/1000g_wgs_sites_chr22_16050k_16300k.vcf.gz` | 1000 Genomes Phase 3 WGS sites | sites-only |
 | `public/clinvar_grch38_chr22_16050k_20000k.vcf.gz` | ClinVar GRCh38 VCF | sites-only clinical annotations |
 | `public/gnomad_v4.1_exomes_sites_chr22_20000k_20100k.vcf.gz` | gnomAD v4.1 exomes chr22 | sites-only, INFO-heavy |
+| `large/public/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz` | GIAB HG002 v4.2.1 | 4,048,342-record single-sample truth-set small variants |
+| `large/public/giab/HG002_GRCh38_v5.0q_smvar.vcf.gz` | GIAB HG002 v5.0q GRCh38 | 5,945,525-record single-sample small variants |
+| `large/public/giab/HG002_GRCh38_v5.0q_stvar.vcf.gz` | GIAB HG002 v5.0q GRCh38 | 6,268,852-record single-sample structural variants |
+| `large/public/giab/HG002_CHM13v2.0_v5.0q_smvar.vcf.gz` | GIAB HG002 v5.0q CHM13v2.0 | 5,829,374-record single-sample small variants |
 
 Source URLs used:
 
@@ -62,7 +82,28 @@ https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_sha
 https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz
 https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
 https://gnomad-public-us-east-1.s3.amazonaws.com/release/4.1/vcf/exomes/gnomad.exomes.v4.1.sites.chr22.vcf.bgz
+https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.vcf.gz
+https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_stvar.vcf.gz
+https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_CHM13v2.0_v5.0q_smvar.vcf.gz
 ```
+
+The parent CCDG/1000G high-coverage chr22 file for
+`public/ccdg_chr22_10k.vcf.gz` is:
+
+```text
+https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
+```
+
+It is 26.0 GiB compressed and is available locally at:
+
+```text
+/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/data/original/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
+```
+
+Do not run the normal output-materializing command harness on this file.  A
+single uncompressed BCF output reached 155 GiB before the run was interrupted.
+Use the streaming checksum harness below instead.
 
 ## Synthetic Inputs
 
@@ -118,9 +159,7 @@ By default this runs unthreaded plus `-@ 2`, `-@ 4`, and `-@ 8`.  Override with
 now mirrors the full large corpus so thread scaling is checked across the same
 real and synthetic workload shapes as the primary benchmark.
 
-The script runs each input in two modes.  `interp` remains accepted by
-`HTS_VCF_FORMAT_PLAN`, but it aliases the same dynamic parser as `plan`, so the
-benchmark harness does not run it as a separate timing row.
+The script runs each input in two modes:
 
 ```text
 baseline: HTS_VCF_FORMAT_PLAN=0
@@ -207,10 +246,82 @@ checks.tsv    baseline-vs-plan cmp status, including skipped_no_samples
 commands.tsv  command descriptions captured with the result directory
 ```
 
+For very large inputs, use the streaming checksum variant.  It runs the same
+command families but pipes output through `cksum` and compares checksums instead
+of storing complete BCF/text outputs:
+
+```sh
+BCFTOOLS=/path/to/bcftools \
+OUTDIR=bench/format-shape/large/results-bcftools-full-ccdg-stream \
+  bash bench/format-shape/scripts/run_bcftools_command_bench_stream.sh \
+  bench/format-shape/large/bcftools-full-ccdg-inputs.tsv
+```
+
+The full CCDG chr22 streaming run wrote:
+
+```text
+bench/format-shape/large/results-bcftools-full-ccdg-stream/timings.tsv
+bench/format-shape/large/results-bcftools-full-ccdg-stream/checks.tsv
+bench/format-shape/large/results-bcftools-full-ccdg-stream/checksums.tsv
+```
+
+All baseline-vs-plan checksums compared `ok`.
+
+| Command | Baseline real | Plan real | Real speedup | Baseline user | Plan user | User speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| `view_bcf` | 678.46 s | 562.96 s | 1.21x | 476.41 s | 377.47 s | 1.26x |
+| `view_sites` | 472.27 s | 403.28 s | 1.17x | 455.70 s | 386.18 s | 1.18x |
+| `query_sites` | 71.44 s | 76.78 s | 0.93x | 67.02 s | 72.00 s | 0.93x |
+| `query_format` | 124.14 s | 76.88 s | 1.61x | 119.16 s | 72.27 s | 1.65x |
+| `stats` | 77.45 s | 77.12 s | 1.00x | 72.86 s | 72.55 s | 1.00x |
+| `filter_gt` | 531.20 s | 453.21 s | 1.17x | 512.95 s | 434.35 s | 1.18x |
+
 For CI, the likely future shape is to keep one or two tiny inputs per command
 and assert `checks.tsv` has only `ok` or expected `skipped_no_samples` rows.
 The large corpus should remain a performance benchmark rather than a normal
 test-suite dependency.
+
+Run the GIAB plus CCDG correctness/performance pass:
+
+```sh
+BCFTOOLS=/path/to/bcftools \
+KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-giab-ccdg-prod-hardening \
+  bench/format-shape/scripts/run_bcftools_command_bench.sh \
+  bench/format-shape/large/bcftools-giab-ccdg-inputs.tsv
+```
+
+If using the sibling bcftools checkout in this workspace, build it against this
+HTSlib checkout explicitly:
+
+```sh
+cd ../bcftools-htslib-vcf-plan
+make HTSDIR=../htslib-vcf-avx-sanity bcftools
+```
+
+This pass is primarily a production-shape correctness check.  GIAB is
+single-sample, so it does not show the large cohort speedups, but it does cover
+real truth-set small-variant and structural-variant FORMAT details.  The first
+GIAB v5.0q run exposed a planned-path bug where `.|.` was serialized as `./.`.
+The GT2 parser now preserves phased missing alleles, and the fixed rerun has
+all baseline-vs-plan command outputs comparing `ok`.
+
+Latest hardened GIAB/CCDG command run:
+
+| Input | Command | Real speedup | User speedup |
+|---|---|---:|---:|
+| CCDG 10k | view_bcf | 1.14x | 1.14x |
+| CCDG 10k | view_sites | 1.13x | 1.14x |
+| CCDG 10k | query_format | 1.52x | 1.56x |
+| CCDG 10k | filter_gt | 1.12x | 1.12x |
+| GIAB HG002 GRCh38 v4.2.1 | view_bcf | 1.09x | 1.09x |
+| GIAB HG002 GRCh38 v4.2.1 | query_format | 1.07x | 1.07x |
+| GIAB HG002 GRCh38 v4.2.1 | filter_gt | 1.09x | 1.09x |
+| GIAB HG002 GRCh38 v5.0q small variants | view_bcf | 1.09x | 1.09x |
+| GIAB HG002 GRCh38 v5.0q small variants | query_format | 1.09x | 1.07x |
+| GIAB HG002 GRCh38 v5.0q structural variants | view_bcf | 1.09x | 1.09x |
+| GIAB HG002 GRCh38 v5.0q structural variants | query_format | 1.02x | 1.02x |
+| GIAB HG002 CHM13 v5.0q small variants | view_bcf | 1.07x | 1.07x |
+| GIAB HG002 CHM13 v5.0q small variants | query_format | 1.06x | 1.06x |
 
 `merge_self` is intentionally not in the default `COMMANDS` list because it can
 produce very large outputs on cohort-scale inputs.  Run it against the smaller
@@ -248,8 +359,8 @@ unchanged at 2.69 s.
 - eight generated 2,048-sample synthetic FORMAT workloads:
   CCDG-like likelihood, reordered likelihood, multiallelic likelihood,
   float/string FORMAT, variable phase-string widths, row-local likelihood
-	  fallbacks, GT-first wrong-order likelihood-like rows, and two-string
-	  float rows.
+  fallbacks, GT-first wrong-order likelihood-like rows, and two-string
+  float rows.
 
 `large/threaded-inputs.tsv` mirrors this full corpus for `-@` scaling checks.
 `large/bcftools-command-inputs.tsv` is a smaller representative set for the
@@ -270,8 +381,18 @@ SYNTHETIC_ONLY_NEW=1 \
 The latest large run is summarized in:
 
 ```text
-bench/format-shape/large/results/timings.tsv
-bench/format-shape/large/results/checks.tsv
+bench/format-shape/large/results-prod-hardening2/timings.tsv
+bench/format-shape/large/results-prod-hardening2/checks.tsv
 ```
 
 All plan outputs in that run compared byte-identical to baseline.
+
+That run includes fallback reason diagnostics.  In the CCDG 10k slice, the
+planner hit 9,861 of 10,000 rows; the remaining 139 rows fell back for
+`string_width`, meaning their measured string field exceeded the current
+256-byte planned cap.
+
+One rejected optimization is recorded in
+`bench/format-shape/large/results-opt-nosubset-split`: splitting the all-samples
+loop from the `keep_samples` loop preserved correctness but slowed the planned
+rows, so that code was reverted.
