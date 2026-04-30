@@ -1,0 +1,13 @@
+##fileformat=VCFv4.3
+##contig=<ID=1>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods">
+##FORMAT=<ID=QS,Number=.,Type=Float,Description="Variable-width quality scores">
+##FORMAT=<ID=AB,Number=1,Type=Float,Description="Allele balance">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3
+1	1	.	A	C	.	PASS	.	GT:GL:QS:AB:DP	0/1:-0.1,-1.2,-3:0.5,1.5:0.50:7	0/0:0,-5,-9:0.1,0.2,0.3,0.4:.:8	./.:.:1.25,2.5:.:0
+1	2	.	A	C,G	.	PASS	.	GT:GL:QS:AB:DP	1/2:-9,-8,-7,-6,-5,-4:0.1:0.25:12	0/2:-2,-3,-4,-5,-6,-7:0.2,0.3:0.75:9	./.:.:.:.:0
+1	3	.	G	T	.	PASS	.	QS:GT:GL:AB:DP	0.1,0.2:0/1:-1,-2,-3:0.5:5	.:0/0:0,-10,-20:0.0:4	0.3,0.4,0.5:./.:.:.:0
+1	4	.	T	G	.	PASS	.	GT:GL:QS:AB:DP	0/1:.:.:.:6	0/0:.:.:.:4	./.:.:.:.:0
+1	5	.	C	T	.	PASS	.	GT:GL:QS:AB:DP	0/1:-0.4,-0.8:0.1:0.5:3	0/0:0,-2:0.2:0.1:2	./.:.:.:.:0

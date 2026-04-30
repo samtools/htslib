@@ -182,7 +182,7 @@ remained byte-identical after the rewrite, with the same broad performance
 profile: 1000G chr22 GT user time at 26.06 s baseline versus 7.96 s planned,
 and CCDG 10k at 2.55 s baseline versus 2.24 s planned.
 
-## Profitability Gate For String/Float Shapes
+## String/Float Shape Boundary
 
 The expanded threaded benchmark exposed two regressions:
 
@@ -195,11 +195,12 @@ dynamic path had to measure string widths over every sample before parsing, then
 still use the general float conversion path, while there were no integer vectors
 to amortize that setup.
 
-Result: retained.  The compiler now negative-caches these low-profit schemas and
-sends only those FORMAT rows to the generic parser.  The full threaded corpus
-remained byte-identical.  The two-string float case improved from a consistent
-slowdown, roughly 0.86-0.89x, to parity at 1.00-1.01x.  Other integer-heavy
-likelihood rows stayed on the dynamic path.
+Result: retained as a conservative support boundary.  The compiler now
+negative-caches measured-string plus float-vector schemas that do not also have
+integer-vector work, and sends those FORMAT rows to the generic parser.  The
+full threaded corpus remained byte-identical.  The two-string float case
+improved from a consistent slowdown, roughly 0.86-0.89x, to parity at
+1.00-1.01x.  Other integer-heavy likelihood rows stayed on the dynamic path.
 
 ## Selected-Sample Support
 
@@ -286,8 +287,7 @@ The full parent CCDG/1000G high-coverage chr22 VCF was identified as:
 https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
 ```
 
-It is 26.0 GiB compressed and was later found locally under
-`/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/data/original`.
+It is 26.0 GiB compressed and requires a local copy for reruns.
 The normal command harness materializes complete outputs, which is not practical
 for this file: a single `view_bcf -Ob -l 0` baseline output reached 155 GiB
 before that run was stopped.  A streaming checksum harness was added so command
@@ -465,10 +465,11 @@ checks because the local build invoked the C compiler on `test/usepublic.cpp`
 with `-std=gnu23`.  The relevant whitespace check and `git diff --check` passed
 separately.
 
-The htslib large corpus in `bench/format-shape/large/results-prod-hardening2`
-compared byte-identical to baseline.  CCDG 10k held the expected 9,861 / 139
-hit/fallback split, and 1000G chr22 full GT remained the largest win at
-24.61 s baseline user time versus 9.48 s planned.
+The htslib large corpus run written locally under
+`bench/format-shape/large/results-prod-hardening2` compared byte-identical to
+baseline.  The generated result files are ignored, so the recorded summary is:
+CCDG 10k held the expected 9,861 / 139 hit/fallback split, and 1000G chr22 full
+GT remained the largest win at 24.61 s baseline user time versus 9.48 s planned.
 
 The latest bcftools GIAB/CCDG command corpus in
 `bench/format-shape/large/results-bcftools-giab-ccdg-prod-hardening` also
@@ -482,8 +483,9 @@ The per-plan runtime cooldown was removed after an A/B pass showed no practical
 benefit on realistic workloads.  The cooldown had paused a supported cached
 schema after repeated row-local fallbacks, but standard corpus hit/fallback
 counts were identical with and without it.  The remaining protection is simpler:
-compile-time unsupported schemas are negative-cached, low-profit schemas are
-rejected at compile time, and row-local misses fall back only for that record.
+compile-time unsupported schemas are negative-cached, unsupported mixed
+string/float shapes are rejected at compile time, and row-local misses fall back
+only for that record.
 
 The final no-cooldown parser corpus in
 `bench/format-shape/large/results-no-cooldown-final` compared byte-identical to

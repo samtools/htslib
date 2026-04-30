@@ -29,14 +29,14 @@ bench/format-shape/
   results/                   generated timing logs and BCF outputs
 ```
 
-The downloaded/generated VCF inputs are intentionally ignored by git to avoid
-accidentally pushing large benchmark data.  The manifest, scripts, docs, and
-small result summaries are tracked; the local data can be regenerated from the
-commands below.
+The downloaded/generated VCF inputs and benchmark result files are intentionally
+ignored by git to avoid accidentally pushing large local data.  The manifests,
+scripts, and docs are tracked; local data and timing summaries can be
+regenerated from the commands below.
 
-`results/` can be regenerated at any time and may become large.  The script
-keeps BCF outputs locally so `cmp` checks are inspectable, but `.gitignore`
-excludes those large files.
+`results/` can be regenerated at any time and may become large.  The scripts
+write timing/check summaries and keep BCF outputs locally so `cmp` checks are
+inspectable, but `.gitignore` excludes those rerun artifacts.
 
 ## Repo Tests
 
@@ -95,10 +95,11 @@ The parent CCDG/1000G high-coverage chr22 file for
 https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
 ```
 
-It is 26.0 GiB compressed and is available locally at:
+It is 26.0 GiB compressed.  For local reruns, point the full-CCDG manifest at a
+local copy such as:
 
 ```text
-/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/data/original/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
+/path/to/local/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
 ```
 
 Do not run the normal output-materializing command harness on this file.  A
@@ -378,13 +379,14 @@ SYNTHETIC_ONLY_NEW=1 \
   bench/format-shape/large/synthetic 2048
 ```
 
-The latest large run is summarized in:
+The latest large run used this local output directory:
 
 ```text
 bench/format-shape/large/results-prod-hardening2/timings.tsv
 bench/format-shape/large/results-prod-hardening2/checks.tsv
 ```
 
+Generated result files are ignored; the summary below is the portable record.
 All plan outputs in that run compared byte-identical to baseline.
 
 That run includes fallback reason diagnostics.  In the CCDG 10k slice, the

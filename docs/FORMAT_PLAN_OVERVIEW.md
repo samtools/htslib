@@ -19,10 +19,10 @@ unsupported decisions tied to the exact header metadata that produced them.
 If the row fits the supported operation set, the dynamic executor parses samples
 and writes BCF's transposed FORMAT layout directly.  If anything looks unsafe or
 unsupported, htslib falls back to the generic parser for the whole FORMAT
-column.  The planner also keeps a small profitability gate: schemas dominated by
-measured strings plus float vectors, such as `GT:FT:PID:GL:DP`, currently use
-the generic parser because the dynamic path's width-measurement work costs
-more than it saves.
+column.  The planner also keeps a conservative shape boundary: schemas dominated
+by measured strings plus float vectors, such as `GT:FT:PID:GL:DP`, currently use
+the generic parser because the dynamic path's width-measurement work costs more
+than it saves.
 
 The optimized path also supports selected-sample reads.  When
 `bcf_hdr_set_samples()` is active, it scans the original sample columns, skips
@@ -91,7 +91,7 @@ Known fallback cases include:
 
 - undefined FORMAT tags that require production header repair;
 - unsupported header types or number models;
-- low-profit string/float-heavy schemas;
+- mixed measured-string plus float-vector schemas without integer-vector work;
 - duplicate FORMAT tags;
 - malformed separators or unexpected sample cardinality;
 - row-local widths above the bounded fast-path limit;

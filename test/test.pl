@@ -1317,24 +1317,44 @@ sub test_vcf_format_plan_one
 
 sub test_vcf_format_plan_failure
 {
-    my ($opts, $input, $label) = @_;
+    my ($opts, $input, $label, $expected_stats) = @_;
     my $base = "$$opts{tmp}/$label.base.bcf";
     my $plan = "$$opts{tmp}/$label.plan.bcf";
+    my $plan_stats = "$$opts{tmp}/$label.plan.stats";
     my $test = "VCF FORMAT planner expected failure: $label";
+    my $plan_env = "HTS_VCF_FORMAT_PLAN=1";
+    my $plan_stderr = "";
+
+    if (defined($expected_stats)) {
+        $plan_env .= " HTS_VCF_FORMAT_PLAN_STATS=1";
+        $plan_stderr = " 2>$plan_stats";
+    }
 
     print "$test:\n";
+    if (!-e "$$opts{path}/$input") {
+        failed($opts, $test, "missing test input $$opts{path}/$input");
+        return;
+    }
 
     my $cmd = "env HTS_VCF_FORMAT_PLAN=0 $$opts{path}/test_view -b -l 0 $$opts{path}/$input > $base";
     print "\t$cmd\n";
     my ($base_ret, $base_out) = _cmd($cmd);
 
-    $cmd = "env HTS_VCF_FORMAT_PLAN=1 $$opts{path}/test_view -b -l 0 $$opts{path}/$input > $plan";
+    $cmd = "env $plan_env $$opts{path}/test_view -b -l 0 $$opts{path}/$input > $plan$plan_stderr";
     print "\t$cmd\n";
     my ($plan_ret, $plan_out) = _cmd($cmd);
 
     if ($base_ret == 0 || $plan_ret == 0) {
         failed($opts, $test, "expected both parser modes to fail, got generic=$base_ret planned=$plan_ret");
         return;
+    }
+
+    if (defined($expected_stats)) {
+        my $stats_error = test_vcf_format_plan_check_stats($plan_stats, $expected_stats);
+        if ($stats_error) {
+            failed($opts, $test, $stats_error);
+            return;
+        }
     }
 
     passed($opts, $test);
@@ -1366,6 +1386,33 @@ sub test_vcf_format_plan
                                parse => 0, separator => 0,
                                sample_count => 0 });
 
+    test_vcf_format_plan_one($opts, "format-plan-malformed-fields.vcf",
+                             "format-plan-malformed-fields", "",
+                             { attempts => 3, hits => 0, fallback => 3,
+                               parsed_samples => 0,
+                               unsupported => 0, numeric_width => 0,
+                               string_width => 1, gt_shape => 0,
+                               parse => 2, separator => 0,
+                               sample_count => 0 });
+
+    test_vcf_format_plan_one($opts, "format-plan-float-vector.vcf",
+                             "format-plan-float-vector", "",
+                             { attempts => 5, hits => 5, fallback => 0,
+                               parsed_samples => 15,
+                               unsupported => 0, numeric_width => 0,
+                               string_width => 0, gt_shape => 0,
+                               parse => 0, separator => 0,
+                               sample_count => 0 });
+
+    test_vcf_format_plan_one($opts, "format-plan-float-vector.vcf",
+                             "format-plan-float-vector.S1_S3", "-s S1,S3",
+                             { attempts => 5, hits => 5, fallback => 0,
+                               parsed_samples => 10,
+                               unsupported => 0, numeric_width => 0,
+                               string_width => 0, gt_shape => 0,
+                               parse => 0, separator => 0,
+                               sample_count => 0 });
+
     for my $samples ("S1,S3", "S2", "^S2") {
         for my $input ("format-plan-composable.vcf", "format-plan-edge.vcf") {
             (my $label = "$input.$samples") =~ s/[^A-Za-z0-9_.-]/_/g;
@@ -1383,6 +1430,14 @@ sub test_vcf_format_plan
                                sample_count => 0 });
     test_vcf_format_plan_failure($opts, "format-plan-sample-count.vcf",
                                  "format-plan-sample-count");
+    test_vcf_format_plan_failure($opts, "format-plan-empty-format-tag.vcf",
+                                 "format-plan-empty-format-tag",
+                                 { attempts => 1, hits => 0, fallback => 1,
+                                   parsed_samples => 0,
+                                   unsupported => 1, numeric_width => 0,
+                                   string_width => 0, gt_shape => 0,
+                                   parse => 0, separator => 0,
+                                   sample_count => 0 });
 }
 
 sub write_multiblock_bgzf {

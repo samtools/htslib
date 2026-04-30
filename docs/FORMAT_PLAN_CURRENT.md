@@ -53,8 +53,8 @@ The compile step rejects:
 - unsupported header types;
 - unsupported number models;
 - `GT` declarations that are not `Type=String,Number=1`.
-- string-plus-float-vector schemas with too little integer-vector work to repay
-  the dynamic path's width-measurement cost.
+- measured-string plus float-vector schemas that do not also have integer-vector
+  work for the planned executor.
 
 Undefined tags intentionally fall back to the generic parser so existing
 dummy-header repair and warning behavior is preserved.
@@ -113,7 +113,8 @@ The planned parser must preserve these invariants:
 - selected-sample parsing must honor `h->keep_samples`, use `h->nsamples_ori`
   for input-column scans, and set `v->n_sample` to the retained sample count;
 - duplicate or undefined tags use the generic parser;
-- low-profit string/float-heavy schemas use the generic parser;
+- measured-string plus float-vector schemas without integer-vector work use the
+  generic parser;
 - unsupported GT encodings force fallback;
 - numeric vectors preserve observed width and vector-end padding;
 - strings use observed maximum byte length and zero-pad shorter samples;
@@ -128,33 +129,16 @@ Focused validation lives in the existing `test/test.pl` harness as
 `HTS_VCF_FORMAT_PLAN=1` byte-for-byte with `cmp`, and also verifies that
 unrecognized control values such as `HTS_VCF_FORMAT_PLAN=off` behave like the
 generic parser.  The repo fixtures cover numeric-width and GT-shape fallback,
-low-value float/string schemas, cache growth, long FORMAT strings, string-width
-fallback, separator fallback, parse fallback with rollback, repeated wide GT
-values, selected-sample skipping of malformed unselected columns, and
-sample-count mismatch.  The selected-sample checks compare explicit inclusion
-and exclusion lists (`S1,S3`, `S2`, and `^S2`).  `test/test_format_plan_cache`
-mutates and resyncs a header after a plan has been compiled for the same FORMAT
-string, then verifies the row is planned again with the new metadata.
-
-## Current Source Delta
-
-After removing the old exact kernels and SIMD tab scanner, then hardening the
-dynamic cache, the live parser/test hook delta relative to `origin/develop` is:
-
-| File | Added lines |
-|---|---:|
-| `vcf.c` | 1,939 added / 164 removed |
-| `Makefile` | 6 |
-| `test/test.pl` | 110 |
-| `test/test_format_plan_cache.c` | 133 |
-| `test/test_view.c` | 45 added / 2 removed |
-| `test/format-plan-cache.vcf` | 61 |
-| `test/format-plan-edge.vcf` | 38 |
-| `test/format-plan-float-string.vcf` | 8 |
-| `test/format-plan-fallback.vcf` | 10 |
-| `test/format-plan-repeated-wide-gt.vcf` | 14 |
-| `test/format-plan-sample-count.vcf` | 6 |
-| `test/format-plan-sample-skip.vcf` | 7 |
+mixed string/float schemas kept on the generic parser, cache growth, long FORMAT
+strings, string-width fallback, separator fallback, parse fallback with rollback,
+repeated wide GT values, float-vector compaction, selected-sample skipping of
+malformed unselected columns, and sample-count mismatch.  The selected-sample
+checks compare explicit inclusion and exclusion lists (`S1,S3`, `S2`, and
+`^S2`) and also verify retained-sample float widths do not depend on skipped
+input columns.
+`test/test_format_plan_cache` mutates and resyncs a header after a plan has been
+compiled for the same FORMAT string, then verifies the row is planned again with
+the new metadata.
 
 ## Large Corpus Benchmark
 
@@ -183,9 +167,10 @@ All planned outputs compared byte-identical to baseline.
 The CCDG 10k fallbacks are all `string_width=139`, meaning only rows with
 measured string fields wider than the 256-byte planned cap use the generic
 parser.  The float/string control fixtures still fall back as unsupported
-because the low-profit schema gate deliberately rejects those schemas.  Briefly
-tested runtime guards regressed sparse-fallback CCDG-like layouts, so the current
-implementation leaves row-local fallbacks local to the record.
+because the mixed string/float shape boundary keeps those rows on the generic
+parser.  Briefly tested runtime guards regressed sparse-fallback CCDG-like
+layouts, so the current implementation leaves row-local fallbacks local to the
+record.
 
 ## Full Threaded Corpus Benchmark
 
@@ -197,9 +182,9 @@ KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-threaded-profit-gate \
   bench/format-shape/large/threaded-inputs.tsv
 ```
 
-All 40 planned outputs compared byte-identical to baseline.  Detailed timings
-are in `bench/format-shape/large/results-threaded-profit-gate/timings.tsv`; the
-table below summarizes real-time speedup.
+All 40 planned outputs compared byte-identical to baseline.  Generated result
+files are ignored; the table below summarizes the recorded real-time speedup
+from `bench/format-shape/large/results-threaded-profit-gate`.
 
 | Input | 0 threads | 2 threads | 4 threads | 8 threads |
 |---|---:|---:|---:|---:|
@@ -219,19 +204,19 @@ table below summarizes real-time speedup.
 A clean bcftools `develop` worktree was built at:
 
 ```text
-/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan
+/path/to/bcftools-htslib-vcf-plan
 ```
 
 using this htslib worktree:
 
 ```sh
-make HTSDIR=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/htslib-vcf-avx-sanity bcftools
+make HTSDIR=/path/to/htslib bcftools
 ```
 
 Timing command:
 
 ```sh
-BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+BCFTOOLS=/path/to/bcftools-htslib-vcf-plan/bcftools \
 KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools \
   bench/format-shape/scripts/run_bcftools_bench.sh \
   bench/format-shape/large/threaded-inputs.tsv
@@ -264,7 +249,7 @@ path through bcftools rather than only through the test harness.
 Command:
 
 ```sh
-BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+BCFTOOLS=/path/to/bcftools-htslib-vcf-plan/bcftools \
 SAMPLE_COUNT=2 KEEP_OUTPUTS=0 \
 OUTDIR=bench/format-shape/large/results-bcftools-keep2 \
   bench/format-shape/scripts/run_bcftools_bench.sh \
@@ -324,7 +309,7 @@ The broader command runner exercises bcftools paths that either consume FORMAT
 records, discard FORMAT records, or mostly operate on site-level data:
 
 ```sh
-BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+BCFTOOLS=/path/to/bcftools-htslib-vcf-plan/bcftools \
 KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-commands \
   bench/format-shape/scripts/run_bcftools_command_bench.sh \
   bench/format-shape/large/bcftools-command-inputs.tsv
@@ -363,7 +348,7 @@ planner overhead in workloads that do not benefit from FORMAT decoding.
 grow quickly.  It was run against the smaller merge manifest:
 
 ```sh
-BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+BCFTOOLS=/path/to/bcftools-htslib-vcf-plan/bcftools \
 COMMANDS=merge_self KEEP_OUTPUTS=0 \
 OUTDIR=bench/format-shape/large/results-bcftools-merge \
   bench/format-shape/scripts/run_bcftools_command_bench.sh \
@@ -386,7 +371,7 @@ structural variants, and v5.0q CHM13v2.0 small variants.  The same bcftools
 command suite was run against those files plus the all-sample CCDG 10k slice:
 
 ```sh
-BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+BCFTOOLS=/path/to/bcftools-htslib-vcf-plan/bcftools \
 KEEP_OUTPUTS=0 OUTDIR=bench/format-shape/large/results-bcftools-giab-ccdg-prod-hardening \
   bench/format-shape/scripts/run_bcftools_command_bench.sh \
   bench/format-shape/large/bcftools-giab-ccdg-inputs.tsv
@@ -413,10 +398,10 @@ The parent CCDG/1000G high-coverage chr22 file is 26.0 GiB compressed:
 https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20201028_3202_raw_GT_with_annot/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
 ```
 
-It is available locally at:
+For local reruns, point the full-CCDG manifest at a local copy such as:
 
 ```text
-/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/data/original/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
+/path/to/local/20201028_CCDG_14151_B01_GRM_WGS_2020-08-05_chr22.recalibrated_variants.vcf.gz
 ```
 
 The normal command harness is unsafe for this input because one full
@@ -424,7 +409,7 @@ The normal command harness is unsafe for this input because one full
 full-file benchmark therefore used the streaming checksum harness:
 
 ```sh
-BCFTOOLS=/Users/jeremiah.li/geneticoptims/inplace-htslib-refactor/bcftools-htslib-vcf-plan/bcftools \
+BCFTOOLS=/path/to/bcftools-htslib-vcf-plan/bcftools \
 OUTDIR=bench/format-shape/large/results-bcftools-full-ccdg-stream \
   bash bench/format-shape/scripts/run_bcftools_command_bench_stream.sh \
   bench/format-shape/large/bcftools-full-ccdg-inputs.tsv

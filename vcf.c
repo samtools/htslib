@@ -3399,6 +3399,11 @@ typedef struct {
 } vcf_format_row_op_t;
 
 typedef struct {
+    /*
+     * Measured string fields are scanned once up front to determine the row
+     * width.  Keep the span from that pass so execution can copy bytes without
+     * searching for the same ':' or tab delimiter again.
+     */
     const char *ptr;
     int len;
 } vcf_format_string_span_t;
@@ -3515,37 +3520,41 @@ found:
     return idx;
 }
 
-static int vcf_format_general_plan_profitable(const vcf_format_general_plan_t *plan)
+static inline int vcf_format_op_is_vector(const vcf_format_op_t *op)
 {
-    int j, string_ops = 0, float_vector_ops = 0, int_ops = 0, int_vector_ops = 0;
+    return op->vl_type != BCF_VL_FIXED || op->number != 1;
+}
+
+/*
+ * Return whether this FORMAT composition is inside the current planned
+ * executor's supported shape set.  This is a support boundary, not a learned
+ * runtime heuristic: mixed measured-string plus float-vector rows are kept on
+ * the generic parser unless there is also integer-vector work for the planner
+ * to accelerate.
+ */
+static int vcf_format_general_plan_shape_supported(const vcf_format_general_plan_t *plan)
+{
+    int j, has_measured_string = 0, has_float_vector = 0, has_int_vector = 0;
 
     for (j = 0; j < plan->n_ops; j++) {
         const vcf_format_op_t *op = &plan->ops[j];
         if (op->is_gt)
             continue;
         if (op->htype == BCF_HT_STR) {
-            string_ops++;
-        } else if (op->htype == BCF_HT_REAL) {
-            if (op->vl_type == BCF_VL_FIXED && op->number == 1)
-                ;
-            else
-                float_vector_ops++;
-        } else if (op->htype == BCF_HT_INT) {
-            int_ops++;
-            if (op->vl_type != BCF_VL_FIXED || op->number != 1)
-                int_vector_ops++;
+            has_measured_string = 1;
+        } else if (op->htype == BCF_HT_REAL && vcf_format_op_is_vector(op)) {
+            has_float_vector = 1;
+        } else if (op->htype == BCF_HT_INT && vcf_format_op_is_vector(op)) {
+            has_int_vector = 1;
         }
     }
 
     /*
-     * FORMAT rows with measured strings plus float vectors have to pay the
-     * dynamic executor's full width-measurement pass and then still use the
-     * general float conversion path.  Without integer vectors to amortize that
-     * setup, production parsing has been consistently faster on the large
-     * corpus (for example GT:GL:FT:DP:GQ and GT:FT:PID:GL:DP).
+     * Examples intentionally left on generic: GT:GL:FT:DP:GQ and
+     * GT:FT:PID:GL:DP.  Both are valid FORMAT schemas, but this executor has no
+     * cheap integer-vector encoding work to offset the measured-string pass.
      */
-    if (string_ops > 0 && float_vector_ops > 0 &&
-        int_vector_ops == 0 && int_ops <= 2)
+    if (has_measured_string && has_float_vector && !has_int_vector)
         return 0;
     return 1;
 }
@@ -3555,7 +3564,7 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
                                            uint64_t hdr_gen,
                                            vcf_format_general_plan_t *plan)
 {
-    char *tmp, *tok, *saveptr = NULL;
+    char *tmp, *tok, *format_end;
     int i, ret = 0;
 
     memset(plan, 0, sizeof(*plan));
@@ -3580,9 +3589,20 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
      * additional header-described tags to share the same executor instead of
      * needing exact string-specific kernels.
      */
-    for (tok = strtok_r(tmp, ":", &saveptr); tok;
-         tok = strtok_r(NULL, ":", &saveptr)) {
+    /*
+     * Keep empty FORMAT tokens visible.  strtok_r() would collapse GT::DP into
+     * GT:DP, but the generic parser treats the empty tag as malformed.
+     */
+    format_end = tmp + format_len;
+    for (tok = tmp; tok <= format_end; ) {
+        char *next = memchr(tok, ':', (size_t)(format_end - tok));
         int key, htype;
+
+        if (!next)
+            next = format_end;
+        if (next == tok)
+            goto done;
+        *next = '\0';
 
         if (plan->n_ops >= MAX_N_FMT)
             goto done;
@@ -3629,11 +3649,15 @@ static int vcf_format_general_plan_compile(const bcf_hdr_t *h, const char *forma
             }
         }
         plan->n_ops++;
+
+        if (next == format_end)
+            break;
+        tok = next + 1;
     }
 
     if (!plan->n_ops)
         goto done;
-    if (!vcf_format_general_plan_profitable(plan))
+    if (!vcf_format_general_plan_shape_supported(plan))
         goto done;
 
     plan->supported = 1;
@@ -3781,16 +3805,6 @@ VCF_PLAN_ALWAYS_INLINE void vcf_plan_int_range_add_regular(vcf_plan_int_range_t 
         range->max = val;
     if (range->min > val)
         range->min = val;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_vector_count(const float *vals, int width)
-{
-    int i;
-
-    for (i = 0; i < width; i++)
-        if (bcf_float_is_vector_end(vals[i]))
-            break;
-    return i;
 }
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_value(const char **sp, float *out)
@@ -4109,23 +4123,28 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_copy_string_span(const vcf_format_string_spa
     return 0;
 }
 
-static int vcf_plan_parse_float_vector_dynamic(const char **sp, float *out, int width)
+/*
+ * Parse a dynamic-width float vector and report the number of values seen
+ * before padding the rest of the row with BCF vector-end markers.  Returning
+ * the count avoids a second pass over the encoded floats, which is also safer
+ * than inferring width from sentinel values after conversion.
+ */
+static int vcf_plan_parse_float_vector_dynamic_counted(const char **sp,
+                                                       float *out, int width,
+                                                       int *nread)
 {
     const char *s = *sp;
     int i = 0;
 
-    if (*s == ':' || *s == '\t' || *s == '\0') {
-        bcf_float_set_missing(out[i++]);
-    } else {
-        for (;;) {
-            if (i >= width || vcf_plan_float_value(&s, &out[i]) < 0)
-                return -1;
-            i++;
-            if (*s != ',')
-                break;
-            s++;
-        }
+    for (;;) {
+        if (i >= width || vcf_plan_float_value(&s, &out[i]) < 0)
+            return -1;
+        i++;
+        if (*s != ',')
+            break;
+        s++;
     }
+    *nread = i;
     for (; i < width; i++)
         bcf_float_set_vector_end(out[i]);
     *sp = s;
@@ -4145,10 +4164,6 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_scalar_flexible_range(const char **sp, i
 
 VCF_PLAN_ALWAYS_INLINE int vcf_plan_float_scalar_flexible(const char **sp, float *out)
 {
-    if (**sp == ':' || **sp == '\t' || **sp == '\0') {
-        bcf_float_set_missing(*out);
-        return 0;
-    }
     return vcf_plan_float_value(sp, out);
 }
 
@@ -4283,8 +4298,12 @@ static int vcf_format_general_expected_width(const vcf_format_op_t *op, bcf1_t *
         return v->n_allele > 1 ? v->n_allele - 1 : 0;
     case BCF_VL_R:
         return v->n_allele;
-    case BCF_VL_G:
-        return v->n_allele * (v->n_allele + 1) / 2;
+    case BCF_VL_G: {
+        uint64_t n = (uint64_t) v->n_allele;
+        uint64_t width = n * (n + 1) / 2;
+
+        return width > INT_MAX ? INT_MAX : (int) width;
+    }
     default:
         return 0;
     }
@@ -4374,6 +4393,12 @@ static void vcf_format_compact_row_op(kstring_t *mem, int nsamples,
                    width == 3 ? VCF_FORMAT_ROW_INT3 : VCF_FORMAT_ROW_INTN;
 }
 
+/*
+ * Resolve FORMAT widths before execution.  Fixed widths come from the header
+ * and current allele count; Type=String and Number=. numeric rows require a
+ * sample scan.  Returns 0 for a usable plan, -4 for generic fallback, and -1
+ * for allocation failure.
+ */
 static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
                                             const vcf_format_general_plan_t *plan,
                                             bcf1_t *v, char *q, int *widths,
@@ -4489,8 +4514,6 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
                 }
                 if (j > 0)
                     w++;
-                if (w <= 0)
-                    w = 1;
                 if (w > VCF_FORMAT_MAX_STRING_WIDTH) {
                     vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_STRING_WIDTH);
                     return -4;
@@ -4527,22 +4550,34 @@ static int vcf_format_general_strict_widths(kstring_t *s, const bcf_hdr_t *h,
     }
     for (j = 0; j < plan->n_ops; j++)
         if (plan->ops[j].measured_width) {
-            if (widths[j] <= 0)
-                widths[j] = 1;
             if (plan->ops[j].htype == BCF_HT_STR) {
+                if (widths[j] <= 0) {
+                    vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_STRING_WIDTH);
+                    return -4;
+                }
                 if (widths[j] > VCF_FORMAT_MAX_STRING_WIDTH) {
                     vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_STRING_WIDTH);
                     return -4;
                 }
-            } else if (widths[j] > VCF_FORMAT_MAX_NUMERIC_WIDTH) {
-                vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH);
-                return -4;
+            } else {
+                if (widths[j] <= 0)
+                    widths[j] = 1;
+                if (widths[j] > VCF_FORMAT_MAX_NUMERIC_WIDTH) {
+                    vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_NUMERIC_WIDTH);
+                    return -4;
+                }
             }
         }
 
     return 0;
 }
 
+/*
+ * Execute a row-local FORMAT plan.  Parsing proceeds sample-major because that
+ * matches the VCF text, then staged rows are encoded op-major to match BCF
+ * FORMAT layout.  Returns 0 on success, -4 for generic fallback, and -1 on hard
+ * errors after rolling back any direct writes to v->indiv.
+ */
 static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                                                bcf1_t *v,
                                                const vcf_format_general_plan_t *plan,
@@ -4686,11 +4721,11 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                 }
                 break;
             case VCF_FORMAT_ROW_FLOATN:
-                if (vcf_plan_parse_float_vector_dynamic(&cur, (float *)buf, op->width) < 0) {
+                if (vcf_plan_parse_float_vector_dynamic_counted(&cur, (float *)buf,
+                                                                op->width, &n) < 0) {
                     vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_PARSE);
                     goto fallback;
                 }
-                n = vcf_plan_float_vector_count((float *)buf, op->width);
                 break;
             case VCF_FORMAT_ROW_STR:
                 if (string_span_offsets && string_span_offsets[j] != (size_t)-1) {
