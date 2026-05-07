@@ -81,6 +81,7 @@ BUILT_TEST_PROGRAMS = \
 	test/pileup_mod \
 	test/plugins-dlhts \
 	test/sam \
+	test/test_alloc \
 	test/test_bgzf \
 	test/test_expr \
 	test/test_faidx \
@@ -682,6 +683,7 @@ SRC = $(srcprefix)
 #    MSYS2_ARG_CONV_EXCL="*" make check
 check test: all $(HTSCODECS_TEST_TARGETS)
 	test/hts_endian
+	test/test_alloc
 	test/test_expr
 	test/test_kfunc
 	test/test_khash
@@ -747,6 +749,9 @@ test/plugins-dlhts: test/plugins-dlhts.o
 
 test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
+
+test/test_alloc: test/test_alloc.o
+	$(CC) $(LDFLAGS) -o $@ test/test_alloc.o
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a $(LIBS) -lpthread
@@ -872,6 +877,7 @@ test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
 test/pileup_mod.o: test/pileup_mod.c config.h $(htslib_sam_h)
 test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
+test/test_alloc.o: test/test_alloc.c config.h $(htslib_hts_alloc_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
