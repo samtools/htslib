@@ -1388,11 +1388,11 @@ sub test_vcf_format_plan
 
     test_vcf_format_plan_one($opts, "format-plan-malformed-fields.vcf",
                              "format-plan-malformed-fields", "",
-                             { attempts => 3, hits => 0, fallback => 3,
+                             { attempts => 4, hits => 0, fallback => 4,
                                parsed_samples => 0,
                                unsupported => 0, numeric_width => 0,
                                string_width => 1, gt_shape => 0,
-                               parse => 2, separator => 0,
+                               parse => 3, separator => 0,
                                sample_count => 0 });
 
     test_vcf_format_plan_one($opts, "format-plan-float-vector.vcf",

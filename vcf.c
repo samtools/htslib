@@ -3390,12 +3390,9 @@ struct vcf_format_plan_cache_t {
 };
 
 typedef enum {
-    VCF_FORMAT_ROW_GT,
     VCF_FORMAT_ROW_GT2,
     VCF_FORMAT_ROW_INT1,
-    VCF_FORMAT_ROW_INT2,
-    VCF_FORMAT_ROW_INT3,
-    VCF_FORMAT_ROW_INTN,
+    VCF_FORMAT_ROW_INTVEC,
     VCF_FORMAT_ROW_FLOAT1,
     VCF_FORMAT_ROW_FLOATN,
     VCF_FORMAT_ROW_STR
@@ -3876,236 +3873,35 @@ VCF_PLAN_ALWAYS_INLINE int vcf_plan_int_value_range(const char **sp, int32_t *ou
     return 0;
 }
 
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector_counted_range(const char **sp,
-                                                                   int32_t *out,
-                                                                   int width,
-                                                                   int *nread,
-                                                                   vcf_plan_int_range_t *range)
+static int vcf_plan_parse_int_vector_counted_range(const char **sp,
+                                                   int32_t *out,
+                                                   int width,
+                                                   int *nread,
+                                                   vcf_plan_int_range_t *range)
 {
     const char *s = *sp;
-    int i, nvals;
+    int i = 0;
 
-    for (i = 0; i < width; i++) {
+    while (i < width) {
         if (vcf_plan_int_value_range(&s, &out[i], range) < 0)
             return -1;
-        if (*s != ',') {
-            i++;
+        i++;
+        if (*s != ',')
             break;
-        }
+        /*
+         * Another comma after width values means the subfield has too many
+         * entries, including the trailing-comma form "1,2,".
+         */
+        if (i == width)
+            return -1;
         s++;
     }
-    nvals = i;
-    *nread = nvals;
+    *nread = i;
     if (i < width)
         range->has_special = 1;
     for (; i < width; i++)
         out[i] = bcf_int32_vector_end;
-    if (*s == ',')
-        return -1;
     *sp = s;
-    return 0;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_counted_range(const char **sp, int32_t *out, int *nread,
-                                                                    vcf_plan_int_range_t *range)
-{
-    const char *s = *sp;
-
-    if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
-        return -1;
-    if (*s != ',') {
-        out[1] = bcf_int32_vector_end;
-        *sp = s;
-        range->has_special = 1;
-        *nread = 1;
-        return 0;
-    }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
-        return -1;
-    if (*s == ',')
-        return -1;
-    *sp = s;
-    *nread = 2;
-    return 0;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_counted_range(const char **sp, int32_t *out, int *nread,
-                                                                    vcf_plan_int_range_t *range)
-{
-    const char *s = *sp;
-
-    if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
-        return -1;
-    if (*s != ',') {
-        out[1] = bcf_int32_vector_end;
-        out[2] = bcf_int32_vector_end;
-        *sp = s;
-        range->has_special = 1;
-        *nread = 1;
-        return 0;
-    }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
-        return -1;
-    if (*s != ',') {
-        out[2] = bcf_int32_vector_end;
-        *sp = s;
-        range->has_special = 1;
-        *nread = 2;
-        return 0;
-    }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
-        return -1;
-    if (*s == ',')
-        return -1;
-    *sp = s;
-    *nread = 3;
-    return 0;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector4_counted_range(const char **sp, int32_t *out, int *nread,
-                                                                    vcf_plan_int_range_t *range)
-{
-    const char *s = *sp;
-    int i = 4;
-
-    if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
-        return -1;
-    if (*s != ',') {
-        out[1] = bcf_int32_vector_end;
-        out[2] = bcf_int32_vector_end;
-        out[3] = bcf_int32_vector_end;
-        range->has_special = 1;
-        i = 1;
-        goto done;
-    }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
-        return -1;
-    if (*s != ',') {
-        out[2] = bcf_int32_vector_end;
-        out[3] = bcf_int32_vector_end;
-        range->has_special = 1;
-        i = 2;
-        goto done;
-    }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
-        return -1;
-    if (*s != ',') {
-        out[3] = bcf_int32_vector_end;
-        range->has_special = 1;
-        i = 3;
-        goto done;
-    }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[3], range) < 0)
-        return -1;
-    if (*s == ',')
-        return -1;
-done:
-    *sp = s;
-    *nread = i;
-    return 0;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector6_counted_range(const char **sp, int32_t *out, int *nread,
-                                                                    vcf_plan_int_range_t *range)
-{
-    const char *s = *sp;
-    int i = 6, j;
-
-    if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
-        return -1;
-    if (*s != ',') { i = 1; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
-        return -1;
-    if (*s != ',') { i = 2; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
-        return -1;
-    if (*s != ',') { i = 3; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[3], range) < 0)
-        return -1;
-    if (*s != ',') { i = 4; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[4], range) < 0)
-        return -1;
-    if (*s != ',') { i = 5; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[5], range) < 0)
-        return -1;
-    if (*s == ',')
-        return -1;
-    goto done;
-fill:
-    range->has_special = 1;
-    for (j = i; j < 6; j++)
-        out[j] = bcf_int32_vector_end;
-done:
-    *sp = s;
-    *nread = i;
-    return 0;
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector10_counted_range(const char **sp, int32_t *out, int *nread,
-                                                                     vcf_plan_int_range_t *range)
-{
-    const char *s = *sp;
-    int i = 10, j;
-
-    if (vcf_plan_int_value_range(&s, &out[0], range) < 0)
-        return -1;
-    if (*s != ',') { i = 1; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[1], range) < 0)
-        return -1;
-    if (*s != ',') { i = 2; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[2], range) < 0)
-        return -1;
-    if (*s != ',') { i = 3; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[3], range) < 0)
-        return -1;
-    if (*s != ',') { i = 4; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[4], range) < 0)
-        return -1;
-    if (*s != ',') { i = 5; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[5], range) < 0)
-        return -1;
-    if (*s != ',') { i = 6; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[6], range) < 0)
-        return -1;
-    if (*s != ',') { i = 7; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[7], range) < 0)
-        return -1;
-    if (*s != ',') { i = 8; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[8], range) < 0)
-        return -1;
-    if (*s != ',') { i = 9; goto fill; }
-    s++;
-    if (vcf_plan_int_value_range(&s, &out[9], range) < 0)
-        return -1;
-    if (*s == ',')
-        return -1;
-    goto done;
-fill:
-    range->has_special = 1;
-    for (j = i; j < 10; j++)
-        out[j] = bcf_int32_vector_end;
-done:
-    *sp = s;
-    *nread = i;
     return 0;
 }
 
@@ -4208,30 +4004,6 @@ VCF_PLAN_ALWAYS_INLINE void vcf_plan_fill_missing_int_vector(int32_t *out,
     *nread = 1;
 }
 
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector2_flexible_counted_range(const char **sp,
-                                                                             int32_t *out,
-                                                                             int *nread,
-                                                                             vcf_plan_int_range_t *range)
-{
-    if (**sp == ':' || **sp == '\t' || **sp == '\0') {
-        vcf_plan_fill_missing_int_vector(out, 2, nread, range);
-        return 0;
-    }
-    return vcf_plan_parse_int_vector2_counted_range(sp, out, nread, range);
-}
-
-VCF_PLAN_ALWAYS_INLINE int vcf_plan_parse_int_vector3_flexible_counted_range(const char **sp,
-                                                                             int32_t *out,
-                                                                             int *nread,
-                                                                             vcf_plan_int_range_t *range)
-{
-    if (**sp == ':' || **sp == '\t' || **sp == '\0') {
-        vcf_plan_fill_missing_int_vector(out, 3, nread, range);
-        return 0;
-    }
-    return vcf_plan_parse_int_vector3_counted_range(sp, out, nread, range);
-}
-
 static int vcf_plan_parse_int_vector_flexible_counted_range(const char **sp,
                                                             int32_t *out,
                                                             int width,
@@ -4241,16 +4013,6 @@ static int vcf_plan_parse_int_vector_flexible_counted_range(const char **sp,
     if (**sp == ':' || **sp == '\t' || **sp == '\0') {
         vcf_plan_fill_missing_int_vector(out, width, nread, range);
         return 0;
-    }
-    switch (width) {
-    case 4:
-        return vcf_plan_parse_int_vector4_counted_range(sp, out, nread, range);
-    case 6:
-        return vcf_plan_parse_int_vector6_counted_range(sp, out, nread, range);
-    case 10:
-        return vcf_plan_parse_int_vector10_counted_range(sp, out, nread, range);
-    default:
-        break;
     }
     return vcf_plan_parse_int_vector_counted_range(sp, out, width, nread, range);
 }
@@ -4287,12 +4049,8 @@ static int vcf_format_general_resolve_ops(const vcf_format_general_plan_t *plan,
         } else if (op->htype == BCF_HT_INT) {
             if (row->width == 1)
                 row->kind = VCF_FORMAT_ROW_INT1;
-            else if (row->width == 2)
-                row->kind = VCF_FORMAT_ROW_INT2;
-            else if (row->width == 3)
-                row->kind = VCF_FORMAT_ROW_INT3;
             else
-                row->kind = VCF_FORMAT_ROW_INTN;
+                row->kind = VCF_FORMAT_ROW_INTVEC;
             row->size = row->width * (int)sizeof(int32_t);
         } else if (op->htype == BCF_HT_REAL) {
             row->kind = row->width == 1 ? VCF_FORMAT_ROW_FLOAT1 : VCF_FORMAT_ROW_FLOATN;
@@ -4301,9 +4059,7 @@ static int vcf_format_general_resolve_ops(const vcf_format_general_plan_t *plan,
             row->kind = VCF_FORMAT_ROW_STR;
             row->size = row->width;
         }
-        row->can_compact = row->kind == VCF_FORMAT_ROW_INT2 ||
-                           row->kind == VCF_FORMAT_ROW_INT3 ||
-                           row->kind == VCF_FORMAT_ROW_INTN ||
+        row->can_compact = row->kind == VCF_FORMAT_ROW_INTVEC ||
                            row->kind == VCF_FORMAT_ROW_FLOATN;
     }
     return 0;
@@ -4358,30 +4114,33 @@ static int vcf_format_general_encode_row_ops_from_ranges(kstring_t *dst, kstring
         uint8_t *buf = (uint8_t*)mem->s + op->offset;
 
         bcf_enc_int1(dst, op->key);
-        if (op->kind == VCF_FORMAT_ROW_GT2) {
+        switch (op->kind) {
+        case VCF_FORMAT_ROW_GT2:
             if (vcf_enc_gt2_u8(dst, nsamples, buf) < 0)
                 return -1;
-        } else if (op->kind == VCF_FORMAT_ROW_STR) {
+            break;
+        case VCF_FORMAT_ROW_STR:
             if (bcf_enc_size(dst, op->width, BCF_BT_CHAR) < 0)
                 return -1;
             if (kputsn((char *)buf, nsamples * (size_t)op->width, dst) < 0)
                 return -1;
-        } else if (op->kind == VCF_FORMAT_ROW_FLOAT1 || op->kind == VCF_FORMAT_ROW_FLOATN) {
+            break;
+        case VCF_FORMAT_ROW_FLOAT1:
+        case VCF_FORMAT_ROW_FLOATN:
             if (bcf_enc_size(dst, op->width, BCF_BT_FLOAT) < 0)
                 return -1;
             if (serialize_float_array(dst, nsamples * (size_t)op->width, (float *)buf) < 0)
                 return -1;
-        } else if (op->kind == VCF_FORMAT_ROW_INT1 ||
-                   op->kind == VCF_FORMAT_ROW_INT2 ||
-                   op->kind == VCF_FORMAT_ROW_INT3 ||
-                   op->kind == VCF_FORMAT_ROW_INTN) {
+            break;
+        case VCF_FORMAT_ROW_INT1:
+        case VCF_FORMAT_ROW_INTVEC:
             if (bcf_enc_vint_known_range_special(dst, nsamples * op->width, (int32_t *)buf,
                                                  op->width, ranges[j].min, ranges[j].max,
                                                  ranges[j].has_special) < 0)
                 return -1;
-        } else {
-            if (bcf_enc_vint(dst, nsamples * op->width, (int32_t *)buf, op->width) < 0)
-                return -1;
+            break;
+        default:
+            return -1;
         }
     }
     return 0;
@@ -4408,23 +4167,31 @@ static int vcf_format_direct_prefix_len(const vcf_format_row_op_t *row_ops, int 
     return j;
 }
 
-static void vcf_format_compact_row_op(kstring_t *mem, int nsamples,
-                                      vcf_format_row_op_t *op, int width)
+static int vcf_format_compact_row_op(kstring_t *mem, int nsamples,
+                                     vcf_format_row_op_t *op, int width)
 {
-    size_t elem_size = op->kind == VCF_FORMAT_ROW_FLOATN ? sizeof(float) : sizeof(int32_t);
-    size_t old_stride = (size_t) op->width * elem_size;
-    size_t new_stride = (size_t) width * elem_size;
+    size_t elem_size;
+    size_t old_stride, new_stride;
     char *base = mem->s + op->offset;
     int sample;
 
+    switch (op->kind) {
+    case VCF_FORMAT_ROW_INTVEC:
+        elem_size = sizeof(int32_t);
+        break;
+    case VCF_FORMAT_ROW_FLOATN:
+        elem_size = sizeof(float);
+        break;
+    default:
+        return -1;
+    }
+    old_stride = (size_t) op->width * elem_size;
+    new_stride = (size_t) width * elem_size;
     for (sample = 1; sample < nsamples; sample++)
         memmove(base + sample * new_stride, base + sample * old_stride, new_stride);
     op->width = width;
     op->size = (int)new_stride;
-    if (op->kind == VCF_FORMAT_ROW_INT2 || op->kind == VCF_FORMAT_ROW_INT3)
-        op->kind = width == 1 ? VCF_FORMAT_ROW_INT1 :
-                   width == 2 ? VCF_FORMAT_ROW_INT2 :
-                   width == 3 ? VCF_FORMAT_ROW_INT3 : VCF_FORMAT_ROW_INTN;
+    return 0;
 }
 
 /*
@@ -4727,19 +4494,7 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
                     goto fallback;
                 }
                 break;
-            case VCF_FORMAT_ROW_INT2:
-                if (vcf_plan_parse_int_vector2_flexible_counted_range(&cur, (int32_t *)buf, &n, &ranges[j]) < 0) {
-                    vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_PARSE);
-                    goto fallback;
-                }
-                break;
-            case VCF_FORMAT_ROW_INT3:
-                if (vcf_plan_parse_int_vector3_flexible_counted_range(&cur, (int32_t *)buf, &n, &ranges[j]) < 0) {
-                    vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_PARSE);
-                    goto fallback;
-                }
-                break;
-            case VCF_FORMAT_ROW_INTN:
+            case VCF_FORMAT_ROW_INTVEC:
                 if (vcf_plan_parse_int_vector_flexible_counted_range(&cur, (int32_t *)buf,
                                                                      op->width, &n, &ranges[j]) < 0) {
                     vcf_format_plan_set_reason(reason, VCF_FORMAT_PLAN_FB_PARSE);
@@ -4824,7 +4579,8 @@ static int vcf_parse_format_general_composable(kstring_t *s, const bcf_hdr_t *h,
              * header-derived width.  Compacting here avoids unnecessary
              * whole-row fallback while keeping byte-identical BCF output.
              */
-            vcf_format_compact_row_op(mem, output_nsamples, &row_ops[j], max_counts[j]);
+            if (vcf_format_compact_row_op(mem, output_nsamples, &row_ops[j], max_counts[j]) < 0)
+                goto error;
         }
     }
 

@@ -1,6 +1,7 @@
 ##fileformat=VCFv4.3
 ##contig=<ID=1>
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
 ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
 ##FORMAT=<ID=F,Number=1,Type=Float,Description="Scalar float">
 ##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods">
@@ -9,3 +10,4 @@
 1	1	.	A	C	.	PASS	.	GT:F:DP	0/1::5
 1	2	.	A	C	.	PASS	.	GT:GL:DP	0/1::5
 1	3	.	A	C	.	PASS	.	ST:DP	:5
+1	4	.	A	C	.	PASS	.	GT:AD:DP	0/1:1,2,:5
