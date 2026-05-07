@@ -3185,7 +3185,7 @@ static inline int reg2bins_wide(int64_t beg, int64_t end, hts_itr_t *itr, int mi
 
 static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
 {
-    int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
+    int l, s = min_shift + (n_lvls<<1) + n_lvls;
     size_t reg_bin_count = 0, hash_bin_count = kh_n_buckets(bidx), max_bins;
     hts_pos_t end1;
     if (end >= 1LL<<s) end = 1LL<<s;
@@ -3194,7 +3194,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 
     // Count bins to see if it's faster to iterate through the hash table
     // or the set of bins covering the region
-    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+    for (l = 0; l <= n_lvls; s -= 3, ++l) {
         reg_bin_count += (end1 >> s) - (beg >> s) + 1;
     }
     max_bins = reg_bin_count < kh_size(bidx) ? reg_bin_count : kh_size(bidx);
@@ -3303,7 +3303,7 @@ static inline int reg2intervals_wide(hts_itr_t *iter, const bidx_t *bidx,
 
 static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
-    int l, t, s;
+    int l, s;
     int i, j;
     hts_pos_t end1;
     bidx_t *bidx;
@@ -3323,7 +3323,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
     end1 = end - 1;
     // Count bins to see if it's faster to iterate through the hash table
     // or the set of bins covering the region
-    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+    for (l = 0; l <= n_lvls; s -= 3, ++l) {
         reg_bin_count += (end1 >> s) - (beg >> s) + 1;
     }
 
