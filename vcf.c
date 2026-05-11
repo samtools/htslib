@@ -3180,6 +3180,8 @@ static int vcf_parse_format_dict2(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 return -1;
             }
             hts_log_warning("FORMAT '%s' at %s:%"PRIhts_pos" is not defined in the header, assuming Type=String", t, bcf_seqname_safe(h,v), v->pos+1);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
             kstring_t tmp = {0,0,0};
             int l;
             ksprintf(&tmp, "##FORMAT=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", t);
@@ -3788,7 +3790,10 @@ static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char 
         {
             // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
             // been already printed, but will enable tools like vcfcheck to proceed.
-            hts_log_warning("FILTER '%s' is not defined in the header", t);
+            hts_log_warning("FILTER '%s' at %s:%"PRIhts_pos" is not defined in the header",
+                            t, bcf_seqname_safe(h,v), v->pos+1);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
             kstring_t tmp = {0,0,0};
             int l;
             ksprintf(&tmp, "##FILTER=<ID=%s,Description=\"Dummy\">", t);
@@ -3847,7 +3852,10 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
         k = kh_get(vdict, d, key);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
         {
-            hts_log_warning("INFO '%s' is not defined in the header, assuming Type=String", key);
+            hts_log_warning("INFO '%s' at %s:%"PRIhts_pos" is not defined in the header, assuming Type=String",
+                            key, bcf_seqname_safe(h,v), v->pos+1);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
             kstring_t tmp = {0,0,0};
             int l;
             ksprintf(&tmp, "##INFO=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", key);
@@ -4033,6 +4041,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     k = kh_get(vdict, d, p);
     if (k == kh_end(d)) {
         hts_log_warning("Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
         v->errcode = BCF_ERR_CTG_UNDEF;
         if ((k = fix_chromosome(h, d, p)) == kh_end(d)) {
             hts_log_error("Could not add dummy header for contig '%s'", p);
