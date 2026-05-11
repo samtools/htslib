@@ -585,15 +585,15 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "\n");
     fprintf(fp, "Indexing Options:\n");
     fprintf(fp, "   -0, --zero-based           coordinates are zero-based\n");
-    fprintf(fp, "   -b, --begin INT            column number for region start [4]\n");
-    fprintf(fp, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
+    fprintf(fp, "   -b, --begin INT            column number for region start\n");
+    fprintf(fp, "   -c, --comment CHAR         skip comment lines starting with CHAR\n");
     fprintf(fp, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
-    fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
+    fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b)\n");
     fprintf(fp, "   -f, --force                overwrite existing index without asking\n");
     fprintf(fp, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
     fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf, gaf\n");
-    fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
-    fprintf(fp, "   -S, --skip-lines INT       skip first INT lines [0]\n");
+    fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p)\n");
+    fprintf(fp, "   -S, --skip-lines INT       skip first INT lines\n");
     fprintf(fp, "\n");
     fprintf(fp, "Querying and other options:\n");
     fprintf(fp, "   -h, --print-header         print also the header lines\n");
@@ -608,6 +608,11 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "   -@, --threads INT          number of additional threads to use [0]\n");
     fprintf(fp, "\n");
+    fprintf(fp, "Unless one of the options -0, -b, -c, -e, -p, -s, or -S is used when building\n");
+    fprintf(fp, "an index, tabix will attempt to set its configuration by detecting the file\n");
+    fprintf(fp, "type being indexed.  If detection fails, or any of the options above is present,\n");
+    fprintf(fp, "the settings used will be those for the gff preset unless overridden\n");
+    fprintf(fp, "i.e. one-based positions, -s 1 -b 4 -e 5 -c '#' -S 0\n");
     return status;
 }
 
