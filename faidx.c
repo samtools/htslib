@@ -69,10 +69,13 @@ static inline int bgzf_getc_(BGZF *fp) {
 
 typedef struct {
     int id; // faidx_t->name[id] is for this struct.
-    uint32_t line_len, line_blen;
-    uint64_t len;
-    uint64_t seq_offset;
-    uint64_t qual_offset;
+    uint32_t line_extra;  // Bytes to skip at the end of each line
+                          // Usually 1 for \n or 2 for \r\n ending
+    uint64_t line_blen;   // Number of bases (or quality values) on each line
+                          // Total line length = line_blen + line_extra
+    uint64_t len;         // Length of entire sequence
+    uint64_t seq_offset;  // File offset to start of sequence
+    uint64_t qual_offset; // File offset to start of quality values (if fastq)
 } faidx1_t;
 KHASH_MAP_INIT_STR(s, faidx1_t)
 
@@ -91,10 +94,24 @@ static int fai_name2id(void *v, const char *ref)
     return k == kh_end(fai->hash) ? -1 : kh_val(fai->hash, k).id;
 }
 
-static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len, uint32_t line_len, uint32_t line_blen, uint64_t seq_offset, uint64_t qual_offset)
+static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len, uint64_t line_len, uint64_t line_blen, uint64_t seq_offset, uint64_t qual_offset)
 {
     if (!name) {
-        hts_log_error("Malformed line");
+        hts_log_error("Malformed line: no name");
+        return -1;
+    }
+    if (line_len > HTS_POS_MAX || line_blen > HTS_POS_MAX) {
+        hts_log_error("Malformed line: length out of bounds");
+        return -1;
+    }
+    if (line_len < line_blen) {
+        hts_log_error("Malformed line: width (%"PRIu64") less than base count (%"PRIu64")",
+                      line_len, line_blen);
+        return -1;
+    }
+    if (line_len - line_blen > UINT32_MAX) {
+        hts_log_error("Malformed line: difference between width (%"PRIu64") and base count (%"PRIu64") too large",
+                      line_len, line_blen);
         return -1;
     }
 
@@ -121,7 +138,7 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len,
     v->id = idx->n;
     idx->name[idx->n++] = name_key;
     v->len = len;
-    v->line_len = line_len;
+    v->line_extra = (uint32_t) (line_len - line_blen);
     v->line_blen = line_blen;
     v->seq_offset = seq_offset;
     v->qual_offset = qual_offset;
@@ -363,12 +380,13 @@ static int fai_save(const faidx_t *fai, hFILE *fp) {
 
         if (fai->format == FAI_FASTA) {
             snprintf(buf, sizeof(buf),
-                 "\t%"PRIu64"\t%"PRIu64"\t%"PRIu32"\t%"PRIu32"\n",
-                 x.len, x.seq_offset, x.line_blen, x.line_len);
+                 "\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\n",
+                 x.len, x.seq_offset, x.line_blen, x.line_blen + x.line_extra);
         } else {
             snprintf(buf, sizeof(buf),
-                 "\t%"PRIu64"\t%"PRIu64"\t%"PRIu32"\t%"PRIu32"\t%"PRIu64"\n",
-                 x.len, x.seq_offset, x.line_blen, x.line_len, x.qual_offset);
+                 "\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\n",
+                     x.len, x.seq_offset, x.line_blen,
+                     x.line_blen + x.line_extra, x.qual_offset);
         }
 
         if (hputs(fai->name[i], fp) != 0) return -1;
@@ -394,10 +412,11 @@ static faidx_t *fai_read(hFILE *fp, const char *fname, int format)
     if (!buf) goto fail;
 
     while ((l = hgetln(buf, 0x10000, fp)) > 0) {
-        uint32_t line_len, line_blen, n;
+        uint64_t line_len, line_blen;
         uint64_t len;
         uint64_t seq_offset;
         uint64_t qual_offset = 0;
+        int n;
 
         for (p = buf; *p && !isspace_c(*p); ++p);
 
@@ -406,14 +425,14 @@ static faidx_t *fai_read(hFILE *fp, const char *fname, int format)
         }
 
         if (format == FAI_FASTA) {
-            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu32"%"SCNu32, &len, &seq_offset, &line_blen, &line_len);
+            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu64"%"SCNu64, &len, &seq_offset, &line_blen, &line_len);
 
             if (n != 4) {
                 hts_log_error("Could not understand FASTA index %s line %zd", fname, lnum);
                 goto fail;
             }
         } else {
-            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu32"%"SCNu32"%"SCNu64, &len, &seq_offset, &line_blen, &line_len, &qual_offset);
+            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu64"%"SCNu64"%"SCNu64, &len, &seq_offset, &line_blen, &line_len, &qual_offset);
 
             if (n != 5) {
                 if (n == 4) {
@@ -727,14 +746,16 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     }
 
     if (val->line_blen <= 0) {
-        hts_log_error("Invalid line length in index: %d", val->line_blen);
+        hts_log_error("Invalid line length in index: %"PRIu64, val->line_blen);
         *len = -1;
         return NULL;
     }
 
+    uint64_t line_len = val->line_blen + val->line_extra;
+
     ret = bgzf_useek(fai->bgzf,
                      offset
-                     + beg / val->line_blen * val->line_len
+                     + beg / val->line_blen * line_len
                      + beg % val->line_blen, SEEK_SET);
 
     if (ret < 0) {
@@ -744,7 +765,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     }
 
     // Over-allocate so there is extra space for one end-of-line sequence
-    buffer = hts_malloc(hts_add_sat3(end - beg, val->line_len - val->line_blen, 1));
+    buffer = hts_malloc(hts_add_sat3(end - beg, line_len - val->line_blen, 1));
     if (!buffer) {
         *len = -1;
         return NULL;
@@ -762,7 +783,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     }
 
     s = buffer;
-    firstline_len = val->line_len - beg % val->line_blen;
+    firstline_len = line_len - beg % val->line_blen;
 
     // Read the (partial) first line and its line terminator, but increment  s  past the
     // line contents only, so the terminator characters will be overwritten by the next line.
@@ -773,8 +794,8 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
 
     // Similarly read complete lines and their line terminator characters, but overwrite the latter.
     while (remaining > val->line_blen) {
-        nread = bgzf_read_small(fai->bgzf, s, val->line_len);
-        if (nread < (ssize_t) val->line_len) goto error;
+        nread = bgzf_read_small(fai->bgzf, s, line_len);
+        if (nread < (ssize_t) line_len) goto error;
         s += val->line_blen;
         remaining -= val->line_blen;
     }
@@ -828,9 +849,10 @@ static int fai_get_val(const faidx_t *fai, const char *str,
 }
 
 /*
- *  The internal still has line_blen as uint32_t, but our references
- *  can be longer, so for future proofing we use hts_pos_t.  We also needed
- *  a signed value so we can return negatives as an error.
+ *  Returns hts_pos_t for historic reasons (line_blen was uint32_t,
+ *  but this function returned a wider value in case it was expanded
+ *  which has now happened).  It also needs to return a negative value
+ *  on error.
  */
 hts_pos_t fai_line_length(const faidx_t *fai, const char *str)
 {
@@ -841,7 +863,9 @@ hts_pos_t fai_line_length(const faidx_t *fai, const char *str)
     if (fai_get_val(fai, str, &len, &val, &beg, &end))
         return -1;
     else
-        return val.line_blen;
+        return (val.line_blen <= HTS_POS_MAX
+                ? (hts_pos_t) val.line_blen
+                : (hts_pos_t) -1);
 }
 
 char *fai_fetch64(const faidx_t *fai, const char *str, hts_pos_t *len)
