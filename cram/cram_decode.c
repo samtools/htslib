@@ -2340,6 +2340,81 @@ static int cram_decode_tlen(cram_fd *fd, cram_container *c, cram_slice *s,
 }
 
 /*
+ * Bulk conversion of an entire cram slice to an array of bam objects.
+ * (Assumption that fd->required_fields will not change from one
+ * cram_get_bam_seq() call to the  next.)
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+#define round4(v) (((v-1)&~3)+4)
+#define round8(v) (((v-1)&~7)+8)
+static int bam_size(sam_hrecs_t *bfd, cram_fd *fd, cram_record *cr) {
+    int name_len, rg_len;
+
+    // See cram_to_bam function for these sizes
+    if (fd->required_fields & SAM_QNAME) {
+        if (cr->name_len)
+            name_len = cr->name_len;
+        else
+            name_len = strlen(fd->prefix) + 20; // overestimate; uint64
+    } else {
+        name_len = 1;
+    }
+
+    rg_len = (cr->rg != -1) ? bfd->rg[cr->rg].name_len + 4 : 0;
+
+    return sizeof(bam_seq_t)
+        + round4(name_len + 1) // nul padding
+        + 4 * cr->ncigar
+        + (cr->len+1)/2        // seq
+        + cr->len              // qual
+        + cr->aux_size + rg_len + 1;
+}
+
+/* Converts an entire slice worth of CRAM objects to BAM objects.
+ *
+ * Note memory for these is in a single malloc.  Hence compute upfront the
+ * memory size of each record prior to conversion.
+ * 
+ * Returns 0 on success,
+ *        -1 on failure
+ */
+static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
+    int i;
+    int r = 0;
+    int sizes[10000]; // FIXME: why cache in two passes?
+
+    size_t len = 0;
+    for (i = 0; i < s->hdr->num_records; i++) {
+        int sz = bam_size(bfd, fd, &s->crecs[i]);
+        if (i < 10000)
+            sizes[i] = sz;
+        len += round8(sz);
+    }
+
+    s->bl = (bam_seq_t **)malloc(s->hdr->num_records * sizeof(*s->bl) + len + 8);
+    if (!s->bl)
+        return -1;
+
+    // Round up to next multiple of 8, to ensure bam structs are 8-byte aligned.
+    char *x = ((char *)s->bl) + round8(s->hdr->num_records * sizeof(*s->bl));
+    for (i = 0; i < s->hdr->num_records; i++) {
+        bam_seq_t *b = (bam_seq_t *)x, *o = b;
+        int bsize = i < 10000 ? sizes[i] : bam_size(bfd, fd, &s->crecs[i]);
+        b->m_data = bsize;
+        b->data = (uint8_t *)b + sizeof(*b);
+        r |= (cram_to_bam(fd->header, fd, s, &s->crecs[i], i, &b) < 0);
+        // if we allocated enough, the above won't have resized b
+        assert(o == b && o->m_data == bsize);
+        x += round8(bsize);
+        s->bl[i] = b;
+    }
+
+    return r?-1:0;
+}
+
+/*
  * Decode an entire slice from container blocks. Fills out s->crecs[] array.
  * Returns 0 on success
  *        -1 on failure
@@ -3009,6 +3084,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     BLOCK_RESIZE_EXACT(s->name_blk, BLOCK_SIZE(s->name_blk)+1);
     BLOCK_RESIZE_EXACT(s->aux_blk,  BLOCK_SIZE(s->aux_blk)+1);
 
+    // If we're wanting BAM records, convert these up-front too.
+    // This is useful when we're streaming lots of data in a
+    // multi-threaded environment as the cram to bam conversion is
+    // then threaded too.
+    //
+    // Possible future optimisation - check range query and don't
+    // convert all reads to BAM.
+
+    if (fd->pool)
+        r |= bulk_cram_to_bam(bfd, fd, s);
+
     return r;
 
  block_err:
@@ -3623,6 +3709,20 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
 
     c = fd->ctr;
     s = c->slice;
+
+    if (s->bl) {
+        //*bam = s->bl[s->curr_rec-1]; return 0;
+
+        // TODO:
+        // Ideally we'd check bam->mempolicy and if not BAM_USER_OWNS_STRUCT
+        // and not BAM_USER_OWNS_DATA then we can just do
+        // *bam = s->bl[s->curr_rec-1];
+        //
+        // We could also handle the inbetween case were the user doesn't
+        // own the data so we can just switch pointers over.
+        // For now we take the easy bam_copy approach.
+        return bam_copy1(*bam, s->bl[s->curr_rec-1]) ? 0 : -1;
+    }
 
     return cram_to_bam(fd->header, fd, s, cr, s->curr_rec-1, bam);
 }

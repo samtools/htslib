@@ -662,6 +662,9 @@ struct cram_slice {
 
     int max_rec, curr_rec;       // current and max recs per slice
     int slice_num;               // To be copied into c->curr_slice in decode
+
+    // Cache of converted BAM structs
+    bam_seq_t **bl;
 };
 
 /*-----------------------------------------------------------------------------
