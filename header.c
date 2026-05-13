@@ -3325,8 +3325,8 @@ char **sam_hdr_expand_split_chr(sam_hdr_t *hdr, const char *region,
     }
     qsort(tids, nrefs, sizeof(*tids), tid_sort);
 
-    int err = 0, j = 0;
-    for (int i = 0; i < nrefs; i++) {
+    int err = 0, j = 0, i;
+    for (i = 0; i < nrefs; i++) {
         sq = tids[i].sq;
         hts_pos_t s_beg = sq->offset;
         hts_pos_t s_end = sq->offset + sq->len-1;
@@ -3358,7 +3358,8 @@ char **sam_hdr_expand_split_chr(sam_hdr_t *hdr, const char *region,
     free(s.s);
 
     if (reg_array) {
-        for (int i = 0; i < *nsub; i++)
+        int i;
+        for (i = 0; i < *nsub; i++)
             free(reg_array[i]);
         free(reg_array);
     }

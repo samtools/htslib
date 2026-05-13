@@ -1767,7 +1767,8 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *regi
         return NULL;
 
     iter = sam_itr_regarray(idx, hdr, reg_list, nregs);
-    for (int i = 0; i < nregs; i++)
+    int i;
+    for (i = 0; i < nregs; i++)
         free(reg_list[i]);
     free(reg_list);
 
