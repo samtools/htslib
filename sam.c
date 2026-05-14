@@ -1556,11 +1556,12 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t 
     int pass_filter, ret;
 
     do {
-        ret = cram_get_bam_seq(fp->fp.cram, &b);
+        int has_CG_tag = 0;
+        ret = cram_get_bam_seq(fp->fp.cram, &b, &has_CG_tag);
         if (ret < 0)
             return cram_eof(fp->fp.cram) ? -1 : -2;
 
-        if (bam_tag2cigar(b, 1, 1) < 0)
+        if (has_CG_tag && bam_tag2cigar(b, 1, 1) < 0)
             return -2;
 
         *tid = b->core.tid;
@@ -4145,11 +4146,12 @@ static inline int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 
 // Internal component of sam_read1 below
 static inline int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
-    int ret = cram_get_bam_seq(fp->fp.cram, b);
+    int has_CG_tag = 0;
+    int ret = cram_get_bam_seq(fp->fp.cram, b, &has_CG_tag);
     if (ret < 0)
         return cram_eof(fp->fp.cram) ? -1 : -2;
 
-    if (bam_tag2cigar(*b, 1, 1) < 0)
+    if (has_CG_tag && bam_tag2cigar(*b, 1, 1) < 0)
         return -2;
 
     return ret;

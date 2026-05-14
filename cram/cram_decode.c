@@ -2014,6 +2014,7 @@ static int cram_decode_aux(cram_fd *fd,
     int32_t TL = 0;
     unsigned char *TN;
     uint32_t ds = s->data_series;
+    cr->has_CG = 0;
 
     if (!(ds & (CRAM_TL|CRAM_aux))) {
         cr->aux = 0;
@@ -2046,6 +2047,8 @@ static int cram_decode_aux(cram_fd *fd,
             *has_MD = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);
         if (TN[0] == 'N' && TN[1] == 'M' && has_NM)
             *has_NM = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);;
+        if (TN[0] == 'C' && TN[1] == 'G')
+            cr->has_CG = 1;
 
         //printf("Tag %d/%d\n", i+1, cr->ntags);
         tag_data[0] = TN[0];
@@ -2957,6 +2960,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
         /* Auxiliary tags */
         has_MD = has_NM = 0;
+        cr->has_CG = -1; // unknown
         if (CRAM_MAJOR_VERS(fd->version) == 1)
             r |= cram_decode_aux_1_0(c, s, blk, cr);
         else
@@ -3699,7 +3703,7 @@ cram_record *cram_get_seq(cram_fd *fd) {
  * Returns >= 0 success (number of bytes written to *bam)
  *        -1 on EOF or failure (check fd->err)
  */
-int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
+int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam, int *has_CG_tag) {
     cram_record *cr;
     cram_container *c;
     cram_slice *s;
@@ -3721,9 +3725,28 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
         // We could also handle the inbetween case were the user doesn't
         // own the data so we can just switch pointers over.
         // For now we take the easy bam_copy approach.
-        return bam_copy1(*bam, s->bl[s->curr_rec-1]) ? 0 : -1;
+        //fprintf(stderr, "mem=%d\n", (*bam)->mempolicy);
+        if ((*bam)->mempolicy != 0) {
+            fprintf(stderr, "mem=%d\n", (*bam)->mempolicy);
+            return bam_copy1(*bam, s->bl[s->curr_rec-1]) ? 0 : -1;
+        }
+
+        // Otherwise we can swap pointers
+        bam1_t *b = *bam;
+        *bam = s->bl[s->curr_rec-1];
+        s->bl[s->curr_rec-1] = b;
+        return 0;
+
+#if 0
+        // Swap bam1_t->data around, but copy struct
+        uint8_t *data_tmp = (*bam)->data;
+        **bam = *s->bl[s->curr_rec-1];
+        s->bl[s->curr_rec-1]->data = data_tmp;
+        return 0;
+#endif
     }
 
+    *has_CG_tag = cr->has_CG;
     return cram_to_bam(fd->header, fd, s, cr, s->curr_rec-1, bam);
 }
 

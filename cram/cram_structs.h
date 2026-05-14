@@ -521,6 +521,8 @@ typedef struct cram_record {
     uint32_t feature;     // idx to s->feature
     uint32_t nfeature;    // number of features
     int32_t mate_flags;   // MF
+
+    int has_CG;           // used to avoid bam_tag2cigar call
 } cram_record;
 
 // Accessor macros as an analogue of the bam ones
