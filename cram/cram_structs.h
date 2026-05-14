@@ -464,6 +464,7 @@ struct cram_container {
 
     /* For multi-threading */
     bam_seq_t **bams;
+    int nbams;            // size of associated bams array
 
     /* Statistics for encoding */
     cram_stats *stats[DS_END];
@@ -602,6 +603,12 @@ typedef union cram_feature {
     } H;
 } cram_feature;
 
+typedef struct bam_list {
+    bam_seq_t **bams;
+    struct bam_list *next;
+    int nbams;
+} bam_list;
+
 /*
  * A slice is really just a set of blocks, but it
  * is the logical unit for decoding a number of
@@ -666,7 +673,7 @@ struct cram_slice {
     int slice_num;               // To be copied into c->curr_slice in decode
 
     // Cache of converted BAM structs
-    bam_seq_t **bl;
+    bam_list *bl;
 };
 
 /*-----------------------------------------------------------------------------
@@ -748,11 +755,6 @@ typedef struct {
 /*-----------------------------------------------------------------------------
  */
 /* CRAM File handle */
-
-typedef struct spare_bams {
-    bam_seq_t **bams;
-    struct spare_bams *next;
-} spare_bams;
 
 struct cram_fd;
 typedef struct varint_vec {
@@ -869,7 +871,7 @@ struct cram_fd {
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
     pthread_mutex_t range_lock;
-    spare_bams *bl;
+    bam_list *bl; // linked list of arrays of spare bam records
     pthread_mutex_t bam_list_lock;
     void *job_pending;
     int ooc;                            // out of containers.

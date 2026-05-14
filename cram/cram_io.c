@@ -4422,8 +4422,10 @@ void cram_free_slice(cram_slice *s) {
     if (!s)
         return;
 
-    if (s->bl)
+    if (s->bl) {
+        free_bam_list(s->bl->bams, s->bl->nbams);
         free(s->bl);
+    }
 
     if (s->hdr_block)
         cram_free_block(s->hdr_block);
@@ -5559,7 +5561,7 @@ int cram_write_eof_block(cram_fd *fd) {
  *        -1 on failure
  */
 int cram_close(cram_fd *fd) {
-    spare_bams *bl, *next;
+    bam_list *bl, *next;
     int i, ret = 0;
 
     if (!fd)
@@ -5602,10 +5604,8 @@ int cram_close(cram_fd *fd) {
     }
 
     for (bl = fd->bl; bl; bl = next) {
-        int max_rec = fd->seqs_per_slice * fd->slices_per_container;
-
         next = bl->next;
-        free_bam_list(bl->bams, max_rec);
+        free_bam_list(bl->bams, bl->nbams);
         free(bl);
     }
 

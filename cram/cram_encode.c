@@ -1853,7 +1853,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     cram_block *c_hdr;
     int multi_ref = 0;
     int r1, r2, sn, nref, embed_ref, no_ref;
-    spare_bams *spares;
+    bam_list *spares;
 
     if (!c->bams)
         goto err;
@@ -2139,8 +2139,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* Link our bams[] array onto the spare bam list for reuse */
     spares = malloc(sizeof(*spares));
     if (!spares) goto_err;
-    pthread_mutex_lock(&fd->bam_list_lock);
     spares->bams = c->bams;
+    spares->nbams = c->nbams;
+    pthread_mutex_lock(&fd->bam_list_lock);
     spares->next = fd->bl;
     fd->bl = spares;
     pthread_mutex_unlock(&fd->bam_list_lock);
@@ -4186,12 +4187,23 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         /* First time through, allocate a set of bam pointers */
         pthread_mutex_lock(&fd->bam_list_lock);
         if (fd->bl) {
-            spare_bams *spare = fd->bl;
+            bam_list *spare = fd->bl;
+            if (c->max_c_rec > spare->nbams) {
+                if (!(spare->bams =
+                      realloc(spare->bams,
+                              c->max_c_rec * sizeof(bam_seq_t*)))) {
+                    pthread_mutex_unlock(&fd->bam_list_lock);
+                    return -1;
+                }
+                spare->nbams = c->max_c_rec;
+            }
             c->bams = spare->bams;
+            c->nbams = spare->nbams;
             fd->bl = spare->next;
             free(spare);
         } else {
             c->bams = calloc(c->max_c_rec, sizeof(bam_seq_t *));
+            c->nbams = c->max_c_rec;
             if (!c->bams) {
                 pthread_mutex_unlock(&fd->bam_list_lock);
                 return -1;
@@ -4202,6 +4214,10 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
     /* Copy or alloc+copy the bam record, for later encoding */
     if (c->bams[c->curr_c_rec]) {
+        // IDEA: We could have a cram_put_bam_seq_fast which does pointer
+        // swapping for bam1_t->data.  The caller would need to accept
+        // that the bam object it passes in is modified, but this is often
+        // fine if we're doing a read-write loop.
         if (bam_copy1(c->bams[c->curr_c_rec], b) == NULL)
             return -1;
     } else {

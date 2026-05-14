@@ -53,6 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../htslib/hts.h"
 #include "../htslib/hts_alloc.h"
 #include "../htslib/hfile.h"
+#include "../sam_internal.h" // realloc_bam_data()
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
@@ -2386,32 +2387,52 @@ static int bam_size(sam_hrecs_t *bfd, cram_fd *fd, cram_record *cr) {
 static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
     int i;
     int r = 0;
-    int sizes[10000]; // FIXME: why cache in two passes?
 
-    size_t len = 0;
+    bam_list *bl = NULL;
+    pthread_mutex_lock(&fd->bam_list_lock);
+    if (fd->bl) {
+        bl = fd->bl;
+        fd->bl = fd->bl->next;
+    }
+    pthread_mutex_unlock(&fd->bam_list_lock);
+
+    if (bl) {
+        // Reuse an old bam list, possibly growing it
+        if (s->hdr->num_records > bl->nbams) {
+            bl->bams = realloc(bl->bams, s->hdr->num_records *
+                               sizeof(*bl->bams));
+            if (!bl->bams)
+                return -1;
+            memset(&bl->bams[bl->nbams], 0,
+                   (s->hdr->num_records - bl->nbams) * sizeof(*bl->bams));
+            bl->nbams = s->hdr->num_records;
+        }
+    } else {
+        // Create a new bam list
+        bl = calloc(1, sizeof(*bl));
+        if (!bl)
+            return -1;
+        bl->nbams = s->hdr->num_records;
+        bl->next = NULL;
+        bl->bams = calloc(s->hdr->num_records, sizeof(bam_seq_t *));
+        if (!bl->bams) {
+            free(bl);
+            return -1;
+        }
+    }
+    s->bl = bl;
+
     for (i = 0; i < s->hdr->num_records; i++) {
         int sz = bam_size(bfd, fd, &s->crecs[i]);
-        if (i < 10000)
-            sizes[i] = sz;
-        len += round8(sz);
+        if (!s->bl->bams[i])
+            if (!(s->bl->bams[i] = bam_init1()))
+                return -1;
+        realloc_bam_data(s->bl->bams[i], sz);
     }
 
-    s->bl = (bam_seq_t **)malloc(s->hdr->num_records * sizeof(*s->bl) + len + 8);
-    if (!s->bl)
-        return -1;
-
-    // Round up to next multiple of 8, to ensure bam structs are 8-byte aligned.
-    char *x = ((char *)s->bl) + round8(s->hdr->num_records * sizeof(*s->bl));
     for (i = 0; i < s->hdr->num_records; i++) {
-        bam_seq_t *b = (bam_seq_t *)x, *o = b;
-        int bsize = i < 10000 ? sizes[i] : bam_size(bfd, fd, &s->crecs[i]);
-        b->m_data = bsize;
-        b->data = (uint8_t *)b + sizeof(*b);
-        r |= (cram_to_bam(fd->header, fd, s, &s->crecs[i], i, &b) < 0);
-        // if we allocated enough, the above won't have resized b
-        assert(o == b && o->m_data == bsize);
-        x += round8(bsize);
-        s->bl[i] = b;
+        r |= (cram_to_bam(fd->header, fd, s, &s->crecs[i], i,
+                          &s->bl->bams[i]) < 0);
     }
 
     return r?-1:0;
@@ -3646,6 +3667,14 @@ cram_record *cram_get_seq(cram_fd *fd) {
         if (c && c->slice && c->slice->curr_rec < c->slice->max_rec) {
             s = c->slice;
         } else {
+            // Save old spare bams list if needed
+            if (c && (s = c->slice) && s->bl) {
+                pthread_mutex_lock(&fd->bam_list_lock);
+                s->bl->next = fd->bl;
+                fd->bl = s->bl;
+                pthread_mutex_unlock(&fd->bam_list_lock);
+                s->bl = NULL;
+            }
             if (!(s = cram_next_slice(fd, &c)))
                 return NULL;
             continue; /* In case slice contains no records */
@@ -3715,35 +3744,18 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam, int *has_CG_tag) {
     s = c->slice;
 
     if (s->bl) {
-        //*bam = s->bl[s->curr_rec-1]; return 0;
-
-        // TODO:
-        // Ideally we'd check bam->mempolicy and if not BAM_USER_OWNS_STRUCT
-        // and not BAM_USER_OWNS_DATA then we can just do
-        // *bam = s->bl[s->curr_rec-1];
-        //
-        // We could also handle the inbetween case were the user doesn't
-        // own the data so we can just switch pointers over.
-        // For now we take the easy bam_copy approach.
-        //fprintf(stderr, "mem=%d\n", (*bam)->mempolicy);
-        if ((*bam)->mempolicy != 0) {
-            fprintf(stderr, "mem=%d\n", (*bam)->mempolicy);
-            return bam_copy1(*bam, s->bl[s->curr_rec-1]) ? 0 : -1;
+        // If the user owns the data then we just have to do a slow copy
+        if (bam_get_mempolicy(*bam) & BAM_USER_OWNS_DATA) {
+            return bam_copy1(*bam, s->bl->bams[s->curr_rec-1]) ? 0 : -1;
         }
 
-        // Otherwise we can swap pointers
-        bam1_t *b = *bam;
-        *bam = s->bl[s->curr_rec-1];
-        s->bl[s->curr_rec-1] = b;
+        // Otherwise we'll copy the struct but swap the data pointers over
+        uint8_t *data = (*bam)->data;
+        uint32_t m_data = (*bam)->m_data;
+        **bam = *s->bl->bams[s->curr_rec-1];
+        s->bl->bams[s->curr_rec-1]->data = data;
+        s->bl->bams[s->curr_rec-1]->m_data = m_data;
         return 0;
-
-#if 0
-        // Swap bam1_t->data around, but copy struct
-        uint8_t *data_tmp = (*bam)->data;
-        **bam = *s->bl[s->curr_rec-1];
-        s->bl[s->curr_rec-1]->data = data_tmp;
-        return 0;
-#endif
     }
 
     *has_CG_tag = cr->has_CG;
