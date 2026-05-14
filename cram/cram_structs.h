@@ -463,7 +463,7 @@ struct cram_container {
     //struct ref_entry *ref;
 
     /* For multi-threading */
-    bam_seq_t **bams;
+    bam_seq_t *bams;
     int nbams;            // size of associated bams array
 
     /* Statistics for encoding */
@@ -604,7 +604,7 @@ typedef union cram_feature {
 } cram_feature;
 
 typedef struct bam_list {
-    bam_seq_t **bams;
+    bam_seq_t *bams;
     struct bam_list *next;
     int nbams;
 } bam_list;

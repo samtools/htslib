@@ -3694,10 +3694,10 @@ cram_container *cram_new_container(int nrec, int nslice) {
     return NULL;
 }
 
-static void free_bam_list(bam_seq_t **bams, int max_rec) {
+static void free_bam_list(bam_seq_t *bams, int max_rec) {
     int i;
     for (i = 0; i < max_rec; i++)
-        bam_free(bams[i]);
+        bam_free(&bams[i]);
 
     free(bams);
 }
