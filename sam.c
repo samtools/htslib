@@ -3410,7 +3410,7 @@ static void *sam_dispatcher_read(void *vp) {
             // entire buffer is part of a single line
             if (cp == l->data) {
                 line_frag = l->data_size;
-                char *rp = realloc(l->data, hts_add_sat2(hts_prod_sat2(l->alloc, 2), 8));
+                char *rp = hts_realloc_pse(l->data, 2, l->alloc, 0, 8);
                 if (!rp)
                     goto err;
                 l->alloc *= 2;
