@@ -551,7 +551,7 @@ int bam_set1(bam1_t *bam,
     }
 
     // validate parameters
-    if (l_qname > 254) {
+    if (l_qname > BAM_MAX_QNAME_LEN) {
         hts_log_error("Query name too long");
         errno = EINVAL;
         return -1;
@@ -858,7 +858,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
-    if (c->l_qname - c->l_extranul > 255) {
+    if (c->l_qname - c->l_extranul > BAM_MAX_QNAME_LEN + 1) { // +1 for NUL
         hts_log_error("QNAME \"%s\" is longer than 254 characters", bam_get_qname(b));
         errno = EOVERFLOW;
         return -1;

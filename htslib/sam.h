@@ -259,6 +259,9 @@ typedef struct bam1_t {
     uint32_t mempolicy:2, :30 /* Reserved */;
 } bam1_t;
 
+//! @abstract Longest QNAME permitted by BAM
+#define BAM_MAX_QNAME_LEN 254
+
 /*! @function
  @abstract  Get whether the query is on the reverse strand
  @param  b  pointer to an alignment
