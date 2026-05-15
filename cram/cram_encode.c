@@ -2107,7 +2107,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         // slice can start aggregating them from the start again.
         if (c->tags_used->n_occupied) {
             int ntags = c->tags_used->n_occupied;
-            s->aux_block = calloc(hts_prod_sat2(ntags, 2), sizeof(*s->aux_block));
+            s->aux_block = hts_calloc(hts_prod_sat2(ntags, 2), sizeof(*s->aux_block));
             if (!s->aux_block)
                 return -1;
 

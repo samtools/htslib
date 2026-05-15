@@ -744,7 +744,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     }
 
     // Over-allocate so there is extra space for one end-of-line sequence
-    buffer = malloc(hts_add_sat3(end - beg, val->line_len - val->line_blen, 1));
+    buffer = hts_malloc(hts_add_sat3(end - beg, val->line_len - val->line_blen, 1));
     if (!buffer) {
         *len = -1;
         return NULL;

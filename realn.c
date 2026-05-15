@@ -220,7 +220,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
         }
 
         assert(bq == NULL); // bq was used above, but should now be NULL
-        bq = malloc(hts_add_sat2(hts_prod_sat2(align_lqseq, 3), lref));
+        bq = hts_malloc_pse(3, align_lqseq, 0, lref);
         if (!bq) goto fail;
         q = bq + align_lqseq;
         tseq = q + align_lqseq;
