@@ -63,7 +63,9 @@ void HTS_NORETURN usage(int exit_code)
     fprintf(stderr, "   -O, --output-fmt <fmt>       fmt: vcf,bcf,summary\n");
     fprintf(stderr, "   -p, --pair <logic[+ref]>     logic: snps,indels,both,snps+ref,indels+ref,both+ref,exact,some,all\n");
     fprintf(stderr, "   -r, --regions <reg_list>     comma-separated list of regions\n");
+    fprintf(stderr, "   -R, --regions-file <file>    BED/tab file of regions (exercises bcf_sr_set_regions is_file=1)\n");
     fprintf(stderr, "   -t, --targets <reg_list>     comma-separated list of targets\n");
+    fprintf(stderr, "   -T, --targets-file <file>    file of targets (exercises bcf_sr_set_targets is_file=1)\n");
     fprintf(stderr, "   -u, --usefptr                use hfile pointer interface on reader addition\n");
     fprintf(stderr, "\n");
     exit(exit_code);
@@ -132,7 +134,9 @@ int main(int argc, char *argv[])
         {"output-fmt",required_argument,NULL,'O'},
         {"pair",required_argument,NULL,'p'},
         {"regions",required_argument,NULL,'r'},
+        {"regions-file",required_argument,NULL,'R'},
         {"targets",required_argument,NULL,'t'},
+        {"targets-file",required_argument,NULL,'T'},
         {"no-index",no_argument,NULL,1000},
         {"args",no_argument,NULL,1001},
         {"usefptr",no_argument,NULL,'u'},
@@ -142,8 +146,9 @@ int main(int argc, char *argv[])
     int c, pair = 0, use_index = 1, use_fofn = 1, usefptr = 0;
     enum htsExactFormat out_fmt = text_format; // for original pos + alleles
     const char *out_fn = NULL, *regions = NULL, *targets = NULL;
+    int regions_is_file = 0, targets_is_file = 0;
     htsFile **htsfp = NULL;
-    while ((c = getopt_long(argc, argv, "o:O:p:r:t:hu", loptions, NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "o:O:p:r:R:t:T:hu", loptions, NULL)) >= 0)
     {
         switch (c)
         {
@@ -174,8 +179,16 @@ int main(int argc, char *argv[])
             case 'r':
                 regions = optarg;
                 break;
+            case 'R':
+                regions = optarg;
+                regions_is_file = 1;
+                break;
             case 't':
                 targets = optarg;
+                break;
+            case 'T':
+                targets = optarg;
+                targets_is_file = 1;
                 break;
             case 1000:
                 use_index = 0;
@@ -215,13 +228,13 @@ int main(int argc, char *argv[])
 
     if (regions)
     {
-        if (bcf_sr_set_regions(sr, regions, 0) != 0)
+        if (bcf_sr_set_regions(sr, regions, regions_is_file) != 0)
             error("Failed to set regions\n");
     }
 
     if (targets)
     {
-        if (bcf_sr_set_targets(sr, targets, 0, 0) != 0)
+        if (bcf_sr_set_targets(sr, targets, targets_is_file, 0) != 0)
             error("Failed to set targets\n");
     }
 

@@ -59,6 +59,7 @@ run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
 run_test('test_bcf_sr_range', $opts);
 run_test('test_bcf_sr_hreader', $opts);
+run_test('test_bcf_sr_regions_fastpath', $opts);
 run_test('test_command',$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 run_test('test_convert_padded_header',$opts);
 run_test('test_rebgzip',$opts);
@@ -1422,6 +1423,39 @@ sub test_bcf_sr_hreader {
         failed($opts, $test, "Output differs to reference output\n");
         return;
     }
+    passed($opts, $test);
+}
+
+sub test_bcf_sr_regions_fastpath {
+    # Regression test for samtools/bcftools#2557. bcf_sr_set_regions(file=1)
+    # auto-promotes a dense single-base BED to the streaming-targets path.
+    # The fixture has 300 entries (> SNIFF_LINES=256), so the sniffer fires
+    # and the test exercises the fastpath. A control run with -T against the
+    # same BED is expected to produce identical output; we diff the two.
+    my ($opts, %args) = @_;
+    my $test = "test_bcf_sr_regions_fastpath";
+    my $vcfdir = "$$opts{path}/bcf-sr";
+
+    # bgzip + tabix-index the fixture BED and VCF in the tmp dir.
+    foreach my $base ('regions-fastpath.bed', 'regions-fastpath.vcf') {
+        my $preset = ($base =~ /\.bed$/) ? 'bed' : 'vcf';
+        my ($ret) = _cmd("cp $vcfdir/$base $$opts{tmp}/ && $$opts{bin}/bgzip -f $$opts{tmp}/$base && $$opts{bin}/tabix -p $preset $$opts{tmp}/$base.gz");
+        if ($ret) { failed($opts, $test, "Failed to prepare fixture $base"); return; }
+    }
+    my $vcf = "$$opts{tmp}/regions-fastpath.vcf.gz";
+    my $bed = "$$opts{tmp}/regions-fastpath.bed.gz";
+
+    # Run with -R FILE (exercises bcf_sr_set_regions is_file=1 fastpath) and
+    # -T FILE (control: existing streaming-targets behaviour). Both must
+    # produce identical output.
+    my $out_R = "$$opts{tmp}/regions-fastpath.R.out.vcf";
+    my $out_T = "$$opts{tmp}/regions-fastpath.T.out.vcf";
+    my ($r1) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_R -R $bed --args $vcf");
+    if ($r1) { failed($opts, $test, "test-bcf-sr -R failed"); return; }
+    my ($r2) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_T -T $bed --args $vcf");
+    if ($r2) { failed($opts, $test, "test-bcf-sr -T failed"); return; }
+    my ($r3) = _cmd("diff $out_R $out_T");
+    if ($r3) { failed($opts, $test, "-R fastpath output differs from -T control"); return; }
     passed($opts, $test);
 }
 

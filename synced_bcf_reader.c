@@ -188,6 +188,45 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     return NULL;
 }
 
+// Sniff a regions BED/TSV: returns 1 iff the first SNIFF_LINES non-comment
+// entries are *all* single-base regions (CHROM\tN-1\tN). Used by
+// bcf_sr_set_regions() to auto-promote dense single-base BEDs to the
+// streaming-targets path (samtools/bcftools#2557): the default per-region
+// `tbx_itr_queryi()` path is 300-500x slower than a sequential scan at
+// SNP-panel sizes (84M entries / 23GB VCF didn't complete in 11+ hours of
+// 100% CPU in production). Returns 0 if any entry is wider, malformed, or
+// the file has fewer than SNIFF_LINES entries — the latter prevents firing
+// on small BEDs where the seek path is already cheap.
+#define BCF_SR_REGIONS_SNIFF_LINES 256
+static int sniff_regions_singlebase(const char *fname)
+{
+    htsFile *fp = hts_open(fname, "r");
+    if (!fp) return 0;
+    kstring_t line = {0,0,0};
+    int n = 0, all_singlebase = 1;
+    while (n < BCF_SR_REGIONS_SNIFF_LINES)
+    {
+        int ret = hts_getline(fp, KS_SEP_LINE, &line);
+        if (ret < 0) break;     // EOF or read error
+        if (line.l == 0 || line.s[0] == '#') continue;  // skip headers/comments
+        // Parse CHROM\tSTART\tEND[\t...]. BED 1-bp regions have END-START==1.
+        char *p = line.s;
+        while (*p && *p != '\t') p++;
+        if (*p != '\t') { all_singlebase = 0; break; }
+        char *start_s = ++p;
+        while (*p && *p != '\t') p++;
+        if (*p != '\t') { all_singlebase = 0; break; }
+        char *end_s = ++p;
+        hts_pos_t start = strtoll(start_s, NULL, 10);
+        hts_pos_t end   = strtoll(end_s,   NULL, 10);
+        if (end - start != 1) { all_singlebase = 0; break; }
+        n++;
+    }
+    free(line.s);
+    hts_close(fp);
+    return (all_singlebase && n == BCF_SR_REGIONS_SNIFF_LINES) ? 1 : 0;
+}
+
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 {
     if ( readers->nreaders || readers->regions )
@@ -196,6 +235,19 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
         readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
         bcf_sr_seek_start(readers);
         return 0;
+    }
+
+    // #2557 fastpath: a dense single-base BED (typical SNP panel: HGDP+1kGP
+    // 84M sites, AADR 1240k, PGS Catalog) hits a 300-500x per-region seek
+    // overhead in the default path. The streaming-targets code path
+    // (bcf_sr_set_targets) handles the same workload at near-baseline
+    // speed. Auto-promote when the sniffer recognises the pattern; the
+    // 0/1/2 --regions-overlap semantics are identical to --targets-overlap
+    // so the user-set value carries over unchanged.
+    if ( is_file && sniff_regions_singlebase(regions) )
+    {
+        BCF_SR_AUX(readers)->targets_overlap = BCF_SR_AUX(readers)->regions_overlap;
+        return bcf_sr_set_targets(readers, regions, is_file, 0);
     }
 
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
