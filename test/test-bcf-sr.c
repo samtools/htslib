@@ -67,6 +67,8 @@ void HTS_NORETURN usage(int exit_code)
     fprintf(stderr, "   -t, --targets <reg_list>     comma-separated list of targets\n");
     fprintf(stderr, "   -T, --targets-file <file>    file of targets (exercises bcf_sr_set_targets is_file=1)\n");
     fprintf(stderr, "   -u, --usefptr                use hfile pointer interface on reader addition\n");
+    fprintf(stderr, "       --auto-targets-from-regions\n");
+    fprintf(stderr, "                                set BCF_SR_AUTO_TARGETS_FROM_REGIONS (sniff-and-promote -R)\n");
     fprintf(stderr, "\n");
     exit(exit_code);
 }
@@ -139,11 +141,13 @@ int main(int argc, char *argv[])
         {"targets-file",required_argument,NULL,'T'},
         {"no-index",no_argument,NULL,1000},
         {"args",no_argument,NULL,1001},
+        {"auto-targets-from-regions",no_argument,NULL,1002},
         {"usefptr",no_argument,NULL,'u'},
         {NULL,0,NULL,0}
     };
 
     int c, pair = 0, use_index = 1, use_fofn = 1, usefptr = 0;
+    int auto_targets_from_regions = 0;
     enum htsExactFormat out_fmt = text_format; // for original pos + alleles
     const char *out_fn = NULL, *regions = NULL, *targets = NULL;
     int regions_is_file = 0, targets_is_file = 0;
@@ -196,6 +200,9 @@ int main(int argc, char *argv[])
             case 1001:
                 use_fofn = 0;
                 break;
+            case 1002:
+                auto_targets_from_regions = 1;
+                break;
             case 'u':
                 usefptr = 1;    //use htsfile interface instead of fname i/f
                 break;
@@ -224,6 +231,9 @@ int main(int argc, char *argv[])
         bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
     } else {
         bcf_sr_set_opt(sr, BCF_SR_ALLOW_NO_IDX);
+    }
+    if (auto_targets_from_regions) {
+        bcf_sr_set_opt(sr, BCF_SR_AUTO_TARGETS_FROM_REGIONS);
     }
 
     if (regions)

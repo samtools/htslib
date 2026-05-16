@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/bgzf.h"
+#include "htslib/hfile.h"
 #include "htslib/hts_alloc.h"
 #include "htslib/thread_pool.h"
 #include "bcf_sr_sort.h"
@@ -71,6 +72,7 @@ typedef struct
     sr_sort_t sort;
     int regions_overlap, targets_overlap;
     int *closefile;             // close htsfile with sync reader close or not
+    int auto_targets_from_regions;  // BCF_SR_AUTO_TARGETS_FROM_REGIONS opt-in
 }
 aux_t;
 
@@ -142,6 +144,10 @@ int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...)
             if ( readers->targets ) readers->targets->overlap = BCF_SR_AUX(readers)->targets_overlap;
             return 0;
 
+        case BCF_SR_AUTO_TARGETS_FROM_REGIONS:
+            BCF_SR_AUX(readers)->auto_targets_from_regions = 1;
+            return 0;
+
         default:
             break;
     }
@@ -188,31 +194,54 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     return NULL;
 }
 
-// Sniff a regions BED/TSV: returns 1 iff the first SNIFF_LINES non-comment
-// entries are *all* single-base regions (CHROM\tN-1\tN). Used by
-// bcf_sr_set_regions() to auto-promote dense single-base BEDs to the
-// streaming-targets path (samtools/bcftools#2557): the default per-region
-// `tbx_itr_queryi()` path is 300-500x slower than a sequential scan at
-// SNP-panel sizes (84M entries / 23GB VCF didn't complete in 11+ hours of
-// 100% CPU in production). Returns 0 if any entry is wider, malformed, or
-// the file has fewer than SNIFF_LINES entries — the latter prevents firing
-// on small BEDs where the seek path is already cheap.
+// Sniff a regions BED/TSV: returns 1 iff (a) the path is a regular local
+// file we can safely re-open, (b) the first SNIFF_LINES non-comment entries
+// are *all* single-base regions (CHROM\tN-1\tN), and (c) those entries are
+// densely packed (average intra-chromosome inter-entry distance below
+// DENSITY_BP). Used by bcf_sr_set_regions() when the caller has opted in
+// via BCF_SR_AUTO_TARGETS_FROM_REGIONS to auto-promote dense single-base
+// BEDs to the streaming-targets path (samtools/bcftools#2557): the default
+// per-region `tbx_itr_queryi()` path is 300-500x slower than a sequential
+// scan at SNP-panel sizes (84M entries / 23GB VCF didn't complete in 11+
+// hours of 100% CPU in production).
+//
+// The density check rejects sparse BEDs (e.g. ~11 SNPs per chromosome)
+// where streaming would do a full-chromosome scan to satisfy a handful of
+// records — pre-promotion the tabix seek path is the cheap one there.
 #define BCF_SR_REGIONS_SNIFF_LINES 256
+#define BCF_SR_REGIONS_DENSITY_BP  10000
 static int sniff_regions_singlebase(const char *fname)
 {
+    // Bail on inputs whose bytes are gone after the sniff close: FIFOs,
+    // stdin, character devices.  Each subsequent hts_open() in
+    // bcf_sr_regions_init() would see a truncated stream (or block) for
+    // these.  Remote URLs reopen freshly per hts_open() and are safe in
+    // principle, but the extra round-trip outweighs the heuristic value
+    // here — keep the auto-promote local-files-only.
+    if ( hisremote(fname) ) return 0;
+    if ( fname[0]=='-' && fname[1]==0 ) return 0;
+    struct stat sb;
+    if ( stat(fname, &sb) != 0 ) return 0;
+    if ( !S_ISREG(sb.st_mode) ) return 0;
+
     htsFile *fp = hts_open(fname, "r");
     if (!fp) return 0;
     kstring_t line = {0,0,0};
-    int n = 0, all_singlebase = 1;
+    kstring_t prev_chr = {0,0,0};
+    hts_pos_t prev_pos = -1;
+    hts_pos_t total_intra_dist = 0;
+    int n = 0, n_intra = 0, all_singlebase = 1;
     while (n < BCF_SR_REGIONS_SNIFF_LINES)
     {
         int ret = hts_getline(fp, KS_SEP_LINE, &line);
         if (ret < 0) break;     // EOF or read error
         if (line.l == 0 || line.s[0] == '#') continue;  // skip headers/comments
         // Parse CHROM\tSTART\tEND[\t...]. BED 1-bp regions have END-START==1.
+        char *chr = line.s;
         char *p = line.s;
         while (*p && *p != '\t') p++;
         if (*p != '\t') { all_singlebase = 0; break; }
+        size_t chr_len = p - chr;
         char *start_s = ++p;
         while (*p && *p != '\t') p++;
         if (*p != '\t') { all_singlebase = 0; break; }
@@ -220,11 +249,30 @@ static int sniff_regions_singlebase(const char *fname)
         hts_pos_t start = strtoll(start_s, NULL, 10);
         hts_pos_t end   = strtoll(end_s,   NULL, 10);
         if (end - start != 1) { all_singlebase = 0; break; }
+
+        if ( prev_chr.l == chr_len && prev_pos >= 0 &&
+             memcmp(prev_chr.s, chr, chr_len) == 0 )
+        {
+            hts_pos_t d = start - prev_pos;
+            if (d < 0) d = -d;
+            total_intra_dist += d;
+            n_intra++;
+        }
+        prev_chr.l = 0;
+        kputsn(chr, chr_len, &prev_chr);
+        prev_pos = start;
         n++;
     }
     free(line.s);
+    free(prev_chr.s);
     hts_close(fp);
-    return (all_singlebase && n == BCF_SR_REGIONS_SNIFF_LINES) ? 1 : 0;
+    if ( !all_singlebase || n != BCF_SR_REGIONS_SNIFF_LINES ) return 0;
+    // Need at least one same-chrom comparison and the sample must be dense.
+    // (If every entry sits on a different chromosome, the panel is sparse
+    // by construction — reject.)
+    if ( n_intra == 0 ) return 0;
+    if ( total_intra_dist / n_intra > BCF_SR_REGIONS_DENSITY_BP ) return 0;
+    return 1;
 }
 
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
@@ -241,10 +289,15 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
     // 84M sites, AADR 1240k, PGS Catalog) hits a 300-500x per-region seek
     // overhead in the default path. The streaming-targets code path
     // (bcf_sr_set_targets) handles the same workload at near-baseline
-    // speed. Auto-promote when the sniffer recognises the pattern; the
-    // 0/1/2 --regions-overlap semantics are identical to --targets-overlap
-    // so the user-set value carries over unchanged.
-    if ( is_file && sniff_regions_singlebase(regions) )
+    // speed. Opt-in via BCF_SR_AUTO_TARGETS_FROM_REGIONS — when set, the
+    // sniffer decides whether the file qualifies. The opt-in is required
+    // because this routes regions through readers->targets, which is
+    // observable to callers and incompatible with a subsequent
+    // bcf_sr_set_targets() call.  The 0/1/2 --regions-overlap semantics
+    // match --targets-overlap so the user-set value carries over unchanged.
+    if ( is_file
+         && BCF_SR_AUX(readers)->auto_targets_from_regions
+         && sniff_regions_singlebase(regions) )
     {
         BCF_SR_AUX(readers)->targets_overlap = BCF_SR_AUX(readers)->regions_overlap;
         return bcf_sr_set_targets(readers, regions, is_file, 0);

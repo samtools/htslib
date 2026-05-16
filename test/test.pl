@@ -1427,14 +1427,24 @@ sub test_bcf_sr_hreader {
 }
 
 sub test_bcf_sr_regions_fastpath {
-    # Regression test for samtools/bcftools#2557. bcf_sr_set_regions(file=1)
-    # auto-promotes a dense single-base BED to the streaming-targets path.
-    # The fixture has 300 entries (> SNIFF_LINES=256), so the sniffer fires
-    # and the test exercises the fastpath. A control run with -T against the
-    # same BED is expected to produce identical output; we diff the two.
+    # Regression test for samtools/bcftools#2557. With
+    # BCF_SR_AUTO_TARGETS_FROM_REGIONS set, bcf_sr_set_regions(file=1) sniffs
+    # the BED and routes dense single-base panels through the streaming-
+    # targets path. The fixture has 300 entries on 3 contigs spaced ~100bp
+    # apart, so it clears the sniffer's count and density gates.
+    #
+    # Three runs over the same fixture, all required to match:
+    #   - slow path:   -R FILE                          (per-region tbx_itr_queryi)
+    #   - fastpath:    -R FILE + auto-targets opt       (sniff + set_targets)
+    #   - -T control:  -T FILE                          (set_targets directly)
+    # Slow path and fastpath take genuinely different code paths inside
+    # bcf_sr_next_line(), so a regression in either is visible in their diff
+    # (avoids the prior tautology where -R-fastpath literally re-invoked
+    # set_targets).  The -T diff additionally pins regions/targets parity.
     my ($opts, %args) = @_;
     my $test = "test_bcf_sr_regions_fastpath";
     my $vcfdir = "$$opts{path}/bcf-sr";
+    print "$test:\n";
 
     # bgzip + tabix-index the fixture BED and VCF in the tmp dir.
     foreach my $base ('regions-fastpath.bed', 'regions-fastpath.vcf') {
@@ -1445,17 +1455,19 @@ sub test_bcf_sr_regions_fastpath {
     my $vcf = "$$opts{tmp}/regions-fastpath.vcf.gz";
     my $bed = "$$opts{tmp}/regions-fastpath.bed.gz";
 
-    # Run with -R FILE (exercises bcf_sr_set_regions is_file=1 fastpath) and
-    # -T FILE (control: existing streaming-targets behaviour). Both must
-    # produce identical output.
-    my $out_R = "$$opts{tmp}/regions-fastpath.R.out.vcf";
-    my $out_T = "$$opts{tmp}/regions-fastpath.T.out.vcf";
-    my ($r1) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_R -R $bed --args $vcf");
-    if ($r1) { failed($opts, $test, "test-bcf-sr -R failed"); return; }
-    my ($r2) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_T -T $bed --args $vcf");
-    if ($r2) { failed($opts, $test, "test-bcf-sr -T failed"); return; }
-    my ($r3) = _cmd("diff $out_R $out_T");
-    if ($r3) { failed($opts, $test, "-R fastpath output differs from -T control"); return; }
+    my $out_slow = "$$opts{tmp}/regions-fastpath.slow.out.vcf";
+    my $out_fast = "$$opts{tmp}/regions-fastpath.fast.out.vcf";
+    my $out_T    = "$$opts{tmp}/regions-fastpath.T.out.vcf";
+    my ($r1) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_slow -R $bed --args $vcf");
+    if ($r1) { failed($opts, $test, "test-bcf-sr -R (slow path) failed"); return; }
+    my ($r2) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_fast --auto-targets-from-regions -R $bed --args $vcf");
+    if ($r2) { failed($opts, $test, "test-bcf-sr -R (fastpath) failed"); return; }
+    my ($r3) = _cmd("$$opts{path}/test-bcf-sr -O vcf -o $out_T -T $bed --args $vcf");
+    if ($r3) { failed($opts, $test, "test-bcf-sr -T (control) failed"); return; }
+    my ($r4) = _cmd("diff $out_slow $out_fast");
+    if ($r4) { failed($opts, $test, "fastpath output differs from slow path"); return; }
+    my ($r5) = _cmd("diff $out_slow $out_T");
+    if ($r5) { failed($opts, $test, "slow-path output differs from -T control"); return; }
     passed($opts, $test);
 }
 

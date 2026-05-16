@@ -99,7 +99,8 @@ typedef enum
     BCF_SR_PAIR_LOGIC,          // combination of the PAIR_* values above
     BCF_SR_ALLOW_NO_IDX,        // allow to proceed even if required index is not present (at the user's risk)
     BCF_SR_REGIONS_OVERLAP,     // include overlapping records with POS outside the regions: 0=no, 1=VCF line overlap, 2=true variant overlap [1]
-    BCF_SR_TARGETS_OVERLAP      // include overlapping records with POS outside the targets: 0=no, 1=VCF line overlap, 2=true variant overlap [0]
+    BCF_SR_TARGETS_OVERLAP,     // include overlapping records with POS outside the targets: 0=no, 1=VCF line overlap, 2=true variant overlap [0]
+    BCF_SR_AUTO_TARGETS_FROM_REGIONS    // route a dense single-base regions file through the streaming-targets code path; sets readers->targets, so incompatible with bcf_sr_set_targets() [off]
 }
 bcf_sr_opt_t;
 
