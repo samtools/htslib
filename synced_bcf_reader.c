@@ -265,7 +265,8 @@ static int sniff_regions_singlebase(const char *fname)
     }
     free(line.s);
     free(prev_chr.s);
-    hts_close(fp);
+    if (hts_close(fp) < 0)
+        hts_log_error("Error on closing %s", fname);
     if ( !all_singlebase || n != BCF_SR_REGIONS_SNIFF_LINES ) return 0;
     // Need at least one same-chrom comparison and the sample must be dense.
     // (If every entry sits on a different chromosome, the panel is sparse
