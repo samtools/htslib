@@ -2064,7 +2064,7 @@ static off_t s3_seek(hFILE *fpv, off_t offset, int whence) {
         ks_clear(&fp->buffer); // resetting fp->buffer triggers a new remote read
     }
 
-    return fp->last_read;
+    return (off_t) pos;
 }
 
 
