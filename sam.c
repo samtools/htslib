@@ -57,6 +57,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_endian.h"
 #include "htslib/hts_expr.h"
 #include "header.h"
+#include "sam_cache.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -1150,6 +1151,9 @@ static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t *
     htsFile *fp = (htsFile *)fpv;
     bam1_t *b = bv;
     fp->line.l = 0;
+    if (fp->c) {    //mark as thr' iterator
+        ((rc_t*)fp->c)->itr = 1;
+    }
     int ret = sam_read1(fp, fp->bam_header, b);
     if (ret >= 0) {
         *tid = b->core.tid;
@@ -1165,6 +1169,9 @@ static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, hts_po
     htsFile *fp = (htsFile *)fpv;
     bam1_t *b = bv;
     fp->line.l = 0;
+    if (fp->c) {    //mark as thr' iterator
+        ((rc_t*)fp->c)->itr = 1;
+    }
     int ret = sam_read1(fp, fp->bam_header, b);
     return ret;
 }
@@ -1745,11 +1752,11 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (idx == NULL)
-        return hts_itr_query(NULL, tid, beg, end, sam_readrec_rest);
+        return hts_itr_usecache(hts_itr_query(NULL, tid, beg, end, sam_readrec_rest));
     else if (cidx->fmt == HTS_FMT_CRAI)
-        return cram_itr_query(idx, tid, beg, end, sam_readrec);
+        return hts_itr_usecache(cram_itr_query(idx, tid, beg, end, sam_readrec));
     else
-        return hts_itr_query(idx, tid, beg, end, sam_readrec);
+        return hts_itr_usecache(hts_itr_query(idx, tid, beg, end, sam_readrec));
 }
 
 static int cram_name2id(void *fdv, const char *ref)
@@ -1761,9 +1768,9 @@ static int cram_name2id(void *fdv, const char *ref)
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    return hts_itr_querys(idx, region, bam_name2id_wrapper, hdr,
+    return hts_itr_usecache(hts_itr_querys(idx, region, bam_name2id_wrapper, hdr,
                           cidx->fmt == HTS_FMT_CRAI ? cram_itr_query : hts_itr_query,
-                          sam_readrec);
+                          sam_readrec));
 }
 
 hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarray, unsigned int regcount)
@@ -1789,6 +1796,7 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarra
         itr = hts_itr_regions(idx, r_list, r_count, bam_name2id_wrapper, hdr,
                    hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
     }
+    hts_itr_usecache(itr);
 
     if (!itr)
         hts_reglist_free(r_list, r_count);
@@ -1804,11 +1812,11 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, sam_hdr_t *hdr, hts_reglist_t *
         return NULL;
 
     if (cidx->fmt == HTS_FMT_CRAI)
-        return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
-                   hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
+        return hts_itr_usecache(hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
+                   hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell));
     else
-        return hts_itr_regions(idx, reglist, regcount, bam_name2id_wrapper, hdr,
-                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
+        return hts_itr_usecache(hts_itr_regions(idx, reglist, regcount, bam_name2id_wrapper, hdr,
+                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell));
 }
 
 /**********************
@@ -4266,11 +4274,38 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 // Returns 0 on success,
 //        -1 on EOF,
 //       <-1 on error
-int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
+int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *r)
 {
     int ret, pass_filter;
+    rc_t *c = NULL;
+    ce_t *e = NULL;
+    bam1_t *b = r;
+
+    if(fp->c) { //cache in use?
+        if (!((rc_t*)fp->c)->itr) { //not thr' iterators, OK to use here
+            c = (rc_t*)fp->c;
+        }
+    }
+    if (c) {
+        if ((ret = getfromreadcache(c, r, NULL)) > 0) {
+            return 0;
+        } else if (ret < 0)
+            return -1;
+    }
+    if(c) {
+        LG("sr1: t %"PRIu64" s %"PRIu64" i %"PRIu64" n %"PRIu64"\n", c->rcnt, c->selcnt,c->inscnt, c->nselcnt);
+        // assert(!c->inscnt && !c->selcnt);
+        // assert(!c->head_sel && !c->tail_sel);
+        // assert(!c->head_ins && !c->tail_ins);
+    }
 
     do {
+        if (c) {
+            if (!(e = getcache(fp)))
+                return -4;
+            b = e->r;
+            // assert(c->cache.m == c->cache.f+1+c->rcnt+c->inscnt+c->selcnt+c->nselcnt);
+        }
         switch (fp->format.format) {
         case bam:
             ret = sam_read1_bam(fp, h, b);
@@ -4308,7 +4343,56 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
         pass_filter = (ret >= 0 && fp->filter)
             ? sam_passes_filter(h, b, fp->filter)
             : 1;
+
+        //if pass, add to cache
+        //move processing to thread
+        if (c) {
+            if (pass_filter) {
+                /* window should start from 1st pos read in
+                pos may change or could be on same pos and
+                as tid changes, pos may start again from older pos or even smaller than that!
+                */
+                pass_filter = 0;
+                if (ret >= 0) {
+                    if (addtoreadcache(c, e, NULL)) {
+                        return -4;
+                    }
+                } else {
+                    if (ret == -1) {
+                        c->trgr = 4;//end   //todo change to avoid internal access
+                        c->tid = -3;
+                        retcache(c,e);
+                        //fprintf(stderr,"ret -1; ready for processing\n");
+                    }
+                }
+                if (c->trgr >= 2) { //end or window full/ready
+                    // {
+                    //     assert(!c->inscnt && !c->selcnt);
+                    //     assert(!c->head_sel && !c->tail_sel);
+                    //     assert(!c->head_ins && !c->tail_ins);
+                    // }
+
+                    processcache(c);
+
+                    pass_filter = getfromreadcache(c, r, NULL);
+                    if (-1 == ret && !pass_filter) {
+                        pass_filter = 1;
+                        // ce_t *tmp = c->head_nsel;
+                        // while (tmp) {
+                        //     LG("LG bal %"PRIu64" %s,,,nsel-cleaning\n", tmp->ord, tmp->log.s);
+                        //     tmp = tmp->next;
+                        // }
+                    }
+                    else
+                        ret = 0;
+                }
+            } else
+                retcache(c, e);
+        }
     } while (pass_filter == 0);
+    if (c) {
+        LG("sr2: t %"PRIu64" s %"PRIu64" i %"PRIu64" n %"PRIu64"\n", c->rcnt, c->selcnt,c->inscnt, c->nselcnt);
+    }
 
     return pass_filter < 0 ? -2 : ret;
 }

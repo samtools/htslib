@@ -62,6 +62,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_alloc.h"
 #include "htslib/hts_expr.h"
 #include "htslib/hts_os.h" // drand48
+#include "sam_cache.h"
 
 #include "htslib/khash.h"
 #include "htslib/kseq.h"
@@ -1216,7 +1217,9 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     else if (strcmp(o->arg, "fastq_umi_regex") == 0 ||
         strcmp(o->arg, "FASTQ_UMI_REGEX") == 0)
         o->opt = FASTQ_OPT_UMI_REGEX, o->val.s = val;
-
+    else if (strcmp(o->arg, "hts_maxdepth") == 0 ||
+        strcmp(o->arg, "HTS_MAXDEPTH") == 0)
+        o->opt = HTS_OPT_MAXDEPTH, o->val.i = atoi(val);    //todo should this be sammaxdepth as it is not applicable to bcf
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1699,6 +1702,7 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
+    destroycache(fp);
     sam_hdr_destroy(fp->bam_header);
     hts_idx_destroy(fp->idx);
     hts_filter_free(fp->filter);
@@ -1902,6 +1906,22 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
             }
         } // else CRAM manages this in its own way
         break;
+    }
+    case HTS_OPT_MAXDEPTH: {
+        va_start(args, opt);
+        int dpth = va_arg(args, int);
+        va_end(args);
+        // int wndsz = dpth >> 8;
+        // if (wndsz <= 0)
+        //     wndsz = 350;
+        // dpth = dpth & 0x00FF;   //upto 65535
+        //todo check whether sorted by pos and setup only if so
+        if (dpth > 0)
+            if(setupcache(fp, 3500, dpth)) {
+                hts_log_warning("Failed to setup hts cache");
+            }
+            //hts_log_warning("Wnd %d dpth %d", wndsz, dpth);
+        return 0;
     }
 
     default:
@@ -4270,75 +4290,148 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
     return itr;
 }
 
-int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
+int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *s, void *data)
 {
-    int ret, tid;
+    int ret, tid, sts = 0;
     hts_pos_t beg, end;
+    void *c = getsamcache(iter, data);
+    void *e = NULL;
+    void *r = s;
+
     if (iter == NULL || iter->finished) return -1;
+    if (c && getfromreadcache_iter(c, s, &iter->curr_tid, &iter->curr_beg, &iter->curr_end)) {
+        return 0;
+    }
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
             if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) {
                 hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
-                              iter->curr_off,
-                              errno ? ": " : "", strerror(errno));
+                            iter->curr_off,
+                            errno ? ": " : "", strerror(errno));
                 return -2;
             }
             iter->curr_off = 0; // only seek once
         }
-        ret = iter->readrec(fp, data, r, &tid, &beg, &end);
-        if (ret < 0) iter->finished = 1;
-        iter->curr_tid = tid;
-        iter->curr_beg = beg;
-        iter->curr_end = end;
-        return ret;
     }
     // A NULL iter->off should always be accompanied by iter->finished.
-    assert(iter->off != NULL);
+    assert(iter->off != NULL || iter->read_rest);
     for (;;) {
-        if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
-            if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
-            if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
-                    hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
-                                  iter->off[iter->i+1].u,
-                                  errno ? ": " : "", strerror(errno));
-                    return -2;
-                }
-                iter->curr_off = bgzf_tell(fp);
-            }
-            ++iter->i;
+        if (c) {
+            if (!(e = getcache_iter(data)))
+                return -3;
+            r = getreadbuffer_iter(e);
+            sts = 0;
         }
-        if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
-            iter->curr_off = bgzf_tell(fp);
-            if (tid != iter->tid || beg >= iter->end) { // no need to proceed
-                ret = -1; break;
-            } else if (end > iter->beg && iter->end > beg) {
+        if (iter->read_rest) {
+            ret = iter->readrec(fp, data, r, &tid, &beg, &end);
+            if (ret < 0) {
+                if (c) {
+                    notifyend_iter(c, e);
+                }
+                break;
+            } else if (!c) {
                 iter->curr_tid = tid;
                 iter->curr_beg = beg;
                 iter->curr_end = end;
                 return ret;
+            } else {//TODO use end to set e->len
+                if (addtoreadcache_iter(c, e, &sts)) {
+                    return -3;
+                }
+                if (sts >= 2)   //ready/wnd full/end
+                    break;
+                continue;
             }
-        } else break; // end of file or error
+        } else {
+            if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
+                if (iter->i == iter->n_off - 1) {
+                    ret = -1;
+                    if (c) {
+                        notifyend_iter(c, e);
+                    }
+                    break;
+                } // no more chunks
+                if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
+                    if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                        hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
+                                    iter->off[iter->i+1].u,
+                                    errno ? ": " : "", strerror(errno));
+                        return -2;
+                    }
+                    iter->curr_off = bgzf_tell(fp);
+                }
+                ++iter->i;
+            }
+            if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
+                iter->curr_off = bgzf_tell(fp);
+                if (tid != iter->tid || beg >= iter->end) { // no need to proceed
+                    ret = -1;
+                    if (c) {
+                        notifyend_iter(c, e);
+                    }
+                    break;
+                } else if (end > iter->beg && iter->end > beg) {
+                    if (c) {
+                        if (addtoreadcache_iter(c, e, &sts)) {
+                            return -3;
+                        }
+                        if (sts >= 2)   //ready/wnd full/end
+                            break;
+                        continue;
+                    }
+                    iter->curr_tid = tid;
+                    iter->curr_beg = beg;
+                    iter->curr_end = end;
+                    return ret;
+                } else {    //non interested data?
+                    if (c)
+                        retcache(c,e);
+                }
+            } else {
+                if (c && ret == -1) { //eof
+                    notifyend_iter(c, e);
+                }
+                break; // end of file or error
+            }
+        }
     }
-    iter->finished = 1;
+    if (c && ret >= -1) {
+        processcache_iter(c);
+        if (!getfromreadcache_iter(c, s, &iter->tid, &iter->curr_beg, &iter->curr_end)) {
+            //if (ret == -1) {
+                iter->finished = 1;
+                resetcache_itr(c);
+            //}
+            return -1;
+        } else if (ret < 0)
+            ret = 0;
+        return ret;
+    } else {
+        iter->finished = 1;
+    }
     return ret;
 }
 
-int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
+int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
 {
     void *fp;
-    int ret, tid, i, cr, ci;
+    int ret, tid, i, cr, ci, sts = 0, used = 0;
     hts_pos_t beg, end;
     hts_reglist_t *found_reg;
+    void *c = (void*)fd->c;
+    void *e = NULL;
+    void *r = s;
 
-    if (iter == NULL || iter->finished) return -1;
+    if (iter == NULL || iter->finished) return -1;//todo chk
+    if (c && getfromreadcache_iter(c, s, &iter->curr_tid, &iter->curr_beg, &iter->curr_end)) {
+        return 0;
+    }
 
     if (iter->is_cram) {
         fp = fd->fp.cram;
     } else {
         fp = fd->fp.bgzf;
     }
-
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
@@ -4348,267 +4441,351 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
             iter->curr_off = 0; // only seek once
         }
 
-        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
-        if (ret < 0)
-            iter->finished = 1;
-
-        iter->curr_tid = tid;
-        iter->curr_beg = beg;
-        iter->curr_end = end;
-
-        return ret;
-    }
-    // A NULL iter->off should always be accompanied by iter->finished.
-    assert(iter->off != NULL || iter->nocoor != 0);
-
-    int next_range = 0;
-    for (;;) {
-        // Note that due to the way bam indexing works, iter->off may contain
-        // file chunks that are not actually needed as they contain data
-        // beyond the end of the requested region.  These are filtered out
-        // by comparing the tid and index into hts_reglist_t::intervals
-        // (packed for reasons of convenience into iter->off[iter->i].max)
-        // associated with the file region with iter->curr_tid and
-        // iter->curr_intv.
-
-        if (next_range
-            || iter->curr_off == 0
-            || iter->i >= iter->n_off
-            || iter->curr_off >= iter->off[iter->i].v
-            || (iter->off[iter->i].max >> 32 == iter->curr_tid
-                && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)) {
-
-            // Jump to the next chunk.  It may be necessary to skip more
-            // than one as the iter->off list can include overlapping entries.
-            do {
-                iter->i++;
-            } while (iter->i < iter->n_off
-                     && (iter->curr_off >= iter->off[iter->i].v
-                         || (iter->off[iter->i].max >> 32 == iter->curr_tid
-                             && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)));
-
-            if (iter->is_cram && iter->i < iter->n_off) {
-                // Ensure iter->curr_reg is correct.
-                //
-                // We need this for CRAM as we shortcut some of the later
-                // logic by getting an end-of-range and continuing to the
-                // next offset.
-                //
-                // We cannot do this for BAM (and fortunately do not need to
-                // either) because in BAM world a query to genomic positions
-                // GX and GY leading to a seek offsets PX and PY may have
-                // GX > GY and PX < PY.  (This is due to the R-tree and falling
-                // between intervals, bumping up to a higher bin.)
-                // CRAM strictly follows PX >= PY if GX >= GY, so this logic
-                // works.
-                int want_tid = iter->off[iter->i].max >> 32;
-                if (!(iter->curr_reg < iter->n_reg &&
-                      iter->reg_list[iter->curr_reg].tid == want_tid)) {
-                    int j;
-                    for (j = 0; j < iter->n_reg; j++)
-                        if (iter->reg_list[j].tid == want_tid)
-                            break;
-                    if (j == iter->n_reg)
-                        return -1;
-                    iter->curr_reg = j;
-                    iter->curr_tid = iter->reg_list[iter->curr_reg].tid;
-                };
-                iter->curr_intv = iter->off[iter->i].max & 0xffffffff;
+        for(;;) {
+            if (c) {
+                if (!(e = getcache_iter(fd)))
+                    return -3;
+                r = getreadbuffer_iter(e);
+                sts = 0;
             }
-
-            if (iter->i >= iter->n_off) { // no more chunks, except NOCOORs
-                if (iter->nocoor) {
-                    next_range = 0;
-                    if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
-                        hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
-                        return -2;
-                    }
-                    if (iter->is_cram) {
-                        cram_range r = { HTS_IDX_NOCOOR };
-                        cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
-                    }
-
-                    // The first slice covering the unmapped reads might
-                    // contain a few mapped reads, so scroll
-                    // forward until finding the first unmapped read.
-                    do {
-                        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
-                    } while (tid >= 0 && ret >=0);
-
-                    if (ret < 0)
-                        iter->finished = 1;
-                    else
-                        iter->read_rest = 1;
-
-                    iter->curr_off = 0; // don't seek any more
-                    iter->curr_tid = tid;
-                    iter->curr_beg = beg;
-                    iter->curr_end = end;
-
-                    return ret;
-                } else {
-                    ret = -1; break;
+            ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+            if (ret < 0) {
+                if (c) {
+                    notifyend_iter(c, e);
                 }
-            } else if (iter->i < iter->n_off) {
-                // New chunk may overlap the last one, so ensure we
-                // only seek forwards.
-                if (iter->curr_off < iter->off[iter->i].u || next_range) {
-                    iter->curr_off = iter->off[iter->i].u;
-
-                    // CRAM has the capability of setting an end location.
-                    // This means multi-threaded decodes can stop once they
-                    // reach that point, rather than pointlessly decoding
-                    // more slices than we'll be using.
-                    //
-                    // We have to be careful here.  Whenever we set the cram
-                    // range we need a corresponding seek in order to ensure
-                    // we can safely decode at that offset.  We use next_range
-                    // var to ensure this is always true; this is set on
-                    // end-of-range condition. It's never modified for BAM.
-                    if (iter->is_cram) {
-                        // Next offset.[uv] tuple, but it's already been
-                        // included in our cram range, so don't seek and don't
-                        // reset range so we can efficiently multi-thread.
-                        if (next_range || iter->curr_off >= iter->end) {
-                            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
-                                hts_log_error("Seek at offset %" PRIu64
-                                        " failed.", iter->curr_off);
-                                return -2;
-                            }
-
-                            // Find the genomic range matching this interval.
-                            int j;
-                            hts_reglist_t *rl = &iter->reg_list[iter->curr_reg];
-                            cram_range r = {
-                                    rl->tid,
-                                    rl->intervals[iter->curr_intv].beg,
-                                    rl->intervals[iter->curr_intv].end
-                            };
-
-                            // Expand it up to cover neighbouring intervals.
-                            // Note we can only have a single chromosome in a
-                            // range, so if we detect our blocks span chromosomes
-                            // or we have a multi-ref mode slice, we just use
-                            // HTS_IDX_START refid instead.  This doesn't actually
-                            // seek (due to CRAM_OPT_RANGE_NOSEEK) and is simply
-                            // and indicator of decoding with no end limit.
-                            //
-                            // That isn't as efficient as it could be, but it's
-                            // no poorer than before and it works.
-                            int tid = r.refid;
-                            int64_t end = r.end;
-                            int64_t v = iter->off[iter->i].v;
-                            j = iter->i+1;
-                            while (j < iter->n_off) {
-                                if (iter->off[j].u > v)
-                                    break;
-
-                                uint64_t max = iter->off[j].max;
-                                if ((max>>32) != tid) {
-                                    tid = HTS_IDX_START; // => no range limit
-                                } else {
-                                    if (end < rl->intervals[max & 0xffffffff].end)
-                                        end = rl->intervals[max & 0xffffffff].end;
-                                }
-                                if (v < iter->off[j].v)
-                                    v = iter->off[j].v;
-                                j++;
-                            }
-                            r.refid = tid;
-                            r.end = end;
-
-                            // Remember maximum 'v' here so we don't do
-                            // unnecessary subsequent seeks for the next
-                            // regions.  We can't change curr_off, but
-                            // beg/end are used only by single region iterator so
-                            // we cache it there to avoid changing the struct.
-                            iter->end = v;
-
-                            cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
-                            next_range = 0;
-                        }
-                    } else { // Not CRAM
-                        if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
-                            hts_log_error("Seek at offset %" PRIu64 " failed.",
-                                          iter->curr_off);
-                            return -2;
-                        }
-                    }
-                }
-            }
-        }
-
-        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
-        if (ret < 0) {
-            if (iter->is_cram && cram_eof(fp)) {
-                // Skip to end of range
-                //
-                // We should never be adjusting curr_off manually unless
-                // we also can guarantee we'll be doing a seek after to
-                // a new location.  Otherwise we'll be reading wrong offset
-                // for the next container.
-                //
-                // We ensure this by adjusting our CRAM_OPT_RANGE
-                // accordingly above, but to double check we also
-                // set the skipped_block flag to enforce a seek also.
-                iter->curr_off = iter->off[iter->i].v;
-                next_range = 1;
-
-                // Next region
-                if (++iter->curr_intv >= iter->reg_list[iter->curr_reg].count){
-                    if (++iter->curr_reg >= iter->n_reg)
-                        break;
-                    iter->curr_intv = 0;
-                    iter->curr_tid = iter->reg_list[iter->curr_reg].tid;
-                }
-                continue;
-            } else {
                 break;
-            }
-        }
-
-        iter->curr_off = iter->tell(fp);
-
-        if (tid != iter->curr_tid) {
-            hts_reglist_t key;
-            key.tid = tid;
-
-            found_reg = (hts_reglist_t *)bsearch(&key, iter->reg_list,
-                                                 iter->n_reg,
-                                                 sizeof(hts_reglist_t),
-                                                 compare_regions);
-            if (!found_reg)
-                continue;
-
-            iter->curr_reg = (found_reg - iter->reg_list);
-            iter->curr_tid = tid;
-            iter->curr_intv = 0;
-        }
-
-        cr = iter->curr_reg;
-        ci = iter->curr_intv;
-
-        for (i = ci; i < iter->reg_list[cr].count; i++) {
-            if (end > iter->reg_list[cr].intervals[i].beg &&
-                iter->reg_list[cr].intervals[i].end > beg) {
+            } else if (!c) {
+                iter->curr_tid = tid;
                 iter->curr_beg = beg;
                 iter->curr_end = end;
-                iter->curr_intv = i;
-
                 return ret;
+            } else {//TODO use end to set e->len
+                if (addtoreadcache_iter(c, e, &sts)) {
+                    return -3;
+                }
+                if (sts >= 2)   //ready/wnd full/end
+                    break;
+                continue;
+            }
+        }
+    } else {
+        // A NULL iter->off should always be accompanied by iter->finished.
+        assert(iter->off != NULL || iter->nocoor != 0);
+
+        int next_range = 0;
+        for (;;) {
+            // Note that due to the way bam indexing works, iter->off may contain
+            // file chunks that are not actually needed as they contain data
+            // beyond the end of the requested region.  These are filtered out
+            // by comparing the tid and index into hts_reglist_t::intervals
+            // (packed for reasons of convenience into iter->off[iter->i].max)
+            // associated with the file region with iter->curr_tid and
+            // iter->curr_intv.
+
+            if (c) {
+                if (!(e = getcache_iter(fd)))
+                    return -3;
+                r = getreadbuffer_iter(e);
+                used = 0;
+                sts = 0;
+            }
+            if (next_range
+                || iter->curr_off == 0
+                || iter->i >= iter->n_off
+                || iter->curr_off >= iter->off[iter->i].v
+                || (iter->off[iter->i].max >> 32 == iter->curr_tid
+                    && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)) {
+
+                // Jump to the next chunk.  It may be necessary to skip more
+                // than one as the iter->off list can include overlapping entries.
+                do {
+                    iter->i++;
+                } while (iter->i < iter->n_off
+                        && (iter->curr_off >= iter->off[iter->i].v
+                            || (iter->off[iter->i].max >> 32 == iter->curr_tid
+                                && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)));
+
+                if (iter->is_cram && iter->i < iter->n_off) {
+                    // Ensure iter->curr_reg is correct.
+                    //
+                    // We need this for CRAM as we shortcut some of the later
+                    // logic by getting an end-of-range and continuing to the
+                    // next offset.
+                    //
+                    // We cannot do this for BAM (and fortunately do not need to
+                    // either) because in BAM world a query to genomic positions
+                    // GX and GY leading to a seek offsets PX and PY may have
+                    // GX > GY and PX < PY.  (This is due to the R-tree and falling
+                    // between intervals, bumping up to a higher bin.)
+                    // CRAM strictly follows PX >= PY if GX >= GY, so this logic
+                    // works.
+                    int want_tid = iter->off[iter->i].max >> 32;
+                    if (!(iter->curr_reg < iter->n_reg &&
+                        iter->reg_list[iter->curr_reg].tid == want_tid)) {
+                        int j;
+                        for (j = 0; j < iter->n_reg; j++)
+                            if (iter->reg_list[j].tid == want_tid)
+                                break;
+                        if (j == iter->n_reg)
+                            return -1;
+                        iter->curr_reg = j;
+                        iter->curr_tid = iter->reg_list[iter->curr_reg].tid;
+                    };
+                    iter->curr_intv = iter->off[iter->i].max & 0xffffffff;
+                }
+
+                if (iter->i >= iter->n_off) { // no more chunks, except NOCOORs
+                    if (iter->nocoor) {
+                        next_range = 0;
+                        if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
+                            hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
+                            return -2;
+                        }
+                        if (iter->is_cram) {
+                            cram_range r = { HTS_IDX_NOCOOR };
+                            cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
+                        }
+
+                        // The first slice covering the unmapped reads might
+                        // contain a few mapped reads, so scroll
+                        // forward until finding the first unmapped read.
+                        do {
+                            ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+                        } while (tid >= 0 && ret >=0);
+
+                        if (ret < 0) {
+                            if (c) {
+                                notifyend_iter(c, e);
+                            }
+                            break;
+                        }
+                        else {
+                            iter->read_rest = 1;
+                            iter->curr_off = 0; // don't seek any more
+                            if (!c) {
+                                iter->curr_tid = tid;
+                                iter->curr_beg = beg;
+                                iter->curr_end = end;
+                                return ret;
+                            } else {//TODO use end to set e->len
+                                if (addtoreadcache_iter(c, e, &sts)) {
+                                    return -3;
+                                }
+                                if (sts >= 2)   //ready/wnd full/end
+                                    break;
+                                continue;
+                            }
+                        }
+
+                    } else {
+                        ret = -1;
+                        if (c) {
+                            notifyend_iter(c, e);
+                        }
+                        break;
+                    }
+                } else if (iter->i < iter->n_off) {
+                    // New chunk may overlap the last one, so ensure we
+                    // only seek forwards.
+                    if (iter->curr_off < iter->off[iter->i].u || next_range) {
+                        iter->curr_off = iter->off[iter->i].u;
+
+                        // CRAM has the capability of setting an end location.
+                        // This means multi-threaded decodes can stop once they
+                        // reach that point, rather than pointlessly decoding
+                        // more slices than we'll be using.
+                        //
+                        // We have to be careful here.  Whenever we set the cram
+                        // range we need a corresponding seek in order to ensure
+                        // we can safely decode at that offset.  We use next_range
+                        // var to ensure this is always true; this is set on
+                        // end-of-range condition. It's never modified for BAM.
+                        if (iter->is_cram) {
+                            // Next offset.[uv] tuple, but it's already been
+                            // included in our cram range, so don't seek and don't
+                            // reset range so we can efficiently multi-thread.
+                            if (next_range || iter->curr_off >= iter->end) {
+                                if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                                    hts_log_error("Seek at offset %" PRIu64
+                                            " failed.", iter->curr_off);
+                                    return -2;
+                                }
+
+                                // Find the genomic range matching this interval.
+                                int j;
+                                hts_reglist_t *rl = &iter->reg_list[iter->curr_reg];
+                                cram_range r = {
+                                        rl->tid,
+                                        rl->intervals[iter->curr_intv].beg,
+                                        rl->intervals[iter->curr_intv].end
+                                };
+
+                                // Expand it up to cover neighbouring intervals.
+                                // Note we can only have a single chromosome in a
+                                // range, so if we detect our blocks span chromosomes
+                                // or we have a multi-ref mode slice, we just use
+                                // HTS_IDX_START refid instead.  This doesn't actually
+                                // seek (due to CRAM_OPT_RANGE_NOSEEK) and is simply
+                                // and indicator of decoding with no end limit.
+                                //
+                                // That isn't as efficient as it could be, but it's
+                                // no poorer than before and it works.
+                                int tid = r.refid;
+                                int64_t end = r.end;
+                                int64_t v = iter->off[iter->i].v;
+                                j = iter->i+1;
+                                while (j < iter->n_off) {
+                                    if (iter->off[j].u > v)
+                                        break;
+
+                                    uint64_t max = iter->off[j].max;
+                                    if ((max>>32) != tid) {
+                                        tid = HTS_IDX_START; // => no range limit
+                                    } else {
+                                        if (end < rl->intervals[max & 0xffffffff].end)
+                                            end = rl->intervals[max & 0xffffffff].end;
+                                    }
+                                    if (v < iter->off[j].v)
+                                        v = iter->off[j].v;
+                                    j++;
+                                }
+                                r.refid = tid;
+                                r.end = end;
+
+                                // Remember maximum 'v' here so we don't do
+                                // unnecessary subsequent seeks for the next
+                                // regions.  We can't change curr_off, but
+                                // beg/end are used only by single region iterator so
+                                // we cache it there to avoid changing the struct.
+                                iter->end = v;
+
+                                cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
+                                next_range = 0;
+                            }
+                        } else { // Not CRAM
+                            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                                hts_log_error("Seek at offset %" PRIu64 " failed.",
+                                            iter->curr_off);
+                                return -2;
+                            }
+                        }
+                    }
+                }
             }
 
-            // Check if the read starts beyond intervals[i].end
-            // If so, the interval is finished so move on to the next.
-            if (beg > iter->reg_list[cr].intervals[i].end)
-                iter->curr_intv = i + 1;
+            ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+            if (ret < 0) {
+                if (iter->is_cram && cram_eof(fp)) {
+                    // Skip to end of range
+                    //
+                    // We should never be adjusting curr_off manually unless
+                    // we also can guarantee we'll be doing a seek after to
+                    // a new location.  Otherwise we'll be reading wrong offset
+                    // for the next container.
+                    //
+                    // We ensure this by adjusting our CRAM_OPT_RANGE
+                    // accordingly above, but to double check we also
+                    // set the skipped_block flag to enforce a seek also.
+                    iter->curr_off = iter->off[iter->i].v;
+                    next_range = 1;
 
-            // No need to keep searching if the read ends before intervals[i].beg
-            if (end < iter->reg_list[cr].intervals[i].beg)
-                break;
+                    // Next region
+                    if (++iter->curr_intv >= iter->reg_list[iter->curr_reg].count){
+                        if (++iter->curr_reg >= iter->n_reg) {
+                            if (c) {
+                                notifyend_iter(c, e);
+                            }
+                            break;
+                        }
+                        iter->curr_intv = 0;
+                        iter->curr_tid = iter->reg_list[iter->curr_reg].tid;
+                    }
+                    if (c) {
+                        notifyend_iter(c, e);
+                    }
+                    continue;
+                } else {
+                    if (c) {
+                        notifyend_iter(c, e);
+                    }
+                    break;
+                }
+            }
+
+            iter->curr_off = iter->tell(fp);
+
+            if (tid != iter->curr_tid) {
+                hts_reglist_t key;
+                key.tid = tid;
+
+                found_reg = (hts_reglist_t *)bsearch(&key, iter->reg_list,
+                                                    iter->n_reg,
+                                                    sizeof(hts_reglist_t),
+                                                    compare_regions);
+                if (!found_reg) {
+                    retcache(c,e);
+                    continue;
+                }
+
+                iter->curr_reg = (found_reg - iter->reg_list);
+                iter->curr_tid = tid;
+                iter->curr_intv = 0;
+            }
+
+            cr = iter->curr_reg;
+            ci = iter->curr_intv;
+
+            for (i = ci; i < iter->reg_list[cr].count; i++) {
+                if (end > iter->reg_list[cr].intervals[i].beg &&
+                    iter->reg_list[cr].intervals[i].end > beg) {
+                    if (c) {
+                        used = 1;
+                        sts = 0;
+                        if (addtoreadcache_iter(c, e, &sts)) {
+                            return -3;
+                        }
+                        break;
+                    } else {
+                        iter->curr_beg = beg;
+                        iter->curr_end = end;
+                        iter->curr_intv = i;
+                        return ret;
+                    }
+                }
+
+                // Check if the read starts beyond intervals[i].end
+                // If so, the interval is finished so move on to the next.
+                if (beg > iter->reg_list[cr].intervals[i].end)
+                    iter->curr_intv = i + 1;
+
+                // No need to keep searching if the read ends before intervals[i].beg
+                if (end < iter->reg_list[cr].intervals[i].beg) {
+                    break;
+                }
+            }
+            if (c) {
+                if (used) {
+                    if(sts >= 2)   //ready/wnd full/end
+                        break;
+                } else {    //unused, return to cache
+                    retcache(c,e);
+                }
+            }
         }
     }
-    iter->finished = 1;
+    if (c && ret >= -1) {
+        processcache_iter(c);
+        if (!getfromreadcache_iter(c, s, &iter->tid, &iter->curr_beg, &iter->curr_end)) {
+            if (ret == -1) {
+                iter->finished = 1;
+            }
+            return -1;
+        } else
+            ret = 0;
+        return ret;
+    } else {
+        iter->finished = 1;
+    }
 
     return ret;
 }

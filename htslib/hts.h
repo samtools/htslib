@@ -260,6 +260,7 @@ typedef struct htsFile {
     const char *fnidx;
     struct sam_hdr_t *bam_header;
     struct hts_filter_t *filter;
+    void *c;    //for cache
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -331,6 +332,7 @@ enum hts_fmt_option {
     HTS_OPT_BLOCK_SIZE,
     HTS_OPT_FILTER,
     HTS_OPT_PROFILE,
+    HTS_OPT_MAXDEPTH,
 
     // Fastq
 
@@ -875,7 +877,7 @@ typedef int64_t hts_tell_func(void *fp);
  */
 
 typedef struct hts_itr_t {
-    uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, dummy:27;
+    uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, usecache:1, dummy:26;
     int tid, n_off, i, n_reg;
     hts_pos_t beg, end;
     hts_reglist_t *reg_list;
@@ -1314,6 +1316,9 @@ typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, hts_pos_t b
  */
 HTSLIB_EXPORT
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
+
+/// use caching when available
+static inline hts_itr_t* hts_itr_usecache(hts_itr_t *itr) { if (itr) itr->usecache = 1; return itr; }
 
 /// Return the next record from an iterator
 /** @param fp      Input file handle
