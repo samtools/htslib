@@ -599,6 +599,7 @@ ref_cache/http_parser.o: ref_cache/http_parser.c config.h $(ref_cache_http_parse
 ref_cache/listener.o: ref_cache/listener.c config.h $(ref_cache_listener_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h)
 ref_cache/log_files.o: ref_cache/log_files.c config.h $(ref_cache_log_files_h) $(ref_cache_options_h)
 ref_cache/main.o: ref_cache/main.c config.h $(ref_cache_listener_h) $(ref_cache_log_files_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_ping_h) $(ref_cache_poll_wrap_h) $(ref_cache_server_h) $(ref_cache_upstream_h)
+ref_cache/misc.o: ref_cache/misc.c config.h $(ref_cache_misc_h)
 ref_cache/ping.o: ref_cache/ping.c config.h $(ref_cache_ping_h) $(ref_cache_misc_h) $(ref_cache_options_h)
 ref_cache/poll_wrap_epoll.o: ref_cache/poll_wrap_epoll.c config.h $(ref_cache_poll_wrap_h) cram/pooled_alloc.h
 ref_cache/poll_wrap_poll.o: ref_cache/poll_wrap_poll.c config.h $(ref_cache_poll_wrap_h) cram/pooled_alloc.h
