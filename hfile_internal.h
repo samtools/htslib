@@ -57,6 +57,10 @@ struct BGZF;
  */
 struct hFILE *bgzf_hfile(struct BGZF *fp);
 
+/* Opens chunked: manifests using the multipart stream backend. */
+struct hFILE *hopen_chunked_manifest(const char *url, const char *mode)
+    HTS_RESULT_USED;
+
 /*!
   @abstract Closes all hFILE plugins that have been loaded
 */

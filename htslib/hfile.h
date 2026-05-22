@@ -69,6 +69,10 @@ The usual `fopen(3)` _mode_ letters are supported: one of
 `r` (read), `w` (write), `a` (append), optionally followed by any of
 `+` (update), `e` (close on `exec(2)`), `x` (create exclusively),
 `:` (indicates scheme-specific variable arguments follow).
+
+The built-in `chunked:` scheme opens a read-only manifest containing one
+chunk filename per line and presents the chunks as one non-seekable stream.
+Blank lines and lines beginning with `#` are ignored.
 */
 HTSLIB_EXPORT
 hFILE *hopen(const char *filename, const char *mode, ...) HTS_RESULT_USED;

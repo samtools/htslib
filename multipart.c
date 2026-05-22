@@ -37,6 +37,9 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef EPROTO
 #define EPROTO ENOEXEC
 #endif
+#ifndef ENOTSUP
+#define ENOTSUP EINVAL
+#endif
 
 typedef struct hfile_part {
     char *url;
@@ -139,6 +142,155 @@ static const struct hFILE_backend multipart_backend =
 {
     multipart_read, multipart_write, multipart_seek, NULL, multipart_close
 };
+
+static int chunked_has_uri_scheme(const char *s)
+{
+    int n = 0;
+
+    while (isalnum_c(s[n]) || s[n] == '+' || s[n] == '-' || s[n] == '.')
+        n++;
+
+    return n > 1 && s[n] == ':';
+}
+
+static int chunked_is_absolute_path(const char *s)
+{
+    if (s[0] == '/')
+        return 1;
+#if defined(_WIN32) || defined(__MSYS__)
+    if (isalpha_c(s[0]) && s[1] == ':' && (s[2] == '/' || s[2] == '\\'))
+        return 1;
+#endif
+    return 0;
+}
+
+static char *chunked_manifest_dir(const char *manifest_name)
+{
+    const char *slash;
+    char *dir;
+    size_t len;
+
+    if (chunked_has_uri_scheme(manifest_name))
+        return NULL;
+
+    slash = strrchr(manifest_name, '/');
+    if (!slash)
+        return NULL;
+
+    len = slash - manifest_name + 1;
+    dir = malloc(len + 1);
+    if (!dir) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    memcpy(dir, manifest_name, len);
+    dir[len] = '\0';
+    return dir;
+}
+
+static char *chunked_resolve_name(const char *base, const char *name)
+{
+    char *copy;
+
+    if (!base || chunked_is_absolute_path(name) || chunked_has_uri_scheme(name))
+        return strdup(name);
+
+    size_t base_len = strlen(base), name_len = strlen(name);
+    copy = malloc(base_len + name_len + 1);
+    if (!copy)
+        return NULL;
+
+    memcpy(copy, base, base_len);
+    memcpy(copy + base_len, name, name_len + 1);
+    return copy;
+}
+
+hFILE *hopen_chunked_manifest(const char *url, const char *mode)
+{
+    hFILE_multipart *fp = NULL;
+    hFILE *manifest = NULL;
+    kstring_t line = KS_INITIALIZE;
+    const char *manifest_name = url + 8; // len("chunked:") = 8
+    char *manifest_dir = NULL;
+
+    if (!strchr(mode, 'r') || strchr(mode, '+') || strchr(mode, 'w')
+        || strchr(mode, 'a')) {
+        errno = ENOTSUP;
+        return NULL;
+    }
+
+    if (*manifest_name == '\0') {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    fp = (hFILE_multipart *) hfile_init(sizeof(*fp), mode, 0);
+    if (!fp) return NULL;
+
+    fp->parts = NULL;
+    fp->nparts = fp->maxparts = 0;
+
+    manifest = hopen(manifest_name, "r");
+    if (!manifest)
+        goto fail;
+
+    errno = 0;
+    manifest_dir = chunked_manifest_dir(manifest_name);
+    if (!manifest_dir && errno)
+        goto fail;
+
+    while (ks_clear(&line), khgetline(&line, manifest) == 0) {
+        char *chunk_name;
+        hfile_part *part;
+
+        if (line.l == 0 || line.s[0] == '#')
+            continue;
+
+        chunk_name = chunked_resolve_name(manifest_dir, line.s);
+        if (!chunk_name)
+            goto fail;
+
+        hts_expand(hfile_part, fp->nparts + 1, fp->maxparts, fp->parts);
+        part = &fp->parts[fp->nparts++];
+        part->url = chunk_name;
+        part->headers = NULL;
+    }
+
+    if (herrno(manifest))
+        goto fail;
+    if (hclose(manifest) < 0) {
+        manifest = NULL;
+        goto fail;
+    }
+    manifest = NULL;
+
+    if (fp->nparts == 0) {
+        errno = EINVAL;
+        goto fail;
+    }
+
+    fp->current = 0;
+    fp->currentfp = NULL;
+    fp->base.backend = &multipart_backend;
+
+    free(manifest_dir);
+    ks_free(&line);
+    return &fp->base;
+
+ fail:
+    {
+        int save = errno;
+        if (manifest)
+            hclose_abruptly(manifest);
+        free(manifest_dir);
+        ks_free(&line);
+        free_all_parts(fp);
+        hfile_destroy((hFILE *) fp);
+        errno = save;
+    }
+    return NULL;
+}
 
 // Returns 'v' (valid value), 'i' (invalid; required GA4GH field missing),
 // or upon encountering an unexpected token, that token's type.
