@@ -2827,11 +2827,17 @@ static int idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 {
     int ret, save;
+    const char *fn_local;
+
     if (idx == NULL || fn == NULL) { errno = EINVAL; return -1; }
-    char *fnidx = (char*)calloc(1, strlen(fn) + 5);
+
+    fn_local = strncmp(fn, "chunked:", 8) == 0 && !hisremote(fn + 8)
+        ? fn + 8 : fn;
+
+    char *fnidx = (char*)calloc(1, strlen(fn_local) + 5);
     if (fnidx == NULL) return -1;
 
-    strcpy(fnidx, fn);
+    strcpy(fnidx, fn_local);
     switch (fmt) {
     case HTS_FMT_BAI: strcat(fnidx, ".bai"); break;
     case HTS_FMT_CSI: strcat(fnidx, ".csi"); break;
@@ -4776,8 +4782,9 @@ int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
                 break;
             }
     } else {
+        if (strncmp(fn, "chunked:", 8) == 0 && !hisremote(fn + 8)) fn_tmp = fn + 8;
         // Borrowed from hopen_fd_fileuri()
-        if (strncmp(fn, "file://localhost/", 17) == 0) fn_tmp = fn + 16;
+        else if (strncmp(fn, "file://localhost/", 17) == 0) fn_tmp = fn + 16;
         else if (strncmp(fn, "file:///", 8) == 0) fn_tmp = fn + 7;
         else fn_tmp = fn;
 #if defined(_WIN32) || defined(__MSYS__)

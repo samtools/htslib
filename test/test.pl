@@ -863,6 +863,32 @@ sub test_view
     testv $opts, "./test_view $tv_args -p $src_sam.bam.sam $src_sam.bam";
     testv $opts, "./compare_sam.pl $src_sam $src_sam.bam.sam";
 
+    my $chunk_manifest = "$src_sam.bam.chunks";
+    open(my $chunk_in, '<', "$src_sam.bam")
+        || die "Couldn't open $src_sam.bam : $!\n";
+    binmode($chunk_in);
+    open(my $chunk_list, '>', $chunk_manifest)
+        || die "Couldn't open $chunk_manifest : $!\n";
+    my $chunk_no = 0;
+    while (read($chunk_in, my $chunk, 101)) {
+        my $chunk_name = sprintf("%s.bam.part%02d", $src_sam, $chunk_no++);
+        open(my $chunk_out, '>', $chunk_name)
+            || die "Couldn't open $chunk_name : $!\n";
+        binmode($chunk_out);
+        print $chunk_out $chunk;
+        close($chunk_out) || die "Error on closing $chunk_name : $!\n";
+        (my $chunk_entry = $chunk_name) =~ s{.*/}{};
+        print $chunk_list "$chunk_entry\n";
+    }
+    close($chunk_list) || die "Error on closing $chunk_manifest : $!\n";
+    close($chunk_in) || die "Error on closing $src_sam.bam : $!\n";
+
+    testv $opts, "./test_view $tv_args -p $src_sam.bam.chunked.sam chunked:$chunk_manifest";
+    testv $opts, "./compare_sam.pl $src_sam $src_sam.bam.chunked.sam";
+    testv $opts, "./test_index -b chunked:$chunk_manifest";
+    testv $opts, "./test_view $tv_args -p $src_sam.bam.chunked.region.sam chunked:$chunk_manifest ref:1-100000";
+    testv $opts, "./compare_sam.pl $src_sam $src_sam.bam.chunked.region.sam";
+
     if ($test_view_failures == 0) {
         passed($opts, "BAM records spanning multiple BGZF block tests");
     } else {

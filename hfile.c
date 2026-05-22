@@ -1111,6 +1111,7 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
 static int load_hfile_plugins(void)
 {
     static const struct hFILE_scheme_handler
+        chunked = { hopen_chunked_manifest, hfile_always_local, "built-in", 80 },
         data = { hopen_mem, hfile_always_local, "built-in", 80 },
         file = { hopen_fd_fileuri, hfile_always_local, "built-in", 80 },
         preload = { hopen_preload, is_preload_url_remote, "built-in", 80 };
@@ -1119,6 +1120,7 @@ static int load_hfile_plugins(void)
     if (schemes == NULL)
         return -1;
 
+    hfile_add_scheme_handler("chunked", &chunked);
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
     hfile_add_scheme_handler("preload", &preload);

@@ -57,6 +57,10 @@ struct BGZF;
  */
 struct hFILE *bgzf_hfile(struct BGZF *fp);
 
+/* Opens chunked: manifests as seekable logical files. */
+struct hFILE *hopen_chunked_manifest(const char *url, const char *mode)
+    HTS_RESULT_USED;
+
 /*!
   @abstract Closes all hFILE plugins that have been loaded
 */
