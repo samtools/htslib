@@ -86,7 +86,7 @@ char *bcf_sr_strerror(int errnum)
 {
     switch (errnum)
     {
-        case open_failed:
+        case bcf_sr_open_failed:
             return strerror(errno);
         case not_bgzf:
             return "not compressed with bgzip";
@@ -108,6 +108,12 @@ char *bcf_sr_strerror(int errnum)
             return "BCF read error";
         case noidx_error:
             return "merge of unindexed files failed";
+        case bcf_sr_seek_error:
+            return "failed to seek to next location";
+        case bcf_sr_regions_error:
+            return "failed to read regions/targets list";
+        case bcf_sr_samples_error:
+            return "failed to read samples list";
         default: return "";
     }
 }
