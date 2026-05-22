@@ -352,32 +352,32 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int
 HTSLIB_EXPORT
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
 
-
-
-/*
+/**
  *  bcf_sr_regions_init()
- *  @regions:   regions can be either a comma-separated list of regions
- *              (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
- *              tab-delimited file (the default). Uncompressed files
- *              are stored in memory while bgzip-compressed and tabix-indexed
- *              region files are streamed.
- *  @is_file:   0: regions is a comma-separated list of regions
- *                  (chr|chr:pos|chr:from-to|chr:from-)
- *              1: VCF, BED or tab-delimited file
- *  @chr, from, to:
- *              Column indexes of chromosome, start position and end position
- *              in the tab-delimited file. The positions are 1-based and
- *              inclusive.
- *              These parameters are ignored when reading from VCF, BED or
- *              tabix-indexed files. When end position column is not present,
- *              supply 'from' in place of 'to'. When 'to' is negative, first
- *              abs(to) will be attempted and if that fails, 'from' will be used
- *              instead.
- *              If chromosome name contains the characters ':' or '-', it should
- *              be put in curly brackets, for example as "{weird-chr-name:1-2}:1000-2000"
+ *  @param regions regions can be either a comma-separated list of regions
+ *                 (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
+ *                 tab-delimited file (the default). Uncompressed files
+ *                 are stored in memory while bgzip-compressed and tabix-indexed
+ *                 region files are streamed.
+ *  @param is_file 0: regions is a comma-separated list of regions
+ *                    (chr|chr:pos|chr:from-to|chr:from-)
+ *                 1: VCF, BED or tab-delimited file
+ *  @param chr     Column index of chromosome
+ *  @param from    Column index of start position (1-based, inclusive)
+ *  @param to      Column index of end position (1-based, inclusive)
+ *  @return Pointer to a populated bcf_sr_regions_t struct on success
+ *          NULL on failure
  *
  *  The bcf_sr_regions_t struct returned by a successful call should be freed
  *  via bcf_sr_regions_destroy() when it is no longer needed.
+ *
+ *  These @p chr, @p from and @p tp  parameters are ignored when reading
+ *  from VCF, BED or tabix-indexed files. When end position column is not
+ *  present, supply 'from' in place of 'to'. When 'to' is negative, first
+ *  abs(to) will be attempted and if that fails, 'from' will be used instead.
+ *
+ *  If chromosome name contains the characters ':' or '-', it should
+ *  be put in curly brackets, for example as "{weird-chr-name:1-2}:1000-2000"
  */
 HTSLIB_EXPORT
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int chr, int from, int to);
@@ -394,12 +394,15 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 HTSLIB_EXPORT
 int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
 
-/*
- *  bcf_sr_regions_next() - retrieves next region. Returns 0 on success and -1
- *  when all regions have been read. The fields reg->seq, reg->start and
- *  reg->end are filled with the genomic coordinates on success or with
- *  NULL,-1,-1 when no region is available. The coordinates are 0-based,
- *  inclusive.
+/**
+ *  Retrieve next region.
+ *  @return  0 on success
+ *          -1 when all regions have been read
+ *          -2 on failure
+ *
+ *  The fields reg->seq, reg->start and reg->end are filled with the
+ *  genomic coordinates on success or with NULL,-1,-1 when no region is
+ *  available. The coordinates are 0-based, inclusive.
  */
 HTSLIB_EXPORT
 int bcf_sr_regions_next(bcf_sr_regions_t *reg);
