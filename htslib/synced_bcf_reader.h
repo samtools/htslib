@@ -155,8 +155,22 @@ bcf_sr_t;
 
 typedef enum
 {
-    open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
-    header_error, no_eof, no_memory, vcf_parse_error, bcf_read_error, noidx_error
+    bcf_sr_ok = 0,        // No error
+    open_failed HTS_DEPRECATED_ENUM("Use bcf_sr_open_failed instead") = 0,
+    not_bgzf,             // Input file not BGZF compressed
+    idx_load_failed,      // Couldn't load the index
+    file_type_error,      // Unsupported file type
+    api_usage_error,      // API used incorrectly
+    header_error,         // Header could not be read
+    no_eof,               // Input file does not have an EOF block
+    no_memory,            // Ran out of memory
+    vcf_parse_error,      // Invalid VCF line
+    bcf_read_error,       // Error reading file
+    noidx_error,          // Input file not indexed, and streaming not possible
+    bcf_sr_open_failed,   // Failed to open the input file
+    bcf_sr_seek_error,    // Failed to seek to next location
+    bcf_sr_regions_error, // Failed to read the regions list
+    bcf_sr_samples_error, // Failed to read the samples list
 }
 bcf_sr_error;
 
