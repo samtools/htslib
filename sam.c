@@ -3861,7 +3861,7 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
             bc = "RX";
         int ntags = 0, err = 0;
         for (ntags = 0; *bc && ntags < UMI_TAGS; ntags++) {
-            if (!isalpha(bc[0]) || !isalnum_c(bc[1])) {
+            if (!isalpha_c(bc[0]) || !isalnum_c(bc[1])) {
                 err = 1;
                 break;
             }
