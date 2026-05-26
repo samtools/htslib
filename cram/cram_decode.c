@@ -165,13 +165,8 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
         hdr->ref_seq_id = fd->vv.varint_get32(&cp, endp, &err);
-        if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-            hdr->ref_seq_start = fd->vv.varint_get64(&cp, endp, &err);
-            hdr->ref_seq_span  = fd->vv.varint_get64(&cp, endp, &err);
-        } else {
-            hdr->ref_seq_start = fd->vv.varint_get32(&cp, endp, &err);
-            hdr->ref_seq_span  = fd->vv.varint_get32(&cp, endp, &err);
-        }
+        hdr->ref_seq_start = fd->vv.varint_get32(&cp, endp, &err);
+        hdr->ref_seq_span  = fd->vv.varint_get32(&cp, endp, &err);
         hdr->num_records   = fd->vv.varint_get32(&cp, endp, &err);
         hdr->num_landmarks = fd->vv.varint_get32(&cp, endp, &err);
         if (hdr->num_landmarks < 0 ||
@@ -349,7 +344,6 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
     /* Record encoding map */
     map_size  = fd->vv.varint_get32(&cp, endp, &err); cp_copy = cp;
     map_count = fd->vv.varint_get32(&cp, endp, &err);
-    int is_v4 = CRAM_MAJOR_VERS(fd->version) >= 4 ? 1 : 0;
     for (i = 0; i < map_count; i++) {
         char *key = cp;
         int32_t encoding = E_NULL;
@@ -400,7 +394,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
             ds_id = DS_RL; type = E_INT;
         } else if (key[0] == 'A' && key[1] == 'P') {
             ds_id = DS_AP;
-            type = is_v4 ? E_SLONG : E_INT;
+            type = E_INT;
         } else if (key[0] == 'R' && key[1] == 'G') {
             ds_id = DS_RG;
             type = E_INT;
@@ -410,10 +404,10 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
             ds_id = DS_NS; type = E_INT;
         } else if (key[0] == 'N' && key[1] == 'P') {
             ds_id = DS_NP;
-            type = is_v4 ? E_LONG : E_INT;
+            type = E_INT;
         } else if (key[0] == 'T' && key[1] == 'S') {
             ds_id = DS_TS;
-            type = is_v4 ? E_SLONG : E_INT;
+            type = E_INT;
         } else if (key[0] == 'N' && key[1] == 'F') {
             ds_id = DS_NF; type = E_INT;
         } else if (key[0] == 'T' && key[1] == 'C') {
@@ -979,13 +973,10 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
 
     if (b->content_type == MAPPED_SLICE) {
         hdr->ref_seq_id = fd->vv.varint_get32s((char **)&cp, (char *)cp_end, &err);
-        if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-            hdr->ref_seq_start = fd->vv.varint_get64((char **)&cp, (char *)cp_end, &err);
-            hdr->ref_seq_span  = fd->vv.varint_get64((char **)&cp, (char *)cp_end, &err);
-        } else {
-            hdr->ref_seq_start = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
-            hdr->ref_seq_span  = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
-        }
+        hdr->ref_seq_start =
+            fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
+        hdr->ref_seq_span  =
+            fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
         if (hdr->ref_seq_start < 0 || hdr->ref_seq_span < 0) {
             free(hdr);
             hts_log_error("Negative values not permitted for header "
@@ -1111,11 +1102,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     uint32_t nm = 0;
     int32_t md_dist = 0;
     int orig_aux = 0;
-    // CRAM <  4.0 decode_md is off/on
-    // CRAM >= 4.0 decode_md is auto/on (auto=on if MD* present, off otherwise)
-    int do_md = CRAM_MAJOR_VERS(fd->version) >= 4
-        ? (s->decode_md > 0)
-        : (s->decode_md != 0);
+    int do_md = s->decode_md != 0;
     int decode_md = s->ref && cr->ref_id >= 0 && ((do_md && !has_MD) || has_MD < 0);
     int decode_nm = s->ref && cr->ref_id >= 0 && ((do_md && !has_NM) || has_NM < 0);
     uint32_t ds = s->data_series;
@@ -2057,74 +2044,40 @@ static int cram_decode_aux(cram_fd *fd,
         tag_data[2] = TN[2];
         id = (tag_data[0]<<16) | (tag_data[1]<<8) | tag_data[2];
 
-        if (CRAM_MAJOR_VERS(fd->version) >= 4 && TN[2] == '*') {
-            // Place holder, fill out contents later.
-            int tag_data_size;
-            if (TN[0] == 'N' && TN[1] == 'M') {
-                // Use a fixed size, so we can allocate room for it now.
-                memcpy(&tag_data[2], "I\0\0\0\0", 5);
-                tag_data_size = 7;
-            } else if (TN[0] == 'R' && TN[1] == 'G') {
-                // RG is variable size, but known already.  Insert now
-                TN += 3;
-                // Equiv to fd->header->hrecs->rg[cr->rg], but this is the
-                // new header API equivalent.
-                const char *rg = sam_hdr_line_name(fd->header, "RG", cr->rg);
-                if (!rg)
-                    continue;
+        TN += 3;
+        m = map_find(c->comp_hdr->tag_encoding_map, tag_data, id);
+        if (!m)
+            return -1;
 
-                size_t rg_len = strlen(rg);
-                tag_data[2] = 'Z';
-                BLOCK_APPEND(s->aux_blk, (char *)tag_data, 3);
-                BLOCK_APPEND(s->aux_blk, rg, rg_len);
-                BLOCK_APPEND_CHAR(s->aux_blk, '\0');
-                cr->aux_size += 3 + rg_len + 1;
-                cr->rg = -1; // prevents auto-add later
-                continue;
-            } else {
-                // Unknown size.  We'll insert MD into stream later.
-                tag_data[2] = 'Z';
-                tag_data_size = 3;
-            }
-            BLOCK_APPEND(s->aux_blk, (char *)tag_data, tag_data_size);
-            cr->aux_size += tag_data_size;
-            TN += 3;
-        } else {
-            TN += 3;
-            m = map_find(c->comp_hdr->tag_encoding_map, tag_data, id);
-            if (!m)
-                return -1;
+        BLOCK_APPEND(s->aux_blk, (char *)tag_data, 3);
 
-            BLOCK_APPEND(s->aux_blk, (char *)tag_data, 3);
+        if (!m->codec) return -1;
+        if (m->codec->codec == E_BYTE_ARRAY_LEN ||
+            m->codec->codec == E_BYTE_ARRAY_STOP)
+            // NB we don't know the maximum length for B arrays yet,
+            // but we're using BYTE_ARRAY_BLOCK encodings so they're auto-
+            // resizing arrays that cannot overflow.  The codec handles this
+            // check for us.
+            out_sz *= aux_ele_size(TN[-1]);
+        r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
+        if (r) break;
+        cr->aux_size += out_sz + 3;
 
-            if (!m->codec) return -1;
-            if (m->codec->codec == E_BYTE_ARRAY_LEN ||
-                m->codec->codec == E_BYTE_ARRAY_STOP)
-                // NB we don't know the maximum length for B arrays yet,
-                // but we're using BYTE_ARRAY_BLOCK encodings so they're auto-
-                // resizing arrays that cannot overflow.  The codec handles this
-                // check for us.
-                out_sz *= aux_ele_size(TN[-1]);
-            r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
-            if (r) break;
-            cr->aux_size += out_sz + 3;
+        // cF CRAM flags.
+        if (TN[-3]=='c' && TN[-2]=='F' && TN[-1]=='C' && out_sz == 1) {
+            // Remove cF tag
+            uint8_t cF = BLOCK_END(s->aux_blk)[-1];
+            BLOCK_SIZE(s->aux_blk) -= out_sz+3;
+            cr->aux_size -= out_sz+3;
 
-            // cF CRAM flags.
-            if (TN[-3]=='c' && TN[-2]=='F' && TN[-1]=='C' && out_sz == 1) {
-                // Remove cF tag
-                uint8_t cF = BLOCK_END(s->aux_blk)[-1];
-                BLOCK_SIZE(s->aux_blk) -= out_sz+3;
-                cr->aux_size -= out_sz+3;
+            // bit 1 => don't auto-decode MD.
+            // Pretend MD is present verbatim, so we don't auto-generate
+            if ((cF & 1) && has_MD && *has_MD == 0)
+                *has_MD = 1;
 
-                // bit 1 => don't auto-decode MD.
-                // Pretend MD is present verbatim, so we don't auto-generate
-                if ((cF & 1) && has_MD && *has_MD == 0)
-                    *has_MD = 1;
-
-                // bit 1 => don't auto-decode NM
-                if ((cF & 2) && has_NM && *has_NM == 0)
-                    *has_NM = 1;
-            }
+            // bit 1 => don't auto-decode NM
+            if ((cF & 2) && has_NM && *has_NM == 0)
+                *has_NM = 1;
         }
 
         // We could go to 2^32 fine, but we shouldn't be hitting this anyway,
@@ -2335,10 +2288,6 @@ static int cram_decode_tlen(cram_fd *fd, cram_container *c, cram_slice *s,
             ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
                      (char *)&i32, &out_sz);
         *tlen = i32;
-    } else {
-        r |= c->comp_hdr->codecs[DS_TS]
-            ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
-                     (char *)tlen, &out_sz);
     }
     return r;
 }
@@ -2471,10 +2420,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         return -1;
 
     ref_id = s->hdr->ref_seq_id;
-    if (CRAM_MAJOR_VERS(fd->version) < 4)
-       embed_ref = s->hdr->ref_base_id >= 0 ? 1 : 0;
-    else
-       embed_ref = s->hdr->ref_base_id > 0 ? 1 : 0;
+    embed_ref = s->hdr->ref_base_id >= 0 ? 1 : 0;
 
     if (ref_id >= 0) {
         if (embed_ref) {
@@ -2745,17 +2691,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (ds & CRAM_AP) {
             if (!c->comp_hdr->codecs[DS_AP]) goto block_err;
-            if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-                r |= c->comp_hdr->codecs[DS_AP]
-                                ->decode(s, c->comp_hdr->codecs[DS_AP], blk,
-                                         (char *)&cr->apos, &out_sz);
-            } else  {
-                int32_t i32;
-                r |= c->comp_hdr->codecs[DS_AP]
-                                ->decode(s, c->comp_hdr->codecs[DS_AP], blk,
-                                         (char *)&i32, &out_sz);
-                cr->apos = i32;
-            }
+            int32_t i32;
+            r |= c->comp_hdr->codecs[DS_AP]
+                ->decode(s, c->comp_hdr->codecs[DS_AP], blk,
+                         (char *)&i32, &out_sz);
+            cr->apos = i32;
             if (r) goto block_err;;
             if (c->comp_hdr->AP_delta) {
                 if (cr->apos < 0 && c->unsorted == 0) {
@@ -2876,10 +2816,6 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                                     ->decode(s, c->comp_hdr->codecs[DS_NP], blk,
                                              (char *)&i32, &out_sz);
                     cr->mate_pos = i32;
-                } else {
-                    r |= c->comp_hdr->codecs[DS_NP]
-                        ->decode(s, c->comp_hdr->codecs[DS_NP], blk,
-                                 (char *)&cr->mate_pos, &out_sz);
                 }
                 if (r) goto block_err;
             }

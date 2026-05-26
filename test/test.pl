@@ -801,18 +801,6 @@ sub test_view
                 testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
                 testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
             }
-
-            ## Experimental CRAM 4.0 support.
-            # SAM -> CRAM40 -> SAM
-            @p = $sam eq "ce#large_seq.sam" || $sam eq "xx#large_aux.sam"
-                ? (qw/fast normal small archive/)
-                : (qw/archive/);
-            foreach my $profile (@p) {
-                $cram = "$base.tmp.cram";
-                testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=4.0 -o $profile $sam > $cram";
-                testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
-                testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
-            }
         }
 
         # Java pre-made CRAM -> SAM
@@ -891,16 +879,6 @@ sub test_view
     $ercram = "embed_MD.tmp.cram";
     $ersam2 = "${ercram}.sam";
     testv $opts, "./test_view $tv_args -o embed_ref=2 -o seqs_per_slice=3 -o bases_per_slice=1000000 -C -p $ercram $ersam";
-    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
-    testv $opts, "./compare_sam.pl $ersam $ersam2";
-
-    # Embed_ref=2 with CRAM v4 uses explicit_len if it has to instead of
-    # breaking pairs with detached mode.
-    # Oddly this bug was only triggered when also specifying a reference.
-    $ersam = "xx#pair.sam";
-    $ercram = "xx#pair.tmp.cram";
-    $ersam2 = "${ercram}.sam";
-    testv $opts, "./test_view $tv_args -o version=4.0 -o embed_ref=2 -t xx.fa -C -p $ercram $ersam";
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
 
