@@ -119,12 +119,6 @@ enum cram_encoding {
     E_CONST_BYTE         = 43, // Alternative to HUFFMAN with 1 symbol
     E_CONST_INT          = 44, // Alternative to HUFFMAN with 1 symbol
 
-    // More experimental ideas, not documented in spec yet
-    E_XHUFFMAN           = 50, // To external block
-    E_XPACK              = 51, // Transform to sub-codec
-    E_XRLE               = 52, // Transform to sub-codec
-    E_XDELTA             = 53, // Transform to sub-codec
-
     // Total number of codecs, not a real one.
     E_NUM_CODECS,
 };
@@ -135,8 +129,6 @@ enum cram_external_type {
     E_BYTE               = 3,
     E_BYTE_ARRAY         = 4,
     E_BYTE_ARRAY_BLOCK   = 5,
-    E_SINT               = 6, // signed INT
-    E_SLONG              = 7, // signed LONG
 };
 
 /* External IDs used by this implementation (only assumed during writing) */
@@ -882,8 +874,9 @@ struct cram_fd {
 
     BGZF *idxfp;                        // File pointer for on-the-fly index creation
 
-    // variable integer decoding callbacks.
-    // This changed in CRAM4.0 to a data-size agnostic encoding.
+    // Variable integer decoding callbacks.
+    // This changed in CRAM4.0 to a data-size agnostic encoding,
+    // but isn't supported in this htslib release.
     varint_vec vv;
 
     // Force AP delta even on non positional sorted data.
