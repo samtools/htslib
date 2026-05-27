@@ -1,6 +1,17 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+API additions
+-------------
+
+* Added tbx_itr_regions(), a multi-region iterator constructor for tabix
+  indexed text files (VCF.gz, BED, GFF, custom TSV). Returns an hts_itr_t
+  that, when driven by hts_itr_multi_next, yields records from all listed
+  regions in genome order with coalesced index lookups. Meaningfully
+  faster than calling tbx_itr_queryi() once per region when the region
+  list is large or dense. Mirrors how hts_itr_regions() already works for
+  BAM and CRAM. samtools/bcftools#2557.
+
 Noteworthy changes in release 1.23.1 (18th March 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

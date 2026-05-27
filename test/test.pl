@@ -59,6 +59,7 @@ run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
 run_test('test_bcf_sr_range', $opts);
 run_test('test_bcf_sr_hreader', $opts);
+run_test('test_tbx_multi', $opts);
 run_test('test_command',$opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 run_test('test_convert_padded_header',$opts);
 run_test('test_rebgzip',$opts);
@@ -1421,6 +1422,35 @@ sub test_bcf_sr_hreader {
     if ($ret != 0) {
         failed($opts, $test, "Output differs to reference output\n");
         return;
+    }
+    passed($opts, $test);
+}
+
+sub test_tbx_multi {
+    # Parity test for tbx_itr_regions (samtools/htslib PR for multi-region
+    # tabix iteration). Runs against three tabix preset formats (BED, VCF,
+    # GFF) to verify that the single-region path and the multi-region path
+    # produce byte-identical output across all of them. Plus a failure-path
+    # check for NULL inputs (ownership invariant).
+    my ($opts) = @_;
+    my $test = "test_tbx_multi";
+
+    my @fixtures = (
+        { src => 'tbx-multi.bed', preset => 'bed' },
+        { src => 'tbx-multi.vcf', preset => 'vcf' },
+        { src => 'tbx-multi.gff', preset => 'gff' },
+    );
+
+    foreach my $f (@fixtures) {
+        my $src = "$$opts{path}/$$f{src}";
+        my $dst = "$$opts{tmp}/$$f{src}.gz";
+
+        my ($r1) = _cmd("$$opts{bin}/bgzip -c $src > $dst");
+        if ($r1) { failed($opts, $test, "bgzip failed for $$f{src}: $r1"); return; }
+        my ($r2) = _cmd("$$opts{bin}/tabix -p $$f{preset} $dst");
+        if ($r2) { failed($opts, $test, "tabix -p $$f{preset} failed for $$f{src}: $r2"); return; }
+        my ($r3) = _cmd("$$opts{path}/test_tbx_multi $dst");
+        if ($r3) { failed($opts, $test, "test_tbx_multi exited $r3 for $$f{src} (parity mismatch?)"); return; }
     }
     passed($opts, $test);
 }

@@ -137,6 +137,14 @@ const char *hts_plugin_path(void);
  */
 int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped);
 
+/*
+ * qsort comparator for hts_pair_pos_t intervals, sorting by (beg, end)
+ * ascending. Exposed because both region.c (sort within parsed reglists)
+ * and tbx.c (multi-region tabix iterator: hts_itr_multi_bam requires
+ * intervals to be sorted) need this comparator with identical behavior.
+ */
+int compare_hts_pair_pos_t(const void *av, const void *bv);
+
 static inline int find_file_extension(const char *fn, char ext_out[static HTS_MAX_EXT_LEN])
 {
     const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;

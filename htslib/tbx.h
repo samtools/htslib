@@ -75,6 +75,60 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     HTSLIB_EXPORT
     int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_pos_t *end);
 
+    /// Construct a multi-region iterator over a tabix indexed text file.
+    /** Returns an hts_itr_t that, when driven by hts_itr_multi_next, yields
+        records from all the regions in reglist in genome order. Adjacent
+        and nearby regions are coalesced into combined tabix index lookups
+        by hts_itr_multi_next, so this is meaningfully faster than calling
+        tbx_itr_queryi once per region when the region list is large or
+        dense. See test/bench_tbx_regions.c for a reproducible measurement
+        of the speedup curve.
+
+        Reglist entries may specify their target contig either way:
+          - reglist[i].tid set to a tid (use tbx_name2id() to resolve)
+            with reglist[i].reg == NULL, or
+          - reglist[i].reg set to a reference name string such as "chr1"
+            (or "." for all-with-coords records, "*" for unmapped),
+            which this function resolves internally via tbx_name2id().
+        Each reglist[i].intervals must hold reglist[i].count
+        hts_pair_pos_t entries.
+
+        Semantics differ from running tbx_itr_queryi() multiple times in
+        one respect: each underlying file record is yielded at most once,
+        even when multiple intervals in reglist cover it. Duplicate or
+        overlapping intervals produce a single emission per matching
+        record, not one per matching interval. Callers that need
+        per-interval multiplicity must call tbx_itr_queryi() per interval.
+
+        Ownership: the caller's reglist is deep-copied internally and is
+        never mutated or freed by this function regardless of outcome.
+        The caller retains ownership of reglist (and is responsible for
+        freeing it) as well as of tbx and fp. tbx must remain valid for
+        the lifetime of the iterator. Destroy the iterator with
+        hts_itr_destroy.
+
+        Concurrency: only one multi-region tabix iterator may be active
+        on a given htsFile at a time. The iterator uses the BGZF
+        private_data slot on fp to thread tbx_t through hts_itr_multi_next;
+        constructing a second multi-region iterator on the same fp before
+        destroying the first would clobber that slot and yield wrong
+        records from the first. Single-region iterators (tbx_itr_queryi)
+        on the same fp are unaffected. This matches the existing
+        constraint on binary BCF iteration, which uses the same slot.
+
+        Lifetime: destroy the iterator (hts_itr_destroy) before destroying
+        the tbx (tbx_destroy) or closing the fp (hts_close). The iterator
+        retains a pointer to tbx via the BGZF private_data slot; destroying
+        tbx first leaves a dangling pointer in fp's BGZF cache that would
+        be returned by a later bgzf_get_private_data on the same fp.
+
+        Returns NULL if fp, tbx, or reglist is NULL; if count <= 0; if
+        fp is not BGZF; if memory cannot be allocated; or if the iterator
+        cannot otherwise be constructed. */
+    HTSLIB_EXPORT
+    hts_itr_t *tbx_itr_regions(htsFile *fp, tbx_t *tbx,
+                                hts_reglist_t *reglist, int count);
+
 /// Build an index of the lines in a BGZF-compressed file
 /** The index struct returned by a successful call should be freed
     via tbx_destroy() when it is no longer needed.

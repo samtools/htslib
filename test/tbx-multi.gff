@@ -1,0 +1,7 @@
+##gff-version 3
+1	test	feature	100	100	.	+	.	ID=region_a
+1	test	feature	150	150	.	+	.	ID=region_b
+1	test	feature	200	200	.	+	.	ID=region_c
+1	test	feature	300	300	.	+	.	ID=region_d
+2	test	feature	100	100	.	+	.	ID=region_e
+2	test	feature	200	200	.	+	.	ID=region_f

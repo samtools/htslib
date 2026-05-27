@@ -104,7 +104,9 @@ BUILT_TEST_PROGRAMS = \
 	test/test-parse-reg \
 	test/test_introspection \
 	test/test-bcf_set_variant_type \
-	test/test_hfile_libcurl
+	test/test_hfile_libcurl \
+	test/test_tbx_multi \
+	test/bench_tbx_regions
 
 BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads1 \
@@ -808,6 +810,12 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 test/test-bcf-sr: test/test-bcf-sr.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a $(LIBS) -lpthread
 
+test/test_tbx_multi: test/test_tbx_multi.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_tbx_multi.o libhts.a $(LIBS) -lpthread
+
+test/bench_tbx_regions: test/bench_tbx_regions.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/bench_tbx_regions.o libhts.a $(LIBS) -lpthread
+
 test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a $(LIBS) -lpthread
 
@@ -897,6 +905,8 @@ test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_vcf_h) $(htslib_vcfutils_h) $(htslib_kbitset_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_hts_alloc_h) $(htslib_hts_defs_h) $(htslib_synced_bcf_reader_h) $(htslib_hts_h) $(htslib_vcf_h)
+test/test_tbx_multi.o: test/test_tbx_multi.c config.h $(htslib_hts_h) $(htslib_tbx_h) $(htslib_kstring_h)
+test/bench_tbx_regions.o: test/bench_tbx_regions.c config.h $(htslib_hts_h) $(htslib_tbx_h) $(htslib_kstring_h)
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
 test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c

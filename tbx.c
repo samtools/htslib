@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include "htslib/tbx.h"
 #include "htslib/bgzf.h"
+#include "bgzf_internal.h"
 #include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "hts_internal.h"
@@ -351,19 +352,21 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
  *               -1 on EOF
  *            <= -2 on error
  */
-int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_pos_t *end)
+/* Shared body between tbx_readrec (single region path) and tbx_readrec_multi
+ * (multi region path). Reads the next non-meta line from fp, parses it via
+ * get_intv, and returns the interval coordinates. Centralising the body here
+ * means that future fixes to meta_char handling or get_intv parsing apply to
+ * both paths automatically. */
+static int tbx_readrec_impl(BGZF *fp, tbx_t *tbx, kstring_t *s,
+                            int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
-    tbx_t *tbx = (tbx_t *) tbxv;
-    kstring_t *s = (kstring_t *) sv;
     int ret;
 
-    // Get a line until either EOF or a non-meta character
     do {
         ret = bgzf_getline(fp, '\n', s);
     } while (ret >= 0 && s->l && *s->s == tbx->conf.meta_char);
 
-    // Parse line
-    if (ret >= 0)  {
+    if (ret >= 0) {
         tbx_intv_t intv;
         if (get_intv(tbx, s, &intv, 0) < 0)
             return -2;
@@ -371,6 +374,182 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_po
     }
 
     return ret;
+}
+
+int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_pos_t *end)
+{
+    return tbx_readrec_impl(fp, (tbx_t *) tbxv, (kstring_t *) sv, tid, beg, end);
+}
+
+/* Internal helpers for the multi-region tabix iterator. Mirror the
+ * sam.c bam_pseek/bam_ptell pattern but parameterised on BGZF rather than
+ * any BAM-specific structure. */
+static int tbx_pseek(void *fp, int64_t offset, int where)
+{
+    return bgzf_seek((BGZF *) fp, offset, where);
+}
+
+static int64_t tbx_ptell(void *fp)
+{
+    BGZF *bgzf = (BGZF *) fp;
+    if (!bgzf) return -1L;
+    return bgzf_tell(bgzf);
+}
+
+/* Multi-region readrec callback. Retrieves tbx_t from BGZF private_data
+ * because hts_itr_multi_next passes the htsFile pointer as the second
+ * argument and has no mechanism to thread a tabix-specific context through.
+ * Mirrors how bcf_readrec retrieves bcf_hdr_t from BGZF private_data. */
+static int tbx_readrec_multi(BGZF *fp, void *ignored, void *sv,
+                             int *tid, hts_pos_t *beg, hts_pos_t *end)
+{
+    tbx_t *tbx = (tbx_t *) bgzf_get_private_data(fp);
+    if (!tbx) {
+        /* The wrapper tbx_itr_regions always sets private_data before
+         * returning the iterator. Reaching here means either the slot
+         * was cleared mid-iteration (caller violated the single-iterator
+         * precondition) or the iterator was driven outside its lifetime.
+         * Return -2 rather than -1 so the caller sees an error rather
+         * than a silent end-of-stream. */
+        hts_log_error("Multi-region tabix iterator has no BGZF private_data;"
+                      " concurrent multi-region iterators on the same"
+                      " htsFile are not supported");
+        return -2;
+    }
+    return tbx_readrec_impl(fp, tbx, (kstring_t *) sv, tid, beg, end);
+}
+
+/* Deep copy a caller-provided reglist for internal use by tbx_itr_regions.
+ *
+ * Why deep copy: hts_itr_regions's ownership semantics on failure are
+ * inconsistent (NULL return may or may not have freed the reglist depending
+ * on which branch failed). By giving it our own owned copy, the caller's
+ * input is never touched, so they always own what they passed in regardless
+ * of outcome.
+ *
+ * Why resolve .reg here: hts_itr_regions invokes getid(hdr, reg) whenever
+ * reglist[i].reg is non-NULL. We pass getid=NULL, so we must clear .reg on
+ * the copy after pre-resolving it via tbx_name2id. This lets callers pass
+ * either pre-resolved tids or reference name strings, matching how
+ * sam_itr_regions handles getid internally.
+ *
+ * Returns 0 on success (*out points to a freshly allocated reglist that
+ * the caller must release via hts_reglist_free) or -1 on allocation
+ * failure. */
+static int tbx_reglist_dup(tbx_t *tbx, const hts_reglist_t *src, int count,
+                           hts_reglist_t **out)
+{
+    hts_reglist_t *dst = calloc(count, sizeof(*dst));
+    if (!dst) return -1;
+
+    for (int i = 0; i < count; i++) {
+        dst[i].tid     = src[i].tid;
+        dst[i].count   = src[i].count;
+        dst[i].min_beg = src[i].min_beg;
+        dst[i].max_end = src[i].max_end;
+        dst[i].reg     = NULL;       /* always pre-resolved below */
+        dst[i].intervals = NULL;
+
+        if (src[i].reg) {
+            if (!strcmp(src[i].reg, "."))      dst[i].tid = HTS_IDX_START;
+            else if (!strcmp(src[i].reg, "*")) dst[i].tid = HTS_IDX_NOCOOR;
+            else {
+                int tid = tbx_name2id(tbx, src[i].reg);
+                if (tid < 0)
+                    hts_log_warning("Region '%s' refers to an unknown"
+                                    " reference name", src[i].reg);
+                dst[i].tid = tid;
+            }
+        }
+
+        /* An entry with count > 0 but intervals == NULL (or vice versa) is
+         * an inconsistent caller-side state; treat as having no intervals
+         * so we never hand hts_itr_multi_bam a non-zero count with a NULL
+         * intervals array, which it would dereference and crash on. */
+        if (!src[i].intervals || src[i].count == 0) {
+            dst[i].count = 0;
+            continue;
+        }
+
+        /* Read src[i].count into a local once and use the local for size
+         * computation, allocation, and bookkeeping. Avoids any TOCTOU
+         * mismatch between the size we allocate and the size we believe
+         * dst holds, even though callers are not expected to mutate src
+         * concurrently. */
+        uint32_t n = src[i].count;
+        dst[i].intervals = malloc((size_t) n * sizeof(hts_pair_pos_t));
+        if (!dst[i].intervals) {
+            hts_reglist_free(dst, count);
+            return -1;
+        }
+        memcpy(dst[i].intervals, src[i].intervals,
+               (size_t) n * sizeof(hts_pair_pos_t));
+        dst[i].count = n;
+
+        /* Recompute min_beg / max_end from the copied intervals so they
+         * remain consistent even if the caller's summary fields were
+         * stale or if the later qsort reorders intervals[0]. */
+        hts_pos_t mn = dst[i].intervals[0].beg;
+        hts_pos_t mx = dst[i].intervals[0].end;
+        for (uint32_t k = 1; k < n; k++) {
+            if (dst[i].intervals[k].beg < mn) mn = dst[i].intervals[k].beg;
+            if (dst[i].intervals[k].end > mx) mx = dst[i].intervals[k].end;
+        }
+        dst[i].min_beg = mn;
+        dst[i].max_end = mx;
+    }
+
+    *out = dst;
+    return 0;
+}
+
+hts_itr_t *tbx_itr_regions(htsFile *fp, tbx_t *tbx,
+                           hts_reglist_t *reglist, int count)
+{
+    if (!fp || !tbx || !reglist || count <= 0) return NULL;
+    BGZF *bgzf = hts_get_bgzfp(fp);
+    if (!bgzf) return NULL;
+
+    /* Make our own copy of the reglist so the caller's input is never
+     * mutated and never assumed to be live past this call. The copy also
+     * lets us pre-resolve any .reg name strings to tids so we can pass
+     * getid=NULL safely to hts_itr_regions below. */
+    hts_reglist_t *owned = NULL;
+    if (tbx_reglist_dup(tbx, reglist, count, &owned) < 0)
+        return NULL;
+
+    /* hts_itr_multi_bam (the itr_specific used here) requires intervals
+     * within each reglist entry to be sorted by start position; its
+     * advance logic uses the interval index packed into the offset list
+     * which relies on sorted iteration. Sort our copy now. */
+    for (int i = 0; i < count; i++) {
+        if (owned[i].intervals && owned[i].count > 1) {
+            qsort(owned[i].intervals, owned[i].count,
+                  sizeof(hts_pair_pos_t), compare_hts_pair_pos_t);
+        }
+    }
+
+    hts_itr_t *itr = hts_itr_regions(tbx->idx, owned, count, NULL, NULL,
+                                     hts_itr_multi_bam, tbx_readrec_multi,
+                                     tbx_pseek, tbx_ptell);
+    if (!itr) {
+        /* hts_itr_regions has exactly one failure path that does not
+         * free reglist via hts_itr_destroy: the OOM at its initial
+         * calloc(itr) before it ever assigns reg_list. Every other
+         * failure (itr_specific failure, getid failure) frees 'owned'.
+         * We accept the small leak in the calloc-OOM case rather than
+         * duplicate hts_itr_regions's allocation path here, because
+         * the caller's original reglist is untouched either way. */
+        return NULL;
+    }
+
+    /* Stash the tbx_t in BGZF private_data so tbx_readrec_multi can
+     * retrieve it on each call. The slot is otherwise unused for tabix
+     * indexed text files; only bcf_hdr_read uses it, for binary BCF.
+     * Caller retains ownership of tbx, which must remain valid for the
+     * lifetime of the iterator. */
+    bgzf_set_private_data(bgzf, tbx, NULL);
+    return itr;
 }
 
 static int tbx_set_meta(tbx_t *tbx)
