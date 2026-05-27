@@ -439,10 +439,16 @@ static int tbx_readrec_multi(BGZF *fp, void *ignored, void *sv,
 static int tbx_reglist_dup(tbx_t *tbx, const hts_reglist_t *src, int count,
                            hts_reglist_t **out)
 {
-    hts_reglist_t *dst = calloc(count, sizeof(*dst));
+    hts_reglist_t *dst;
+    int i;
+
+    dst = calloc(count, sizeof(*dst));
     if (!dst) return -1;
 
-    for (int i = 0; i < count; i++) {
+    for (i = 0; i < count; i++) {
+        uint32_t n, k;
+        hts_pos_t mn, mx;
+
         dst[i].tid     = src[i].tid;
         dst[i].count   = src[i].count;
         dst[i].min_beg = src[i].min_beg;
@@ -476,7 +482,7 @@ static int tbx_reglist_dup(tbx_t *tbx, const hts_reglist_t *src, int count,
          * mismatch between the size we allocate and the size we believe
          * dst holds, even though callers are not expected to mutate src
          * concurrently. */
-        uint32_t n = src[i].count;
+        n = src[i].count;
         dst[i].intervals = malloc((size_t) n * sizeof(hts_pair_pos_t));
         if (!dst[i].intervals) {
             hts_reglist_free(dst, count);
@@ -489,9 +495,9 @@ static int tbx_reglist_dup(tbx_t *tbx, const hts_reglist_t *src, int count,
         /* Recompute min_beg / max_end from the copied intervals so they
          * remain consistent even if the caller's summary fields were
          * stale or if the later qsort reorders intervals[0]. */
-        hts_pos_t mn = dst[i].intervals[0].beg;
-        hts_pos_t mx = dst[i].intervals[0].end;
-        for (uint32_t k = 1; k < n; k++) {
+        mn = dst[i].intervals[0].beg;
+        mx = dst[i].intervals[0].end;
+        for (k = 1; k < n; k++) {
             if (dst[i].intervals[k].beg < mn) mn = dst[i].intervals[k].beg;
             if (dst[i].intervals[k].end > mx) mx = dst[i].intervals[k].end;
         }
@@ -506,15 +512,19 @@ static int tbx_reglist_dup(tbx_t *tbx, const hts_reglist_t *src, int count,
 hts_itr_t *tbx_itr_regions(htsFile *fp, tbx_t *tbx,
                            hts_reglist_t *reglist, int count)
 {
+    BGZF *bgzf;
+    hts_reglist_t *owned = NULL;
+    hts_itr_t *itr;
+    int i;
+
     if (!fp || !tbx || !reglist || count <= 0) return NULL;
-    BGZF *bgzf = hts_get_bgzfp(fp);
+    bgzf = hts_get_bgzfp(fp);
     if (!bgzf) return NULL;
 
     /* Make our own copy of the reglist so the caller's input is never
      * mutated and never assumed to be live past this call. The copy also
      * lets us pre-resolve any .reg name strings to tids so we can pass
      * getid=NULL safely to hts_itr_regions below. */
-    hts_reglist_t *owned = NULL;
     if (tbx_reglist_dup(tbx, reglist, count, &owned) < 0)
         return NULL;
 
@@ -522,16 +532,16 @@ hts_itr_t *tbx_itr_regions(htsFile *fp, tbx_t *tbx,
      * within each reglist entry to be sorted by start position; its
      * advance logic uses the interval index packed into the offset list
      * which relies on sorted iteration. Sort our copy now. */
-    for (int i = 0; i < count; i++) {
+    for (i = 0; i < count; i++) {
         if (owned[i].intervals && owned[i].count > 1) {
             qsort(owned[i].intervals, owned[i].count,
                   sizeof(hts_pair_pos_t), compare_hts_pair_pos_t);
         }
     }
 
-    hts_itr_t *itr = hts_itr_regions(tbx->idx, owned, count, NULL, NULL,
-                                     hts_itr_multi_bam, tbx_readrec_multi,
-                                     tbx_pseek, tbx_ptell);
+    itr = hts_itr_regions(tbx->idx, owned, count, NULL, NULL,
+                          hts_itr_multi_bam, tbx_readrec_multi,
+                          tbx_pseek, tbx_ptell);
     if (!itr) {
         /* hts_itr_regions has exactly one failure path that does not
          * free reglist via hts_itr_destroy: the OOM at its initial

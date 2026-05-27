@@ -65,7 +65,8 @@
 static inline uint64_t fnv1a64_update(uint64_t h, const void *data, size_t len)
 {
     const unsigned char *p = (const unsigned char *) data;
-    for (size_t i = 0; i < len; i++) {
+    size_t i;
+    for (i = 0; i < len; i++) {
         h ^= p[i];
         h *= FNV1A64_PRIME;
     }
@@ -134,7 +135,8 @@ static int read_bed(const char *path, bench_regions_t *out)
 
 static void free_regions(bench_regions_t *r)
 {
-    for (int i = 0; i < r->n; i++) free(r->items[i].chrom);
+    int i;
+    for (i = 0; i < r->n; i++) free(r->items[i].chrom);
     free(r->items);
 }
 
@@ -147,10 +149,8 @@ static void free_regions(bench_regions_t *r)
 static int run_single(const char *fn, const bench_regions_t *regs,
                       bench_sample_t *s, int with_parity)
 {
-    htsFile *fp = hts_open(fn, "r");
-    if (!fp) return -1;
-    tbx_t *tbx = tbx_index_load(fn);
-    if (!tbx) { hts_close(fp); return -1; }
+    htsFile *fp;
+    tbx_t *tbx;
     kstring_t line = {0,0,0};
     long records = 0;
     uint64_t hash = FNV1A64_OFFSET;
@@ -158,13 +158,21 @@ static int run_single(const char *fn, const bench_regions_t *regs,
     static const char newline = '\n';
     struct rusage ru0, ru1;
     struct timespec t0, t1;
+    int i;
+
+    fp = hts_open(fn, "r");
+    if (!fp) return -1;
+    tbx = tbx_index_load(fn);
+    if (!tbx) { hts_close(fp); return -1; }
     getrusage(RUSAGE_SELF, &ru0);
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    for (int i = 0; i < regs->n; i++) {
-        int tid = tbx_name2id(tbx, regs->items[i].chrom);
+    for (i = 0; i < regs->n; i++) {
+        int tid;
+        hts_itr_t *itr;
+        tid = tbx_name2id(tbx, regs->items[i].chrom);
         if (tid < 0) continue;
-        hts_itr_t *itr = tbx_itr_queryi(tbx, tid, regs->items[i].beg,
-                                             regs->items[i].end);
+        itr = tbx_itr_queryi(tbx, tid, regs->items[i].beg,
+                             regs->items[i].end);
         if (!itr) continue;
         while (tbx_itr_next(fp, tbx, itr, &line) >= 0) {
             records++;
@@ -195,20 +203,35 @@ static int run_single(const char *fn, const bench_regions_t *regs,
 static int run_multi(const char *fn, const bench_regions_t *regs,
                      bench_sample_t *s, int with_parity)
 {
-    htsFile *fp = hts_open(fn, "r");
+    htsFile *fp;
+    tbx_t *tbx;
+    hts_reglist_t *reglist;
+    hts_itr_t *itr;
+    kstring_t line = {0,0,0};
+    long records = 0;
+    uint64_t hash = FNV1A64_OFFSET;
+    size_t bytes = 0;
+    static const char newline = '\n';
+    struct rusage ru0, ru1;
+    struct timespec t0, t1;
+    int n_reg = 0;
+    int i, j;
+
+    fp = hts_open(fn, "r");
     if (!fp) return -1;
-    tbx_t *tbx = tbx_index_load(fn);
+    tbx = tbx_index_load(fn);
     if (!tbx) { hts_close(fp); return -1; }
 
     /* Group regions by tid into one reglist entry per contig. */
-    hts_reglist_t *reglist = calloc(regs->n, sizeof(*reglist));
+    reglist = calloc(regs->n, sizeof(*reglist));
     if (!reglist) { tbx_destroy(tbx); hts_close(fp); return -1; }
-    int n_reg = 0;
-    for (int i = 0; i < regs->n; i++) {
-        int tid = tbx_name2id(tbx, regs->items[i].chrom);
+    for (i = 0; i < regs->n; i++) {
+        int tid, idx;
+        hts_pair_pos_t *grown;
+        tid = tbx_name2id(tbx, regs->items[i].chrom);
         if (tid < 0) continue;
-        int idx = -1;
-        for (int j = 0; j < n_reg; j++) {
+        idx = -1;
+        for (j = 0; j < n_reg; j++) {
             if (reglist[j].tid == tid) { idx = j; break; }
         }
         if (idx < 0) {
@@ -220,10 +243,10 @@ static int run_multi(const char *fn, const bench_regions_t *regs,
             reglist[idx].min_beg = regs->items[i].beg;
             reglist[idx].max_end = regs->items[i].end;
         }
-        hts_pair_pos_t *grown = realloc(reglist[idx].intervals,
-                                        (reglist[idx].count + 1) * sizeof(hts_pair_pos_t));
+        grown = realloc(reglist[idx].intervals,
+                        (reglist[idx].count + 1) * sizeof(hts_pair_pos_t));
         if (!grown) {
-            for (int j = 0; j < n_reg; j++) free(reglist[j].intervals);
+            for (j = 0; j < n_reg; j++) free(reglist[j].intervals);
             free(reglist); tbx_destroy(tbx); hts_close(fp); return -1;
         }
         reglist[idx].intervals = grown;
@@ -236,19 +259,12 @@ static int run_multi(const char *fn, const bench_regions_t *regs,
             reglist[idx].max_end = regs->items[i].end;
     }
 
-    kstring_t line = {0,0,0};
-    long records = 0;
-    uint64_t hash = FNV1A64_OFFSET;
-    size_t bytes = 0;
-    static const char newline = '\n';
-    struct rusage ru0, ru1;
-    struct timespec t0, t1;
     getrusage(RUSAGE_SELF, &ru0);
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    hts_itr_t *itr = tbx_itr_regions(fp, tbx, reglist, n_reg);
+    itr = tbx_itr_regions(fp, tbx, reglist, n_reg);
     if (!itr) {
         clock_gettime(CLOCK_MONOTONIC, &t1);
-        for (int j = 0; j < n_reg; j++) free(reglist[j].intervals);
+        for (j = 0; j < n_reg; j++) free(reglist[j].intervals);
         free(reglist); free(line.s);
         tbx_destroy(tbx); hts_close(fp);
         return -1;
@@ -284,21 +300,31 @@ static void print_sample(const char *label, bench_sample_t s)
 
 int main(int argc, char **argv)
 {
+    const char *fn;
+    const char *bed;
+    int warmup;
+    int reps;
+    bench_regions_t regs;
+    bench_sample_t scratch;
+    bench_sample_t parity_a, parity_b;
+    double sum_wall_single = 0, sum_wall_multi = 0;
+    long rec_single, rec_multi;
+    int rc = 0;
+    int w, r;
+
     if (argc < 3) {
         fprintf(stderr, "Usage: %s FILE.gz REGIONS.bed [WARMUP] [REPS]\n", argv[0]);
         return 1;
     }
-    const char *fn = argv[1];
-    const char *bed = argv[2];
-    int warmup = argc > 3 ? atoi(argv[3]) : 0;
-    int reps   = argc > 4 ? atoi(argv[4]) : 3;
+    fn  = argv[1];
+    bed = argv[2];
+    warmup = argc > 3 ? atoi(argv[3]) : 0;
+    reps   = argc > 4 ? atoi(argv[4]) : 3;
 
-    bench_regions_t regs;
     if (read_bed(bed, &regs) < 0) return 2;
     fprintf(stderr, "loaded %d regions from %s\n", regs.n, bed);
 
-    bench_sample_t scratch;
-    for (int w = 0; w < warmup; w++) {
+    for (w = 0; w < warmup; w++) {
         if (run_single(fn, &regs, &scratch, 0) < 0) { fprintf(stderr, "warmup single failed\n"); return 2; }
         if (run_multi (fn, &regs, &scratch, 0) < 0) { fprintf(stderr, "warmup multi failed\n"); return 2; }
     }
@@ -311,7 +337,6 @@ int main(int argc, char **argv)
      * a real warmup pass for the OS page cache, so the timed reps that
      * follow operate on equivalent cache state. */
     printf("=== parity check ===\n");
-    bench_sample_t parity_a, parity_b;
     if (run_single(fn, &regs, &parity_a, 1) < 0) {
         fprintf(stderr, "parity single failed\n"); return 2;
     }
@@ -325,7 +350,6 @@ int main(int argc, char **argv)
            parity_b.records, parity_b.parity_bytes,
            (unsigned long long) parity_b.parity_hash);
 
-    int rc = 0;
     if (parity_a.parity_bytes != parity_b.parity_bytes ||
         parity_a.parity_hash  != parity_b.parity_hash  ||
         parity_a.records      != parity_b.records) {
@@ -343,10 +367,10 @@ int main(int argc, char **argv)
     }
     if (rc) { free_regions(&regs); return rc; }
 
-    double sum_wall_single = 0, sum_wall_multi = 0;
-    long rec_single = parity_a.records, rec_multi = parity_b.records;
+    rec_single = parity_a.records;
+    rec_multi  = parity_b.records;
     printf("=== bench_tbx_regions: %s with %d regions ===\n", fn, regs.n);
-    for (int r = 0; r < reps; r++) {
+    for (r = 0; r < reps; r++) {
         bench_sample_t a, b;
         if (run_single(fn, &regs, &a, 0) < 0) return 2;
         if (run_multi (fn, &regs, &b, 0) < 0) return 2;

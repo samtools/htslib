@@ -70,20 +70,26 @@ static void append_line(kstring_t *out, const char *line)
 /* Single-region path: one tbx_itr_queryi per query, append results. */
 static int run_single_region(const char *filename, kstring_t *out)
 {
-    htsFile *fp = hts_open(filename, "r");
-    if (!fp) { fprintf(stderr, "single: hts_open failed: %s\n", filename); return -1; }
-    tbx_t *tbx = tbx_index_load(filename);
-    if (!tbx) { fprintf(stderr, "single: tbx_index_load failed\n"); hts_close(fp); return -1; }
-
+    htsFile *fp;
+    tbx_t *tbx;
     kstring_t s = {0, 0, 0};
     int rc = 0;
-    for (int i = 0; i < N_QUERIES; i++) {
-        int tid = tbx_name2id(tbx, QUERIES[i].chrom);
+    int i;
+
+    fp = hts_open(filename, "r");
+    if (!fp) { fprintf(stderr, "single: hts_open failed: %s\n", filename); return -1; }
+    tbx = tbx_index_load(filename);
+    if (!tbx) { fprintf(stderr, "single: tbx_index_load failed\n"); hts_close(fp); return -1; }
+
+    for (i = 0; i < N_QUERIES; i++) {
+        int tid;
+        hts_itr_t *itr;
+        tid = tbx_name2id(tbx, QUERIES[i].chrom);
         if (tid < 0) {
             fprintf(stderr, "single: no contig %s in fixture\n", QUERIES[i].chrom);
             rc = -1; break;
         }
-        hts_itr_t *itr = tbx_itr_queryi(tbx, tid, QUERIES[i].beg, QUERIES[i].end);
+        itr = tbx_itr_queryi(tbx, tid, QUERIES[i].beg, QUERIES[i].end);
         if (!itr) {
             fprintf(stderr, "single: tbx_itr_queryi failed for %s:%lld-%lld\n",
                     QUERIES[i].chrom, (long long)QUERIES[i].beg, (long long)QUERIES[i].end);
@@ -104,26 +110,35 @@ static int run_single_region(const char *filename, kstring_t *out)
  * drain it. */
 static int run_multi_region(const char *filename, kstring_t *out)
 {
-    htsFile *fp = hts_open(filename, "r");
+    htsFile *fp;
+    tbx_t *tbx;
+    hts_reglist_t *reglist;
+    hts_itr_t *itr;
+    kstring_t s = {0, 0, 0};
+    int n_reg = 0;
+    int i, j;
+
+    fp = hts_open(filename, "r");
     if (!fp) { fprintf(stderr, "multi: hts_open failed: %s\n", filename); return -1; }
-    tbx_t *tbx = tbx_index_load(filename);
+    tbx = tbx_index_load(filename);
     if (!tbx) { fprintf(stderr, "multi: tbx_index_load failed\n"); hts_close(fp); return -1; }
 
     /* Build a reglist: group queries by contig. hts_reglist_t holds intervals
      * for ONE tid each, so one reglist per distinct chrom. */
-    hts_reglist_t *reglist = calloc(N_QUERIES, sizeof(hts_reglist_t));
+    reglist = calloc(N_QUERIES, sizeof(hts_reglist_t));
     if (!reglist) {
         tbx_destroy(tbx); hts_close(fp); return -1;
     }
-    int n_reg = 0;
-    for (int i = 0; i < N_QUERIES; i++) {
-        int tid = tbx_name2id(tbx, QUERIES[i].chrom);
+    for (i = 0; i < N_QUERIES; i++) {
+        int tid, idx;
+        hts_pair_pos_t *grown;
+        tid = tbx_name2id(tbx, QUERIES[i].chrom);
         if (tid < 0) {
             fprintf(stderr, "multi: no contig %s in fixture\n", QUERIES[i].chrom);
             free(reglist); tbx_destroy(tbx); hts_close(fp); return -1;
         }
-        int idx = -1;
-        for (int j = 0; j < n_reg; j++) {
+        idx = -1;
+        for (j = 0; j < n_reg; j++) {
             if (reglist[j].tid == tid) { idx = j; break; }
         }
         if (idx < 0) {
@@ -136,10 +151,10 @@ static int run_multi_region(const char *filename, kstring_t *out)
             reglist[idx].max_end = QUERIES[i].end;
         }
         /* realloc into a temp so the original buffer is not lost on NULL. */
-        hts_pair_pos_t *grown = realloc(reglist[idx].intervals,
-                                         (reglist[idx].count + 1) * sizeof(hts_pair_pos_t));
+        grown = realloc(reglist[idx].intervals,
+                        (reglist[idx].count + 1) * sizeof(hts_pair_pos_t));
         if (!grown) {
-            for (int j = 0; j < n_reg; j++) free(reglist[j].intervals);
+            for (j = 0; j < n_reg; j++) free(reglist[j].intervals);
             free(reglist); tbx_destroy(tbx); hts_close(fp); return -1;
         }
         reglist[idx].intervals = grown;
@@ -150,15 +165,14 @@ static int run_multi_region(const char *filename, kstring_t *out)
         if (QUERIES[i].end > reglist[idx].max_end) reglist[idx].max_end = QUERIES[i].end;
     }
 
-    hts_itr_t *itr = tbx_itr_regions(fp, tbx, reglist, n_reg);
+    itr = tbx_itr_regions(fp, tbx, reglist, n_reg);
     if (!itr) {
         fprintf(stderr, "multi: tbx_itr_regions returned NULL\n");
-        for (int j = 0; j < n_reg; j++) free(reglist[j].intervals);
+        for (j = 0; j < n_reg; j++) free(reglist[j].intervals);
         free(reglist);
         tbx_destroy(tbx); hts_close(fp); return -1;
     }
 
-    kstring_t s = {0, 0, 0};
     while (hts_itr_multi_next(fp, itr, &s) >= 0) {
         append_line(out, s.s);
     }
@@ -166,7 +180,7 @@ static int run_multi_region(const char *filename, kstring_t *out)
     free(s.s);
     hts_itr_destroy(itr);
     /* Caller always owns the original reglist (tbx_itr_regions deep copies). */
-    for (int j = 0; j < n_reg; j++) free(reglist[j].intervals);
+    for (j = 0; j < n_reg; j++) free(reglist[j].intervals);
     free(reglist);
     tbx_destroy(tbx);
     hts_close(fp);
@@ -241,12 +255,19 @@ static int test_dedup_and_overlap(const char *filename)
  * ASan-instrumented build will catch any double-free or use-after-free. */
 static int test_failure_paths(const char *filename)
 {
-    htsFile *fp = hts_open(filename, "r");
+    htsFile *fp;
+    tbx_t *tbx;
+    hts_reglist_t *reg;
+    hts_itr_t *itr;
+    int rc = 0;
+    int i, n_cases;
+
+    fp = hts_open(filename, "r");
     if (!fp) return -1;
-    tbx_t *tbx = tbx_index_load(filename);
+    tbx = tbx_index_load(filename);
     if (!tbx) { hts_close(fp); return -1; }
 
-    hts_reglist_t *reg = calloc(1, sizeof(hts_reglist_t));
+    reg = calloc(1, sizeof(hts_reglist_t));
     if (!reg) { tbx_destroy(tbx); hts_close(fp); return -1; }
     reg[0].tid = tbx_name2id(tbx, "1");
     reg[0].count = 1;
@@ -257,27 +278,25 @@ static int test_failure_paths(const char *filename)
     reg[0].min_beg = 99;
     reg[0].max_end = 100;
 
-    int rc = 0;
-    hts_itr_t *itr;
-
-    struct { const char *name; htsFile *fp; tbx_t *tbx; hts_reglist_t *reg; int count; } cases[] = {
-        { "NULL htsFile",     NULL, tbx,  reg,  1 },
-        { "NULL tbx",         fp,   NULL, reg,  1 },
-        { "NULL fp+tbx",      NULL, NULL, reg,  1 },
-        { "NULL reglist",     fp,   tbx,  NULL, 1 },
-        { "count == 0",       fp,   tbx,  reg,  0 },
-        { "negative count",   fp,   tbx,  reg, -1 },
-    };
-    const int n_cases = sizeof(cases) / sizeof(cases[0]);
-
-    for (int i = 0; i < n_cases; i++) {
-        itr = tbx_itr_regions(cases[i].fp, cases[i].tbx, cases[i].reg, cases[i].count);
-        if (itr != NULL) {
-            fprintf(stderr, "FAIL: %s should return NULL, got non-NULL\n", cases[i].name);
-            hts_itr_destroy(itr);
-            rc = 1;
-        } else {
-            fprintf(stderr, "OK: %s returns NULL\n", cases[i].name);
+    {
+        struct { const char *name; htsFile *fp; tbx_t *tbx; hts_reglist_t *reg; int count; } cases[] = {
+            { "NULL htsFile",     NULL, tbx,  reg,  1 },
+            { "NULL tbx",         fp,   NULL, reg,  1 },
+            { "NULL fp+tbx",      NULL, NULL, reg,  1 },
+            { "NULL reglist",     fp,   tbx,  NULL, 1 },
+            { "count == 0",       fp,   tbx,  reg,  0 },
+            { "negative count",   fp,   tbx,  reg, -1 },
+        };
+        n_cases = sizeof(cases) / sizeof(cases[0]);
+        for (i = 0; i < n_cases; i++) {
+            itr = tbx_itr_regions(cases[i].fp, cases[i].tbx, cases[i].reg, cases[i].count);
+            if (itr != NULL) {
+                fprintf(stderr, "FAIL: %s should return NULL, got non-NULL\n", cases[i].name);
+                hts_itr_destroy(itr);
+                rc = 1;
+            } else {
+                fprintf(stderr, "OK: %s returns NULL\n", cases[i].name);
+            }
         }
     }
 

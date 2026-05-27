@@ -59,6 +59,7 @@ shlib-exports-*.txt
 /test/sam
 /test/ref_cache/*.tmp.*
 /test/tabix/*.tmp.*
+/test/bench_tbx_regions
 /test/test_alloc
 /test/test-bcf-sr
 /test/test-bcf-translate
@@ -78,6 +79,7 @@ shlib-exports-*.txt
 /test/test_realn
 /test/test-regidx
 /test/test_str2int
+/test/test_tbx_multi
 /test/test_time_funcs
 /test/test-vcf-api
 /test/test-vcf-sweep
