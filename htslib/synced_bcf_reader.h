@@ -207,7 +207,7 @@ typedef struct bcf_srs_t
 bcf_srs_t;
 
 /** Allocate and initialize a bcf_srs_t struct.
- *
+ *  @return Pointer to a bcf_srs_t struct on success; NULL on failure.
  *  The bcf_srs_t struct returned by a successful call should be freed
  *  via bcf_sr_destroy() when it is no longer needed.
  */
@@ -218,18 +218,32 @@ bcf_srs_t *bcf_sr_init(void);
 HTSLIB_EXPORT
 void bcf_sr_destroy(bcf_srs_t *readers);
 
+
+/** Return a string describing a synced reader error
+ *  @param errnum  Error code (see enum bcf_sr_error)
+ *  @return a char pointer to the error string
+ *  @note The string returned should be treated as const.  The caller should
+ *        not try to edit or free it.
+ */
+
 HTSLIB_EXPORT
 char *bcf_sr_strerror(int errnum);
+
+/** Set an option in the synced reader
+ *  @param readers  Synced reader struct
+ *  @param opt      Option to set
+ *  @return 0 on success, 1 if the option was not recognised
+ */
 
 HTSLIB_EXPORT
 int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...);
 
 
 /**
- * bcf_sr_set_threads() - allocates a thread-pool for use by the synced reader.
- * @n_threads: size of thread pool
+ * Allocate a thread-pool for use by the synced reader.
+ * @param n_threads size of thread pool
  *
- * Returns 0 if the call succeeded, or <0 on error.
+ * @return 0 if the call succeeded, or <0 on error.
  */
 HTSLIB_EXPORT
 int bcf_sr_set_threads(bcf_srs_t *files, int n_threads);
@@ -239,11 +253,11 @@ HTSLIB_EXPORT
 void bcf_sr_destroy_threads(bcf_srs_t *files);
 
 /**
- *  bcf_sr_add_reader() - open new reader
- *  @readers: holder of the open readers
- *  @fname:   the VCF file
+ *  Open new reader
+ *  @param readers holder of the open readers
+ *  @param fname   the VCF file
  *
- *  Returns 1 if the call succeeded, or 0 on error.
+ *  @return 1 if the call succeeded, or 0 on error.
  *
  *  See also the bcf_srs_t data structure for parameters controlling
  *  the reader's logic.
@@ -253,19 +267,26 @@ HTSLIB_EXPORT
 int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
 
 /**
- *  bcf_sr_add_hreader() - open new reader using htsfile
- *  @readers: holder of the open readers
- *  @file_ptr: htsfile already opened
- *  @autoclose: close file along with reader or not, 1 - close, 0 - do not close
- *  @idxname: index file name for file in @file_ptr
+ *  Open new reader using htsfile
+ *  @param readers  holder of the open readers
+ *  @param file_ptr htsfile already opened
+ *  @param autoclose close file along with reader or not, 1 - close, 0 - do not close
+ *  @param idxname index file name for file in @file_ptr
  *
- *  Returns 1 if the call succeeded, or 0 on error.
+ *  @return 1 if the call succeeded, or 0 on error.
  *
  *  See also the bcf_srs_t data structure for parameters controlling
  *  the reader's logic.
  *  If idxname is NULL, uses file_ptr->fn to find index file.
  *  With idxname as NULL, index file must be present along with the file with
  *  default name
+ *
+ *  If the call succeeds, and @p autoclose is 1, ownership of @p file_ptr
+ *  passes to @p readers, and the file will be closed automatically when either
+ *  the reader is removed by bcf_sr_remove_reader(), or when all readers
+ *  are closed by bcf_sr_destroy().  If this function fails, ownership of
+ *  the file remains with the caller and the caller is responsible for cleaning
+ *  it up.
  */
 HTSLIB_EXPORT
 int bcf_sr_add_hreader(bcf_srs_t *readers, htsFile *file_ptr, int autoclose,
@@ -275,12 +296,18 @@ HTSLIB_EXPORT
 void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 
 /**
- * bcf_sr_next_line() - the iterator
- * @readers:    holder of the open readers
+ * Synced reader iterator
+ * @param  readers    holder of the open readers
+ * @return Number of readers with current line on success
+ *         0 when finished, or on error
  *
  * Returns the number of readers which have the current line
  * (bcf_sr_t.buffer[0]) set at this position. Use the bcf_sr_has_line macro to
  * determine which of the readers are set.
+ *
+ * A return value of 0 indicates either that the iterator finished, or
+ * there was an error.  Callers must check @p readers->errnum to tell
+ * these states apart.
  */
 HTSLIB_EXPORT
 int bcf_sr_next_line(bcf_srs_t *readers);
@@ -294,43 +321,47 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 
 
 /**
- *  bcf_sr_seek() - set all readers to selected position
- *  @seq:  sequence name; NULL to seek to start
- *  @pos:  0-based coordinate
+ *  Set all readers to selected position
+ *  @param seq  sequence name; NULL to seek to start
+ *  @param pos  0-based coordinate
+ *  @return Number of readers with iterators over the new sequence on success
+ *          0 on failure
+ *
+ *  @note Callers must check @p readers->errnum to detect failures
  */
 HTSLIB_EXPORT
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos);
 
 /**
- * bcf_sr_set_samples() - sets active samples
- * @readers: holder of the open readers
- * @samples: this can be one of: file name with one sample per line;
- *           or column-separated list of samples; or '-' for a list of
- *           samples shared by all files. If first character is the
- *           exclamation mark, all but the listed samples are included.
- * @is_file: 0: list of samples; 1: file with sample names
+ * Set active samples
+ * @param readers holder of the open readers
+ * @param samples this can be one of: file name with one sample per line;
+ *                or column-separated list of samples; or '-' for a list of
+ *                samples shared by all files. If first character is the
+ *                exclamation mark, all but the listed samples are included.
+ * @param is_file 0: list of samples; 1: file with sample names
  *
- * Returns 1 if the call succeeded, or 0 on error.
+ * @return 1 if the call succeeded, or 0 on error.
  */
 HTSLIB_EXPORT
 int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
 
-/**
- *  bcf_sr_set_targets(), bcf_sr_set_regions() - init targets/regions
- *  @readers:   holder of the open readers
- *  @targets:   list of regions, one-based and inclusive.
- *  @is_fname:  0: targets is a comma-separated list of regions (chr,chr:from-to)
- *              1: targets is a tabix indexed file with a list of regions
- *              (<chr,pos> or <chr,from,to>)
+/** Set targets filter
+ *  @param readers   holder of the open readers
+ *  @param targets   list of regions, one-based and inclusive.
+ *  @param is_fname  0: targets is a comma-separated list of regions (chr,chr:from-to)
+ *                   1: targets is a tabix indexed file with a list of regions
+ *                      (<chr,pos> or <chr,from,to>)
+ *  @param alleles   One-based index of column listing alleles (see below)
+ *  @return 0 if the call succeeded, or -1 on error.
  *
- *  Returns 0 if the call succeeded, or -1 on error.
- *
- *  Both functions behave the same way, unlisted positions will be skipped by
- *  bcf_sr_next_line(). However, there is an important difference: regions use
+ *  Both bcf_sr_set_targets() and bcf_sr_set_regions() behave the same way,
+ *  unlisted positions will be skipped by bcf_sr_next_line().
+ *  However, there is an important difference: regions uses an
  *  index to jump to desired positions while targets streams the whole files
  *  and merely skip unlisted positions.
  *
- *  Moreover, bcf_sr_set_targets() accepts an optional parameter $alleles which
+ *  Moreover, bcf_sr_set_targets() accepts an optional parameter @p alleles which
  *  is interpreted as a 1-based column index in the tab-delimited file where
  *  alleles are listed. This in principle enables to perform the COLLAPSE_*
  *  logic also with tab-delimited files. However, the current implementation
@@ -349,11 +380,29 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
 HTSLIB_EXPORT
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
 
+/** Set region list
+ *  @param readers   holder of the open readers
+ *  @param targets   list of regions, one-based and inclusive.
+ *  @param is_fname  0: targets is a comma-separated list of regions (chr,chr:from-to)
+ *                   1: targets is a tabix indexed file with a list of regions
+ *                      (<chr,pos> or <chr,from,to>)
+ *  @return 0 if the call succeeded, or -1 on error.
+ *
+ *  Both bcf_sr_set_targets() and bcf_sr_set_regions() behave the same way,
+ *  unlisted positions will be skipped by bcf_sr_next_line().
+ *  However, there is an important difference: regions uses an
+ *  index to jump to desired positions while targets streams the whole files
+ *  and merely skip unlisted positions.
+ *
+ *  API notes:
+ *  - calling bcf_sr_set_regions AFTER readers have been initialized will
+ *    reposition the readers and discard all previous regions.
+ */
 HTSLIB_EXPORT
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
 
 /**
- *  bcf_sr_regions_init()
+ *  Create a regions list
  *  @param regions regions can be either a comma-separated list of regions
  *                 (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
  *                 tab-delimited file (the default). Uncompressed files
@@ -386,8 +435,9 @@ HTSLIB_EXPORT
 void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 
 /*
- *  bcf_sr_regions_seek() - seek to the chromosome block
- *
+ *  Seek regions to the chromosome block
+ *  @param regions Pointer to regions list
+ *  @param chr     Chromosome to seek to
  *  Returns 0 on success or -1 on failure. Sets reg->seq appropriately and
  *  reg->start,reg->end to -1.
  */
@@ -407,14 +457,19 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
 HTSLIB_EXPORT
 int bcf_sr_regions_next(bcf_sr_regions_t *reg);
 
-/*
- *  bcf_sr_regions_overlap() - checks if the interval <start,end> overlaps any of
+/** Check if interval seq:start-end overlaps any regions
+ *  @param reg   Regions list
+ *  @param seq   Reference name
+ *  @param start Start of interval in seq (0-based, inclusive)
+ *  @param end   End of interval in seq (0-based, inclusive)
+ *  @return  0 if the position is in regions
+ *          -1 if the position is not in the regions and more regions exist
+ *          -2 if not in the regions and there are no more regions left
+ *          -3 on failure
+ *
+ *  Checks if the interval <start,end> overlaps any of
  *  the regions, the coordinates are 0-based, inclusive. The coordinate queries
  *  must come in ascending order.
- *
- *  Returns 0 if the position is in regions; -1 if the position is not in the
- *  regions and more regions exist; -2 if not in the regions and there are no more
- *  regions left.
  */
 HTSLIB_EXPORT
 int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end);
