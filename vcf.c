@@ -4835,6 +4835,25 @@ hts_itr_t *bcf_itr_querys1(const hts_idx_t *idx, bcf_hdr_t *hdr,
                           hts_itr_query, bcf_readrec);
 }
 
+hts_itr_t *bcf_itr_regarray(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                            char **regarray, unsigned int regcount) {
+    hts_itr_t *itr = NULL;
+    hts_reglist_t *r_list = NULL;
+    int r_count = 0;
+
+    r_list = hts_reglist_create(regarray, regcount, &r_count, hdr,
+                                bcf_hdr_name2id_wrapper);
+    if (!r_list)
+        return NULL;
+
+    itr = hts_itr_regions(idx, r_list, r_count, bcf_hdr_name2id_wrapper, hdr,
+                          hts_itr_multi_bam, bcf_readrec,
+                          bgzf_pseek, bgzf_ptell);
+    if (!itr)
+        hts_reglist_free(r_list, r_count);
+
+    return itr;
+}
 
 /*****************
  *** Utilities ***
