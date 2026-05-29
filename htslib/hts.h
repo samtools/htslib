@@ -260,6 +260,7 @@ typedef struct htsFile {
     const char *fnidx;
     struct sam_hdr_t *bam_header;
     struct hts_filter_t *filter;
+    void *cond_data;    //for extra checks and filters
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -331,6 +332,9 @@ enum hts_fmt_option {
     HTS_OPT_BLOCK_SIZE,
     HTS_OPT_FILTER,
     HTS_OPT_PROFILE,
+
+    // Seq data
+    SEQ_OPT_MAXDEPTH = 500, // sets the max depth above which read is discarded
 
     // Fastq
 
