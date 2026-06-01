@@ -57,6 +57,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_endian.h"
 #include "htslib/hts_expr.h"
 #include "header.h"
+#include "bgzf_internal.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -1627,23 +1628,6 @@ static int64_t cram_ptell(void *fp)
     return ret;
 }
 
-static int bam_pseek(void *fp, int64_t offset, int whence)
-{
-    BGZF *fd = (BGZF *)fp;
-
-    return bgzf_seek(fd, offset, whence);
-}
-
-static int64_t bam_ptell(void *fp)
-{
-    BGZF *fd = (BGZF *)fp;
-    if (!fd)
-        return -1L;
-
-    return bgzf_tell(fd);
-}
-
-
 
 static hts_idx_t *index_load(htsFile *fp, const char *fn, const char *fnidx, int flags)
 {
@@ -1785,7 +1769,7 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarra
         if (!r_list)
             return NULL;
         itr = hts_itr_regions(idx, r_list, r_count, bam_name2id_wrapper, hdr,
-                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
+                   hts_itr_multi_bam, sam_readrec, bgzf_pseek, bgzf_ptell);
     }
 
     if (!itr)
@@ -1806,7 +1790,7 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, sam_hdr_t *hdr, hts_reglist_t *
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     else
         return hts_itr_regions(idx, reglist, regcount, bam_name2id_wrapper, hdr,
-                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
+                   hts_itr_multi_bam, sam_readrec, bgzf_pseek, bgzf_ptell);
 }
 
 /**********************

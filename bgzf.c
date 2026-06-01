@@ -2174,8 +2174,8 @@ int bgzf_check_EOF(BGZF *fp) {
     return has_eof;
 }
 
-static inline int64_t bgzf_seek_common(BGZF* fp,
-                                       int64_t block_address, int block_offset)
+static inline int bgzf_seek_common(BGZF* fp,
+                                   int64_t block_address, int block_offset)
 {
     if (fp->mt) {
         // The reader runs asynchronous and does loops of:
@@ -2258,6 +2258,24 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
 
     return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
 }
+
+// Wrapper for use with hts_itr_regions()
+int bgzf_pseek(void *fp, int64_t offset, int whence)
+{
+    BGZF *fd = (BGZF *)fp;
+    return bgzf_seek(fd, offset, whence);
+}
+
+// Wrapper for use with hts_itr_regions()
+int64_t bgzf_ptell(void *fp)
+{
+    BGZF *fd = (BGZF *)fp;
+    if (!fd)
+        return -1L;
+
+    return bgzf_tell(fd);
+}
+
 
 int bgzf_is_bgzf(const char *fn)
 {

@@ -68,3 +68,9 @@ static inline void * bgzf_get_private_data(BGZF *fp) {
     assert(fp->cache != NULL);
     return fp->cache->private_data;
 }
+
+// Wrapper for use with hts_itr_regions()
+int bgzf_pseek(void *fp, int64_t offset, int whence);
+
+// Wrapper for use with hts_itr_regions()
+int64_t bgzf_ptell(void *fp);
