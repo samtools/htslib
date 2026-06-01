@@ -351,6 +351,9 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
         {
             int nseq;
             const char **seq = NULL;
+            hts_itr_t *itr = NULL;
+            int num_itr = nregs;
+
             if ( reg_idx ) {
                 seq = tbx_seqnames(tbx, &nseq);
                 if (!seq) {
@@ -358,10 +361,18 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                     error_errno("Failed to get sequence names list");
                 }
             }
-            for (i=0; i<nregs; i++)
+
+            if (args->is_multi) {
+                itr = tbx_itr_regarray(tbx, regs, nregs);
+                num_itr = 1; // Only need to run the loop below once
+            }
+
+            for (i=0; i<num_itr; i++)
             {
                 int ret, found = 0;
-                hts_itr_t *itr = tbx_itr_querys(tbx, regs[i]);
+                if (!args->is_multi) {
+                    itr = tbx_itr_querys(tbx, regs[i]);
+                }
                 if ( !itr ) continue;
                 while ((ret = tbx_itr_next(fp, tbx, itr, &str)) >= 0)
                 {

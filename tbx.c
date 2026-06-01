@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "hts_internal.h"
+#include "bgzf_internal.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -373,6 +374,45 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_po
     return ret;
 }
 
+/*
+  Wrapper to get the tbx_t struct to tbx_readrec() when using the
+  multi-region iterator interface.  This is required to deal with
+  differences between the single- and multi-region iterator interfaces.
+
+  In particular, the multi-region one lacks a way to directly pass the tbx_t
+  structure to the tbx_readrec() function.  By using the structure below,
+  tbx_itr_next1() can parcel a tbx_t pointer up along with one to the output
+  buffer, then tbx_multi_readrec() can unwrap them to pass on to tbx_readrec().
+*/
+
+typedef struct tbx_wrapper {
+    void *result_ptr;
+    tbx_t *tbx;
+} tbx_wrapper;
+
+int tbx_itr_next1(htsFile *htsfp, tbx_t *tbx, hts_itr_t *iter, void *r)
+{
+    if (!htsfp->is_bgzf) {
+        hts_log_error("Only bgzf compressed files can be used with iterators");
+        errno = EINVAL;
+        return -2;
+    }
+
+    if (iter->multi) {
+        tbx_wrapper tmp = { r, tbx };
+        return hts_itr_multi_next(htsfp, iter, &tmp);
+    } else {
+        return hts_itr_next(htsfp->fp.bgzf, iter, r, tbx);
+    }
+}
+
+static int tbx_multi_readrec(BGZF *fp, void *fpv, void *r,
+                             int *tid, hts_pos_t *beg, hts_pos_t *end)
+{
+    tbx_wrapper *tmp = (tbx_wrapper *) r;
+    return tbx_readrec(fp, tmp->tbx, tmp->result_ptr, tid, beg, end);
+}
+
 static int tbx_set_meta(tbx_t *tbx)
 {
     int i, l = 0, l_nm;
@@ -651,4 +691,25 @@ hts_itr_t *tbx_itr_querys1(tbx_t *tbx, const char *region)
 {
     return hts_itr_querys(tbx->idx, region, tbx_name2id_wrapper, tbx,
                           hts_itr_query, tbx_readrec);
+}
+
+hts_itr_t *tbx_itr_regarray(tbx_t *tbx, char **regarray, unsigned int regcount)
+{
+    hts_itr_t *itr = NULL;
+    hts_reglist_t *r_list = NULL;
+    int r_count = 0;
+
+    r_list = hts_reglist_create(regarray, regcount, &r_count, tbx,
+                                tbx_name2id_wrapper);
+    if (!r_list)
+        return NULL;
+
+    itr = hts_itr_regions(tbx->idx, r_list, r_count, tbx_name2id_wrapper, tbx,
+                          hts_itr_multi_bam, tbx_multi_readrec,
+                          bgzf_pseek, bgzf_ptell);
+    if (!itr)
+        hts_reglist_free(r_list, r_count);
+
+    return itr;
+
 }
