@@ -2183,48 +2183,18 @@ int cram_xrle_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char
     int n = *out_size;
 
     cram_block *b = cram_xrle_decode_expand_char(slice, c);
+    if (!b)
+        return -1;
 
     if (out) {
-        if (*out_size > b->idx + n)
+        if (n < 0
+            || (int64_t)b->idx + n > b->uncomp_size
+            || *out_size > b->idx + n) {
             return -1;
+        }
         memcpy(out, b->data + b->idx, n);
     }
     b->idx += n;
-    return 0;
-
-    // Old code when not cached
-    while (n > 0) {
-        if (c->u.xrle.cur_len == 0) {
-            unsigned char lit;
-            int one = 1;
-            if (c->u.xrle.lit_codec->decode(slice, c->u.xrle.lit_codec, in,
-                                          (char *)&lit, &one) < 0)
-                return -1;
-            c->u.xrle.cur_lit = lit;
-
-            if (c->u.xrle.rep_score[lit] > 0) {
-                if (c->u.xrle.len_codec->decode(slice, c->u.xrle.len_codec, in,
-                                              (char *)&c->u.xrle.cur_len, &one) < 0)
-                    return -1;
-            } // else cur_len still zero
-            //else fprintf(stderr, "%d\n", lit);
-
-            c->u.xrle.cur_len++;
-        }
-
-        if (n >= c->u.xrle.cur_len) {
-            memset(out, c->u.xrle.cur_lit, c->u.xrle.cur_len);
-            out += c->u.xrle.cur_len;
-            n -= c->u.xrle.cur_len;
-            c->u.xrle.cur_len = 0;
-        } else {
-            memset(out, c->u.xrle.cur_lit, n);
-            out += n;
-            c->u.xrle.cur_len -= n;
-            n = 0;
-        }
-    }
-
     return 0;
 }
 
