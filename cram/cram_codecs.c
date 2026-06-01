@@ -1853,6 +1853,9 @@ cram_codec *cram_xdelta_decode_init(cram_block_compression_hdr *hdr,
     c->describe = NULL;
 
     c->u.xdelta.word_size = vv->varint_get32(&cp, endp, NULL);
+    if (c->u.xdelta.word_size <= 0)
+        goto malformed;
+
     c->u.xdelta.last = 0;
 
     int encoding = vv->varint_get32(&cp, endp, NULL);
