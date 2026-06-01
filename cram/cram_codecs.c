@@ -1442,6 +1442,20 @@ int cram_xpack_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, cha
         if (!b)
             return -1;
 
+        // b->uncomp_size is signed 32-bit.
+        // It should be unsigned, but the CRAM specification uses ITF8
+        // and hence declares it as signed.  It's a mistake to have it signed
+        // in the struct, but we validate in cram_read_block.
+        // b->byte is size_t, however it's bounded by 0 to b->uncomp_size
+        // so it cannot significantly overflow (by up to *out_size, which is
+        // also int).
+        //
+        // However uncomp_size - byte may overflow due to mixed types,
+        // hence the need for an explicit cast.
+        if (b->byte > (size_t)b->uncomp_size ||
+            (size_t)*out_size > (size_t)b->uncomp_size - b->byte)
+            return -1;
+
         if (out) {
             if (*out_size > b->uncomp_size - b->byte)
                 return -1;
