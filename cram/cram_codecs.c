@@ -1343,9 +1343,13 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
  */
 int cram_xpack_decode_long(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int64_t *out_i = (int64_t *)out;
-    int i, n = *out_size;
+    uint32_t i, n = *out_size;
 
     if (c->u.xpack.nbits) {
+        // consider overflow check nbits * n?
+        if (cram_not_enough_bits(in, c->u.xpack.nbits * (uint64_t)n))
+            return -1;
+
         for (i = 0; i < n; i++)
             out_i[i] = c->u.xpack.rmap[get_bits_MSB(in, c->u.xpack.nbits)];
     } else {
@@ -1358,10 +1362,10 @@ int cram_xpack_decode_long(cram_slice *slice, cram_codec *c, cram_block *in, cha
 
 int cram_xpack_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int32_t *out_i = (int32_t *)out;
-    int i, n = *out_size;
+    uint32_t i, n = *out_size;
 
     if (c->u.xpack.nbits) {
-        if (cram_not_enough_bits(in, c->u.xpack.nbits * n))
+        if (cram_not_enough_bits(in, c->u.xpack.nbits * (uint64_t)n))
             return -1;
 
         for (i = 0; i < n; i++)
