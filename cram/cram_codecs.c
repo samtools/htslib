@@ -2470,33 +2470,32 @@ int cram_subexp_decode(cram_slice *slice, cram_codec *c, cram_block *in, char *o
     int k = c->u.subexp.k;
 
     for (count = 0, n = *out_size; count < n; count++) {
-        int i = 0, tail;
+        int u = 0, tail;
         int val;
 
-        /* Get number of 1s */
-        //while (get_bit_MSB(in) == 1) i++;
-        i = get_one_bits_MSB(in);
-        if (i < 0 || cram_not_enough_bits(in, i > 0 ? i + k - 1 : k))
+        /* Get number of 1s: u */
+        u = get_one_bits_MSB(in);
+        if (u < 0 || cram_not_enough_bits(in, u > 0 ? u + k - 1 : k))
             return -1;
         /*
          * Val is
-         * i > 0:  2^(k+i-1) + k+i-1 bits
-         * i = 0:  k bits
+         * u > 0:  2^(k+u-1) + k+u-1 bits
+         * u = 0:  k bits
          */
-        if (i) {
-            tail = i + k-1;
+        if (u) {
+            if (u > 31-k)
+                return -1;
+            tail = u + k-1;
             val = 0;
             while (tail) {
-                //val = val<<1; val |= get_bit_MSB(in);
                 GET_BIT_MSB(in, val);
                 tail--;
             }
-            val += 1 << (i + k-1);
+            val += 1 << (u + k-1);
         } else {
             tail = k;
             val = 0;
             while (tail) {
-                //val = val<<1; val |= get_bit_MSB(in);
                 GET_BIT_MSB(in, val);
                 tail--;
             }
@@ -2545,7 +2544,7 @@ cram_codec *cram_subexp_decode_init(cram_block_compression_hdr *hdr,
     c->u.subexp.offset = vv->varint_get32(&cp, data + size, NULL);
     c->u.subexp.k      = vv->varint_get32(&cp, data + size, NULL);
 
-    if (cp - data != size || c->u.subexp.k < 0) {
+    if (cp - data != size || c->u.subexp.k < 0 || c->u.subexp.k > 31) {
         hts_log_error("Malformed subexp header stream");
         free(c);
         return NULL;
