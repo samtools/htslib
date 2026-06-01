@@ -1444,12 +1444,14 @@ void cram_xpack_decode_free(cram_codec *c) {
 }
 
 int cram_xpack_decode_size(cram_slice *slice, cram_codec *c) {
-    cram_xpack_decode_expand_char(slice, c);
+    if (cram_xpack_decode_expand_char(slice, c) < 0)
+        return -1;
     return slice->block_by_id[512 + c->codec_id]->uncomp_size;
 }
 
 cram_block *cram_xpack_get_block(cram_slice *slice, cram_codec *c) {
-    cram_xpack_decode_expand_char(slice, c);
+    if (cram_xpack_decode_expand_char(slice, c) < 0)
+        return NULL;
     return slice->block_by_id[512 + c->codec_id];
 }
 
@@ -1484,7 +1486,8 @@ cram_codec *cram_xpack_decode_init(cram_block_compression_hdr *hdr,
     c->u.xpack.nbits = vv->varint_get32(&cp, endp, NULL);
     c->u.xpack.nval  = vv->varint_get32(&cp, endp, NULL);
     if (c->u.xpack.nbits >= 8  || c->u.xpack.nbits < 0 ||
-        c->u.xpack.nval  > 256 || c->u.xpack.nval < 0)
+        c->u.xpack.nval  > 256 || c->u.xpack.nval < 0 ||
+        (c->u.xpack.nval > 1 && c->u.xpack.nbits == 0))
         goto malformed;
     int i;
     for (i = 0; i < c->u.xpack.nval; i++) {
