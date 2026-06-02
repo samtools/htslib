@@ -53,7 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../htslib/hts.h"
 #include "../htslib/hts_alloc.h"
 #include "../htslib/hfile.h"
-#include "../sam_internal.h" // realloc_bam_data()
+#include "../sam_internal.h" // bam_tag2cigar()
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
@@ -2366,10 +2366,12 @@ static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
     if (bl) {
         // Reuse an old bam list, possibly growing it
         if (s->hdr->num_records > bl->nbams) {
-            bl->bams = hts_realloc_p(bl->bams, s->hdr->num_records,
-                                     sizeof(*bl->bams));
-            if (!bl->bams)
+            bam_seq_t *bams;
+            bams = hts_realloc_p(bl->bams, s->hdr->num_records,
+                                 sizeof(*bl->bams));
+            if (!bams)
                 return -1;
+            bl->bams = bams;
             memset(&bl->bams[bl->nbams], 0,
                    (s->hdr->num_records - bl->nbams) * sizeof(*bl->bams));
             int i;

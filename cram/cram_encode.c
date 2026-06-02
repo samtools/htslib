@@ -1216,11 +1216,12 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     {
         int i, j;
 
-        s->hdr->block_content_ids = hts_realloc_p(s->hdr->block_content_ids,
-                                                  sizeof(*s->hdr->block_content_ids),
-                                                  s->hdr->num_blocks);
-        if (!s->hdr->block_content_ids)
+        int32_t *bids = hts_realloc_p(s->hdr->block_content_ids,
+                                      sizeof(*s->hdr->block_content_ids),
+                                      s->hdr->num_blocks);
+        if (!bids)
             return -1;
+        s->hdr->block_content_ids = bids;
 
         for (i = j = 1; i < s->hdr->num_blocks; i++) {
             if (!s->block[i] || s->block[i] == s->block[0])
@@ -2580,9 +2581,11 @@ static int cram_add_feature(cram_container *c, cram_slice *s,
                             cram_record *r, cram_feature *f) {
     if (s->nfeatures >= s->afeatures) {
         s->afeatures = s->afeatures ? s->afeatures*2 : 1024;
-        s->features = hts_realloc_p(s->features, sizeof(*s->features), s->afeatures);
-        if (!s->features)
+        cram_feature *features
+            = hts_realloc_p(s->features, sizeof(*s->features), s->afeatures);
+        if (!features)
             return -1;
+        s->features = features;
     }
 
     if (!r->nfeature++) {
@@ -3489,9 +3492,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->ncigar      = bam_cigar_len(b);
         while (cr->cigar + cr->ncigar >= s->cigar_alloc) {
             s->cigar_alloc = s->cigar_alloc ? s->cigar_alloc*2 : 1024;
-            s->cigar = hts_realloc_p(s->cigar, sizeof(*s->cigar), s->cigar_alloc);
-            if (!s->cigar)
+            uint32_t *cigar
+                = hts_realloc_p(s->cigar, sizeof(*s->cigar), s->cigar_alloc);
+            if (!cigar)
                 return -1;
+            s->cigar = cigar;
         }
 
         cig_to = (uint32_t *)s->cigar;
@@ -4189,12 +4194,14 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         if (fd->bl) {
             bam_list *spare = fd->bl;
             if (c->max_c_rec > spare->nbams) {
-                if (!(spare->bams =
-                      hts_realloc_p(spare->bams, c->max_c_rec,
-                                    sizeof(*spare->bams)))) {
+                bam_seq_t *bams
+                    = hts_realloc_p(spare->bams, c->max_c_rec,
+                                    sizeof(*spare->bams));
+                if (!bams) {
                     pthread_mutex_unlock(&fd->bam_list_lock);
                     return -1;
                 }
+                spare->bams = bams;
                 int i;
                 for (i = spare->nbams; i < c->max_c_rec; i++)
                     bam_set_mempolicy(&spare->bams[i], BAM_USER_OWNS_STRUCT);
