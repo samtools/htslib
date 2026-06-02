@@ -4190,8 +4190,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             bam_list *spare = fd->bl;
             if (c->max_c_rec > spare->nbams) {
                 if (!(spare->bams =
-                      realloc(spare->bams,
-                              c->max_c_rec * sizeof(*spare->bams)))) {
+                      hts_realloc_p(spare->bams, c->max_c_rec,
+                                    sizeof(*spare->bams)))) {
                     pthread_mutex_unlock(&fd->bam_list_lock);
                     return -1;
                 }

@@ -2366,8 +2366,8 @@ static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
     if (bl) {
         // Reuse an old bam list, possibly growing it
         if (s->hdr->num_records > bl->nbams) {
-            bl->bams = realloc(bl->bams, s->hdr->num_records *
-                               sizeof(*bl->bams));
+            bl->bams = hts_realloc_p(bl->bams, s->hdr->num_records,
+                                     sizeof(*bl->bams));
             if (!bl->bams)
                 return -1;
             memset(&bl->bams[bl->nbams], 0,
