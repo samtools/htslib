@@ -254,6 +254,9 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     }
 
 
+    // refid indexes fd->index, so bound it to the header's reference count.
+    int nref = sam_hdr_nref(fd->header);
+
     // Parse it line at a time
     while (pos < kstr.l) {
         /* 1.1 layout */
@@ -278,7 +281,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         e.end += e.start-1;
         //printf("%d/%d..%d-offset=%" PRIu64 ",len=%d,slice=%d\n", e.refid, e.start, e.end, e.offset, e.len, e.slice);
 
-        if (e.refid < -1) {
+        if (e.refid < -1 || e.refid >= nref) {
             hts_log_error("Malformed index file, refid %d", e.refid);
             goto fail;
         }
