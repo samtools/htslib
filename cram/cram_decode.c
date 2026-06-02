@@ -2343,39 +2343,6 @@ static int cram_decode_tlen(cram_fd *fd, cram_container *c, cram_slice *s,
     return r;
 }
 
-/*
- * Bulk conversion of an entire cram slice to an array of bam objects.
- * (Assumption that fd->required_fields will not change from one
- * cram_get_bam_seq() call to the  next.)
- *
- * Returns 0 on success
- *        -1 on failure
- */
-#define round4(v) (((v-1)&~3)+4)
-#define round8(v) (((v-1)&~7)+8)
-static int bam_size(sam_hrecs_t *bfd, cram_fd *fd, cram_record *cr) {
-    int name_len, rg_len;
-
-    // See cram_to_bam function for these sizes
-    if (fd->required_fields & SAM_QNAME) {
-        if (cr->name_len)
-            name_len = cr->name_len;
-        else
-            name_len = strlen(fd->prefix) + 20; // overestimate; uint64
-    } else {
-        name_len = 1;
-    }
-
-    rg_len = (cr->rg != -1) ? bfd->rg[cr->rg].name_len + 4 : 0;
-
-    return sizeof(bam_seq_t)
-        + round4(name_len + 1) // nul padding
-        + 4 * cr->ncigar
-        + (cr->len+1)/2        // seq
-        + cr->len              // qual
-        + cr->aux_size + rg_len + 1;
-}
-
 /* Converts an entire slice worth of CRAM objects to BAM objects.
  *
  * Note memory for these is in a single malloc.  Hence compute upfront the
@@ -2427,11 +2394,6 @@ static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
             bam_set_mempolicy(&bl->bams[i], BAM_USER_OWNS_STRUCT);
     }
     s->bl = bl;
-
-    for (i = 0; i < s->hdr->num_records; i++) {
-        int sz = bam_size(bfd, fd, &s->crecs[i]);
-        realloc_bam_data(&s->bl->bams[i], sz);
-    }
 
     for (i = 0; i < s->hdr->num_records; i++) {
         r |= (cram_to_bam(fd->header, fd, s, &s->crecs[i], i,
