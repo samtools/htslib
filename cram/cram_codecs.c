@@ -1819,7 +1819,8 @@ int cram_xdelta_decode_size(cram_slice *slice, cram_codec *c) {
 }
 
 cram_block *cram_xdelta_get_block(cram_slice *slice, cram_codec *c) {
-    cram_xdelta_decode_expand_char(slice, c);
+    if (!cram_xdelta_decode_expand_char(slice, c))
+        return NULL;
     return c->u.xdelta.expanded;
 }
 
@@ -2180,7 +2181,8 @@ int cram_xrle_decode_size(cram_slice *slice, cram_codec *c) {
 }
 
 cram_block *cram_xrle_get_block(cram_slice *slice, cram_codec *c) {
-    cram_xrle_decode_expand_char(slice, c);
+    if (!cram_xrle_decode_expand_char(slice, c))
+        return NULL;
     return c->u.xrle.expanded;
 }
 
