@@ -1416,7 +1416,8 @@ int cram_xpack_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, cha
     // We therefore have to cache appropriate block info in slice and not codec.
     //    b = cram_get_block_by_id(slice, c->external.content_id);
     if (c->u.xpack.nval > 1) {
-        cram_xpack_decode_expand_char(slice, c);
+        if (cram_xpack_decode_expand_char(slice, c) < 0)
+            return -1;
         cram_block *b = slice->block_by_id[512 + c->codec_id];
         if (!b)
             return -1;
@@ -1775,12 +1776,14 @@ void cram_xdelta_decode_free(cram_codec *c) {
 }
 
 int cram_xdelta_decode_size(cram_slice *slice, cram_codec *c) {
-    cram_xdelta_decode_expand_char(slice, c);
+    if (cram_xdelta_decode_expand_char(slice, c) < 0)
+        return -1;
     return slice->block_by_id[512 + c->codec_id]->uncomp_size;
 }
 
 cram_block *cram_xdelta_get_block(cram_slice *slice, cram_codec *c) {
-    cram_xdelta_decode_expand_char(slice, c);
+    if (cram_xdelta_decode_expand_char(slice, c) < 0)
+        return NULL;
     return slice->block_by_id[512 + c->codec_id];
 }
 
@@ -2122,19 +2125,22 @@ static int cram_xrle_decode_expand_char(cram_slice *slice, cram_codec *c) {
 }
 
 int cram_xrle_decode_size(cram_slice *slice, cram_codec *c) {
-    cram_xrle_decode_expand_char(slice, c);
+    if (cram_xrle_decode_expand_char(slice, c) < 0)
+        return -1;
     return slice->block_by_id[512 + c->codec_id]->uncomp_size;
 }
 
 cram_block *cram_xrle_get_block(cram_slice *slice, cram_codec *c) {
-    cram_xrle_decode_expand_char(slice, c);
+    if (cram_xrle_decode_expand_char(slice, c) < 0)
+        return NULL;
     return slice->block_by_id[512 + c->codec_id];
 }
 
 int cram_xrle_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int n = *out_size;
 
-    cram_xrle_decode_expand_char(slice, c);
+    if (cram_xrle_decode_expand_char(slice, c) < 0)
+        return -1;
     cram_block *b = slice->block_by_id[512 + c->codec_id];
 
     if (out)
