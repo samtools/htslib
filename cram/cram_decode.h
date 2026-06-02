@@ -67,7 +67,7 @@ cram_record *cram_get_seq(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on EOF or failure (check fd->err)
  */
-int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam, int *has_CG_tag);
+int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam);
 
 
 /* ----------------------------------------------------------------------

@@ -3272,6 +3272,10 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         bam->l_data += rg_len;
     }
 
+    if (cr->has_CG)
+        if (bam_tag2cigar(bam, 1, 1) < 0)
+            return -1;
+
     return bam->l_data;
 }
 
@@ -3697,7 +3701,7 @@ cram_record *cram_get_seq(cram_fd *fd) {
  * Returns >= 0 success (number of bytes written to *bam)
  *        -1 on EOF or failure (check fd->err)
  */
-int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam, int *has_CG_tag) {
+int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
     cram_record *cr;
     cram_container *c;
     cram_slice *s;
@@ -3725,7 +3729,6 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam, int *has_CG_tag) {
         return 0;
     }
 
-    *has_CG_tag = cr->has_CG;
     return cram_to_bam(fd->header, fd, s, cr, s->curr_rec-1, *bam);
 }
 
