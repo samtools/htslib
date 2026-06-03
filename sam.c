@@ -678,7 +678,8 @@ hts_pos_t bam_endpos(const bam1_t *b)
     return b->core.pos + rlen;
 }
 
-static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+// return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning)
 {
     bam1_core_t *c = &b->core;
 
@@ -1559,9 +1560,6 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t 
         ret = cram_get_bam_seq(fp->fp.cram, &b);
         if (ret < 0)
             return cram_eof(fp->fp.cram) ? -1 : -2;
-
-        if (bam_tag2cigar(b, 1, 1) < 0)
-            return -2;
 
         *tid = b->core.tid;
         *beg = b->core.pos;
@@ -4148,9 +4146,6 @@ static inline int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
     int ret = cram_get_bam_seq(fp->fp.cram, b);
     if (ret < 0)
         return cram_eof(fp->fp.cram) ? -1 : -2;
-
-    if (bam_tag2cigar(*b, 1, 1) < 0)
-        return -2;
 
     return ret;
 }

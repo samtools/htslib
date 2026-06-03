@@ -1216,11 +1216,12 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     {
         int i, j;
 
-        s->hdr->block_content_ids = hts_realloc_p(s->hdr->block_content_ids,
-                                                  sizeof(*s->hdr->block_content_ids),
-                                                  s->hdr->num_blocks);
-        if (!s->hdr->block_content_ids)
+        int32_t *bids = hts_realloc_p(s->hdr->block_content_ids,
+                                      sizeof(*s->hdr->block_content_ids),
+                                      s->hdr->num_blocks);
+        if (!bids)
             return -1;
+        s->hdr->block_content_ids = bids;
 
         for (i = j = 1; i < s->hdr->num_blocks; i++) {
             if (!s->block[i] || s->block[i] == s->block[0])
@@ -1359,7 +1360,7 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
     // 1: Iterate through names to count frequency
     for (r1 = bam_start, r2 = 0; r2 < s->hdr->num_records; r1++, r2++) {
         //cram_record *cr = &s->crecs[r2];
-        bam_seq_t *b = c->bams[r1];
+        bam_seq_t *b = &c->bams[r1];
         khint_t k;
         int n;
         uint64_t e;
@@ -1402,7 +1403,7 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
     // 2: Remove names if all present (hd.i == -1)
     for (r1 = bam_start, r2 = 0; r2 < s->hdr->num_records; r1++, r2++) {
         cram_record *cr = &s->crecs[r2];
-        bam_seq_t *b = c->bams[r1];
+        bam_seq_t *b = &c->bams[r1];
         khint_t k;
 
         k = kh_get(m_s2u64, names, bam_name(b));
@@ -1443,7 +1444,7 @@ static int add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
          r1 < c->curr_c_rec && r2 < s->hdr->num_records;
          r1++, r2++) {
         cram_record *cr = &s->crecs[r2];
-        bam_seq_t *b = c->bams[r1];
+        bam_seq_t *b = &c->bams[r1];
 
         cr->name        = BLOCK_SIZE(s->name_blk);
         if ((cr->cram_flags & CRAM_FLAG_DETACHED) || keep_names) {
@@ -1739,15 +1740,15 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     // user told us to do embed_ref=2.
     char *ref = NULL;
     uint32_t (*hist)[5] = NULL;
-    hts_pos_t ref_start = c->bams[r1]->core.pos, ref_end = 0,
+    hts_pos_t ref_start = c->bams[r1].core.pos, ref_end = 0,
         ref_end_alloc = 0;
     if (ref_start < 0)
         return -1; // cannot build consensus from unmapped data
 
     // initial allocation
     if (extend_ref(&ref, &hist,
-                   c->bams[r1 + s->hdr->num_records-1]->core.pos +
-                   c->bams[r1 + s->hdr->num_records-1]->core.l_qseq,
+                   c->bams[r1 + s->hdr->num_records-1].core.pos +
+                   c->bams[r1 + s->hdr->num_records-1].core.l_qseq,
                    ref_start, &ref_end, &ref_end_alloc) < 0)
         return -1;
 
@@ -1755,12 +1756,12 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     int r2;
     hts_pos_t last_pos = -1;
     for (r2 = 0; r1 < c->curr_c_rec && r2 < s->hdr->num_records; r1++, r2++) {
-        if (c->bams[r1]->core.pos < last_pos) {
+        if (c->bams[r1].core.pos < last_pos) {
             hts_log_error("Cannot build reference with unsorted data");
             goto err;
         }
-        last_pos = c->bams[r1]->core.pos;
-        if (cram_add_to_ref(c->bams[r1], &ref, &hist, ref_start, &ref_end,
+        last_pos = c->bams[r1].core.pos;
+        if (cram_add_to_ref(&c->bams[r1], &ref, &hist, ref_start, &ref_end,
                             &ref_end_alloc) < 0)
             goto err;
     }
@@ -1853,7 +1854,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     cram_block *c_hdr;
     int multi_ref = 0;
     int r1, r2, sn, nref, embed_ref, no_ref;
-    spare_bams *spares;
+    bam_list *spares;
 
     if (!c->bams)
         goto err;
@@ -1889,9 +1890,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* To create M5 strings */
     /* Fetch reference sequence */
     if (!no_ref) {
-        if (!c->bams || !c->curr_c_rec || !c->bams[0])
+        if (!c->bams || !c->curr_c_rec || !c->nbams)
             goto_err;
-        bam_seq_t *b = c->bams[0];
+        bam_seq_t *b = &c->bams[0];
 
         if (embed_ref <= 1) {
             char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
@@ -1956,7 +1957,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         }
         c->ref_seq_id = c->ref_id;
     } else {
-        c->ref_id = bam_ref(c->bams[0]);
+        c->ref_id = bam_ref(&c->bams[0]);
         cram_ref_incr(fd->refs, c->ref_id);
         c->ref_seq_id = c->ref_id;
     }
@@ -2038,7 +2039,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         // fields and just gathering stats for others.
         for (r2 = 0; r1 < c->curr_c_rec && r2 < s->hdr->num_records; r1++, r2++) {
             cram_record *cr = &s->crecs[r2];
-            bam_seq_t *b = c->bams[r1];
+            bam_seq_t *b = &c->bams[r1];
 
             /* If multi-ref we need to cope with changing reference per seq */
             if (c->multi_seq && !no_ref) {
@@ -2139,8 +2140,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* Link our bams[] array onto the spare bam list for reuse */
     spares = malloc(sizeof(*spares));
     if (!spares) goto_err;
-    pthread_mutex_lock(&fd->bam_list_lock);
     spares->bams = c->bams;
+    spares->nbams = c->nbams;
+    pthread_mutex_lock(&fd->bam_list_lock);
     spares->next = fd->bl;
     fd->bl = spares;
     pthread_mutex_unlock(&fd->bam_list_lock);
@@ -2579,9 +2581,11 @@ static int cram_add_feature(cram_container *c, cram_slice *s,
                             cram_record *r, cram_feature *f) {
     if (s->nfeatures >= s->afeatures) {
         s->afeatures = s->afeatures ? s->afeatures*2 : 1024;
-        s->features = hts_realloc_p(s->features, sizeof(*s->features), s->afeatures);
-        if (!s->features)
+        cram_feature *features
+            = hts_realloc_p(s->features, sizeof(*s->features), s->afeatures);
+        if (!features)
             return -1;
+        s->features = features;
     }
 
     if (!r->nfeature++) {
@@ -3488,9 +3492,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->ncigar      = bam_cigar_len(b);
         while (cr->cigar + cr->ncigar >= s->cigar_alloc) {
             s->cigar_alloc = s->cigar_alloc ? s->cigar_alloc*2 : 1024;
-            s->cigar = hts_realloc_p(s->cigar, sizeof(*s->cigar), s->cigar_alloc);
-            if (!s->cigar)
+            uint32_t *cigar
+                = hts_realloc_p(s->cigar, sizeof(*s->cigar), s->cigar_alloc);
+            if (!cigar)
                 return -1;
+            s->cigar = cigar;
         }
 
         cig_to = (uint32_t *)s->cigar;
@@ -4186,29 +4192,45 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
         /* First time through, allocate a set of bam pointers */
         pthread_mutex_lock(&fd->bam_list_lock);
         if (fd->bl) {
-            spare_bams *spare = fd->bl;
+            bam_list *spare = fd->bl;
+            if (c->max_c_rec > spare->nbams) {
+                bam_seq_t *bams
+                    = hts_realloc_p(spare->bams, c->max_c_rec,
+                                    sizeof(*spare->bams));
+                if (!bams) {
+                    pthread_mutex_unlock(&fd->bam_list_lock);
+                    return -1;
+                }
+                spare->bams = bams;
+                int i;
+                for (i = spare->nbams; i < c->max_c_rec; i++)
+                    bam_set_mempolicy(&spare->bams[i], BAM_USER_OWNS_STRUCT);
+                spare->nbams = c->max_c_rec;
+            }
             c->bams = spare->bams;
+            c->nbams = spare->nbams;
             fd->bl = spare->next;
             free(spare);
         } else {
-            c->bams = calloc(c->max_c_rec, sizeof(bam_seq_t *));
+            c->bams = calloc(c->max_c_rec, sizeof(*c->bams));
+            c->nbams = c->max_c_rec;
             if (!c->bams) {
                 pthread_mutex_unlock(&fd->bam_list_lock);
                 return -1;
             }
+            int i;
+            for (i = 0; i < c->max_c_rec; i++)
+                bam_set_mempolicy(&c->bams[i], BAM_USER_OWNS_STRUCT);
         }
         pthread_mutex_unlock(&fd->bam_list_lock);
     }
 
-    /* Copy or alloc+copy the bam record, for later encoding */
-    if (c->bams[c->curr_c_rec]) {
-        if (bam_copy1(c->bams[c->curr_c_rec], b) == NULL)
-            return -1;
-    } else {
-        c->bams[c->curr_c_rec] = bam_dup1(b);
-        if (c->bams[c->curr_c_rec] == NULL)
-            return -1;
-    }
+    // IDEA: We could have a cram_put_bam_seq_fast which does pointer
+    // swapping for bam1_t->data.  The caller would need to accept
+    // that the bam object it passes in is modified, but this is often
+    // fine if we're doing a read-write loop.
+    if (bam_copy1(&c->bams[c->curr_c_rec], b) == NULL)
+        return -1;
     if (bam_seq_len(b)) {
         c->s_num_bases += bam_seq_len(b);
     } else {

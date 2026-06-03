@@ -117,6 +117,8 @@ static inline void nibble2base(uint8_t *nib, char *seq, int len) {
 #endif
 }
 
+int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning);
+
 #ifdef __cplusplus
 }
 #endif

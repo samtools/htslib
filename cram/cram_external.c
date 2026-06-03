@@ -876,7 +876,7 @@ int cram_filter_container(cram_fd *in, cram_fd *out, cram_container *c,
             break;
 
         // Broadly rquivalent to cram_get_bam_seq, but starting from 'cr'
-        err |= cram_to_bam(in->header, in, s, cr, s->curr_rec++, &b) < 0;
+        err |= cram_to_bam(in->header, in, s, cr, s->curr_rec++, b) < 0;
 
         if (cram_put_bam_seq(out, b) < 0) {
             err |= 1;

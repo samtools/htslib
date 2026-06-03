@@ -53,6 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../htslib/hts.h"
 #include "../htslib/hts_alloc.h"
 #include "../htslib/hfile.h"
+#include "../sam_internal.h" // bam_tag2cigar()
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
@@ -2014,6 +2015,7 @@ static int cram_decode_aux(cram_fd *fd,
     int32_t TL = 0;
     unsigned char *TN;
     uint32_t ds = s->data_series;
+    cr->has_CG = 0;
 
     if (!(ds & (CRAM_TL|CRAM_aux))) {
         cr->aux = 0;
@@ -2046,6 +2048,8 @@ static int cram_decode_aux(cram_fd *fd,
             *has_MD = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);
         if (TN[0] == 'N' && TN[1] == 'M' && has_NM)
             *has_NM = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);;
+        if (TN[0] == 'C' && TN[1] == 'G')
+            cr->has_CG = 1;
 
         //printf("Tag %d/%d\n", i+1, cr->ntags);
         tag_data[0] = TN[0];
@@ -2337,6 +2341,68 @@ static int cram_decode_tlen(cram_fd *fd, cram_container *c, cram_slice *s,
                      (char *)tlen, &out_sz);
     }
     return r;
+}
+
+/* Converts an entire slice worth of CRAM objects to BAM objects.
+ *
+ * Note memory for these is in a single malloc.  Hence compute upfront the
+ * memory size of each record prior to conversion.
+ *
+ * Returns 0 on success,
+ *        -1 on failure
+ */
+static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
+    int i;
+    int r = 0;
+
+    bam_list *bl = NULL;
+    pthread_mutex_lock(&fd->bam_list_lock);
+    if (fd->bl) {
+        bl = fd->bl;
+        fd->bl = fd->bl->next;
+    }
+    pthread_mutex_unlock(&fd->bam_list_lock);
+
+    if (bl) {
+        // Reuse an old bam list, possibly growing it
+        if (s->hdr->num_records > bl->nbams) {
+            bam_seq_t *bams;
+            bams = hts_realloc_p(bl->bams, s->hdr->num_records,
+                                 sizeof(*bl->bams));
+            if (!bams)
+                return -1;
+            bl->bams = bams;
+            memset(&bl->bams[bl->nbams], 0,
+                   (s->hdr->num_records - bl->nbams) * sizeof(*bl->bams));
+            int i;
+            for (i = bl->nbams; i < s->hdr->num_records; i++)
+                bam_set_mempolicy(&bl->bams[i], BAM_USER_OWNS_STRUCT);
+            bl->nbams = s->hdr->num_records;
+        }
+    } else {
+        // Create a new bam list
+        bl = calloc(1, sizeof(*bl));
+        if (!bl)
+            return -1;
+        bl->nbams = s->hdr->num_records;
+        bl->next = NULL;
+        bl->bams = calloc(s->hdr->num_records, sizeof(*bl->bams));
+        if (!bl->bams) {
+            free(bl);
+            return -1;
+        }
+        int i;
+        for (i = 0; i < s->hdr->num_records; i++)
+            bam_set_mempolicy(&bl->bams[i], BAM_USER_OWNS_STRUCT);
+    }
+    s->bl = bl;
+
+    for (i = 0; i < s->hdr->num_records; i++) {
+        r |= (cram_to_bam(fd->header, fd, s, &s->crecs[i], i,
+                          &s->bl->bams[i]) < 0);
+    }
+
+    return r?-1:0;
 }
 
 /*
@@ -2882,6 +2948,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
         /* Auxiliary tags */
         has_MD = has_NM = 0;
+        cr->has_CG = -1; // unknown
         if (CRAM_MAJOR_VERS(fd->version) == 1)
             r |= cram_decode_aux_1_0(c, s, blk, cr);
         else
@@ -3009,6 +3076,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     BLOCK_RESIZE_EXACT(s->name_blk, BLOCK_SIZE(s->name_blk)+1);
     BLOCK_RESIZE_EXACT(s->aux_blk,  BLOCK_SIZE(s->aux_blk)+1);
 
+    // If we're wanting BAM records, convert these up-front too.
+    // This is useful when we're streaming lots of data in a
+    // multi-threaded environment as the cram to bam conversion is
+    // then threaded too.
+    //
+    // Possible future optimisation - check range query and don't
+    // convert all reads to BAM.
+
+    if (fd->pool)
+        r |= bulk_cram_to_bam(bfd, fd, s);
+
     return r;
 
  block_err:
@@ -3099,7 +3177,7 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
  *         -1 on failure.
  */
 int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
-                cram_record *cr, int rec, bam_seq_t **bam) {
+                cram_record *cr, int rec, bam_seq_t *bam) {
     int ret, rg_len;
     char name_a[1024], *name;
     int name_len;
@@ -3166,7 +3244,7 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         qual = NULL;
     }
 
-    ret = bam_set1(*bam,
+    ret = bam_set1(bam,
                    name_len, name,
                    cr->flags, cr->ref_id, cr->apos - 1, cr->mqual,
                    cr->ncigar, &s->cigar[cr->cigar],
@@ -3177,13 +3255,13 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         return ret;
     }
 
-    aux = (char *)bam_aux(*bam);
+    aux = (char *)bam_aux(bam);
 
     /* Auxiliary strings */
     if (cr->aux_size != 0) {
         memcpy(aux, BLOCK_DATA(s->aux_blk) + cr->aux, cr->aux_size);
         aux += cr->aux_size;
-        (*bam)->l_data += cr->aux_size;
+        bam->l_data += cr->aux_size;
     }
 
     /* RG:Z: */
@@ -3193,10 +3271,14 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         memcpy(aux, bfd->rg[cr->rg].name, len);
         aux += len;
         *aux++ = 0;
-        (*bam)->l_data += rg_len;
+        bam->l_data += rg_len;
     }
 
-    return (*bam)->l_data;
+    if (cr->has_CG)
+        if (bam_tag2cigar(bam, 1, 1) < 0)
+            return -1;
+
+    return bam->l_data;
 }
 
 /*
@@ -3556,6 +3638,14 @@ cram_record *cram_get_seq(cram_fd *fd) {
         if (c && c->slice && c->slice->curr_rec < c->slice->max_rec) {
             s = c->slice;
         } else {
+            // Save old spare bams list if needed
+            if (c && (s = c->slice) && s->bl) {
+                pthread_mutex_lock(&fd->bam_list_lock);
+                s->bl->next = fd->bl;
+                fd->bl = s->bl;
+                pthread_mutex_unlock(&fd->bam_list_lock);
+                s->bl = NULL;
+            }
             if (!(s = cram_next_slice(fd, &c)))
                 return NULL;
             continue; /* In case slice contains no records */
@@ -3624,7 +3714,24 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
     c = fd->ctr;
     s = c->slice;
 
-    return cram_to_bam(fd->header, fd, s, cr, s->curr_rec-1, bam);
+    int policy = bam_get_mempolicy(*bam);
+    if (s->bl) {
+        // If the user owns the data then we just have to do a slow copy
+        if (policy & BAM_USER_OWNS_DATA) {
+            return bam_copy1(*bam, &s->bl->bams[s->curr_rec-1]) ? 0 : -1;
+        }
+
+        // Otherwise we'll copy the struct but swap the data pointers over
+        uint8_t *data = (*bam)->data;
+        uint32_t m_data = (*bam)->m_data;
+        **bam = s->bl->bams[s->curr_rec-1];
+        bam_set_mempolicy(*bam, policy);
+        s->bl->bams[s->curr_rec-1].data = data;
+        s->bl->bams[s->curr_rec-1].m_data = m_data;
+        return 0;
+    }
+
+    return cram_to_bam(fd->header, fd, s, cr, s->curr_rec-1, *bam);
 }
 
 /*
