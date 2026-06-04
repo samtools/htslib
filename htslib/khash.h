@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2014-2015, 2018, 2024-2025 Genome Research Ltd.
+   Copyright (C) 2014-2015, 2018, 2024-2026 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -297,8 +297,13 @@ static const double __ac_HASH_UPPER = 0.77;
 				}														\
 			}															\
 			if (h->n_buckets > new_n_buckets) { /* shrink the hash table */ \
-				h->keys = (khkey_t*)krealloc((void *)h->keys, new_n_buckets * sizeof(khkey_t)); \
-				if (kh_is_map) h->vals = (khval_t*)krealloc((void *)h->vals, new_n_buckets * sizeof(khval_t)); \
+				/* As we're shrinking, it should be safe to ignore (unlikely) realloc failures as the old buffer will still be left intact */ \
+				khkey_t *new_keys = (khkey_t*)krealloc((void *)h->keys, new_n_buckets * sizeof(khkey_t)); \
+				if (new_keys) h->keys = new_keys;						\
+				if (kh_is_map) {										\
+					khval_t *new_vals = (khval_t*)krealloc((void *)h->vals, new_n_buckets * sizeof(khval_t)); \
+					if (new_vals) h->vals = new_vals;					\
+				}														\
 			}															\
 			kfree(h->flags); /* free the working space */				\
 			h->flags = new_flags;										\
