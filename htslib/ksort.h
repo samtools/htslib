@@ -105,6 +105,7 @@ typedef struct {
 																		\
 		a2[0] = array;													\
 		a2[1] = temp? temp : (type_t*)hts_malloc_p(sizeof(type_t), n);	\
+		if (!a2[1]) return -1;											\
 		for (curr = 0, shift = 0; (1ul<<shift) < n; ++shift) {			\
 			a = a2[curr]; b = a2[1-curr];								\
 			if (shift == 0) {											\
@@ -219,6 +220,7 @@ typedef struct {
 		for (d = 2; 1ul<<d < n; ++d);									\
 		stack = (ks_isort_stack_t*)hts_malloc_ps(sizeof(ks_isort_stack_t), \
 			                           hts_prod_sat2(sizeof(size_t), d), 2); \
+		if (!stack) return -1;											\
 		top = stack; s = a; t = a + (n-1); d <<= 1;						\
 		while (1) {														\
 			if (s < t) {												\
