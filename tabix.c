@@ -54,7 +54,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only, cache_megs, download_index, separate_regs, threads;
+    int print_header, header_only, cache_megs, download_index, separate_regs, threads, is_multi;
 }
 args_t;
 
@@ -242,9 +242,6 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
             RELEASE_TPOOL(tpool.pool);
             error_errno("Could not open stdout");
         }
-        if (hts_set_thread_pool(out, &tpool) < 0) {
-            hts_log_info("Could not set thread pool to output file!");
-        }
         hts_idx_t *idx = bcf_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) {
             RELEASE_TPOOL(tpool.pool);
@@ -266,15 +263,26 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
         if ( !args->header_only )
         {
             assert(regs != NULL);
+            hts_itr_t *itr = NULL;
             bcf1_t *rec = bcf_init();
+            int num_itr = nregs;
+
             if (!rec) {
                 RELEASE_TPOOL(tpool.pool);
                 error_errno(NULL);
             }
-            for (i=0; i<nregs; i++)
+
+            if (args->is_multi) {
+                itr = bcf_itr_regarray(idx, hdr, regs, nregs);
+                num_itr = 1; // Only need to run the loop below once
+            }
+
+            for (i=0; i<num_itr; i++)
             {
                 int ret, found = 0;
-                hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
+                if (!args->is_multi) {
+                    itr = bcf_itr_querys(idx,hdr,regs[i]);
+                }
                 if (!itr) continue;
                 while ((ret = bcf_itr_next(fp, itr, rec)) >=0 )
                 {
@@ -343,6 +351,9 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
         {
             int nseq;
             const char **seq = NULL;
+            hts_itr_t *itr = NULL;
+            int num_itr = nregs;
+
             if ( reg_idx ) {
                 seq = tbx_seqnames(tbx, &nseq);
                 if (!seq) {
@@ -350,10 +361,18 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                     error_errno("Failed to get sequence names list");
                 }
             }
-            for (i=0; i<nregs; i++)
+
+            if (args->is_multi) {
+                itr = tbx_itr_regarray(tbx, regs, nregs);
+                num_itr = 1; // Only need to run the loop below once
+            }
+
+            for (i=0; i<num_itr; i++)
             {
                 int ret, found = 0;
-                hts_itr_t *itr = tbx_itr_querys(tbx, regs[i]);
+                if (!args->is_multi) {
+                    itr = tbx_itr_querys(tbx, regs[i]);
+                }
                 if ( !itr ) continue;
                 while ((ret = tbx_itr_next(fp, tbx, itr, &str)) >= 0)
                 {
@@ -603,9 +622,12 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -r, --reheader FILE        replace the header with the content of FILE\n");
     fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
+    fprintf(fp, "   -u, --unique               only output regions once, even if they overlap\n");
+    fprintf(fp, "                              (cannot be used with --separate-regions)\n");
     fprintf(fp, "   -D                         do not download the index file\n");
     fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
     fprintf(fp, "       --separate-regions     separate the output by corresponding regions\n");
+    fprintf(fp, "                              (cannot be used with -u, --unique)\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "   -@, --threads INT          number of additional threads to use [0]\n");
     fprintf(fp, "\n");
@@ -652,11 +674,12 @@ int main(int argc, char *argv[])
         {"cache", required_argument, NULL, 4},
         {"separate-regions", no_argument, NULL, 5},
         {"threads", required_argument, NULL, '@'},
+        {"unique", no_argument, NULL, 'u'},
         {NULL, 0, NULL, 0}
     };
 
     char *tmp;
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D@:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:uD@:", loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -735,12 +758,20 @@ int main(int argc, char *argv[])
             case '@':   //thread count
                 args.threads = atoi(optarg);
                 break;
+            case 'u':
+                args.is_multi = 1;
+                break;
             default: return usage(stderr, EXIT_FAILURE);
         }
     }
 
     if (new_line_skip >= 0)
         conf.line_skip = new_line_skip;
+
+    if (args.is_multi && args.separate_regs) {
+        fprintf(stderr, "tabix: --separate-regions cannot be used with -u\n\n");
+        return usage(stderr, EXIT_FAILURE);
+    }
 
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 

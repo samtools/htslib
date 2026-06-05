@@ -145,6 +145,13 @@ Similar to
 .B -R
 but the entire input will be read sequentially and regions not listed in FILE will be skipped.
 .TP
+.B "-u, --unique"
+Only print output lines once,
+even if they are covered more than once in the regions list.
+
+This option cannot be used with
+.B --separate-regions.
+.TP
 .BI "-D "
 Do not download the index file before opening it. Valid for remote files only.
 .TP
@@ -162,6 +169,9 @@ and the user needs to quickly see which file records belong to which region.
 For this, a line with the name of the region, preceded by the file specific
 comment symbol, is inserted in the output before its corresponding group of
 records.
+
+This option cannot be used with
+.B --unique.
 .TP
 .BI "--verbosity " INT
 Set verbosity of logging messages printed to stderr.
