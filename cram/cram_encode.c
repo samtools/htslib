@@ -983,16 +983,8 @@ static int cram_allocate_block(cram_codec *codec, cram_slice *s, int ds_id) {
         codec->out = s->block[0];
         break;
 
-    // Codecs which don't use external blocks
-    case E_CONST_BYTE:
-    case E_CONST_INT:
-       codec->out = NULL;
-       break;
-
     // Codecs that emit directly to external blocks
     case E_EXTERNAL:
-    case E_VARINT_UNSIGNED:
-    case E_VARINT_SIGNED:
         if (!(s->block[ds_id] = cram_new_block(EXTERNAL, ds_id)))
             return -1;
         codec->u.external.content_id = ds_id;
@@ -2862,13 +2854,9 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                 cram_byte_array_len_encoder e;
                 cram_stats st;
 
-                if (CRAM_MAJOR_VERS(fd->version) <= 3) {
-                    e.len_encoding = E_HUFFMAN;
-                    e.len_dat = NULL; // will get codes from st
-                } else {
-                    e.len_encoding = E_CONST_INT;
-                    e.len_dat = NULL; // will get codes from st
-                }
+                e.len_encoding = E_HUFFMAN;
+                e.len_dat = NULL; // will get codes from st
+
                 memset(&st, 0, sizeof(st));
                 if (cram_stats_add(&st, 1) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
@@ -2887,13 +2875,9 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                 cram_byte_array_len_encoder e;
                 cram_stats st;
 
-                if (CRAM_MAJOR_VERS(fd->version) <= 3) {
-                    e.len_encoding = E_HUFFMAN;
-                    e.len_dat = NULL; // will get codes from st
-                } else {
-                    e.len_encoding = E_CONST_INT;
-                    e.len_dat = NULL; // will get codes from st
-                }
+                e.len_encoding = E_HUFFMAN;
+                e.len_dat = NULL; // will get codes from st
+
                 memset(&st, 0, sizeof(st));
                 if (cram_stats_add(&st, 2) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
@@ -2911,13 +2895,9 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                 cram_byte_array_len_encoder e;
                 cram_stats st;
 
-                if (CRAM_MAJOR_VERS(fd->version) <= 3) {
-                    e.len_encoding = E_HUFFMAN;
-                    e.len_dat = NULL; // will get codes from st
-                } else {
-                    e.len_encoding = E_CONST_INT;
-                    e.len_dat = NULL; // will get codes from st
-                }
+                e.len_encoding = E_HUFFMAN;
+                e.len_dat = NULL; // will get codes from st
+
                 memset(&st, 0, sizeof(st));
                 if (cram_stats_add(&st, 4) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);

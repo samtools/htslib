@@ -206,19 +206,7 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
      * Simple policy that everything is external unless it can be
      * encoded using zero bits as a unary item huffman table.
      */
-    if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-        // Note, we're assuming integer data here as we don't have the
-        // type passed in.  Cram_encoder_init does know the type and
-        // will convert to E_CONST_BYTE or E_EXTERNAL as appropriate.
-        if (nvals == 1)
-            return E_CONST_INT;
-        else if (nvals == 0 || min_val < 0)
-            return E_VARINT_SIGNED;
-        else
-            return E_VARINT_UNSIGNED;
-    } else {
-        return nvals <= 1 ? E_HUFFMAN : E_EXTERNAL;
-    }
+    return nvals <= 1 ? E_HUFFMAN : E_EXTERNAL;
 }
 
 void cram_stats_free(cram_stats *st) {
