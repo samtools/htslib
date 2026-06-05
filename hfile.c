@@ -126,6 +126,7 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
     fp->limit = &fp->buffer[capacity];
 
     fp->offset = 0;
+    fp->readahead_limit = 0;
     fp->at_eof = 0;
     fp->mobile = 1;
     fp->readonly = (strchr(mode, 'r') && ! strchr(mode, '+'));
@@ -149,6 +150,7 @@ hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
     fp->limit = &fp->buffer[buf_size];
 
     fp->offset = 0;
+    fp->readahead_limit = 0;
     fp->at_eof = 1;
     fp->mobile = 0;
     fp->readonly = (strchr(mode, 'r') && ! strchr(mode, '+'));
@@ -497,7 +499,13 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
     fp->at_eof = 0;
 
     fp->offset = pos;
+    fp->readahead_limit = 0;  // Clear hint after seek
     return pos;
+}
+
+void hfile_set_readahead_limit(hFILE *fp, off_t limit)
+{
+    fp->readahead_limit = limit;
 }
 
 int hclose(hFILE *fp)
