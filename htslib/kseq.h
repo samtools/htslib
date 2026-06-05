@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013, 2018, 2020, 2023 Genome Research Ltd.
+   Copyright (C) 2013, 2018, 2020, 2023, 2026 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -30,6 +30,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include "kstring.h"
 
@@ -63,8 +64,10 @@
 	SCOPE kstream_t *ks_init(type_t f) \
 	{ \
 		kstream_t *ks = (kstream_t*)calloc(1, sizeof(kstream_t)); \
+		if (!ks) return NULL; \
 		ks->f = f; ks->bufsize = __bufsize; \
 		ks->buf = (unsigned char*)malloc(__bufsize); \
+		if (!ks->buf) { free(ks); return NULL; } \
 		return ks; \
 	} \
 	SCOPE void ks_destroy(kstream_t *ks) \
@@ -122,7 +125,7 @@
 				for (i = ks->begin; i < ks->end; ++i) \
 					if (isspace(ks->buf[i]) && ks->buf[i] != ' ') break;  \
 			} else i = 0; /* never come to here! */ \
-			(void) ks_expand(str, i - ks->begin + 1); \
+			if (ks_expand(str, i - ks->begin + 1) < 0) { return -4; } \
             seek_pos += i - ks->begin; if ( i < ks->end ) seek_pos++; \
 			gotany = 1; \
 			memcpy(str->s + str->l, ks->buf + ks->begin, i - ks->begin);  \
@@ -135,9 +138,10 @@
 		} \
 		if (!gotany && ks_eof(ks)) return -1; \
         ks->seek_pos += seek_pos; \
-		if (str->s == 0) { \
-			str->m = 1; \
+		if (!str->s) { \
 			str->s = (char*)calloc(1, 1); \
+			if (!str->s) return -4; \
+			str->m = 1; \
 		} else if (delimiter == KS_SEP_LINE && str->l > 1 && str->s[str->l-1] == '\r') --str->l; \
 		str->s[str->l] = '\0';											\
 		return str->l; \
@@ -168,6 +172,7 @@
 	SCOPE kseq_t *kseq_init(type_t fd)									\
 	{																	\
 		kseq_t *s = (kseq_t*)calloc(1, sizeof(kseq_t));					\
+		if (!s) return NULL;											\
 		s->f = ks_init(fd);												\
 		return s;														\
 	}																	\
@@ -180,11 +185,11 @@
 	}
 
 /* Return value:
-   >=0  length of the sequence (normal)
+   >=0  length of the sequence, capped to INT_MAX (normal)
    -1   end-of-file
    -2   truncated quality string
    -3   error reading stream
-   -4   overflow error
+   -4   out of memory error
  */
 #define __KSEQ_READ(SCOPE) \
 	SCOPE int kseq_read(kseq_t *seq) \
@@ -198,36 +203,41 @@
 		} /* else: the first header char has been read in the previous call */ \
 		seq->comment.l = seq->seq.l = seq->qual.l = 0; /* reset all members */ \
 		if ((r=ks_getuntil(ks, 0, &seq->name, &c)) < 0) return r; /* normal exit: EOF or error */ \
-		if (c != '\n') ks_getuntil(ks, KS_SEP_LINE, &seq->comment, 0); /* read FASTA/Q comment */ \
-		if (seq->seq.s == 0) { /* we can do this in the loop below, but that is slower */ \
-			seq->seq.m = 256; \
-			seq->seq.s = (char*)malloc(seq->seq.m); \
+		if (c != '\n') { \
+			r = ks_getuntil(ks, KS_SEP_LINE, &seq->comment, 0); /* read FASTA/Q comment */ \
+			if (r < -1) return r; /* read error */ \
+		} \
+		if (!seq->seq.s) { /* we can do this in the loop below, but that is slower */ \
+			size_t sz = 256; \
+			seq->seq.s = (char*)malloc(sz); \
+			if (!seq->seq.s) return -4; \
+			seq->seq.m = sz; \
 		} \
 		while ((c = ks_getc(ks)) >= 0 && c != '>' && c != '+' && c != '@') { \
 			if (c == '\n') continue; /* skip empty lines */ \
 			seq->seq.s[seq->seq.l++] = c; /* this is safe: we always have enough space for 1 char */ \
-			ks_getuntil2(ks, KS_SEP_LINE, &seq->seq, 0, 1); /* read the rest of the line */ \
+			r = ks_getuntil2(ks, KS_SEP_LINE, &seq->seq, 0, 1); /* read the rest of the line */ \
+			if (r < -1) return r; /* read error */ \
 		} \
+		if (c < -1) return c; /* read error */ \
 		if (c == '>' || c == '@') seq->last_char = c; /* the first header char has been read */	\
-		if (seq->seq.l + 1 >= seq->seq.m) { /* seq->seq.s[seq->seq.l] below may be out of boundary */ \
-			seq->seq.m = seq->seq.l + 2; \
-			kroundup32(seq->seq.m); /* rounded to the next closest 2^k */ \
-			if (seq->seq.l + 1 >= seq->seq.m) return -4; /* error: adjusting m overflowed */ \
-			seq->seq.s = (char*)realloc(seq->seq.s, seq->seq.m); \
-		} \
-		seq->seq.s[seq->seq.l] = 0;	/* null terminated string */ \
+		if (ks_expand(&seq->seq, 2) < 0) return -4; /* ensure space for NUL + 1 */ \
+		seq->seq.s[seq->seq.l] = 0;	/* NUL terminated string */ \
 		if (c != '+') return seq->seq.l; /* FASTA */ \
 		if (seq->qual.m < seq->seq.m) {	/* allocate memory for qual in case insufficient */ \
+			char *new_qual = (char*)realloc(seq->qual.s, seq->seq.m); \
+			if (!new_qual) return -4; \
+			seq->qual.s = new_qual; \
 			seq->qual.m = seq->seq.m; \
-			seq->qual.s = (char*)realloc(seq->qual.s, seq->qual.m); \
 		} \
 		while ((c = ks_getc(ks)) >= 0 && c != '\n'); /* skip the rest of '+' line */ \
+		if (c < -1) return c; /* read error */ \
 		if (c == -1) return -2; /* error: no quality string */ \
 		while ((c = ks_getuntil2(ks, KS_SEP_LINE, &seq->qual, 0, 1)) >= 0 && seq->qual.l < seq->seq.l); \
-		if (c == -3) return -3; /* stream error */ \
+		if (c <= -3) return c; /* stream error */ \
 		seq->last_char = 0;	/* we have not come to the next header line */ \
 		if (seq->seq.l != seq->qual.l) return -2; /* error: qual string is of a different length */ \
-		return seq->seq.l; \
+		return seq->seq.l < INT_MAX ? seq->seq.l : INT_MAX; \
 	}
 
 #define __KSEQ_TYPE(type_t)						\
