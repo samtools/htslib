@@ -103,21 +103,15 @@ typedef struct cram_stats {
 /* NB: matches java impl, not the spec */
 enum cram_encoding {
     E_NULL               = 0,
-    E_EXTERNAL           = 1,  // Only for BYTE type in CRAM 4
-    E_GOLOMB             = 2,  // Not in CRAM 4
-    E_HUFFMAN            = 3,  // Not in CRAM 4
+    E_EXTERNAL           = 1,
+    E_GOLOMB             = 2,
+    E_HUFFMAN            = 3,
     E_BYTE_ARRAY_LEN     = 4,
     E_BYTE_ARRAY_STOP    = 5,
-    E_BETA               = 6,  // Not in CRAM 4
-    E_SUBEXP             = 7,  // Not in CRAM 4
-    E_GOLOMB_RICE        = 8,  // Not in CRAM 4
-    E_GAMMA              = 9,  // Not in CRAM 4
-
-    // CRAM 4 specific codecs
-    E_VARINT_UNSIGNED    = 41, // Specialisation of EXTERNAL
-    E_VARINT_SIGNED      = 42, // Specialisation of EXTERNAL
-    E_CONST_BYTE         = 43, // Alternative to HUFFMAN with 1 symbol
-    E_CONST_INT          = 44, // Alternative to HUFFMAN with 1 symbol
+    E_BETA               = 6,
+    E_SUBEXP             = 7,
+    E_GOLOMB_RICE        = 8,
+    E_GAMMA              = 9,
 
     // Total number of codecs, not a real one.
     E_NUM_CODECS,
