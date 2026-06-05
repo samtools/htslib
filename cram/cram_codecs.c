@@ -2228,12 +2228,12 @@ const char *cram_encoding2str(enum cram_encoding t) {
     }
 }
 
-static cram_codec *(*decode_init[])(cram_block_compression_hdr *hdr,
-                                    char *data,
-                                    int size,
-                                    enum cram_encoding codec,
-                                    enum cram_external_type option,
-                                    int version, varint_vec *vv) = {
+static cram_codec *(*decode_init[E_NUM_CODECS])(cram_block_compression_hdr *hdr,
+                                                char *data,
+                                                int size,
+                                                enum cram_encoding codec,
+                                                enum cram_external_type option,
+                                                int version, varint_vec *vv) = {
     // CRAM 3.0 valid codecs
     NULL, // null codec
     cram_external_decode_init,
@@ -2266,11 +2266,11 @@ cram_codec *cram_decoder_init(cram_block_compression_hdr *hdr,
     }
 }
 
-static cram_codec *(*encode_init[])(cram_stats *stx,
-                                    enum cram_encoding codec,
-                                    enum cram_external_type option,
-                                    void *opt,
-                                    int version, varint_vec *vv) = {
+static cram_codec *(*encode_init[E_NUM_CODECS])(cram_stats *stx,
+                                                enum cram_encoding codec,
+                                                enum cram_external_type option,
+                                                void *opt,
+                                                int version, varint_vec *vv) = {
     // CRAM 3.0 valid codecs
     NULL, // null codec
     cram_external_encode_init, // int/bytes in cram 3, byte only in cram 4
