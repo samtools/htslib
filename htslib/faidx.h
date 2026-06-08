@@ -136,7 +136,7 @@ faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
 /** @param  fn  File name of the FASTA file
     @return Pointer to a faidx_t struct on success, NULL on failure.
 
-This function is equivalent to fai_load3(fn, NULL, NULL, FAI_CREATE|FAI_CACHE);
+This function is equivalent to fai_load3(fn, NULL, NULL, FAI_CREATE);
 */
 HTSLIB_EXPORT
 faidx_t *fai_load(const char *fn);
@@ -168,7 +168,7 @@ faidx_t *fai_load3_format(const char *fn, const char *fnfai, const char *fngzi,
     @param  format FASTA or FASTQ file format
     @return Pointer to a faidx_t struct on success, NULL on failure.
 
-This function is equivalent to fai_load3_format(fn, NULL, NULL, FAI_CREATE|FAI_CACHE, format);
+This function is equivalent to fai_load3_format(fn, NULL, NULL, FAI_CREATE, format);
 */
 HTSLIB_EXPORT
 faidx_t *fai_load_format(const char *fn, enum fai_format_options format);
