@@ -69,6 +69,10 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     hts_itr_t *tbx_itr_regarray(tbx_t *tbx, char **regarray, unsigned int regcount);
 
     HTSLIB_EXPORT
+    hts_itr_t *tbx_itr_regions(const tbx_t *tbx, hts_reglist_t *reglist,
+                               unsigned int regcount);
+
+    HTSLIB_EXPORT
     int tbx_itr_next1(htsFile *htsfp, tbx_t *tbx, hts_itr_t *iter, void *r);
 
     HTSLIB_EXPORT

@@ -1353,6 +1353,25 @@ overlaps more than one region, it will only be returned once.
     hts_itr_t *bcf_itr_regarray(const hts_idx_t *idx, bcf_hdr_t *hdr,
                                 char **regarray, unsigned int regcount);
 
+/// Create a multi-region iterator from a hts_reglist_t regions list
+/** @param idx       Index
+    @param hdr       Header
+    @param reglist   Array of regions to iterate over
+    @param regcount  Number of items in reglist
+
+Each @p reglist entry should have the reference name in the `reg` field, an
+array of regions for that reference in `intervals` and the number of items
+in `intervals` should be stored in `count`.  No other fields need to be filled
+in.
+
+The iterator will return all reads overlapping the given regions.  If a read
+overlaps more than one region, it will only be returned once.
+ */
+
+    HTSLIB_EXPORT
+    hts_itr_t *bcf_itr_regions(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                               hts_reglist_t *reglist, unsigned int regcount);
+
     static inline int bcf_itr_next(htsFile *htsfp, hts_itr_t *itr, void *r) {
         if (!htsfp->is_bgzf) {
             hts_log_error("Only bgzf compressed files can be used with iterators");
