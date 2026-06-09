@@ -4877,6 +4877,13 @@ hts_itr_t *bcf_itr_regarray(const hts_idx_t *idx, bcf_hdr_t *hdr,
     return itr;
 }
 
+hts_itr_t *bcf_itr_regions(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                           hts_reglist_t *reglist, unsigned int regcount) {
+    return hts_itr_regions(idx, reglist, regcount, bcf_hdr_name2id_wrapper, hdr,
+                           hts_itr_multi_bam, bcf_readrec,
+                           bgzf_pseek, bgzf_ptell);
+}
+
 /*****************
  *** Utilities ***
  *****************/
