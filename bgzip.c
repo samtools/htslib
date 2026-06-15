@@ -513,7 +513,7 @@ int main(int argc, char **argv)
 
             if (!write_fname) {
                 if (bgzf_close(fp) < 0)
-                    error("Output close failed: Error %d\n", fp->errcode);
+                    error("Output close failed\n");
             }
 
             if (hclose(f_src) < 0)
