@@ -167,7 +167,13 @@ MACH_O_CURRENT_VERSION = 3.1.23
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
 
 version.h:
-	echo '#define HTS_VERSION_TEXT "$(PACKAGE_VERSION)"' > $@
+	@if test 'x$(PACKAGE_VERSION)' != x ; then \
+		echo "echo '#define HTS_VERSION_TEXT "'"$(PACKAGE_VERSION)"'"' > $@" ; \
+		echo '#define HTS_VERSION_TEXT "$(PACKAGE_VERSION)"' > $@ ; \
+	else \
+		echo "Error: PACKAGE_VERSION is not defined.  Check version.sh works." 1>&2 ; \
+		false ; \
+	fi
 
 print-version:
 	@echo $(PACKAGE_VERSION)
