@@ -1,6 +1,6 @@
 /*  poll_wrap_poll.c -- ref-cache wrapper around poll
 
-    Copyright (C) 2025 Genome Research Ltd.
+    Copyright (C) 2025-2026 Genome Research Ltd.
 
     Author: Rob Davies <rmd@sanger.ac.uk>
 
