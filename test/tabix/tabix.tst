@@ -1,4 +1,4 @@
-#    Copyright (C) 2017, 2024 Genome Research Ltd.
+#    Copyright (C) 2017, 2024, 2026 Genome Research Ltd.
 #
 #    Author: Robert Davies <rmd@sanger.ac.uk>
 #
