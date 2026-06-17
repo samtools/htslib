@@ -41,6 +41,15 @@ Updates
   (PR #2030, fixes #1930.  Requested by Adam Novak.
    Replaces the alternative PRs #1997 and #2022)
 
+* Remove references to the non-existant FAI_CACHE.
+  (PR #2033, fixes #2032.  Reported by John Marshall)
+
+* Improve hfile_s3.c error handling.
+  (PR #2036.  Thanks to John Marshall)
+
+* In VCF, improve the "not defined in the header" messages.
+  (PR #2007)
+
 
 Build Changes
 -------------
