@@ -1,0 +1,39 @@
+# Centos containerised builds
+name: Centos
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  centos-job:
+    runs-on: ubuntu-latest
+    container: quay.io/centos/centos:10
+    strategy:
+      fail-fast: false
+
+    steps:
+    - name: Install dependencies
+      run: |
+        yum install -y autoconf automake make gcc perl-Data-Dumper zlib-devel bzip2 bzip2-devel xz-devel curl-devel openssl-devel git perl-FindBin
+
+    - name: Checkout
+      # This is actions/checkout@v6.0.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        submodules: true
+        persist-credentials: false
+
+    - name: Configure
+      run: |
+        autoreconf -i
+        ./configure --enable-werror --enable-plugins CFLAGS='-g -O3 -std=c99 -pedantic'
+
+    - name: Compile
+      run: |
+          make -j5
+
+    - name: Check
+      run: |
+          make check
