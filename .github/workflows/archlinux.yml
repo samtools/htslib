@@ -1,0 +1,40 @@
+# ArchLinux containerised builds
+name: Archlinux
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  archlinux-job:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    strategy:
+      fail-fast: false
+
+    steps:
+    - name: Install dependencies
+      run: |
+        pacman -Syyu --noconfirm
+        pacman -Sy --noconfirm base-devel git libdeflate
+
+    - name: Checkout
+      # This is actions/checkout@v6.0.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        submodules: true
+        persist-credentials: false
+
+    - name: Configure
+      run: |
+        autoreconf -i
+        ./configure --enable-werror --enable-plugins CFLAGS='-g -O3 -std=c99 -pedantic -Wno-sign-conversion'
+
+    - name: Compile
+      run: |
+          make -j5
+
+    - name: Check
+      run: |
+          make check
