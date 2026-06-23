@@ -1,0 +1,39 @@
+# OpenSUSE containerised builds, using the rolling Tumbleweed distro
+name: OpenSUSE
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suse-job:
+    runs-on: ubuntu-latest
+    container: opensuse/tumbleweed
+    strategy:
+      fail-fast: false
+
+    steps:
+    - name: Install dependencies
+      run: |
+        zypper --non-interactive install git autoconf automake make gcc perl zlib-devel libbz2-devel xz-devel libcurl-devel libopenssl-devel diffutils llvm-clang
+
+    - name: Checkout
+      # This is actions/checkout@v6.0.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        submodules: true
+        persist-credentials: false
+
+    - name: Configure
+      run: |
+        autoreconf -i
+        ./configure --enable-werror --enable-plugins CFLAGS='-g -O3 -std=c99 -pedantic' CC=clang
+
+    - name: Compile
+      run: |
+          make -j5
+
+    - name: Check
+      run: |
+          make check
