@@ -58,6 +58,8 @@ Build Changes
   tests that were discontinued.
   (PR #2000)
 
+* Ensure PACKAGE_VERSION is set in the Makefile.
+  (PR #2038.  See also samtools/samtools#2337)
 
 Bug fixes
 ---------
