@@ -44,7 +44,8 @@ Updates
 * Remove references to the non-existant FAI_CACHE.
   (PR #2033, fixes #2032.  Reported by John Marshall)
 
-* Improve hfile_s3.c error handling.
+* The underlying causes of errors when accessing files in S3 buckets are now
+  reported more accurately.
   (PR #2036.  Thanks to John Marshall)
 
 * In VCF, improve the "not defined in the header" messages.
