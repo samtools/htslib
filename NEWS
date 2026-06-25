@@ -29,7 +29,7 @@ Updates
   broke it because it used a uint32_t field to store the line length.
   (PR #2008. fixes samtools/samtools#2331.  Reported by Ying Chen)
 
-* Parallel cram2bam.  Add more of the work into worker threads to speed
+* Parallel cram2bam.  Move more of the work into worker threads to speed
   everything up.
   (PR #2015)
 
@@ -64,7 +64,7 @@ Build Changes
 Bug fixes
 ---------
 
-* Fix a read buffer overflow and improve SQ LN field checking.
+* Fix a read buffer overflow and improve SQ LN field checking in CRAM encode.
   (PR #1999 fixes oss-fuzz issue 499447432)
 
 * A number of small fixes, often removing unused code or correcting misplaced
