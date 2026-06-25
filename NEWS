@@ -66,6 +66,7 @@ Bug fixes
 ---------
 
 * Fix a read buffer overflow and improve SQ LN field checking in CRAM encode.
+  The buffer overflow was in development code only and never in a release.
   (PR #1999 fixes oss-fuzz issue 499447432)
 
 * A number of small fixes, often removing unused code or correcting misplaced
