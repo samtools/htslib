@@ -93,7 +93,7 @@ Documentation updates
 ---------------------
 
 * Clarify how defaults work when building an index with tabix.
-  (PR #2002, addresses #1995. Query made by dariober)
+  (PR #2002, addresses #1995. Query made by Dario Beraldi)
 
 
 Noteworthy changes in release 1.23.1 (18th March 2026)
