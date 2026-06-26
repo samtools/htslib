@@ -1,6 +1,93 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Bug fixes
+---------
+
+* Better enforce QNAME length restrictions in the CRAM reader.
+  HTSlib limits the length of QNAMEs (and mate QNAMEs) to 254 characters to
+  match the maximum allowed by the BAM format.  To avoid problems with
+  handling very long names, enforcement of this limit has been moved to an
+  earlier stage in the CRAM decoder.
+  (PR #2046.  Reported by Claude and Ada Logics.
+   https://github.com/samtools/htslib/security/advisories/GHSA-2jx2-wm7f-rv9m)
+
+* Fix incorrect block pointer caching in CRAM v4 xpack and xrle codecs.
+  (Commits d66a77d, c0b5037.  Reported by Trail of Bits and Anthropic.
+   https://github.com/samtools/htslib/security/advisories/GHSA-6q7c-m967-9v37)
+
+* Several undefined behaviour fixes co-authored with Team Atlanta.
+  - Missing checks that xpack and xrle codecs have enough input data.
+  - Possible integer overflows when checking input size for beta,
+    xpack and xrle codecs.
+  - Some errors were incorrectly ignored in the xdelta, xpack and xrle codecs.
+  - Divide-by-zeros in cram_xpack_decode_char and cram_xdelta_decode.
+  - Oversized shift in cram_subexp_decode.
+  (PR #2025, #2026, #2046; commits 3eb519 to 76147e. Reported by Team Atlanta.
+   https://github.com/samtools/htslib/security/advisories/GHSA-rjqv-xg3q-g423
+   https://github.com/samtools/htslib/security/advisories/GHSA-hg3g-v57p-459q)
+
+* Bounds-check refid when loading a CRAM .crai index.
+  (PR #2029.  Thanks to Sidhartha Kumar.
+   https://github.com/samtools/htslib/security/advisories/GHSA-28r7-prwc-hf5c)
+
+* Improve checks of record consitency in the BCF reader, and disallow
+  excessively large FORMAT entries.
+  (PR #2047.  Reported by VulnSeeker Security Research.
+   https://github.com/samtools/htslib/security/advisories/GHSA-2wm6-8hgm-7g92)
+
+* Improve validation of faidx index entries.
+  (PR #2008.
+   https://github.com/samtools/htslib/security/advisories/GHSA-4hjq-r829-8c8v)
+
+* Fix s3_seek returning wrong offset on cache-hit.
+  This caused unreliability reading of S3 data when using the
+  multi-region iterator. The bug affects 1.23 and 1.23.1.
+  Releases prior to 1.23 were unaffected.
+  (PR #2012.  Thanks to Nick Edwards.
+   Also fixes #2043 reported by Andrew J. Tock.)
+
+* Protect against uninitialised variable read with CRAM X_NOSZ codecs.
+  (PR #2023, fixes #2021.  Reported by Jiami Lin)
+
+* Fix a possible crash when using nonsensical embed_ref=2,no_ref CRAM encode
+  options.
+  (PR #2048)
+
+* Bug fix CRAM v4 CRAM_FLAG_EXPLICIT_TLEN option.
+  (PR #1993)
+
+* Remove a signed overflow bug in bgzf_read_small.
+  (PR #2013)
+
+* Fix problem that caused hfile_libcurl to fail on platforms that disable ftp
+  in their libcurl builds.
+  (PR #2041)
+
+* Small fixes to fix misplaced NULL checks, remove unused variables, and
+  ensure the package builds without warnings on newer compilers.
+  (PR #1992, #2004, #2010, #2028)
+
+* In bgzip and tabix, when handling errors, don't try to access the
+  BGZF::errcode field after calling bgzf_close() as it may no longer be valid.
+  (PR #2035, #2042)
+
+* Fix some memory leaks on failing to build or load an index
+  (PR #2049)
+
+Other Updates
+-------------
+
+* The underlying causes of errors when accessing files in S3 buckets are now
+  reported more accurately.
+  (PR #2036.  Thanks to John Marshall)
+
+Build Changes
+-------------
+
+* The htscodecs submodule is updated to v1.6.7.
+  (PR #2040)
+
 Noteworthy changes in release 1.23.1 (18th March 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
