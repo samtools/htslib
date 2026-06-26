@@ -90,6 +90,9 @@ Bug fixes
 * Bounds-check refid when loading a CRAM .crai index.
   (PR #2029.  Thanks to Sidhartha Kumar)
 
+* In bgzip and tabix, when handling errors, don't try to access the
+  BGZF::errcode field after calling bgzf_close() as it may no longer be valid.
+  (PR #2035, #2042)
 
 Documentation updates
 ---------------------
