@@ -572,7 +572,7 @@ int main(int argc, char **argv)
                 error("Can not write index for stdin data without index filename, use -I option to set index file.\n");
             }
 
-            if ( bgzf_close(fp)<0 ) error("Close failed: Error %d\n",fp->errcode);
+            if ( bgzf_close(fp)<0 ) error("Close failed\n");
         }
         else
         {
@@ -717,7 +717,7 @@ int main(int argc, char **argv)
             start = start_reg;
             end = end_reg;
             free(buffer);
-            if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
+            if (bgzf_close(fp) < 0) error("Close failed\n");
 
             if (statfilename) {
                 if (!write_fname) {
@@ -762,7 +762,7 @@ int main(int argc, char **argv)
             }
 
             if (bgzf_close(fp) < 0)
-                error("Output close failed: Error %d\n", fp->errcode);
+                error("Output close failed\n");
         } else {
             close(f_dst);
         }
