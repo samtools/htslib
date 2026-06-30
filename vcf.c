@@ -2171,14 +2171,22 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
+        // Enforce the same 2GiB limit on FORMAT data items as VCF does,
+        // to prevent issues where multiplications might overflow.
+        // There's already a limit of 4GiB for all FORMAT items due to
+        // the type of l_indiv in the BCF format, so this limits data for each
+        // key to half the maximum possible.
+        uint64_t ndata = (uint64_t) num * (uint64_t) rec->n_sample;
+        if (ndata > (INT_MAX >> bcf_type_shift[type])) goto too_many_indiv;
+        bytes = (size_t) ndata << bcf_type_shift[type]; // Now safe
+        if (end - ptr < bytes) goto bad_indiv;
+
         if (idgt >= 0 && idgt == key) {
             // check first GT phasing bit and fix up if necessary
             if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
                 err |= BCF_ERR_TAG_INVALID;
             }
         } else {
-            bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
-            if (end - ptr < bytes) goto bad_indiv;
             ptr += bytes;
         }
     }
@@ -2208,6 +2216,10 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
  bad_indiv:
     hts_log_error("Bad BCF record at %s:%"PRIhts_pos" - individuals section malformed or too short", bcf_seqname_safe(hdr,rec), rec->pos+1);
+    return -2;
+
+ too_many_indiv:
+    hts_log_error("Bad BCF record at %s:%"PRIhts_pos" - individuals section data too large", bcf_seqname_safe(hdr,rec), rec->pos+1);
     return -2;
 }
 
