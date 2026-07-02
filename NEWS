@@ -74,7 +74,11 @@ Bug fixes
   (PR #1992, PR #1993, PR #2004, PR #2010)
 
 * Fix s3_seek returning wrong offset on cache-hit.
-  (PR #2012.  Thanks to Nick Edwards)
+  This caused unreliability reading of S3 data when using the
+  multi-region iterator. The bug affects 1.23 and 1.23.1.
+  Releases prior to 1.23 were unaffected.
+  (PR #2012.  Thanks to Nick Edwards.
+   Also fixes #2043 reported by Andrew J. Tock.)
 
 * Remove a signed overflow bug in bgzf_read_small.
   (PR #2013)
