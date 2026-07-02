@@ -94,6 +94,9 @@ Bug fixes
   BGZF::errcode field after calling bgzf_close() as it may no longer be valid.
   (PR #2035, #2042)
 
+* Speed up hts_parse_decimal() handling of oversized exponents
+  (PR #2045)
+
 Documentation updates
 ---------------------
 

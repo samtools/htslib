@@ -3923,8 +3923,8 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     }
 
     e -= decimals;
-    while (e > 0) n *= 10, e--;
-    while (e < 0) lost += n % 10, n /= 10, e++;
+    while (e > 0 && n) n *= 10, e--;
+    while (e < 0 && n) lost += n % 10, n /= 10, e++;
 
     if (lost > 0) {
         hts_log_warning("Discarding fractional part of %.*s", (int)(s - str), str);
