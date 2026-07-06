@@ -1023,6 +1023,7 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
 err:
     bam_destroy1(b);
     hts_idx_destroy(idx);
+    sam_hdr_destroy(h);
     return NULL;
 }
 
