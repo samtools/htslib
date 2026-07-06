@@ -301,6 +301,10 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
                        fd->index_sz * sizeof(*fd->index) - index_end);
             }
             idx = &fd->index[e.refid+1];
+            if (idx->e) {
+                hts_log_error("Index is not sorted");
+                goto fail;
+            }
             idx->refid = e.refid;
             idx->start = INT_MIN;
             idx->end   = INT_MAX;
@@ -780,11 +784,12 @@ int cram_index_container(cram_fd *fd,
  *         negative on failure (-1 for read failure, -4 for write failure)
  */
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
-    cram_container *c;
+    cram_container *c = NULL;
     off_t cpos, hpos;
-    BGZF *fp;
+    BGZF *fp = NULL;
     kstring_t fn_idx_str = {0};
     int64_t last_ref = -9, last_start = -9;
+    int ret = -1;
 
     // Useful for cram_index_build_multiref
     cram_set_option(fd, CRAM_OPT_REQUIRED_FIELDS, SAM_RNAME | SAM_POS | SAM_CIGAR);
@@ -813,30 +818,29 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         hpos = htell(fd->fp);
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
-            return -1;
+            goto err;
         assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
 
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
         if (!c->comp_hdr)
-            return -1;
+            goto err;
 
         if (c->ref_seq_id == last_ref && c->ref_seq_start < last_start) {
             hts_log_error("CRAM file is not sorted by chromosome / position");
-            return -2;
+            ret = -2;
+            goto err;
         }
         last_ref = c->ref_seq_id;
         last_start = c->ref_seq_start;
 
-        if (cram_index_container(fd, c, fp, cpos) < 0) {
-            bgzf_close(fp);
-            return -1;
-        }
+        if (cram_index_container(fd, c, fp, cpos) < 0)
+            goto err;
 
         off_t next_cpos = htell(fd->fp);
         if (next_cpos != hpos + c->length) {
             hts_log_error("Length %"PRId32" in container header at offset %lld does not match block lengths (%lld)",
                           c->length, (long long) cpos, (long long) next_cpos - hpos);
-            return -1;
+            goto err;
         }
         cpos = next_cpos;
 
@@ -848,6 +852,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     }
 
     return (bgzf_close(fp) >= 0)? 0 : -4;
+
+ err:
+    if (fp)
+        bgzf_close(fp);
+    if (c)
+        cram_free_container(c);
+    return ret;
 }
 
 // internal recursive step
