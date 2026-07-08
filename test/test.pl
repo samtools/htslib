@@ -882,6 +882,14 @@ sub test_view
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
 
+    # Check embed_ref=2 and no_ref, which is a nonsensical case, on del only
+    $ersam = "embed_del.sam";
+    $ercram = "embed_del.tmp.cram";
+    $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -o embed_ref=2 -o no_ref -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+
     if ($test_view_failures == 0) {
         passed($opts, "embed_ref=2 tests");
     } else {

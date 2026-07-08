@@ -1643,8 +1643,14 @@ static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
         }
 
         case BAM_CDEL:
-        case BAM_CREF_SKIP:
+        case BAM_CREF_SKIP: {
+            int len = bam_cigar_oplen(cigar[i]);
+            if (extend_ref(ref, hist, iref+ref_start + len,
+                           ref_start, ref_end, ref_end_alloc) < 0)
+                return -1;
             iref += bam_cigar_oplen(cigar[i]);
+            break;
+        }
         }
     }
 
