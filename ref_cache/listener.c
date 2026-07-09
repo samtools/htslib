@@ -42,6 +42,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "misc.h"
 #include "options.h"
 #include "poll_wrap.h"
+#include "../htslib/hts_alloc.h"
 
 struct Listeners {
   size_t nsocks;
@@ -129,7 +130,7 @@ Listeners * get_listen_sockets(int port) {
         return NULL;
     }
 
-    lsocks->sockets = malloc(count * sizeof(*lsocks->sockets));
+    lsocks->sockets = hts_malloc_p(sizeof(*lsocks->sockets), count);
     if (lsocks->sockets == NULL) {
         perror("Allocating socket list");
         freeaddrinfo(addr_list);
@@ -209,7 +210,7 @@ Listeners * adopt_listen_sockets(int min_sock_fd, int num_fds) {
     if (lsocks == NULL)
         return NULL;
 
-    lsocks->sockets = malloc((size_t) num_fds * sizeof(*lsocks->sockets));
+    lsocks->sockets = hts_malloc_p(sizeof(*lsocks->sockets), (size_t) num_fds);
     if (lsocks->sockets == NULL) {
         perror("Allocating socket list");
         free(lsocks);

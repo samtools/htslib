@@ -129,6 +129,10 @@ extern "C" {
     HTSLIB_EXPORT
     int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp);
 
+    /* Convenience function to call kgetline with a FILE * */
+    HTSLIB_EXPORT
+    int kfgetline(kstring_t *s, FILE *fp);
+
     /* kgetline2() uses the supplied hgetln()-like function to read a "\n"-
      * or "\r\n"-terminated line from fp.  The line read is appended to the
      * ksring without its terminator and 0 is returned; EOF is returned at

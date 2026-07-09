@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2025 Genome Research Ltd.
+#    Copyright (C) 2015-2026 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -35,7 +35,7 @@ m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2020-2025 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2020-2026 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
@@ -160,6 +160,35 @@ HTS_CHECK_COMPILE_FLAGS_NEEDED([avx512f], [-mavx512f -mpopcnt],
   AC_SUBST([hts_cflags_avx512])
   AC_DEFINE([HAVE_POPCNT],1,[Defined to 1 if rANS source using popcnt can be compiled.])
   AC_DEFINE([HAVE_AVX512],1,[Defined to 1 if rANS source using AVX512F can be compiled.])
+])
+
+dnl Check for presence of builtin_clz
+AC_MSG_CHECKING([for working __builtin_clz])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+  int z = 10;
+  if (__builtin_clz(z)) {
+    return 0;
+  }
+])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE___BUILTIN_CLZ], 1,
+            [Defined to 1 if __builtin_clz works])
+], [
+  AC_MSG_RESULT([no])
+])
+
+dnl Check for presence of builtin_prefetch
+AC_MSG_CHECKING([for working __builtin_prefetch])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+  int z = 10;
+  __builtin_prefetch(&z);
+  return 0;
+])], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([HAVE___BUILTIN_PREFETCH], 1,
+            [Defined to 1 if __builtin_prefetch works])
+], [
+  AC_MSG_RESULT([no])
 ])
 
 dnl Check for working __builtin_cpu_supports (ssse3 is broken on some clangs)

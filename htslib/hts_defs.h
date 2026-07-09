@@ -1,6 +1,6 @@
 /*  hts_defs.h -- Miscellaneous definitions.
 
-    Copyright (C) 2013-2015,2017, 2019-2020, 2024 Genome Research Ltd.
+    Copyright (C) 2013-2015,2017, 2019-2020, 2024, 2026 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -136,6 +136,19 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTSLIB_EXPORT __global
 #else
 #define HTSLIB_EXPORT
+#endif
+
+// Prefetch implementations.
+// We only support a basic implementation here
+#ifdef HAVE___BUILTIN_PREFETCH
+static inline void hts_prefetch(void *p) {
+    __builtin_prefetch(p);
+}
+#else
+static inline void hts_prefetch(void *p) {
+    // Fetch and discard is quite close to a genuine prefetch
+    *(volatile char *)p;
+}
 #endif
 
 #endif

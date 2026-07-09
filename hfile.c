@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2021, 2023-2024 Genome Research Ltd.
+    Copyright (C) 2013-2021, 2023-2025 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -295,6 +295,19 @@ char *hgets(char *buffer, int size, hFILE *fp)
         return NULL;
     }
     return hgetln(buffer, size, fp) > 0 ? buffer : NULL;
+}
+
+// Wrap around hgets() to get the right signature for kgets_func
+static char *hgets_wrapper(char *buffer, int size, void *fp)
+{
+    return hgets(buffer, size, (hFILE *) fp);
+}
+
+int khgetline(struct kstring_t *kstr, hFILE *fp)
+{
+    if (!kstr || !fp)
+        return EOF;
+    return kgetline(kstr, hgets_wrapper, fp);
 }
 
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)

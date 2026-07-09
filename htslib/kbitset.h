@@ -55,6 +55,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include "hts_alloc.h"
 
 #define KBS_ELTBITS (CHAR_BIT * sizeof (unsigned long))
 #define KBS_ELT(i)  ((i) / KBS_ELTBITS)
@@ -79,7 +80,7 @@ static inline kbitset_t *kbs_init2(size_t ni, int fill)
 {
 	size_t n = (ni + KBS_ELTBITS-1) / KBS_ELTBITS;
 	kbitset_t *bs =
-		(kbitset_t *) malloc(sizeof(kbitset_t) + n * sizeof(unsigned long));
+		(kbitset_t *) hts_malloc_pse(sizeof(unsigned long), n, 0, sizeof(kbitset_t));
 	if (bs == NULL) return NULL;
 	bs->n = bs->n_max = n;
 	memset(bs->b, fill? ~0 : 0, n * sizeof (unsigned long));
@@ -104,7 +105,7 @@ static inline int kbs_resize2(kbitset_t **bsp, size_t ni_new, int fill)
 	size_t n_new = (ni_new + KBS_ELTBITS-1) / KBS_ELTBITS;
 	if (bs == NULL || n_new > bs->n_max) {
 		bs = (kbitset_t *)
-			realloc(*bsp, sizeof(kbitset_t) + n_new * sizeof(unsigned long));
+			hts_realloc_pse(*bsp, sizeof(unsigned long), n_new, 0, sizeof(kbitset_t));
 		if (bs == NULL) return -1;
 
 		bs->n_max = n_new;

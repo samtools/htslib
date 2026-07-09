@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2025 Genome Research Ltd.
+    Copyright (C) 2012-2026 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -46,6 +46,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
 #include "hts_internal.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/kstring.h"
@@ -248,7 +249,7 @@ static int bcf_hdr_add_sample_len(bcf_hdr_t *h, const char *s, size_t len)
 
     // Ensure space is available in h->samples
     size_t n = kh_size(d);
-    char **new_samples = realloc(h->samples, sizeof(char*) * (n + 1));
+    char **new_samples = hts_realloc_ps(h->samples, sizeof(*h->samples), n, 1);
     if (!new_samples) {
         free(sdup);
         return -1;
@@ -324,7 +325,7 @@ int bcf_hdr_sync(bcf_hdr_t *h)
         {
             bcf_idpair_t *new_idpair;
             // this should be true only for i=2, BCF_DT_SAMPLE
-            new_idpair = (bcf_idpair_t*) realloc(h->id[i], kh_size(d)*sizeof(bcf_idpair_t));
+            new_idpair = hts_realloc_p(h->id[i], sizeof(bcf_idpair_t), kh_size(d));
             if (!new_idpair) return -1;
             h->n[i] = kh_size(d);
             h->id[i] = new_idpair;
@@ -381,9 +382,9 @@ bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec)
         if (!out->value) goto fail;
     }
     out->nkeys = hrec->nkeys;
-    out->keys = (char**) malloc(sizeof(char*)*hrec->nkeys);
+    out->keys = hts_malloc_p(sizeof(char*), hrec->nkeys);
     if (!out->keys) goto fail;
-    out->vals = (char**) malloc(sizeof(char*)*hrec->nkeys);
+    out->vals = hts_malloc_p(sizeof(char*), hrec->nkeys);
     if (!out->vals) goto fail;
     int i, j = 0;
     for (i=0; i<hrec->nkeys; i++)
@@ -442,14 +443,14 @@ int bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, size_t len)
     char **tmp;
     size_t n = hrec->nkeys + 1;
     assert(len > 0 && len < SIZE_MAX);
-    tmp = realloc(hrec->keys, sizeof(char*)*n);
+    tmp = hts_realloc_p(hrec->keys, sizeof(char*), n);
     if (!tmp) return -1;
     hrec->keys = tmp;
-    tmp = realloc(hrec->vals, sizeof(char*)*n);
+    tmp = hts_realloc_p(hrec->vals, sizeof(char*), n);
     if (!tmp) return -1;
     hrec->vals = tmp;
 
-    hrec->keys[hrec->nkeys] = (char*) malloc((len+1)*sizeof(char));
+    hrec->keys[hrec->nkeys] = hts_malloc_ps(sizeof(char), len, 1);
     if (!hrec->keys[hrec->nkeys]) return -1;
     memcpy(hrec->keys[hrec->nkeys],str,len);
     hrec->keys[hrec->nkeys][len] = 0;
@@ -471,7 +472,7 @@ int bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, size_t len, int i
             errno = ENOMEM;
             return -1;
         }
-        hrec->vals[i] = (char*) malloc((len+3)*sizeof(char));
+        hrec->vals[i] = hts_malloc_ps(sizeof(char), len, 3);
         if (!hrec->vals[i]) return -1;
         hrec->vals[i][0] = '"';
         memcpy(&hrec->vals[i][1],str,len);
@@ -484,7 +485,7 @@ int bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, size_t len, int i
             errno = ENOMEM;
             return -1;
         }
-        hrec->vals[i] = (char*) malloc((len+1)*sizeof(char));
+        hrec->vals[i] = hts_malloc_ps(sizeof(char), len, 1);
         if (!hrec->vals[i]) return -1;
         memcpy(hrec->vals[i],str,len);
         hrec->vals[i][len] = 0;
@@ -495,11 +496,11 @@ int bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, size_t len, int i
 int hrec_add_idx(bcf_hrec_t *hrec, int idx)
 {
     int n = hrec->nkeys + 1;
-    char **tmp = (char**) realloc(hrec->keys, sizeof(char*)*n);
+    char **tmp = hts_realloc_p(hrec->keys, sizeof(char*), n);
     if (!tmp) return -1;
     hrec->keys = tmp;
 
-    tmp = (char**) realloc(hrec->vals, sizeof(char*)*n);
+    tmp = hts_realloc_p(hrec->vals, sizeof(char*), n);
     if (!tmp) return -1;
     hrec->vals = tmp;
 
@@ -666,7 +667,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
 
     hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
     if (!hrec) { *len = -1; return NULL; }
-    hrec->key = (char*) malloc(sizeof(char)*(n+1));
+    hrec->key = hts_malloc_ps(sizeof(char), n, 1);
     if (!hrec->key) goto fail;
     memcpy(hrec->key,p,n);
     hrec->key[n] = 0;
@@ -676,7 +677,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     if ( *p!='<' ) // generic field, e.g. ##samtoolsVersion=0.1.18-r579
     {
         while ( *q && *q!='\n' ) q++;
-        hrec->value = (char*) malloc((q-p+1)*sizeof(char));
+        hrec->value = hts_malloc_p(sizeof(char), (q-p+1));
         if (!hrec->value) goto fail;
         memcpy(hrec->value, p, q-p);
         hrec->value[q-p] = 0;
@@ -1180,7 +1181,7 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
     // New record, needs to be added
     int n = hdr->nhrec + 1;
-    bcf_hrec_t **new_hrec = realloc(hdr->hrec, n*sizeof(bcf_hrec_t*));
+    bcf_hrec_t **new_hrec = hts_realloc_p(hdr->hrec, sizeof(bcf_hrec_t*), n);
     if (!new_hrec) {
         free(str.s);
         bcf_hdr_unregister_hrec(hdr, hrec);
@@ -2171,14 +2172,22 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
+        // Enforce the same 2GiB limit on FORMAT data items as VCF does,
+        // to prevent issues where multiplications might overflow.
+        // There's already a limit of 4GiB for all FORMAT items due to
+        // the type of l_indiv in the BCF format, so this limits data for each
+        // key to half the maximum possible.
+        uint64_t ndata = (uint64_t) num * (uint64_t) rec->n_sample;
+        if (ndata > (INT_MAX >> bcf_type_shift[type])) goto too_many_indiv;
+        bytes = (size_t) ndata << bcf_type_shift[type]; // Now safe
+        if (end - ptr < bytes) goto bad_indiv;
+
         if (idgt >= 0 && idgt == key) {
             // check first GT phasing bit and fix up if necessary
             if (updatephasing(ptr, end, &ptr, rec->n_sample, num, type)) {
                 err |= BCF_ERR_TAG_INVALID;
             }
         } else {
-            bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
-            if (end - ptr < bytes) goto bad_indiv;
             ptr += bytes;
         }
     }
@@ -2208,6 +2217,10 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
  bad_indiv:
     hts_log_error("Bad BCF record at %s:%"PRIhts_pos" - individuals section malformed or too short", bcf_seqname_safe(hdr,rec), rec->pos+1);
+    return -2;
+
+ too_many_indiv:
+    hts_log_error("Bad BCF record at %s:%"PRIhts_pos" - individuals section data too large", bcf_seqname_safe(hdr,rec), rec->pos+1);
     return -2;
 }
 
@@ -2618,7 +2631,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
                 hts_log_error("Couldn't open \"%s\"", fp->fn_aux);
                 goto error;
             }
-            while (tmp.l = 0, kgetline(&tmp, (kgets_func *) hgets, f) >= 0) {
+            while (tmp.l = 0, khgetline(&tmp, f) >= 0) {
                 char *tab = strchr(tmp.s, '\t');
                 if (tab == NULL) continue;
                 e |= (kputs("##contig=<ID=", &txt) < 0);
@@ -3180,6 +3193,8 @@ static int vcf_parse_format_dict2(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 return -1;
             }
             hts_log_warning("FORMAT '%s' at %s:%"PRIhts_pos" is not defined in the header, assuming Type=String", t, bcf_seqname_safe(h,v), v->pos+1);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
             kstring_t tmp = {0,0,0};
             int l;
             ksprintf(&tmp, "##FORMAT=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", t);
@@ -3772,7 +3787,7 @@ static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char 
     for (r = p; *r; ++r)
         if (*r == ';') ++n_flt;
     if (n_flt > max_n_flt) {
-        a_flt = malloc(n_flt * sizeof(*a_flt));
+        a_flt = hts_malloc_p(sizeof(*a_flt), n_flt);
         if (!a_flt) {
             hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
             v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
@@ -3788,7 +3803,10 @@ static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char 
         {
             // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
             // been already printed, but will enable tools like vcfcheck to proceed.
-            hts_log_warning("FILTER '%s' is not defined in the header", t);
+            hts_log_warning("FILTER '%s' at %s:%"PRIhts_pos" is not defined in the header",
+                            t, bcf_seqname_safe(h,v), v->pos+1);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
             kstring_t tmp = {0,0,0};
             int l;
             ksprintf(&tmp, "##FILTER=<ID=%s,Description=\"Dummy\">", t);
@@ -3847,7 +3865,10 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
         k = kh_get(vdict, d, key);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
         {
-            hts_log_warning("INFO '%s' is not defined in the header, assuming Type=String", key);
+            hts_log_warning("INFO '%s' at %s:%"PRIhts_pos" is not defined in the header, assuming Type=String",
+                            key, bcf_seqname_safe(h,v), v->pos+1);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
             kstring_t tmp = {0,0,0};
             int l;
             ksprintf(&tmp, "##INFO=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", key);
@@ -3878,7 +3899,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if (*t == ',') ++n_val;
             // Check both int and float size in one step for simplicity
             if (n_val > max_n_val) {
-                int32_t *a_tmp = (int32_t *)realloc(a_val, n_val * sizeof(*a_val));
+                int32_t *a_tmp = hts_realloc_p(a_val, sizeof(*a_val), n_val);
                 if (!a_tmp) {
                     hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
                     v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
@@ -4033,6 +4054,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     k = kh_get(vdict, d, p);
     if (k == kh_end(d)) {
         hts_log_warning("Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
+            if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
+                hts_log_warning("Missing headers may cause later processing to fail");
         v->errcode = BCF_ERR_CTG_UNDEF;
         if ((k = fix_chromosome(h, d, p)) == kh_end(d)) {
             hts_log_error("Could not add dummy header for contig '%s'", p);
@@ -4486,7 +4509,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                 // No real gain to be had in handling unpacked data here,
                 // but it doesn't cost us much in complexity either and
                 // it gives us flexibility.
-                fmt = malloc(v->n_fmt * sizeof(*fmt));
+                fmt = hts_malloc_p(sizeof(*fmt), v->n_fmt);
                 if (!fmt)
                     return -1;
             }
@@ -4823,6 +4846,37 @@ int bcf_idx_save(htsFile *fp) {
     return sam_idx_save(fp);
 }
 
+// Wrap around bcf_hdr_name2id() to get the right signature for hts_name2id_f
+static int bcf_hdr_name2id_wrapper(void *vhdr, const char *ref) {
+    return bcf_hdr_name2id((bcf_hdr_t *) vhdr, ref);
+}
+
+hts_itr_t *bcf_itr_querys1(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                           const char *region) {
+    return hts_itr_querys(idx, region, bcf_hdr_name2id_wrapper, hdr,
+                          hts_itr_query, bcf_readrec);
+}
+
+hts_itr_t *bcf_itr_regarray(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                            char **regarray, unsigned int regcount) {
+    hts_itr_t *itr = NULL;
+    hts_reglist_t *r_list = NULL;
+    int r_count = 0;
+
+    r_list = hts_reglist_create(regarray, regcount, &r_count, hdr,
+                                bcf_hdr_name2id_wrapper);
+    if (!r_list)
+        return NULL;
+
+    itr = hts_itr_regions(idx, r_list, r_count, bcf_hdr_name2id_wrapper, hdr,
+                          hts_itr_multi_bam, bcf_readrec,
+                          bgzf_pseek, bgzf_ptell);
+    if (!itr)
+        hts_reglist_free(r_list, r_count);
+
+    return itr;
+}
+
 /*****************
  *** Utilities ***
  *****************/
@@ -5020,7 +5074,7 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         int dict;
         for (dict=0; dict<2; dict++)    // BCF_DT_ID and BCF_DT_CTG
         {
-            src_hdr->transl[dict] = (int*) malloc(src_hdr->n[dict]*sizeof(int));
+            src_hdr->transl[dict] = hts_malloc_p(sizeof(int), src_hdr->n[dict]);
             for (i=0; i<src_hdr->n[dict]; i++)
             {
                 if ( !src_hdr->id[dict][i].key ) // gap left after removed BCF header lines
@@ -5264,7 +5318,7 @@ int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file)
     else
     {
         // Make new list and dictionary with desired samples
-        char **samples = (char**) malloc(sizeof(char*)*bcf_hdr_nsamples(hdr));
+        char **samples = hts_malloc_p(sizeof(char*), bcf_hdr_nsamples(hdr));
         vdict_t *new_dict, *d;
         int k, res;
         if (!samples) return -1;
@@ -5435,7 +5489,8 @@ static int bcf_set_variant_types(bcf1_t *b)
     bcf_dec_t *d = &b->d;
     if ( d->n_var < b->n_allele )
     {
-        bcf_variant_t *new_var = realloc(d->var, sizeof(bcf_variant_t)*b->n_allele);
+        bcf_variant_t *new_var = hts_realloc_p(d->var, sizeof(bcf_variant_t),
+                                              b->n_allele);
         if (!new_var)
             return -1;
         d->var = new_var;
@@ -5680,7 +5735,7 @@ int bcf_update_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *key
         int len = strlen(values[i]);
         if ( len > max_len ) max_len = len;
     }
-    char *out = (char*) malloc(max_len*n);
+    char *out = hts_malloc_p(max_len, n);
     if ( !out ) return -2;
     for (i=0; i<n; i++)
     {
@@ -6093,7 +6148,7 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     if ( *ndst < info->len )
     {
         *ndst = info->len;
-        *dst  = realloc(*dst, *ndst * size1);
+        *dst  = hts_realloc_p(*dst, *ndst, size1);
     }
 
     #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_regular, out_type_t) do { \
@@ -6154,7 +6209,7 @@ int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, c
     int nsmpl = bcf_hdr_nsamples(hdr);
     if ( !*dst )
     {
-        *dst = (char**) malloc(sizeof(char*)*nsmpl);
+        *dst = hts_malloc_p(sizeof(char*), nsmpl);
         if ( !*dst ) return -4;     // could not alloc
         (*dst)[0] = NULL;
     }
@@ -6214,7 +6269,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     if ( *ndst < fmt->n*nsmpl )
     {
         *ndst = fmt->n*nsmpl;
-        *dst  = realloc(*dst, *ndst*size1);
+        *dst  = hts_realloc_p(*dst, *ndst, size1);
         if ( !*dst ) return -4;     // could not alloc
     }
 

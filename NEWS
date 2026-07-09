@@ -1,3 +1,144 @@
+Noteworthy changes in release 1.24 (9th July 2026)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* NEW.  Contribution guidelines, Including sections on complexity, completeness,
+  signing and our AI policy.
+  (PR #2003)
+
+Updates
+-------
+
+* Remove CRAM v4.0 support.  The experimental CRAM v4 code was large, complex
+  and insufficiently tested.  With no real move toward v4 adoption we have
+  removed the code in order to reduce the likelihood of security issues.
+  (PR #2020 and PR #2031.
+   Reported by Trail of Bits and Anthropic:
+    https://github.com/samtools/htslib/security/advisories/GHSA-6q7c-m967-9v37
+   Reported by Team Atlanta:
+    https://github.com/samtools/htslib/security/advisories/GHSA-hg3g-v57p-459q
+    https://github.com/samtools/htslib/security/advisories/GHSA-rjqv-xg3q-g423)
+
+* Ensure indirect function calls have the correct type.  Some HTSlib interfaces
+  have function callbacks that are intended to be generic, so the function
+  signatures include a void * for data to be passed in.  While this mostly works
+  it is strictly undefined behaviour.  Some new wrapper functions and interfaces
+  are added to address this.
+  (PR #1994)
+
+* Add wrappers for malloc, realloc with a calloc-like interface.  This helps
+  avoid bugs due to integer wrap-around when calculating memory sizes.
+  (PR #2006)
+
+* Make faidx work with very long (>4 Gbyte!) lines. Although faidx should
+  support very long references, writing one longer than 4Gbases on a single line
+  broke it because it used a uint32_t field to store the line length.
+  (PR #2008. Fixes samtools/samtools#2331.  Reported by Ying Chen)
+
+* Parallel cram2bam.  Move more of the work into worker threads to speed
+  everything up.
+  (PR #2015)
+
+* Improve synced reader error checking.  Ensure memory failures are caught and
+  that error are propagated to callers.
+  (PR #2024)
+
+* Add tbx and bcf multi-region iterators.
+  (PR #2030, fixes #1930.  Requested by Adam Novak.
+   Replaces the alternative PRs #1997 and #2022)
+
+* Remove references to the non-existent FAI_CACHE.
+  (PR #2033, fixes #2032.  Reported by John Marshall)
+
+* The underlying causes of errors when accessing files in S3 buckets are now
+  reported more accurately.
+  (PR #2036.  Thanks to John Marshall)
+
+* In VCF, improve the "not defined in the header" messages.
+  (PR #2007)
+
+
+Build Changes
+-------------
+
+* Add Github actions builds for Linux and Mac OS.  This replaces the Cirrus CI
+  tests that were discontinued.
+  (PR #2000)
+
+* Ensure PACKAGE_VERSION is set in the Makefile.
+  (PR #2038.  See also samtools/samtools#2337)
+
+Bug fixes
+---------
+
+* Better enforce QNAME length restrictions in the CRAM reader.
+  HTSlib limits the length of QNAMEs (and mate QNAMEs) to 254 characters to
+  match the maximum allowed by the BAM format.  To avoid problems with
+  handling very long names, enforcement of this limit has been moved to an
+  earlier stage in the CRAM decoder.
+  (PR #2046.  Reported by Claude and Ada Logics.
+   https://github.com/samtools/htslib/security/advisories/GHSA-2jx2-wm7f-rv9m)
+
+* Bounds-check refid when loading a CRAM .crai index.
+  (PR #2029.  Thanks to Sidhartha Kumar.
+   https://github.com/samtools/htslib/security/advisories/GHSA-28r7-prwc-hf5c)
+
+* Improve checks of record consitency in the BCF reader, and disallow
+  excessively large FORMAT entries.
+  (PR #2047.  Reported by VulnSeeker Security Research.
+   https://github.com/samtools/htslib/security/advisories/GHSA-2wm6-8hgm-7g92)
+
+* Improve validation of faidx index entries.
+  (PR #2008.
+   https://github.com/samtools/htslib/security/advisories/GHSA-4hjq-r829-8c8v)
+
+* Several fixes co-authored by Team Atlanta.
+  - Possible integer overflow when checking input size for the beta codec.
+  - Oversized shift in cram_subexp_decode.
+  (PR #2025, #2046.  Thanks to Team Atlanta.
+   https://github.com/samtools/htslib/security/advisories/GHSA-rjqv-xg3q-g423)
+
+* Fix s3_seek returning wrong offset on cache-hit.
+  This caused unreliability reading of S3 data when using the
+  multi-region iterator. The bug affects 1.23 and 1.23.1.
+  Releases prior to 1.23 were unaffected.
+  (PR #2012.  Thanks to Nick Edwards.
+   Also fixes #2043 reported by Andrew J. Tock.)
+
+* Protect against uninitialised variable read with X_NOSZ codecs.
+  (PR #2023, fixes #2021.  Reported by Jiami Lin)
+
+* Fix a possible crash when using nonsensical embed_ref=2,no_ref CRAM encode
+  options.
+  (PR #2048)
+
+* Fix a read buffer overflow and improve SQ LN field checking.
+  The buffer overflow was in development code only and never in a release.
+  (PR #1999. Fixes oss-fuzz issue 499447432)
+
+* Small updates to fix misplaced NULL checks, remove unused variables, and
+  ensure the package builds without warnings on newer compilers.
+  (PR #1992, PR #1993, PR #2004, PR #2010)
+
+* Remove a signed overflow bug in bgzf_read_small.
+  (PR #2013)
+
+* In bgzip and tabix, when handling errors, don't try to access the
+  BGZF::errcode field after calling bgzf_close() as it may no longer be valid.
+  (PR #2035, #2042)
+
+* Speed up hts_parse_decimal() handling of oversized exponents
+  (PR #2045)
+
+* Fix some memory leaks on failing to build or load an index
+  (PR #2049)
+
+Documentation updates
+---------------------
+
+* Clarify how defaults work when building an index with tabix.
+  (PR #2002, addresses #1995. Query made by Dario Beraldi)
+
+
 Noteworthy changes in release 1.23.1 (18th March 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

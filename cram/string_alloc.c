@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010, 2013, 2018-2019 Genome Research Ltd.
+Copyright (c) 2010, 2013, 2018-2019, 2026 Genome Research Ltd.
 Author: Andrew Whitwham <aw7@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 
 #include "string_alloc.h"
+#include "../htslib/hts_alloc.h"
 
 #define MIN_STR_SIZE 1024
 
@@ -72,12 +73,12 @@ string_alloc_t *string_pool_create(size_t max_length) {
 
 /* internal function to do the actual memory allocation */
 
-static string_t *new_string_pool(string_alloc_t *a_str) {
+static string_t *new_string_pool(string_alloc_t *a_str, size_t length) {
     string_t *str;
 
     if (a_str->nstrings == a_str->max_strings) {
         size_t new_max = (a_str->max_strings | (a_str->max_strings >> 2)) + 1;
-        str = realloc(a_str->strings, new_max * sizeof(*a_str->strings));
+        str = hts_realloc_p(a_str->strings, sizeof(*a_str->strings), new_max);
 
         if (NULL == str) return NULL;
 
@@ -87,11 +88,15 @@ static string_t *new_string_pool(string_alloc_t *a_str) {
 
     str = &a_str->strings[a_str->nstrings];
 
-    str->str = malloc(a_str->max_length);
+    // increase the max length if needs be
+    size_t new_length = length > a_str->max_length ? length : a_str->max_length;
+
+    str->str = hts_malloc(new_length);
 
     if (NULL == str->str) return NULL;
 
     str->used = 0;
+    a_str->max_length = new_length;
     a_str->nstrings++;
 
     return str;
@@ -124,18 +129,17 @@ char *string_alloc(string_alloc_t *a_str, size_t length) {
     if (a_str->nstrings) {
         str = &a_str->strings[a_str->nstrings - 1];
 
-        if (str->used + length < a_str->max_length) {
+        if (length < a_str->max_length - str->used) {
             ret = str->str + str->used;
             str->used += length;
             return ret;
         }
     }
 
-    // increase the max length if needs be
     if (length > a_str->max_length) a_str->max_length = length;
 
     // need a new string pool
-    str = new_string_pool(a_str);
+    str = new_string_pool(a_str, length);
 
     if (NULL == str) return NULL;
 

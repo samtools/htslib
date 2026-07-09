@@ -1,10 +1,10 @@
-.TH tabix 1 "18 March 2026" "htslib-1.23.1" "Bioinformatics tools"
+.TH tabix 1 "9 July 2026" "htslib-1.24" "Bioinformatics tools"
 .SH NAME
 .PP
 tabix \- Generic indexer for TAB-delimited genome position files
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
-.\" Copyright (C) 2014, 2016, 2018, 2020, 2022, 2024 Genome Research Ltd.
+.\" Copyright (C) 2014, 2016, 2018, 2020, 2022, 2024, 2026 Genome Research Ltd.
 .\"
 .\" Author: Heng Li <lh3@sanger.ac.uk>
 .\"
@@ -87,17 +87,17 @@ Specify that the position in the data file is 0-based half-open
 (e.g. UCSC files) rather than 1-based.
 .TP
 .BI "-b, --begin " INT
-Column of start chromosomal position. [4]
+Column of start chromosomal position.
 .TP
 .BI "-c, --comment " CHAR
-Skip lines started with character CHAR. [#]
+Skip lines started with character CHAR.
 .TP
 .BI "-C, --csi"
 Produce CSI format index instead of classical tabix or BAI style indices.
 .TP
 .BI "-e, --end " INT
 Column of end chromosomal position. The end column can be the same as the
-start column. [5]
+start column.
 .TP
 .B "-f, --force "
 Force to overwrite the index file if it is present.
@@ -110,15 +110,15 @@ Input format for indexing. Valid values are: gff, bed, sam, vcf.
 This option should not be applied together with any of
 .BR -s ", " -b ", " -e ", " -c " and " -0 ;
 it is not used for data retrieval because this setting is stored in
-the index file. [gff]
+the index file.
 .TP
 .BI "-s, --sequence " INT
 Column of sequence name. Option
 .BR -s ", " -b ", " -e ", " -S ", " -c " and " -0
-are all stored in the index file and thus not used in data retrieval. [1]
+are all stored in the index file and thus not used in data retrieval.
 .TP
 .BI "-S, --skip-lines " INT
-Skip first INT lines in the data file. [0]
+Skip first INT lines in the data file.
 
 .SH QUERYING AND OTHER OPTIONS
 .TP
@@ -145,6 +145,13 @@ Similar to
 .B -R
 but the entire input will be read sequentially and regions not listed in FILE will be skipped.
 .TP
+.B "-u, --unique"
+Only print output lines once,
+even if they are covered more than once in the regions list.
+
+This option cannot be used with
+.B --separate-regions.
+.TP
 .BI "-D "
 Do not download the index file before opening it. Valid for remote files only.
 .TP
@@ -162,6 +169,9 @@ and the user needs to quickly see which file records belong to which region.
 For this, a line with the name of the region, preceded by the file specific
 comment symbol, is inserted in the output before its corresponding group of
 records.
+
+This option cannot be used with
+.B --unique.
 .TP
 .BI "--verbosity " INT
 Set verbosity of logging messages printed to stderr.
@@ -173,6 +183,25 @@ Values higher than 3 produce additional informational and debugging messages.
 .BI "-@, --threads " INT
 Set number of threads to use for the operation.
 The default is 0, where no extra threads are in use.
+.PP
+Unless one of the options
+.BR -0 ,
+.BR -b ,
+.BR -c ,
+.BR -e ,
+.BR -p ,
+.BR -s ,
+or
+.B -S
+is used when building an index,
+tabix will attempt to set its configuration by detecting the file type being
+indexed.
+If detection fails, or any of the options above is present,
+the settings used will be those for the gff preset unless overridden
+.br
+i.e. one-based positions,
+.B -s 1 -b 4 -e 5 -c '#' -S 0
+
 .PP
 .SH EXAMPLE
 (grep "^#" in.gff; grep -v "^#" in.gff | sort -t"`printf '\(rst'`" -k1,1 -k4,4n) | bgzip > sorted.gff.gz;

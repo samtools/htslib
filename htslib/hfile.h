@@ -1,7 +1,7 @@
 /// @file htslib/hfile.h
 /// Buffered low-level input/output streams.
 /*
-    Copyright (C) 2013-2022 Genome Research Ltd.
+    Copyright (C) 2013-2022, 2025 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -210,6 +210,19 @@ kstring's `kgetline()` to read arbitrarily-long lines into a _kstring_t_.
 */
 HTSLIB_EXPORT
 char *hgets(char *buffer, int size, hFILE *fp) HTS_RESULT_USED;
+
+/// Read a line from a stream and append it to a kstring
+/** @param kstr    The destination kstring
+    @param fp      The file stream
+    @return  0 on success; EOF on end of file or if an error occurred.
+    @since   1.24
+
+Reads a "\n"- or "\r\n"- terminated line from fp into kstr.
+The line read is appended without its terminator and 0 is returned;
+EOF is returned at end of file or on error.
+*/
+HTSLIB_EXPORT
+int khgetline(struct kstring_t *kstr, hFILE *fp) HTS_RESULT_USED;
 
 /// Peek at characters to be read without removing them from buffers
 /** @param fp      The file stream

@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013-2018, 2020-2021, 2023, 2025 Genome Research Ltd.
+   Copyright (C) 2013-2018, 2020-2021, 2023, 2025-2026 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <math.h>
 #include "htslib/kstring.h"
+#include "htslib/hts_alloc.h"
 
 int kputd(double d, kstring_t *s) {
 	int len = 0;
@@ -233,7 +234,7 @@ int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 			if (n == max) {					\
 				int *tmp;				\
 				max = max? max<<1 : 2;			\
-				if ((tmp = (int*)realloc(offsets, sizeof(int) * max))) {  \
+				if ((tmp = hts_realloc_p(offsets, sizeof(int), max))) {  \
 					offsets = tmp;			\
 				} else	{				\
 					free(offsets);			\
@@ -288,6 +289,19 @@ int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 	}
 	s->s[s->l] = '\0';
 	return 0;
+}
+
+// Wrap around fgets to get the right signature for kgets_func
+static char * fgets_wrapper(char *buffer, int size, void *stream)
+{
+    return fgets(buffer, size, (FILE *) stream);
+}
+
+int kfgetline(kstring_t *s, FILE *fp)
+{
+    if (!s || !fp)
+        return EOF;
+    return kgetline(s, fgets_wrapper, fp);
 }
 
 int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
@@ -394,7 +408,7 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 	int i, *suff, *prep, *bmGs, *bmBc;
 	if (m < 1)
 		return NULL;
-	prep = (int*)calloc((size_t) m + 256, sizeof(int));
+	prep = hts_calloc_ps(sizeof(int), m, 256);
 	if (!prep) return NULL;
 	bmGs = prep; bmBc = prep + m;
 	{ // preBmBc()

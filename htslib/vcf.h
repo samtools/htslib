@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2020, 2022-2025 Genome Research Ltd.
+    Copyright (C) 2012-2020, 2022-2026 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -1318,15 +1318,51 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
 
     #define bcf_itr_destroy(iter) hts_itr_destroy(iter)
     #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
-    #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
+    #define bcf_itr_querys(idx, hdr, s) bcf_itr_querys1((idx), (hdr), (s))
+
+    HTSLIB_EXPORT
+    hts_itr_t *bcf_itr_querys1(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                               const char *region);
+
+/// Create a multi-region iterator
+/** @param idx       Index
+    @param hdr       Header
+    @param regarray  Array of ref:interval region specifiers
+    @param regcount  Number of items in regarray
+
+Each @p regarray entry is parsed by hts_parse_reg(), and takes one of the
+following forms:
+
+region          | Outputs
+--------------- | -------------
+REF             | All reads with RNAME REF
+REF:            | All reads with RNAME REF
+REF:START       | Reads with RNAME REF overlapping START to end of REF
+REF:-END        | Reads with RNAME REF overlapping start of REF to END
+REF:START-END   | Reads with RNAME REF overlapping START to END
+.               | All reads from the start of the file
+*               | Unmapped reads at the end of the file (RNAME '*' in SAM)
+
+The form `REF:` should be used when the reference name itself contains a colon.
+
+The iterator will return all reads overlapping the given regions.  If a read
+overlaps more than one region, it will only be returned once.
+ */
+
+    HTSLIB_EXPORT
+    hts_itr_t *bcf_itr_regarray(const hts_idx_t *idx, bcf_hdr_t *hdr,
+                                char **regarray, unsigned int regcount);
 
     static inline int bcf_itr_next(htsFile *htsfp, hts_itr_t *itr, void *r) {
-        if (htsfp->is_bgzf)
+        if (!htsfp->is_bgzf) {
+            hts_log_error("Only bgzf compressed files can be used with iterators");
+            errno = EINVAL;
+            return -2;
+        }
+        if (itr->multi)
+            return hts_itr_multi_next(htsfp, itr, r);
+        else
             return hts_itr_next(htsfp->fp.bgzf, itr, r, 0);
-
-        hts_log_error("Only bgzf compressed files can be used with iterators");
-        errno = EINVAL;
-        return -2;
     }
 /// Load a BCF index
 /** @param fn   BCF file name

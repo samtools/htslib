@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014-2020, 2024 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2020, 2024, 2026 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -41,6 +41,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/regidx.h"
 #include "htslib/hts_defs.h"
 #include "htslib/hts_log.h"
@@ -53,7 +54,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only, cache_megs, download_index, separate_regs, threads;
+    int print_header, header_only, cache_megs, download_index, separate_regs, threads, is_multi;
 }
 args_t;
 
@@ -154,7 +155,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         }
 
         (*nregs) += regidx_nregs(idx);
-        regs = (char**) malloc(sizeof(char*)*(*nregs));
+        regs = hts_malloc_p(sizeof(char*), *nregs);
         if (!regs) error_errno(NULL);
 
         int nseq;
@@ -184,7 +185,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
     {
         if ( argc )
         {
-            regs = (char**) malloc(sizeof(char*)*argc);
+            regs = hts_malloc_p(sizeof(char*), argc);
             if (!regs) error_errno(NULL);
         }
         else
@@ -241,9 +242,6 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
             RELEASE_TPOOL(tpool.pool);
             error_errno("Could not open stdout");
         }
-        if (hts_set_thread_pool(out, &tpool) < 0) {
-            hts_log_info("Could not set thread pool to output file!");
-        }
         hts_idx_t *idx = bcf_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) {
             RELEASE_TPOOL(tpool.pool);
@@ -265,15 +263,26 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
         if ( !args->header_only )
         {
             assert(regs != NULL);
+            hts_itr_t *itr = NULL;
             bcf1_t *rec = bcf_init();
+            int num_itr = nregs;
+
             if (!rec) {
                 RELEASE_TPOOL(tpool.pool);
                 error_errno(NULL);
             }
-            for (i=0; i<nregs; i++)
+
+            if (args->is_multi) {
+                itr = bcf_itr_regarray(idx, hdr, regs, nregs);
+                num_itr = 1; // Only need to run the loop below once
+            }
+
+            for (i=0; i<num_itr; i++)
             {
                 int ret, found = 0;
-                hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
+                if (!args->is_multi) {
+                    itr = bcf_itr_querys(idx,hdr,regs[i]);
+                }
                 if (!itr) continue;
                 while ((ret = bcf_itr_next(fp, itr, rec)) >=0 )
                 {
@@ -342,6 +351,9 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
         {
             int nseq;
             const char **seq = NULL;
+            hts_itr_t *itr = NULL;
+            int num_itr = nregs;
+
             if ( reg_idx ) {
                 seq = tbx_seqnames(tbx, &nseq);
                 if (!seq) {
@@ -349,10 +361,18 @@ static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **reg
                     error_errno("Failed to get sequence names list");
                 }
             }
-            for (i=0; i<nregs; i++)
+
+            if (args->is_multi) {
+                itr = tbx_itr_regarray(tbx, regs, nregs);
+                num_itr = 1; // Only need to run the loop below once
+            }
+
+            for (i=0; i<num_itr; i++)
             {
                 int ret, found = 0;
-                hts_itr_t *itr = tbx_itr_querys(tbx, regs[i]);
+                if (!args->is_multi) {
+                    itr = tbx_itr_querys(tbx, regs[i]);
+                }
                 if ( !itr ) continue;
                 while ((ret = tbx_itr_next(fp, tbx, itr, &str)) >= 0)
                 {
@@ -561,11 +581,11 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         }
         if (bgzf_close(bgzf_out) < 0) {
             RELEASE_TPOOL(tpool);
-            error_errno("Error %d closing output", bgzf_out->errcode);
+            error_errno("Error closing output");
         }
         if (bgzf_close(fp) < 0) {
             RELEASE_TPOOL(tpool);
-            error_errno("Error %d closing \"%s\"", bgzf_out->errcode, fname);
+            error_errno("Error closing \"%s\"", fname);
         }
         free(buf);
     }
@@ -585,15 +605,15 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "\n");
     fprintf(fp, "Indexing Options:\n");
     fprintf(fp, "   -0, --zero-based           coordinates are zero-based\n");
-    fprintf(fp, "   -b, --begin INT            column number for region start [4]\n");
-    fprintf(fp, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
+    fprintf(fp, "   -b, --begin INT            column number for region start\n");
+    fprintf(fp, "   -c, --comment CHAR         skip comment lines starting with CHAR\n");
     fprintf(fp, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
-    fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
+    fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b)\n");
     fprintf(fp, "   -f, --force                overwrite existing index without asking\n");
     fprintf(fp, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
     fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf, gaf\n");
-    fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
-    fprintf(fp, "   -S, --skip-lines INT       skip first INT lines [0]\n");
+    fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p)\n");
+    fprintf(fp, "   -S, --skip-lines INT       skip first INT lines\n");
     fprintf(fp, "\n");
     fprintf(fp, "Querying and other options:\n");
     fprintf(fp, "   -h, --print-header         print also the header lines\n");
@@ -602,12 +622,20 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -r, --reheader FILE        replace the header with the content of FILE\n");
     fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
+    fprintf(fp, "   -u, --unique               only output regions once, even if they overlap\n");
+    fprintf(fp, "                              (cannot be used with --separate-regions)\n");
     fprintf(fp, "   -D                         do not download the index file\n");
     fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
     fprintf(fp, "       --separate-regions     separate the output by corresponding regions\n");
+    fprintf(fp, "                              (cannot be used with -u, --unique)\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "   -@, --threads INT          number of additional threads to use [0]\n");
     fprintf(fp, "\n");
+    fprintf(fp, "Unless one of the options -0, -b, -c, -e, -p, -s, or -S is used when building\n");
+    fprintf(fp, "an index, tabix will attempt to set its configuration by detecting the file\n");
+    fprintf(fp, "type being indexed.  If detection fails, or any of the options above is present,\n");
+    fprintf(fp, "the settings used will be those for the gff preset unless overridden\n");
+    fprintf(fp, "i.e. one-based positions, -s 1 -b 4 -e 5 -c '#' -S 0\n");
     return status;
 }
 
@@ -646,11 +674,12 @@ int main(int argc, char *argv[])
         {"cache", required_argument, NULL, 4},
         {"separate-regions", no_argument, NULL, 5},
         {"threads", required_argument, NULL, '@'},
+        {"unique", no_argument, NULL, 'u'},
         {NULL, 0, NULL, 0}
     };
 
     char *tmp;
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D@:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:uD@:", loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -705,7 +734,7 @@ int main(int argc, char *argv[])
             case 1:
                 printf(
 "tabix (htslib) %s\n"
-"Copyright (C) 2025 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2026 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
             case 2:
                 return usage(stdout, EXIT_SUCCESS);
@@ -729,12 +758,20 @@ int main(int argc, char *argv[])
             case '@':   //thread count
                 args.threads = atoi(optarg);
                 break;
+            case 'u':
+                args.is_multi = 1;
+                break;
             default: return usage(stderr, EXIT_FAILURE);
         }
     }
 
     if (new_line_skip >= 0)
         conf.line_skip = new_line_skip;
+
+    if (args.is_multi && args.separate_regs) {
+        fprintf(stderr, "tabix: --separate-regions cannot be used with -u\n\n");
+        return usage(stderr, EXIT_FAILURE);
+    }
 
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 

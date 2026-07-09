@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2016, 2018-2020, 2023 Genome Research Ltd.
+Copyright (c) 2012-2016, 2018-2020, 2023, 2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -103,27 +103,15 @@ typedef struct cram_stats {
 /* NB: matches java impl, not the spec */
 enum cram_encoding {
     E_NULL               = 0,
-    E_EXTERNAL           = 1,  // Only for BYTE type in CRAM 4
-    E_GOLOMB             = 2,  // Not in CRAM 4
-    E_HUFFMAN            = 3,  // Not in CRAM 4
+    E_EXTERNAL           = 1,
+    E_GOLOMB             = 2,
+    E_HUFFMAN            = 3,
     E_BYTE_ARRAY_LEN     = 4,
     E_BYTE_ARRAY_STOP    = 5,
-    E_BETA               = 6,  // Not in CRAM 4
-    E_SUBEXP             = 7,  // Not in CRAM 4
-    E_GOLOMB_RICE        = 8,  // Not in CRAM 4
-    E_GAMMA              = 9,  // Not in CRAM 4
-
-    // CRAM 4 specific codecs
-    E_VARINT_UNSIGNED    = 41, // Specialisation of EXTERNAL
-    E_VARINT_SIGNED      = 42, // Specialisation of EXTERNAL
-    E_CONST_BYTE         = 43, // Alternative to HUFFMAN with 1 symbol
-    E_CONST_INT          = 44, // Alternative to HUFFMAN with 1 symbol
-
-    // More experimental ideas, not documented in spec yet
-    E_XHUFFMAN           = 50, // To external block
-    E_XPACK              = 51, // Transform to sub-codec
-    E_XRLE               = 52, // Transform to sub-codec
-    E_XDELTA             = 53, // Transform to sub-codec
+    E_BETA               = 6,
+    E_SUBEXP             = 7,
+    E_GOLOMB_RICE        = 8,
+    E_GAMMA              = 9,
 
     // Total number of codecs, not a real one.
     E_NUM_CODECS,
@@ -135,8 +123,6 @@ enum cram_external_type {
     E_BYTE               = 3,
     E_BYTE_ARRAY         = 4,
     E_BYTE_ARRAY_BLOCK   = 5,
-    E_SINT               = 6, // signed INT
-    E_SLONG              = 7, // signed LONG
 };
 
 /* External IDs used by this implementation (only assumed during writing) */
@@ -463,7 +449,8 @@ struct cram_container {
     //struct ref_entry *ref;
 
     /* For multi-threading */
-    bam_seq_t **bams;
+    bam_seq_t *bams;
+    int nbams;            // size of associated bams array
 
     /* Statistics for encoding */
     cram_stats *stats[DS_END];
@@ -521,6 +508,8 @@ typedef struct cram_record {
     uint32_t feature;     // idx to s->feature
     uint32_t nfeature;    // number of features
     int32_t mate_flags;   // MF
+
+    int has_CG;           // used to avoid bam_tag2cigar call
 } cram_record;
 
 // Accessor macros as an analogue of the bam ones
@@ -600,6 +589,12 @@ typedef union cram_feature {
     } H;
 } cram_feature;
 
+typedef struct bam_list {
+    bam_seq_t *bams;
+    struct bam_list *next;
+    int nbams;
+} bam_list;
+
 /*
  * A slice is really just a set of blocks, but it
  * is the logical unit for decoding a number of
@@ -662,6 +657,9 @@ struct cram_slice {
 
     int max_rec, curr_rec;       // current and max recs per slice
     int slice_num;               // To be copied into c->curr_slice in decode
+
+    // Cache of converted BAM structs
+    bam_list *bl;
 };
 
 /*-----------------------------------------------------------------------------
@@ -743,11 +741,6 @@ typedef struct {
 /*-----------------------------------------------------------------------------
  */
 /* CRAM File handle */
-
-typedef struct spare_bams {
-    bam_seq_t **bams;
-    struct spare_bams *next;
-} spare_bams;
 
 struct cram_fd;
 typedef struct varint_vec {
@@ -864,7 +857,7 @@ struct cram_fd {
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
     pthread_mutex_t range_lock;
-    spare_bams *bl;
+    bam_list *bl; // linked list of arrays of spare bam records
     pthread_mutex_t bam_list_lock;
     void *job_pending;
     int ooc;                            // out of containers.
@@ -875,8 +868,9 @@ struct cram_fd {
 
     BGZF *idxfp;                        // File pointer for on-the-fly index creation
 
-    // variable integer decoding callbacks.
-    // This changed in CRAM4.0 to a data-size agnostic encoding.
+    // Variable integer decoding callbacks.
+    // This changed in CRAM4.0 to a data-size agnostic encoding,
+    // but isn't supported in this htslib release.
     varint_vec vv;
 
     // Force AP delta even on non positional sorted data.

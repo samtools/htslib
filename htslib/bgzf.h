@@ -3,7 +3,7 @@
 /*
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013, 2014, 2017, 2018-2019, 2022-2024 Genome Research Ltd
+   Copyright (C) 2009, 2013, 2014, 2017, 2018-2019, 2022-2024, 2026 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -150,9 +150,14 @@ typedef struct BGZF BGZF;
  */
 static inline ssize_t bgzf_read_small(BGZF *fp, void *data, size_t length) {
     // A block length of 0 implies current block isn't loaded (see
-    // bgzf_seek_common).  That gives negative available so careful on types
-    if ((ssize_t)length < fp->block_length - fp->block_offset) {
-        // Short cut the common and easy mode
+    // bgzf_seek_common).  That means length - offset may be negative, which
+    // will be promoted to unsigned for purposes of the comparison.
+    // So we must guard against that case.
+    size_t remaining = fp->block_length - fp->block_offset > 0
+        ? fp->block_length - fp->block_offset
+        : 0;
+
+    if (length < remaining) {
         memcpy((uint8_t *)data,
                (uint8_t *)fp->uncompressed_block + fp->block_offset,
                length);

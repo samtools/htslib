@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2025 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2026 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -59,6 +59,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts_internal.h"
 #include "hfile_internal.h"
 #include "sam_internal.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_expr.h"
 #include "htslib/hts_os.h" // drand48
 
@@ -2027,6 +2028,11 @@ off_t hts_utell(htsFile *fp)
         return htell(fp->fp.hfile);
 }
 
+// Wrap hgetln() with a kgets_func2 signature for kgetline2()
+static ssize_t hgetln_wrapper(char *buf, size_t len, void *vfp) {
+    return hgetln(buf, len, (hFILE *) vfp);
+}
+
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 {
     int ret;
@@ -2038,7 +2044,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
     switch (fp->format.compression) {
     case no_compression:
         str->l = 0;
-        ret = kgetline2(str, (kgets_func2 *) hgetln, fp->fp.hfile);
+        ret = kgetline2(str, hgetln_wrapper, fp->fp.hfile);
         if (ret >= 0) ret = (str->l <= INT_MAX)? (int) str->l : INT_MAX;
         else if (herrno(fp->fp.hfile)) ret = -2, errno = herrno(fp->fp.hfile);
         else ret = -1;
@@ -2106,7 +2112,7 @@ char **hts_readlist(const char *string, int is_file, int *_n)
         }
     }
     // Try to shrink s to the minimum size needed
-    s_new = (char**)realloc(s, n * sizeof(char*));
+    s_new = hts_realloc_p(s, sizeof(char*), n);
     if (!s_new)
         goto err;
 
@@ -2161,7 +2167,7 @@ char **hts_readlines(const char *fn, int *_n)
             }
     } else return 0;
     // Try to shrink s to the minimum size needed
-    s_new = (char**)realloc(s, n * sizeof(char*));
+    s_new = hts_realloc_p(s, sizeof(char*), n);
     if (!s_new)
         goto err;
 
@@ -2329,7 +2335,8 @@ static inline int insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
         }
     } else if (l->n == l->m) {
         uint32_t new_m = l->m ? l->m << 1 : 1;
-        hts_pair64_t *new_list = realloc(l->list, new_m * sizeof(hts_pair64_t));
+        hts_pair64_t *new_list = hts_realloc_p(l->list,
+                                               sizeof(hts_pair64_t), new_m);
         if (!new_list) return -1;
         l->list = new_list;
         l->m = new_m;
@@ -2349,7 +2356,7 @@ static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t of
         size_t new_m = l->m * 2 > end + 1 ? l->m * 2 : end + 1;
         uint64_t *new_offset;
 
-        new_offset = (uint64_t*)realloc(l->offset, new_m * sizeof(uint64_t));
+        new_offset = hts_realloc_p(l->offset, sizeof(uint64_t), new_m);
         if (!new_offset) return -1;
 
         // fill unused memory with (uint64_t)-1
@@ -2478,7 +2485,7 @@ static int compress_binning(hts_idx_t *idx, int i)
                     hts_pair64_t *new_list;
                     kroundup32(new_m);
                     if (new_m > INT32_MAX) return -1; // Limited by index format
-                    new_list = realloc(q->list, new_m * sizeof(*new_list));
+                    new_list = hts_realloc_p(q->list, sizeof(*new_list), new_m);
                     if (!new_list) return -1;
                     q->m = new_m;
                     q->list = new_list;
@@ -2561,11 +2568,11 @@ int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t
         bidx_t **new_bidx;
         lidx_t *new_lidx;
 
-        new_bidx = (bidx_t**)realloc(idx->bidx, new_m * sizeof(bidx_t*));
+        new_bidx = hts_realloc_p(idx->bidx, sizeof(bidx_t*), new_m);
         if (!new_bidx) return -1;
         idx->bidx = new_bidx;
 
-        new_lidx = (lidx_t*) realloc(idx->lidx, new_m * sizeof(lidx_t));
+        new_lidx = hts_realloc_p(idx->lidx, sizeof(lidx_t), new_m);
         if (!new_lidx) return -1;
         idx->lidx = new_lidx;
 
@@ -2648,7 +2655,7 @@ int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name) {
         return idx->tbi_n;
 
     uint32_t len = strlen(name)+1;
-    uint8_t *tmp = (uint8_t *)realloc(idx->meta, idx->l_meta + len);
+    uint8_t *tmp = hts_realloc_ps(idx->meta, sizeof(*tmp), idx->l_meta, len);
     if (!tmp)
         return -1;
 
@@ -2949,7 +2956,7 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (p->n < 0) return -3;
             if ((size_t) p->n > SIZE_MAX / sizeof(hts_pair64_t)) return -2;
             p->m = p->n;
-            p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
+            p->list = hts_malloc_p(sizeof(hts_pair64_t), p->m);
             if (p->list == NULL) return -2;
             if (bgzf_read(fp, p->list, ((size_t) p->n)<<4) != ((size_t) p->n)<<4) return -1;
             if (is_be) swap_bins(p);
@@ -2963,7 +2970,7 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (l->n < 0) return -3;
             if ((size_t) l->n > SIZE_MAX / sizeof(uint64_t)) return -2;
             l->m = l->n;
-            l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
+            l->offset = hts_malloc_p(sizeof(uint64_t), l->n);
             if (l->offset == NULL) return -2;
             if (bgzf_read(fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
@@ -2999,7 +3006,7 @@ static hts_idx_t *idx_read(const char *fn)
         if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
         if (x[2]) {
             if (SIZE_MAX - x[2] < 1) goto fail; // Prevent possible overflow
-            if ((meta = (uint8_t*)malloc((size_t) x[2] + 1)) == NULL) goto fail;
+            if ((meta = hts_malloc_ps(sizeof(*meta), x[2], 1)) == NULL) goto fail;
             if (bgzf_read(fp, meta, x[2]) != x[2]) goto fail;
             // Prevent possible strlen past the end in tbx_index_load2
             meta[x[2]] = '\0';
@@ -3024,7 +3031,7 @@ static hts_idx_t *idx_read(const char *fn)
         n = le_to_u32(&x[7*4]); // location of l_nm
         if (n > UINT32_MAX - 29) goto fail; // Prevent possible overflow
         idx->l_meta = 28 + n;
-        if ((idx->meta = (uint8_t*)malloc(idx->l_meta + 1)) == NULL) goto fail;
+        if ((idx->meta = hts_malloc_ps(sizeof(*idx->meta), idx->l_meta, 1)) == NULL) goto fail;
         // copy format, col_seq, col_beg, col_end, meta, skip, l_nm
         // N.B. left in little-endian byte order.
         memcpy(idx->meta, &x[1*4], 28);
@@ -3064,7 +3071,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta,
             errno = ENOMEM;
             return -1;
         }
-        new_meta = malloc(l + 1);
+        new_meta = hts_malloc_ps(sizeof(*new_meta), l, 1);
         if (!new_meta) return -1;
         memcpy(new_meta, meta, l);
         // Prevent possible strlen past the end in tbx_index_load2
@@ -3180,7 +3187,7 @@ static inline int reg2bins_wide(int64_t beg, int64_t end, hts_itr_t *itr, int mi
 
 static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, bidx_t *bidx)
 {
-    int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
+    int l, s = min_shift + (n_lvls<<1) + n_lvls;
     size_t reg_bin_count = 0, hash_bin_count = kh_n_buckets(bidx), max_bins;
     hts_pos_t end1;
     if (end >= 1LL<<s) end = 1LL<<s;
@@ -3189,7 +3196,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 
     // Count bins to see if it's faster to iterate through the hash table
     // or the set of bins covering the region
-    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+    for (l = 0; l <= n_lvls; s -= 3, ++l) {
         reg_bin_count += (end1 >> s) - (beg >> s) + 1;
     }
     max_bins = reg_bin_count < kh_size(bidx) ? reg_bin_count : kh_size(bidx);
@@ -3201,7 +3208,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
             errno = ENOMEM;
             return -1;
         }
-        int *new_a = realloc(itr->bins.a, new_m * sizeof(*new_a));
+        int *new_a = hts_realloc_p(itr->bins.a, sizeof(*new_a), new_m);
         if (!new_a) return -1;
         itr->bins.a = new_a;
         itr->bins.m = new_m;
@@ -3222,7 +3229,7 @@ static inline int add_to_interval(hts_itr_t *iter, bins_t *bin,
 
     if (!bin->n)
         return 0;
-    off = realloc(iter->off, (iter->n_off + bin->n) * sizeof(*off));
+    off = hts_realloc_ps(iter->off, sizeof(*off), iter->n_off, bin->n);
     if (!off)
         return -2;
 
@@ -3298,7 +3305,7 @@ static inline int reg2intervals_wide(hts_itr_t *iter, const bidx_t *bidx,
 
 static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
-    int l, t, s;
+    int l, s;
     int i, j;
     hts_pos_t end1;
     bidx_t *bidx;
@@ -3318,7 +3325,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
     end1 = end - 1;
     // Count bins to see if it's faster to iterate through the hash table
     // or the set of bins covering the region
-    for (l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+    for (l = 0; l <= n_lvls; s -= 3, ++l) {
         reg_bin_count += (end1 >> s) - (beg >> s) + 1;
     }
 
@@ -3765,7 +3772,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
         tid = curr_reg->tid;
 
         if (tid >= 0) {
-            tmp = realloc(off, (n_off + curr_reg->count) * sizeof(*off));
+            tmp = hts_realloc_ps(off, sizeof(*off), n_off, curr_reg->count);
             if (!tmp)
                 goto err;
             off = tmp;
@@ -3916,8 +3923,8 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     }
 
     e -= decimals;
-    while (e > 0) n *= 10, e--;
-    while (e < 0) lost += n % 10, n /= 10, e++;
+    while (e > 0 && n) n *= 10, e--;
+    while (e < 0 && n) lost += n % 10, n /= 10, e++;
 
     if (lost > 0) {
         hts_log_warning("Discarding fractional part of %.*s", (int)(s - str), str);

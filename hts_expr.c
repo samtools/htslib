@@ -38,6 +38,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 
 #include "htslib/hts_expr.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_log.h"
 #include "textutils_internal.h"
 
@@ -851,12 +852,12 @@ hts_filter_t *hts_filter_init(const char *str) {
     if (!f) return NULL;
 
     // Oversize to permit faster comparisons with memcmp over strcmp
-    size_t len = strlen(str)+100;
-    if (!(f->str = malloc(len))) {
+    size_t len = strlen(str);
+    if (!(f->str = hts_malloc_ps(sizeof(*f->str), len, 100))) {
         free(f);
         return NULL;
     }
-    strcpy(f->str, str);
+    memcpy(f->str, str, len + 1);
     return f;
 }
 

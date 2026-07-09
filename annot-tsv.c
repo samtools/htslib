@@ -38,6 +38,7 @@
 #include <string.h>
 #include <strings.h>
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_defs.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/kstring.h"
@@ -151,7 +152,7 @@ static inline void nbp_add(nbp_t *nbp, hts_pos_t beg, hts_pos_t end)
     if ( nbp->n >= nbp->m )
     {
         nbp->m += 2;
-        nbp->regs = realloc(nbp->regs, nbp->m*sizeof(*nbp->regs));
+        nbp->regs = hts_realloc_p(nbp->regs, sizeof(*nbp->regs), nbp->m);
         if ( !nbp->regs ) error("Out of memory, failed to allocate %zu bytes\n",nbp->m*sizeof(*nbp->regs));
     }
     nbp->regs[nbp->n - 2] = NBP_SET_BEG(beg);
@@ -203,7 +204,7 @@ cols_t *cols_split(const char *line, cols_t *cols, char delim)
         if ( cols->n > cols->m )
         {
             cols->m += 10;
-            cols->off = realloc(cols->off, sizeof(*cols->off)*cols->m);
+            cols->off = hts_realloc_p(cols->off, sizeof(*cols->off), cols->m);
             if ( !cols->off ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(*cols->off)*cols->m);
         }
         cols->off[ cols->n - 1 ] = ss;
@@ -253,7 +254,7 @@ void cols_append(cols_t *cols, char *str)
     if ( cols->n > cols->m )
     {
         cols->m++;
-        cols->off = realloc(cols->off,sizeof(*cols->off)*cols->m);
+        cols->off = hts_realloc_p(cols->off, sizeof(*cols->off), cols->m);
         if ( !cols->off ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(*cols->off)*cols->m);
     }
     cols->off[cols->n-1] = str;
@@ -479,7 +480,7 @@ static int read_next_line(dat_t *dat)
 
 void sanity_check_columns(char *fname, hdr_t *hdr, cols_t *cols, int **col2idx, int force)
 {
-    *col2idx = (int*)malloc(sizeof(int)*cols->n);
+    *col2idx = hts_malloc_p(sizeof(int), cols->n);
     if ( !*col2idx ) error("Out of memory, failed to allocate %zu bytes\n",sizeof(int)*cols->n);
     int i, idx;
     for (i=0; i<cols->n; i++)
@@ -990,7 +991,7 @@ int main(int argc, char **argv)
             case  1 :
                 printf(
 "annot-tsv (htslib) %s\n"
-"Copyright (C) 2025 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2026 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
                 break;
             case  2 :

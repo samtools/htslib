@@ -38,6 +38,7 @@
 #include <sys/time.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hfile.h"
 
 #ifdef _WIN32
@@ -267,7 +268,7 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "bgzip (htslib) %s\n"
-"Copyright (C) 2025 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2026 Genome Research Ltd.\n", hts_version());
             return EXIT_SUCCESS;
         case  2:  binary = 1; break;
         case 'h': return bgzip_main_usage(stdout, EXIT_SUCCESS);
@@ -352,7 +353,8 @@ int main(int argc, char **argv)
                     fp = bgzf_open("-", out_mode);
                 else
                 {
-                    char *name = malloc(strlen(argv[optind]) + 5);
+                    char *name = hts_malloc_ps(sizeof(*name),
+                                               strlen(argv[optind]), 5);
                     strcpy(name, argv[optind]);
                     strcat(name, ".gz");
                     fp = bgzf_open(name, is_forced? out_mode : out_mode_exclusive);
@@ -513,7 +515,7 @@ int main(int argc, char **argv)
 
             if (!write_fname) {
                 if (bgzf_close(fp) < 0)
-                    error("Output close failed: Error %d\n", fp->errcode);
+                    error("Output close failed\n");
             }
 
             if (hclose(f_src) < 0)
@@ -570,7 +572,7 @@ int main(int argc, char **argv)
                 error("Can not write index for stdin data without index filename, use -I option to set index file.\n");
             }
 
-            if ( bgzf_close(fp)<0 ) error("Close failed: Error %d\n",fp->errcode);
+            if ( bgzf_close(fp)<0 ) error("Close failed\n");
         }
         else
         {
@@ -715,7 +717,7 @@ int main(int argc, char **argv)
             start = start_reg;
             end = end_reg;
             free(buffer);
-            if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
+            if (bgzf_close(fp) < 0) error("Close failed\n");
 
             if (statfilename) {
                 if (!write_fname) {
@@ -760,7 +762,7 @@ int main(int argc, char **argv)
             }
 
             if (bgzf_close(fp) < 0)
-                error("Output close failed: Error %d\n", fp->errcode);
+                error("Output close failed\n");
         } else {
             close(f_dst);
         }

@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2025 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2026 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -53,9 +53,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts_internal.h"
 #include "sam_internal.h"
 #include "htslib/hfile.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "htslib/hts_expr.h"
 #include "header.h"
+#include "bgzf_internal.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -212,7 +214,7 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
             goto fail;
     } else {
         h->l_text = h0->text ? h0->l_text : 0;
-        h->text = malloc(h->l_text + 1);
+        h->text = hts_malloc_ps(sizeof(*h->text), h->l_text, 1);
         if (!h->text) goto fail;
         if (h0->text)
             memcpy(h->text, h0->text, h->l_text);
@@ -414,9 +416,14 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
     return 0;
 }
 
+// Wrap around bam_name2id() to get the right signature for hts_name2id_f
+static int bam_name2id_wrapper(void *vhdr, const char *ref) {
+    return bam_name2id((sam_hdr_t *) vhdr, ref);
+}
+
 const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
                              hts_pos_t *beg, hts_pos_t *end, int flags) {
-    return hts_parse_region(s, tid, beg, end, (hts_name2id_f)bam_name2id, h, flags);
+    return hts_parse_region(s, tid, beg, end, bam_name2id_wrapper, h, flags);
 }
 
 /*************************
@@ -552,7 +559,7 @@ int bam_set1(bam1_t *bam,
     }
 
     // validate parameters
-    if (l_qname > 254) {
+    if (l_qname > BAM_MAX_QNAME_LEN) {
         hts_log_error("Query name too long");
         errno = EINVAL;
         return -1;
@@ -587,7 +594,7 @@ int bam_set1(bam1_t *bam,
 
     // re-allocate the data buffer as needed.
     size_t data_len = l_qname + qname_nuls + n_cigar * 4 + (l_seq + 1) / 2 + l_seq;
-    if (realloc_bam_data(bam, data_len + l_aux) < 0) {
+    if (realloc_bam_data(bam, hts_add_sat2(data_len, l_aux)) < 0) {
         return -1;
     }
 
@@ -672,7 +679,8 @@ hts_pos_t bam_endpos(const bam1_t *b)
     return b->core.pos + rlen;
 }
 
-static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+// return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning)
 {
     bam1_core_t *c = &b->core;
 
@@ -859,7 +867,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
-    if (c->l_qname - c->l_extranul > 255) {
+    if (c->l_qname - c->l_extranul > BAM_MAX_QNAME_LEN + 1) { // +1 for NUL
         hts_log_error("QNAME \"%s\" is longer than 254 characters", bam_get_qname(b));
         errno = EOVERFLOW;
         return -1;
@@ -1023,6 +1031,7 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
 err:
     bam_destroy1(b);
     hts_idx_destroy(idx);
+    sam_hdr_destroy(h);
     return NULL;
 }
 
@@ -1554,9 +1563,6 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t 
         if (ret < 0)
             return cram_eof(fp->fp.cram) ? -1 : -2;
 
-        if (bam_tag2cigar(b, 1, 1) < 0)
-            return -2;
-
         *tid = b->core.tid;
         *beg = b->core.pos;
         *end = bam_endpos(b);
@@ -1622,23 +1628,6 @@ static int64_t cram_ptell(void *fp)
 
     return ret;
 }
-
-static int bam_pseek(void *fp, int64_t offset, int whence)
-{
-    BGZF *fd = (BGZF *)fp;
-
-    return bgzf_seek(fd, offset, whence);
-}
-
-static int64_t bam_ptell(void *fp)
-{
-    BGZF *fd = (BGZF *)fp;
-    if (!fd)
-        return -1L;
-
-    return bgzf_tell(fd);
-}
-
 
 
 static hts_idx_t *index_load(htsFile *fp, const char *fn, const char *fnidx, int flags)
@@ -1755,7 +1744,7 @@ static int cram_name2id(void *fdv, const char *ref)
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr,
+    return hts_itr_querys(idx, region, bam_name2id_wrapper, hdr,
                           cidx->fmt == HTS_FMT_CRAI ? cram_itr_query : hts_itr_query,
                           sam_readrec);
 }
@@ -1777,11 +1766,11 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarra
         itr = hts_itr_regions(idx, r_list, r_count, cram_name2id, cidx->cram,
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     } else {
-        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, (hts_name2id_f)(bam_name2id));
+        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, bam_name2id_wrapper);
         if (!r_list)
             return NULL;
-        itr = hts_itr_regions(idx, r_list, r_count, (hts_name2id_f)(bam_name2id), hdr,
-                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
+        itr = hts_itr_regions(idx, r_list, r_count, bam_name2id_wrapper, hdr,
+                   hts_itr_multi_bam, sam_readrec, bgzf_pseek, bgzf_ptell);
     }
 
     if (!itr)
@@ -1801,8 +1790,8 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, sam_hdr_t *hdr, hts_reglist_t *
         return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     else
-        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr,
-                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
+        return hts_itr_regions(idx, reglist, regcount, bam_name2id_wrapper, hdr,
+                   hts_itr_multi_bam, sam_readrec, bgzf_pseek, bgzf_ptell);
 }
 
 /**********************
@@ -2904,7 +2893,7 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *
     n_cigar = read_ncigar(in);
     if (!n_cigar) return 0;
     if (n_cigar > *a_mem) {
-        uint32_t *a_tmp = realloc(*a_cigar, n_cigar*sizeof(**a_cigar));
+        uint32_t *a_tmp = hts_realloc_p(*a_cigar, sizeof(**a_cigar), n_cigar);
         if (a_tmp) {
             *a_cigar = a_tmp;
             *a_mem = n_cigar;
@@ -3252,7 +3241,7 @@ static void *sam_parse_worker(void *arg) {
         if (i >= gb->abams) {
             int old_abams = gb->abams;
             gb->abams *= 2;
-            b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
+            b = hts_realloc_p(gb->bams, sizeof(bam1_t), gb->abams);
             if (!b) {
                 gb->abams /= 2;
                 sam_state_err(fd, ENOMEM);
@@ -3359,7 +3348,7 @@ static void *sam_dispatcher_read(void *vp) {
             if (!l)
                 goto err;
             l->alloc = SAM_NBYTES;
-            l->data = malloc(l->alloc+8); // +8 for optimisation in sam_parse1
+            l->data = hts_malloc_ps(sizeof(*l->data), l->alloc, 8); // +8 for optimisation in sam_parse1
             if (!l->data) {
                 free(l);
                 l = NULL;
@@ -3370,7 +3359,8 @@ static void *sam_dispatcher_read(void *vp) {
         l->next = NULL;
 
         if (l->alloc < line_frag+SAM_NBYTES/2) {
-            char *rp = realloc(l->data, line_frag+SAM_NBYTES/2 +8);
+            char *rp = hts_realloc_ps(l->data, sizeof(*rp),
+                                      line_frag, SAM_NBYTES/2 + 8);
             if (!rp)
                 goto err;
             l->alloc = line_frag+SAM_NBYTES/2;
@@ -3403,7 +3393,7 @@ static void *sam_dispatcher_read(void *vp) {
             // entire buffer is part of a single line
             if (cp == l->data) {
                 line_frag = l->data_size;
-                char *rp = realloc(l->data, l->alloc * 2 + 8);
+                char *rp = hts_realloc_pse(l->data, 2, l->alloc, 0, 8);
                 if (!rp)
                     goto err;
                 l->alloc *= 2;
@@ -3872,7 +3862,7 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
             bc = "RX";
         int ntags = 0, err = 0;
         for (ntags = 0; *bc && ntags < UMI_TAGS; ntags++) {
-            if (!isalpha(bc[0]) || !isalnum_c(bc[1])) {
+            if (!isalpha_c(bc[0]) || !isalnum_c(bc[1])) {
                 err = 1;
                 break;
             }
@@ -4141,9 +4131,6 @@ static inline int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
     int ret = cram_get_bam_seq(fp->fp.cram, b);
     if (ret < 0)
         return cram_eof(fp->fp.cram) ? -1 : -2;
-
-    if (bam_tag2cigar(*b, 1, 1) < 0)
-        return -2;
 
     return ret;
 }
@@ -5388,7 +5375,7 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
     --mp->cnt; p->next = 0; // clear lbnode_t::next here
     if (mp->n == mp->max) {
         mp->max = mp->max? mp->max<<1 : 256;
-        mp->buf = (lbnode_t**)realloc(mp->buf, sizeof(lbnode_t*) * mp->max);
+        mp->buf = hts_realloc_p(mp->buf, sizeof(lbnode_t*), mp->max);
     }
     mp->buf[mp->n++] = p;
 }
@@ -5983,6 +5970,9 @@ static void overlap_remove(bam_plp_t iter, const bam1_t *b)
     khiter_t kitr;
     if ( b )
     {
+        if ( b->core.flag&BAM_FUNMAP || !(b->core.flag&BAM_FPROPER_PAIR) ) //no need
+            return;
+
         kitr = kh_get(olap_hash, iter->overlaps, bam_get_qname(b));
         if ( kitr!=kh_end(iter->overlaps) )
             kh_del(olap_hash, iter->overlaps, kitr);
@@ -6010,6 +6000,8 @@ const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, 
         // write iter->plp at iter->pos
         lbnode_t **pptr = &iter->head;
         while (*pptr != iter->tail) {
+            if ((*pptr)->next)
+                hts_prefetch((*pptr)->next);
             lbnode_t *p = *pptr;
             if (p->b.core.tid < iter->tid || (p->b.core.tid == iter->tid && p->end <= iter->pos)) { // then remove
                 overlap_remove(iter, &p->b);
@@ -6021,7 +6013,7 @@ const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, 
                 if (p->b.core.tid == iter->tid && p->beg <= iter->pos) { // here: p->end > pos; then add to pileup
                     if (n_plp == iter->max_plp) { // then double the capacity
                         iter->max_plp = iter->max_plp? iter->max_plp<<1 : 256;
-                        iter->plp = (bam_pileup1_t*)realloc(iter->plp, sizeof(bam_pileup1_t) * iter->max_plp);
+                        iter->plp = hts_realloc_p(iter->plp, sizeof(bam_pileup1_t), iter->max_plp);
                     }
                     iter->plp[n_plp].b = &p->b;
                     iter->plp[n_plp].cd = p->cd;

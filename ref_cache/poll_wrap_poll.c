@@ -1,6 +1,6 @@
 /*  poll_wrap_poll.c -- ref-cache wrapper around poll
 
-    Copyright (C) 2025 Genome Research Ltd.
+    Copyright (C) 2025-2026 Genome Research Ltd.
 
     Author: Rob Davies <rmd@sanger.ac.uk>
 
@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include <string.h>
 #include "poll_wrap.h"
+#include "../htslib/hts_alloc.h"
 #include "../cram/pooled_alloc.h"
 
 #if defined(REF_CACHE_NO_POOLED_ALLOC)
@@ -74,11 +75,11 @@ Poll_wrap *pw_init(int debug) {
     if (pw->pool == NULL) goto fail;
 
     pw->polled_sz = INIT_POLLED_SZ;
-    pw->polled = malloc(pw->polled_sz * sizeof(struct pollfd));
+    pw->polled = hts_malloc_p(sizeof(struct pollfd), pw->polled_sz);
     if (pw->polled == NULL) goto fail;
 
     pw->idx_sz = INIT_IDX_SZ;
-    pw->fd_index = malloc(pw->idx_sz * sizeof(unsigned int));
+    pw->fd_index = hts_malloc_p(sizeof(unsigned int), pw->idx_sz);
     if (pw->fd_index == NULL) goto fail;
 
     pw->item_index = calloc(pw->idx_sz, sizeof(Pw_item *));
@@ -113,13 +114,13 @@ Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
 
     if (pw->idx_sz <= (unsigned int) fd) {
         unsigned int new_sz = (unsigned int) fd + 1;
-        unsigned int *new_index = realloc(pw->fd_index,
-                                          new_sz * sizeof(unsigned int));
+        unsigned int *new_index = hts_realloc_p(pw->fd_index,
+                                                sizeof(*pw->fd_index), new_sz);
         Pw_item **new_items;
         if (new_index == NULL)
             return NULL;
         pw->fd_index = new_index;
-        new_items = realloc(pw->item_index, new_sz * sizeof(Pw_item *));
+        new_items = hts_realloc_p(pw->item_index, sizeof(*pw->item_index), new_sz);
         if (new_items == NULL)
             return NULL;
         memset(new_items + pw->idx_sz,0,(new_sz - pw->idx_sz) * sizeof(Pw_item *));
@@ -128,8 +129,8 @@ Pw_item * pw_register(Poll_wrap *pw, int fd, Pw_fd_type fd_type,
     }
     if (pw->npolled == pw->polled_sz) {
         unsigned int new_sz = pw->polled_sz * 2;
-        struct pollfd *new_polled = realloc(pw->polled,
-                                            new_sz * sizeof(*new_polled));
+        struct pollfd *new_polled = hts_realloc_p(pw->polled,
+                                                  sizeof(*pw->polled), new_sz);
         if (new_polled == NULL)
             return NULL;
         pw->polled = new_polled;

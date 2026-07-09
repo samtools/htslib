@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013-2020, 2023-2024 Genome Research Ltd.
+Copyright (c) 2013-2020, 2023-2024, 2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -64,6 +64,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "../htslib/bgzf.h"
 #include "../htslib/hfile.h"
+#include "../htslib/hts_alloc.h"
 #include "../hts_internal.h"
 #include "cram.h"
 #include "os.h"
@@ -253,6 +254,9 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     }
 
 
+    // refid indexes fd->index, so bound it to the header's reference count.
+    int nref = sam_hdr_nref(fd->header);
+
     // Parse it line at a time
     while (pos < kstr.l) {
         /* 1.1 layout */
@@ -277,7 +281,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         e.end += e.start-1;
         //printf("%d/%d..%d-offset=%" PRIu64 ",len=%d,slice=%d\n", e.refid, e.start, e.end, e.offset, e.len, e.slice);
 
-        if (e.refid < -1) {
+        if (e.refid < -1 || e.refid >= nref) {
             hts_log_error("Malformed index file, refid %d", e.refid);
             goto fail;
         }
@@ -287,8 +291,8 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
                 cram_index *new_idx;
                 int new_sz = e.refid+2;
                 size_t index_end = fd->index_sz * sizeof(*fd->index);
-                new_idx = realloc(fd->index,
-                                  new_sz * sizeof(*fd->index));
+                new_idx = hts_realloc_p(fd->index, sizeof(*fd->index),
+                                        new_sz);
                 if (!new_idx)
                     goto fail;
 
@@ -298,6 +302,10 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
                        fd->index_sz * sizeof(*fd->index) - index_end);
             }
             idx = &fd->index[e.refid+1];
+            if (idx->e) {
+                hts_log_error("Index is not sorted");
+                goto fail;
+            }
             idx->refid = e.refid;
             idx->start = INT_MIN;
             idx->end   = INT_MAX;
@@ -315,7 +323,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         if (idx->nslice+1 >= idx->nalloc) {
             cram_index *new_e;
             idx->nalloc = idx->nalloc ? idx->nalloc*2 : 16;
-            new_e = realloc(idx->e, idx->nalloc * sizeof(*idx->e));
+            new_e = hts_realloc_p(idx->e, sizeof(*idx->e), idx->nalloc);
             if (!new_e)
                 goto fail;
 
@@ -329,7 +337,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         if (++idx_stack_ptr >= idx_stack_alloc) {
             cram_index **new_stack;
             idx_stack_alloc *= 2;
-            new_stack = realloc(idx_stack, idx_stack_alloc*sizeof(*idx_stack));
+            new_stack = hts_realloc_p(idx_stack, sizeof(*idx_stack), idx_stack_alloc);
             if (!new_stack)
                 goto fail;
             idx_stack = new_stack;
@@ -777,11 +785,12 @@ int cram_index_container(cram_fd *fd,
  *         negative on failure (-1 for read failure, -4 for write failure)
  */
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
-    cram_container *c;
+    cram_container *c = NULL;
     off_t cpos, hpos;
-    BGZF *fp;
+    BGZF *fp = NULL;
     kstring_t fn_idx_str = {0};
     int64_t last_ref = -9, last_start = -9;
+    int ret = -1;
 
     // Useful for cram_index_build_multiref
     cram_set_option(fd, CRAM_OPT_REQUIRED_FIELDS, SAM_RNAME | SAM_POS | SAM_CIGAR);
@@ -810,30 +819,29 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         hpos = htell(fd->fp);
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
-            return -1;
+            goto err;
         assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
 
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
         if (!c->comp_hdr)
-            return -1;
+            goto err;
 
         if (c->ref_seq_id == last_ref && c->ref_seq_start < last_start) {
             hts_log_error("CRAM file is not sorted by chromosome / position");
-            return -2;
+            ret = -2;
+            goto err;
         }
         last_ref = c->ref_seq_id;
         last_start = c->ref_seq_start;
 
-        if (cram_index_container(fd, c, fp, cpos) < 0) {
-            bgzf_close(fp);
-            return -1;
-        }
+        if (cram_index_container(fd, c, fp, cpos) < 0)
+            goto err;
 
         off_t next_cpos = htell(fd->fp);
         if (next_cpos != hpos + c->length) {
             hts_log_error("Length %"PRId32" in container header at offset %lld does not match block lengths (%lld)",
                           c->length, (long long) cpos, (long long) next_cpos - hpos);
-            return -1;
+            goto err;
         }
         cpos = next_cpos;
 
@@ -845,6 +853,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     }
 
     return (bgzf_close(fp) >= 0)? 0 : -4;
+
+ err:
+    if (fp)
+        bgzf_close(fp);
+    if (c)
+        cram_free_container(c);
+    return ret;
 }
 
 // internal recursive step

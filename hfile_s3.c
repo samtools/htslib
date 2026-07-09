@@ -1,6 +1,6 @@
 /*  hfile_s3.c -- Amazon S3 backend for low-level file streams.
 
-    Copyright (C) 2015-2017, 2019-2025 Genome Research Ltd.
+    Copyright (C) 2015-2017, 2019-2026 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "version.h"
 #endif
 #include "htslib/hts.h"  // for hts_version() and hts_verbose
+#include "htslib/hts_alloc.h"
 #include "htslib/kstring.h"
 #include "hts_time_funcs.h"
 
@@ -249,7 +250,6 @@ static FILE *expand_tilde_open(const char *fname, const char *mode)
     return fp;
 }
 
-
 static void parse_ini(const char *fname, const char *section, ...)
 {
     kstring_t line = { 0, 0, NULL };
@@ -259,7 +259,7 @@ static void parse_ini(const char *fname, const char *section, ...)
     FILE *fp = expand_tilde_open(fname, "r");
     if (fp == NULL) return;
 
-    while (line.l = 0, kgetline(&line, (kgets_func *) fgets, fp) >= 0)
+    while (line.l = 0, kfgetline(&line, fp) >= 0)
         if (line.s[0] == '[' && (s = strchr(line.s, ']')) != NULL) {
             *s = '\0';
             active = (strcmp(&line.s[1], section) == 0);
@@ -301,7 +301,7 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
     FILE *fp = expand_tilde_open(fname, "r");
     if (fp == NULL) return;
 
-    while (kgetline(&text, (kgets_func *) fgets, fp) >= 0)
+    while (kfgetline(&text, fp) >= 0)
         kputc(' ', &text);
     fclose(fp);
 
@@ -399,8 +399,8 @@ static char *escape_query(const char *qs) {
     char *escaped;
 
     length = strlen(qs);
-    alloced = length * 3 + 1;
-    if ((escaped = malloc(alloced)) == NULL) {
+    alloced = hts_add_sat2(hts_prod_sat2(length, 3), 1);
+    if ((escaped = hts_malloc(alloced)) == NULL) {
         return NULL;
     }
 
@@ -427,9 +427,9 @@ static char *escape_path(const char *path) {
     char *escaped;
 
     length = strlen(path);
-    alloced = length * 3 + 1;
+    alloced = hts_add_sat2(hts_prod_sat2(length, 3), 1);
 
-    if ((escaped = malloc(alloced)) == NULL) {
+    if ((escaped = hts_malloc(alloced)) == NULL) {
         return NULL;
     }
 
@@ -984,7 +984,7 @@ static int update_time(s3_auth_data *ad, time_t now) {
         }
 
         if (strftime(ad->date_short, 9, "%Y%m%d", tm) != 8) {
-            return -1;;
+            return -1;
         }
 
         ad->date_html.l = 0;
@@ -1019,7 +1019,7 @@ static int order_query_string(kstring_t *qs) {
         return -1;
     }
 
-    if ((queries = malloc(num_queries * sizeof(char*))) == NULL)
+    if ((queries = hts_malloc_p(sizeof(char*), num_queries)) == NULL)
         goto err;
 
     for (i = 0; i < num_queries; i++) {
@@ -1242,6 +1242,9 @@ static int report_s3_error(kstring_t *body, long resp_code) {
 
 static int http_status_errno(int status)
 {
+    if (hts_verbose >= HTS_LOG_INFO)
+        fprintf(stderr, "hfile_s3: setting errno from HTTP status code %d\n", status);
+
     if (status >= 500)
         switch (status) {
         case 501: return ENOSYS;
@@ -1263,6 +1266,88 @@ static int http_status_errno(int status)
     else if (status >= 300)
         return EIO;
     else return 0;
+}
+
+
+static int easy_errno(CURL *curl, CURLcode err)
+{
+    long lval;
+
+    if (hts_verbose >= HTS_LOG_INFO)
+        fprintf(stderr, "hfile_s3: setting errno from libcurl error code %d (%s)\n",
+                (int) err, curl_easy_strerror(err));
+
+    switch (err) {
+    case CURLE_OK:
+        return 0;
+
+    case CURLE_UNSUPPORTED_PROTOCOL:
+    case CURLE_URL_MALFORMAT:
+        return EINVAL;
+
+#if LIBCURL_VERSION_NUM >= 0x071505
+    case CURLE_NOT_BUILT_IN:
+        return ENOSYS;
+#endif
+
+    case CURLE_COULDNT_RESOLVE_PROXY:
+    case CURLE_COULDNT_RESOLVE_HOST:
+    case CURLE_FTP_CANT_GET_HOST:
+        return EDESTADDRREQ; // Lookup failure
+
+    case CURLE_COULDNT_CONNECT:
+    case CURLE_SEND_ERROR:
+    case CURLE_RECV_ERROR:
+        if (curl_easy_getinfo(curl, CURLINFO_OS_ERRNO, &lval) == CURLE_OK)
+            return lval;
+        else
+            return ECONNABORTED;
+
+    case CURLE_REMOTE_ACCESS_DENIED:
+    case CURLE_LOGIN_DENIED:
+    case CURLE_TFTP_PERM:
+        return EACCES;
+
+    case CURLE_PARTIAL_FILE:
+        return EPIPE;
+
+    case CURLE_HTTP_RETURNED_ERROR:
+        if (curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &lval) == CURLE_OK)
+            return http_status_errno(lval);
+        else
+            return EIO;
+
+    case CURLE_OUT_OF_MEMORY:
+        return ENOMEM;
+
+    case CURLE_OPERATION_TIMEDOUT:
+        return ETIMEDOUT;
+
+    case CURLE_RANGE_ERROR:
+        return ESPIPE;
+
+    case CURLE_SSL_CONNECT_ERROR:
+        return ECONNABORTED;
+
+    case CURLE_FILE_COULDNT_READ_FILE:
+    case CURLE_TFTP_NOTFOUND:
+        return ENOENT;
+
+    case CURLE_TOO_MANY_REDIRECTS:
+        return ELOOP;
+
+    case CURLE_FILESIZE_EXCEEDED:
+        return EFBIG;
+
+    case CURLE_REMOTE_DISK_FULL:
+        return ENOSPC;
+
+    case CURLE_REMOTE_FILE_EXISTS:
+        return EEXIST;
+
+    default:
+        return EIO;
+    }
 }
 
 
@@ -1319,6 +1404,7 @@ static int add_header(struct curl_slist **head, char *value) {
 static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstring_t *date,
                  kstring_t *content, kstring_t *token, kstring_t *range) {
     struct curl_slist *headers = NULL;
+    CURLcode cret;
     int err = 0;
 
     /* The next two lines have the effect of preventing curl from
@@ -1349,7 +1435,12 @@ static struct curl_slist *set_html_headers(hFILE_s3 *fp, kstring_t *auth, kstrin
         if ((err = add_header(&headers, token->s)))
             goto error;
 
-    curl_easy_setopt(fp->curl, CURLOPT_HTTPHEADER, headers);
+    cret = curl_easy_setopt(fp->curl, CURLOPT_HTTPHEADER, headers);
+    if (cret != CURLE_OK) {
+        err = 1;
+        errno = easy_errno(fp->curl, cret);
+        goto error;
+    }
 
 error:
 
@@ -1450,8 +1541,10 @@ static int abort_upload(hFILE_s3 *fp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_URL, url.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
 
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        errno = EINVAL;
         goto out;
+    }
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
 
@@ -1462,6 +1555,8 @@ static int abort_upload(hFILE_s3 *fp) {
 
     if (fp->ret == CURLE_OK) {
         ret = 0;
+    } else {
+        errno = easy_errno(fp->curl, fp->ret);
     }
 
  out:
@@ -1520,8 +1615,10 @@ static int complete_upload(hFILE_s3 *fp, kstring_t *resp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
 
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        errno = EINVAL;
         goto out;
+    }
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
 
@@ -1532,6 +1629,8 @@ static int complete_upload(hFILE_s3 *fp, kstring_t *resp) {
 
     if (fp->ret == CURLE_OK) {
         ret = 0;
+    } else {
+        errno = easy_errno(fp->curl, fp->ret);
     }
 
  out:
@@ -1600,8 +1699,10 @@ static int upload_part(hFILE_s3 *fp, kstring_t *resp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
 
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        errno = EINVAL;
         goto out;
+    }
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
 
@@ -1612,6 +1713,8 @@ static int upload_part(hFILE_s3 *fp, kstring_t *resp) {
 
     if (fp->ret == CURLE_OK) {
         ret = 0;
+    } else {
+        errno = easy_errno(fp->curl, fp->ret);
     }
 
  out:
@@ -1645,7 +1748,10 @@ static ssize_t s3_write(hFILE *fpv, const void *bufferv, size_t nbytes) {
 
             cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-            if (cret != CURLE_OK || response_code > 200) {
+            if (cret != CURLE_OK) {
+                errno = easy_errno(fp->curl, cret);
+                ret = -1;
+            } else if (response_code > 200) {
                 errno = http_status_errno(response_code);
                 ret = -1;
             } else {
@@ -1699,7 +1805,10 @@ static int s3_write_close(hFILE *fpv) {
 
                 cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-                if (cret != CURLE_OK || response_code > 200) {
+                if (cret != CURLE_OK) {
+                    errno = easy_errno(fp->curl, cret);
+                    ret = -1;
+                } else if (response_code > 200) {
                     errno = http_status_errno(response_code);
                     ret = -1;
                 } else {
@@ -1740,6 +1849,8 @@ static int s3_write_close(hFILE *fpv) {
                         }
 
                         errno = http_status_errno(response_code);
+                    } else {
+                        errno = easy_errno(fp->curl, cret);
                     }
                 }
             }
@@ -1813,8 +1924,10 @@ static int initialise_upload(hFILE_s3 *fp, kstring_t *head, kstring_t *resp, int
     err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
 
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        errno = EINVAL;
         goto out;
+    }
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, NULL);
 
@@ -1825,6 +1938,8 @@ static int initialise_upload(hFILE_s3 *fp, kstring_t *head, kstring_t *resp, int
 
     if (fp->ret == CURLE_OK) {
         ret = 0;
+    } else {
+        errno = easy_errno(fp->curl, fp->ret);
     }
 
  out:
@@ -1925,8 +2040,10 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
         err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERDATA, (void *)resp);
     }
 
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        errno = EINVAL;
         goto out;
+    }
 
     headers = set_html_headers(fp, &fp->authorisation, &fp->date, &fp->content, &fp->token, &fp->range);
 
@@ -1937,6 +2054,8 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
 
     if (fp->ret == CURLE_OK) {
         ret = 0;
+    } else {
+        errno = easy_errno(fp->curl, fp->ret);
     }
 
 out:
@@ -1988,7 +2107,10 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
                 long response_code;
                 CURLcode cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
 
-                if (cret != CURLE_OK || response_code > 300) {
+                if (cret != CURLE_OK) {
+                    errno = easy_errno(fp->curl, cret);
+                    ret = -1;
+                } else if (response_code > 300) {
                     errno = http_status_errno(response_code);
                     ret = -1;
                 }
@@ -2064,7 +2186,7 @@ static off_t s3_seek(hFILE *fpv, off_t offset, int whence) {
         ks_clear(&fp->buffer); // resetting fp->buffer triggers a new remote read
     }
 
-    return fp->last_read;
+    return (off_t) pos;
 }
 
 
@@ -2109,7 +2231,7 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
     const char *env;
     CURLcode cret;
     long response_code;
-
+    int save_errno;
 
     fp = (hFILE_s3 *)hfile_init(sizeof(hFILE_s3), "w", 0);
 
@@ -2149,7 +2271,7 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
     kputs(url, &fp->url);
 
     if ((query_start = strchr(fp->url.s, '?'))) {
-        has_user_query = 1;;
+        has_user_query = 1;
     }
 
     if (initialise_upload(fp, &header, &response, has_user_query))
@@ -2180,6 +2302,7 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
         cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
     } else {
         // unable to get a response code from curl
+        errno = easy_errno(fp->curl, cret);
         goto error;
     }
 
@@ -2194,6 +2317,8 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
             }
 
             errno = http_status_errno(response_code);
+        } else {
+            errno = easy_errno(fp->curl, cret);
         }
 
         goto error;
@@ -2219,11 +2344,13 @@ static hFILE *s3_write_open(const char *url, s3_auth_data *auth) {
     return &fp->base;
 
 error:
+    save_errno = errno;
     ks_free(&response);
     ks_free(&header);
     cleanup_local(fp);
     free_authorisation_values(fp);
     hfile_destroy((hFILE *)fp);
+    errno = save_errno;
     return NULL;
 }
 
@@ -2235,6 +2362,7 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
     kstring_t file_range = {0, 0, NULL};
     CURLcode cret;
     long response_code = 0;
+    int save_errno;
 
     fp = (hFILE_s3 *)hfile_init(sizeof(hFILE_s3), "r", 0);
 
@@ -2295,6 +2423,7 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
         cret = curl_easy_getinfo(fp->curl, CURLINFO_RESPONSE_CODE, &response_code);
     } else {
         // unable to get a response code from curl
+        errno = easy_errno(fp->curl, cret);
         goto error;
     }
 
@@ -2309,6 +2438,8 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
             }
 
             errno = http_status_errno(response_code);
+        } else {
+            errno = easy_errno(fp->curl, cret);
         }
 
         goto error;
@@ -2335,13 +2466,14 @@ static hFILE *s3_read_open(const char *url, s3_auth_data *auth) {
     ks_free(&file_range);
     return &fp->base;
 
-
  error:
+    save_errno = errno;
     ks_free(&response);
     ks_free(&file_range);
     cleanup_local(fp);
     free_authorisation_values(fp);
     hfile_destroy((hFILE *)fp);
+    errno = save_errno;
     return NULL;
 }
 
@@ -2461,7 +2593,8 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_s3)(struct hFILE_plugin *self) {
     err = curl_global_init(CURL_GLOBAL_ALL);
 
     if (err != CURLE_OK) {
-        // look at putting in an errno here
+        // Set a suitably catastrophic error code
+        errno = ENETDOWN;
         return -1;
     }
 

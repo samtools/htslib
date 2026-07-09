@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023, 2025 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017-2020, 2022-2023, 2025-2026 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -33,8 +33,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include "htslib/tbx.h"
 #include "htslib/bgzf.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "hts_internal.h"
+#include "bgzf_internal.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -372,6 +374,45 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_po
     return ret;
 }
 
+/*
+  Wrapper to get the tbx_t struct to tbx_readrec() when using the
+  multi-region iterator interface.  This is required to deal with
+  differences between the single- and multi-region iterator interfaces.
+
+  In particular, the multi-region one lacks a way to directly pass the tbx_t
+  structure to the tbx_readrec() function.  By using the structure below,
+  tbx_itr_next1() can parcel a tbx_t pointer up along with one to the output
+  buffer, then tbx_multi_readrec() can unwrap them to pass on to tbx_readrec().
+*/
+
+typedef struct tbx_wrapper {
+    void *result_ptr;
+    tbx_t *tbx;
+} tbx_wrapper;
+
+int tbx_itr_next1(htsFile *htsfp, tbx_t *tbx, hts_itr_t *iter, void *r)
+{
+    if (!htsfp->is_bgzf) {
+        hts_log_error("Only bgzf compressed files can be used with iterators");
+        errno = EINVAL;
+        return -2;
+    }
+
+    if (iter->multi) {
+        tbx_wrapper tmp = { r, tbx };
+        return hts_itr_multi_next(htsfp, iter, &tmp);
+    } else {
+        return hts_itr_next(htsfp->fp.bgzf, iter, r, tbx);
+    }
+}
+
+static int tbx_multi_readrec(BGZF *fp, void *fpv, void *r,
+                             int *tid, hts_pos_t *beg, hts_pos_t *end)
+{
+    tbx_wrapper *tmp = (tbx_wrapper *) r;
+    return tbx_readrec(fp, tmp->tbx, tmp->result_ptr, tid, beg, end);
+}
+
 static int tbx_set_meta(tbx_t *tbx)
 {
     int i, l = 0, l_nm;
@@ -382,7 +423,7 @@ static int tbx_set_meta(tbx_t *tbx)
     khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
 
     memcpy(x, &tbx->conf, 24);
-    name = (char**)malloc(sizeof(char*) * kh_size(d));
+    name = hts_malloc_p(sizeof(char*), kh_size(d));
     if (!name) return -1;
     for (k = kh_begin(d), l = 0; k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
@@ -390,7 +431,7 @@ static int tbx_set_meta(tbx_t *tbx)
         l += strlen(kh_key(d, k)) + 1; // +1 to include '\0'
     }
     l_nm = x[6] = l;
-    meta = (uint8_t*)malloc(l_nm + 28);
+    meta = hts_malloc_ps(sizeof(*meta), l_nm, 28);
     if (!meta) { free(name); return -1; }
     if (ed_is_big())
         for (i = 0; i < 7; ++i)
@@ -640,3 +681,35 @@ const char **tbx_seqnames(tbx_t *tbx, int *n)
     return names;
 }
 
+// Wrap around tbx_name2id() to get the right signature for hts_name2id_f
+static int tbx_name2id_wrapper(void *vhdr, const char *ref)
+{
+    return tbx_name2id((tbx_t *) vhdr, ref);
+}
+
+hts_itr_t *tbx_itr_querys1(tbx_t *tbx, const char *region)
+{
+    return hts_itr_querys(tbx->idx, region, tbx_name2id_wrapper, tbx,
+                          hts_itr_query, tbx_readrec);
+}
+
+hts_itr_t *tbx_itr_regarray(tbx_t *tbx, char **regarray, unsigned int regcount)
+{
+    hts_itr_t *itr = NULL;
+    hts_reglist_t *r_list = NULL;
+    int r_count = 0;
+
+    r_list = hts_reglist_create(regarray, regcount, &r_count, tbx,
+                                tbx_name2id_wrapper);
+    if (!r_list)
+        return NULL;
+
+    itr = hts_itr_regions(tbx->idx, r_list, r_count, tbx_name2id_wrapper, tbx,
+                          hts_itr_multi_bam, tbx_multi_readrec,
+                          bgzf_pseek, bgzf_ptell);
+    if (!itr)
+        hts_reglist_free(r_list, r_count);
+
+    return itr;
+
+}

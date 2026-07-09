@@ -2,7 +2,7 @@
 
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013-2025 Genome Research Ltd
+   Copyright (C) 2009, 2013-2026 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -45,6 +45,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
 #include "htslib/thread_pool.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
 #include "cram/pooled_alloc.h"
 #include "hts_internal.h"
@@ -204,7 +205,7 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
 
     if (ic->nentries >= ic->mentries) {
         int new_sz = ic->mentries ? ic->mentries*2 : 1024;
-        if (!(e = realloc(ic->e, new_sz * sizeof(*ic->e)))) {
+        if (!(e = hts_realloc_p(ic->e, sizeof(*ic->e), new_sz))) {
             pthread_mutex_unlock(&mt->idx_m);
             return -1;
         }
@@ -391,7 +392,7 @@ static BGZF *bgzf_read_init(hFILE *hfpr, const char *filename)
     if (fp == NULL) return NULL;
 
     fp->is_write = 0;
-    fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
+    fp->uncompressed_block = hts_malloc_p(2, BGZF_MAX_BLOCK_SIZE);
     if (fp->uncompressed_block == NULL) { free(fp); return NULL; }
     fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
     fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b);
@@ -455,7 +456,7 @@ static BGZF *bgzf_write_init(const char *mode)
     }
     fp->is_compressed = 1;
 
-    fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
+    fp->uncompressed_block = hts_malloc_p(2, BGZF_MAX_BLOCK_SIZE);
     if (fp->uncompressed_block == NULL) goto mem_fail;
     fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
 
@@ -1019,7 +1020,7 @@ int bgzf_read_block(BGZF *fp)
 
         if (!j || j->errcode == BGZF_ERR_MT) {
             if (!fp->mt->free_block) {
-                fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
+                fp->uncompressed_block = hts_malloc_p(2, BGZF_MAX_BLOCK_SIZE);
                 if (fp->uncompressed_block == NULL) return -1;
                 fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
             } // else it's already allocated with malloc, maybe even in-use.
@@ -1417,7 +1418,8 @@ static void *bgzf_mt_writer(void *vp) {
             {
                 fp->idx->moffs = fp->idx->noffs;
                 kroundup32(fp->idx->moffs);
-                fp->idx->offs = (bgzidx1_t*) realloc(fp->idx->offs, fp->idx->moffs*sizeof(bgzidx1_t));
+                fp->idx->offs = hts_realloc_p(fp->idx->offs, sizeof(bgzidx1_t),
+                                              fp->idx->moffs);
                 if ( !fp->idx->offs ) goto err;
             }
             fp->idx->offs[ fp->idx->noffs-1 ].uaddr = fp->idx->offs[ fp->idx->noffs-2 ].uaddr + j->uncomp_len;
@@ -2172,8 +2174,8 @@ int bgzf_check_EOF(BGZF *fp) {
     return has_eof;
 }
 
-static inline int64_t bgzf_seek_common(BGZF* fp,
-                                       int64_t block_address, int block_offset)
+static inline int bgzf_seek_common(BGZF* fp,
+                                   int64_t block_address, int block_offset)
 {
     if (fp->mt) {
         // The reader runs asynchronous and does loops of:
@@ -2256,6 +2258,24 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
 
     return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
 }
+
+// Wrapper for use with hts_itr_regions()
+int bgzf_pseek(void *fp, int64_t offset, int whence)
+{
+    BGZF *fd = (BGZF *)fp;
+    return bgzf_seek(fd, offset, whence);
+}
+
+// Wrapper for use with hts_itr_regions()
+int64_t bgzf_ptell(void *fp)
+{
+    BGZF *fd = (BGZF *)fp;
+    if (!fd)
+        return -1L;
+
+    return bgzf_tell(fd);
+}
+
 
 int bgzf_is_bgzf(const char *fn)
 {
@@ -2358,7 +2378,8 @@ int bgzf_index_add_block(BGZF *fp)
     {
         fp->idx->moffs = fp->idx->noffs;
         kroundup32(fp->idx->moffs);
-        fp->idx->offs = (bgzidx1_t*) realloc(fp->idx->offs, fp->idx->moffs*sizeof(bgzidx1_t));
+        fp->idx->offs = hts_realloc_p(fp->idx->offs, sizeof(bgzidx1_t),
+                                      fp->idx->moffs);
         if ( !fp->idx->offs ) return -1;
     }
     fp->idx->offs[ fp->idx->noffs-1 ].uaddr = fp->idx->ublock_addr;

@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "pooled_alloc.h"
 #include "misc.h"
+#include "../htslib/hts_alloc.h"
 
 //#define DISABLE_POOLED_ALLOC
 //#define TEST_MAIN
@@ -97,12 +98,12 @@ static pool_t *new_pool(pool_alloc_t *p) {
     size_t n = p->psize / p->dsize;
     pool_t *pool;
 
-    pool = realloc(p->pools, (p->npools + 1) * sizeof(*p->pools));
+    pool = hts_realloc_ps(p->pools, sizeof(*p->pools), p->npools, 1);
     if (NULL == pool) return NULL;
     p->pools = pool;
     pool = &p->pools[p->npools];
 
-    pool->pool = malloc(n * p->dsize);
+    pool->pool = hts_malloc_p(p->dsize, n);
     if (NULL == pool->pool) return NULL;
 
     pool->used = 0;

@@ -29,13 +29,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 
 #include "../htslib/hts.h"
+#include "../htslib/hts_alloc.h"
 #include "../htslib/vcf.h"
 #include "../htslib/vcfutils.h"
 #include "../htslib/kbitset.h"
 #include "../htslib/kstring.h"
 #include "../htslib/kseq.h"
 
-void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -201,7 +202,7 @@ void write_bcf(char *fname)
     check0(bcf_update_info_flag(hdr, rec, "DB", NULL, 1));
     check0(bcf_update_info_flag(hdr, rec, "H2", NULL, 1));
     // .. FORMAT
-    int32_t *tmpia = (int*)malloc(bcf_hdr_nsamples(hdr)*2*sizeof(int));
+    int32_t *tmpia = (int*)hts_malloc_p(2 * sizeof(*tmpia), bcf_hdr_nsamples(hdr));
     tmpia[0] = bcf_gt_phased(0);
     tmpia[1] = bcf_gt_phased(0);
     tmpia[2] = bcf_gt_phased(1);

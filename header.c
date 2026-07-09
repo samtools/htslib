@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018-2020, 2023, 2025 Genome Research Ltd.
+Copyright (c) 2018-2020, 2023, 2025-2026 Genome Research Ltd.
 Authors: James Bonfield <jkb@sanger.ac.uk>, Valeriu Ohan <vo2@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "header.h"
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/kseq.h"
 
 // Hash table for removing multiple lines from the header
@@ -174,8 +175,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             return -1; // SN should be present, according to spec.
         }
 
-        if (len == -1) {
-            hts_log_error("Header includes @SQ line \"%s\" with no LN: tag",
+        if (len <= 0) {
+            hts_log_error("Header includes @SQ line \"%s\" with invalid or no LN: tag",
                           name);
             return -1; // LN should be present, according to spec.
         }
@@ -248,7 +249,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
 
         if (nref == hrecs->ref_sz) {
             size_t new_sz = hrecs->ref_sz >= 4 ? hrecs->ref_sz + (hrecs->ref_sz / 4) : 32;
-            sam_hrec_sq_t *new_ref = realloc(hrecs->ref, sizeof(*hrecs->ref) * new_sz);
+            sam_hrec_sq_t *new_ref = hts_realloc_p(hrecs->ref, sizeof(*hrecs->ref), new_sz);
             if (!new_ref)
                 return -1;
             hrecs->ref = new_ref;
@@ -300,7 +301,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
 
         if (nrg == hrecs->rg_sz) {
             size_t new_sz = hrecs->rg_sz >= 4 ? hrecs->rg_sz + hrecs->rg_sz / 4 : 4;
-            sam_hrec_rg_t *new_rg = realloc(hrecs->rg, sizeof(*hrecs->rg) * new_sz);
+            sam_hrec_rg_t *new_rg = hts_realloc_p(hrecs->rg, sizeof(*hrecs->rg), new_sz);
             if (!new_rg)
                 return -1;
             hrecs->rg = new_rg;
@@ -327,7 +328,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
 
         if (npg == hrecs->pg_sz) {
             size_t new_sz = hrecs->pg_sz >= 4 ? hrecs->pg_sz + hrecs->pg_sz / 4 : 4;
-            new_pg = realloc(hrecs->pg, sizeof(*hrecs->pg) * new_sz);
+            new_pg = hts_realloc_p(hrecs->pg, sizeof(*hrecs->pg), new_sz);
             if (!new_pg)
                 return -1;
             hrecs->pg = new_pg;
@@ -396,7 +397,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             int *new_pg_end;
             int  new_alloc = hrecs->npg_end_alloc ? hrecs->npg_end_alloc*2 : 4;
 
-            new_pg_end = realloc(hrecs->pg_end, new_alloc * sizeof(int));
+            new_pg_end = hts_realloc_p(hrecs->pg_end, sizeof(int), new_alloc);
             if (!new_pg_end)
                 return -1;
             hrecs->npg_end_alloc = new_alloc;
@@ -611,7 +612,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
         if (strncmp(type, "CO", 2)) {
             h_tag->len = 3 + strlen(val);
-            str = string_alloc(hrecs->str_pool, h_tag->len+1);
+            str = string_alloc(hrecs->str_pool, hts_add_sat2(h_tag->len, 1));
             if (!str || snprintf(str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
                 return -1;
             h_tag->str = str;
@@ -646,7 +647,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
         if (strncmp(type, "CO", 2)) {
             h_tag->len = 3 + strlen(val);
-            str = string_alloc(hrecs->str_pool, h_tag->len+1);
+            str = string_alloc(hrecs->str_pool, hts_add_sat2(h_tag->len, 1));
             if (!str || snprintf(str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
                 return -1;
             h_tag->str = str;
@@ -1045,8 +1046,8 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
             return -1;
 
         if (hrecs->ref_sz < sq_count) {
-            sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
-                                             sizeof(*hrecs->ref) * sq_count);
+            sam_hrec_sq_t *new_ref = hts_realloc_p(hrecs->ref,
+                                                   sizeof(*hrecs->ref), sq_count);
             if (!new_ref)
                 return -1;
             hrecs->ref = new_ref;
@@ -1080,13 +1081,13 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
 
     // Grow arrays if necessary
     if (bh->n_targets < hrecs->nref) {
-        char **new_names = realloc(bh->target_name,
-                                   hrecs->nref * sizeof(*new_names));
+        char **new_names = hts_realloc_p(bh->target_name, sizeof(*new_names),
+                                         hrecs->nref);
         if (!new_names)
             return -1;
         bh->target_name = new_names;
-        uint32_t *new_lens = realloc(bh->target_len,
-                                     hrecs->nref * sizeof(*new_lens));
+        uint32_t *new_lens = hts_realloc_p(bh->target_len, sizeof(*new_lens),
+                                           hrecs->nref);
         if (!new_lens)
             return -1;
         bh->target_len = new_lens;
@@ -1194,8 +1195,8 @@ static int sam_hrecs_refs_from_targets_array(sam_hrecs_t *hrecs,
     }
 
     if (hrecs->ref_sz < bh->n_targets) {
-        sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
-                                         bh->n_targets * sizeof(*new_ref));
+        sam_hrec_sq_t *new_ref = hts_realloc_p(hrecs->ref, sizeof(*new_ref),
+                                               bh->n_targets);
         if (!new_ref)
             return -1;
 
@@ -1439,7 +1440,7 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
         if (f == NULL)
             goto error;
 
-        while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
+        while (line.l = 0, khgetline(&line, f) >= 0) {
             char* tab = strchr(line.s, '\t');
             size_t l_start = str.l;
             sam_hrec_type_t *h_type;
@@ -1486,8 +1487,8 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
             goto error;
 
         if (hrecs->ref_sz < sq_count) {
-            sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
-                                             sizeof(*hrecs->ref) * sq_count);
+            sam_hrec_sq_t *new_ref = hts_realloc_p(hrecs->ref,
+                                                   sizeof(*hrecs->ref), sq_count);
             if (!new_ref)
                 goto error;
             hrecs->ref = new_ref;
@@ -2482,7 +2483,7 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
         return 0;
 
     hrecs->npg_end_alloc = hrecs->npg;
-    new_pg_end = realloc(hrecs->pg_end, hrecs->npg * sizeof(*new_pg_end));
+    new_pg_end = hts_realloc_p(hrecs->pg_end, sizeof(*new_pg_end), hrecs->npg);
     if (!new_pg_end)
         return -1;
     hrecs->pg_end = new_pg_end;
@@ -2578,7 +2579,8 @@ const char *sam_hdr_pg_id(sam_hdr_t *bh, const char *name) {
     name_len = strlen(name);
     if (name_len > 1000) name_len = 1000;
     if (hrecs->ID_buf_sz < name_len + name_extra) {
-        char *new_ID_buf = realloc(hrecs->ID_buf, name_len + name_extra);
+        char *new_ID_buf = realloc(hrecs->ID_buf,
+                                   hts_add_sat2(name_len, name_extra));
         if (new_ID_buf == NULL)
             return NULL;
         hrecs->ID_buf = new_ID_buf;
@@ -2662,7 +2664,7 @@ int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
 
     if (!specified_pp && hrecs->npg_end) {
         /* Copy ends array to avoid us looping while modifying it */
-        int *end = malloc(hrecs->npg_end * sizeof(int));
+        int *end = hts_malloc_p(sizeof(int), hrecs->npg_end);
         int i, nends = hrecs->npg_end;
 
         if (!end)
@@ -2962,7 +2964,7 @@ int sam_hrecs_vupdate(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
         }
 
         tag->len = 3 + strlen(v);
-        str = string_alloc(hrecs->str_pool, tag->len+1);
+        str = string_alloc(hrecs->str_pool, hts_add_sat2(tag->len, 1));
         if (!str)
             return -1;
 

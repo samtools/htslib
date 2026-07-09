@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2025 Genome Research Ltd.
+#    Copyright (C) 2013-2026 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -81,6 +81,7 @@ BUILT_TEST_PROGRAMS = \
 	test/pileup_mod \
 	test/plugins-dlhts \
 	test/sam \
+	test/test_alloc \
 	test/test_bgzf \
 	test/test_expr \
 	test/test_faidx \
@@ -102,7 +103,8 @@ BUILT_TEST_PROGRAMS = \
 	test/test-bcf-translate \
 	test/test-parse-reg \
 	test/test_introspection \
-	test/test-bcf_set_variant_type
+	test/test-bcf_set_variant_type \
+	test/test_hfile_libcurl
 
 BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads1 \
@@ -158,14 +160,20 @@ LIBHTS_SOVERSION = 3
 # is not strictly necessary and should be removed the next time
 # LIBHTS_SOVERSION is bumped (see #1144 and
 # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html#//apple_ref/doc/uid/TP40002013-SW23)
-MACH_O_COMPATIBILITY_VERSION = 3.1.23
-MACH_O_CURRENT_VERSION = 3.1.23
+MACH_O_COMPATIBILITY_VERSION = 3.1.24
+MACH_O_CURRENT_VERSION = 3.1.24
 
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
 
 version.h:
-	echo '#define HTS_VERSION_TEXT "$(PACKAGE_VERSION)"' > $@
+	@if test 'x$(PACKAGE_VERSION)' != x ; then \
+		echo "echo '#define HTS_VERSION_TEXT "'"$(PACKAGE_VERSION)"'"' > $@" ; \
+		echo '#define HTS_VERSION_TEXT "$(PACKAGE_VERSION)"' > $@ ; \
+	else \
+		echo "Error: PACKAGE_VERSION is not defined.  Check version.sh works." 1>&2 ; \
+		false ; \
+	fi
 
 print-version:
 	@echo $(PACKAGE_VERSION)
@@ -493,49 +501,49 @@ hts-object-files: $(LIBHTS_OBJS)
 	$(CC) -shared $(LDFLAGS) -o $@ $< hts.dll.a $(LIBS)
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(bgzf_internal_h) $(htslib_khash_h)
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_alloc_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(bgzf_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
-kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
-header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_kseq_h)
+kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h) $(htslib_hts_alloc_h)
+header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_alloc_h) $(htslib_kseq_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
-hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
-hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(hts_time_funcs_h)
-hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
-hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_log_h) $(textutils_internal_h)
+hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_kstring_h) $(htslib_khash_h)
+hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_kstring_h) $(hts_time_funcs_h)
+hts.o hts.pico: hts.c config.h os/lzma_stub.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h config_vars.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_alloc_h) $(htslib_hts_expr_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h) $(htscodecs_htscodecs_h)
+hts_expr.o hts_expr.pico: hts_expr.c config.h $(htslib_hts_expr_h) $(htslib_hts_alloc_h) $(htslib_hts_log_h) $(textutils_internal_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
-vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h) $(bgzf_internal_h)
-sam.o sam.pico: sam.c config.h $(fuzz_settings_h) $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
+vcf.o vcf.pico: vcf.c config.h $(fuzz_settings_h) $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_hts_alloc_h) $(htslib_hts_endian_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(bgzf_internal_h)
+sam.o sam.pico: sam.c config.h $(fuzz_settings_h) $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_alloc_h) $(htslib_hts_endian_h) $(htslib_hts_expr_h) $(header_h) $(bgzf_internal_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 sam_mods.o sam_mods.pico: sam_mods.c config.h $(htslib_sam_h) $(textutils_internal_h)
 simd.o simd.pico: simd.c config.h $(htslib_sam_h) $(sam_internal_h)
-tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_hts_endian_h) $(hts_internal_h) $(htslib_khash_h)
-faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kstring_h) $(hts_internal_h)
-bcf_sr_sort.o bcf_sr_sort.pico: bcf_sr_sort.c config.h $(bcf_sr_sort_h) $(htslib_khash_str2int_h) $(htslib_kbitset_h)
-synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h) $(htslib_thread_pool_h) $(bcf_sr_sort_h)
+tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_hts_alloc_h) $(htslib_hts_endian_h) $(hts_internal_h) $(bgzf_internal_h) $(htslib_khash_h)
+faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_hts_alloc_h) $(htslib_khash_h) $(htslib_kstring_h) $(hts_internal_h)
+bcf_sr_sort.o bcf_sr_sort.pico: bcf_sr_sort.c config.h $(bcf_sr_sort_h) $(htslib_khash_str2int_h) $(htslib_kbitset_h) $(htslib_hts_alloc_h)
+synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h) $(htslib_hts_alloc_h) $(htslib_thread_pool_h) $(bcf_sr_sort_h)
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c config.h $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
-vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_kbitset_h)
+vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_hts_alloc_h) $(htslib_kbitset_h)
 kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
-regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h) $(hts_internal_h)
+regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h) $(hts_internal_h)
 region.o region.pico: region.c config.h $(htslib_hts_h) $(htslib_khash_h)
 md5.o md5.pico: md5.c config.h $(htslib_hts_h) $(htslib_hts_endian_h)
 multipart.o multipart.pico: multipart.c config.h $(htslib_kstring_h) $(hts_internal_h) $(hfile_internal_h)
 plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
-probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
-realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
+probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h) $(htslib_hts_alloc_h)
+realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(htslib_sam_h) $(hts_internal_h)
 
-cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(fuzz_settings_h) $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
-cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hfile_h)
-cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h) $(textutils_internal_h)
-cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htscodecs_rANS_static4x16_h) $(htslib_hfile_h) $(cram_h)
-cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(fuzz_settings_h) $(cram_h) $(cram_os_h) $(htslib_hts_h) $(hts_internal_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
-cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
+cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(fuzz_settings_h) $(htslib_hts_alloc_h) $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
+cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_hfile_h) $(sam_internal_h)
+cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_hts_endian_h) $(textutils_internal_h)
+cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htscodecs_rANS_static4x16_h) $(htslib_hfile_h) $(htslib_hts_alloc_h) $(cram_h)
+cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_alloc_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(fuzz_settings_h) $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(hts_internal_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
+cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_alloc_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(htslib_hts_h)
-cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
-cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
-thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_log_h) $(hts_internal_h)
+cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h) $(htslib_hts_alloc_h)
+cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h $(htslib_hts_alloc_h)
+thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_alloc_h) $(htslib_hts_log_h) $(hts_internal_h)
 
 htscodecs/htscodecs/arith_dynamic.o htscodecs/htscodecs/arith_dynamic.pico: htscodecs/htscodecs/arith_dynamic.c config.h $(htscodecs_arith_dynamic_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_utils_h) $(htscodecs_c_simple_model_h)
 htscodecs/htscodecs/fqzcomp_qual.o htscodecs/htscodecs/fqzcomp_qual.pico: htscodecs/htscodecs/fqzcomp_qual.c config.h $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htscodecs_utils_h) $(htscodecs_c_simple_model_h)
@@ -572,10 +580,10 @@ tabix: tabix.o libhts.a
 ref_cache/ref-cache: $(REF_CACHE_OBJS)
 	$(CC) $(LDFLAGS) $(REF_CACHE_EXTRA_LD_FLAGS) -o $@ $(REF_CACHE_OBJS) -lcurl
 
-annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h) $(textutils_internal_h)
-bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hfile_h)
+annot-tsv.o: annot-tsv.c config.h $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_hts_defs_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_regidx_h) $(textutils_internal_h)
+bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_hfile_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
-tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h) $(htslib_thread_pool_h)
+tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h) $(htslib_thread_pool_h)
 
 # ref_cache dependencies
 ref_cache_cmsg_wrap_h = ref_cache/cmsg_wrap.h
@@ -596,12 +604,13 @@ ref_cache_upstream_h = ref_cache/upstream.h $(ref_cache_types_h)
 
 ref_cache/cmsg_wrap.o: ref_cache/cmsg_wrap.c config.h $(ref_cache_cmsg_wrap_h)
 ref_cache/http_parser.o: ref_cache/http_parser.c config.h $(ref_cache_http_parser_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_request_handler_h) $(ref_cache_server_h) cram/pooled_alloc.h
-ref_cache/listener.o: ref_cache/listener.c config.h $(ref_cache_listener_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h)
-ref_cache/log_files.o: ref_cache/log_files.c config.h $(ref_cache_log_files_h) $(ref_cache_options_h)
-ref_cache/main.o: ref_cache/main.c config.h $(ref_cache_listener_h) $(ref_cache_log_files_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_ping_h) $(ref_cache_poll_wrap_h) $(ref_cache_server_h) $(ref_cache_upstream_h)
+ref_cache/listener.o: ref_cache/listener.c config.h $(ref_cache_listener_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_poll_wrap_h) $(htslib_hts_alloc_h)
+ref_cache/log_files.o: ref_cache/log_files.c config.h $(ref_cache_log_files_h) $(ref_cache_options_h) $(htslib_hts_alloc_h)
+ref_cache/main.o: ref_cache/main.c config.h $(ref_cache_listener_h) $(ref_cache_log_files_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_ping_h) $(ref_cache_poll_wrap_h) $(ref_cache_server_h) $(ref_cache_upstream_h) $(htslib_hts_alloc_h)
+ref_cache/misc.o: ref_cache/misc.c config.h $(ref_cache_misc_h)
 ref_cache/ping.o: ref_cache/ping.c config.h $(ref_cache_ping_h) $(ref_cache_misc_h) $(ref_cache_options_h)
 ref_cache/poll_wrap_epoll.o: ref_cache/poll_wrap_epoll.c config.h $(ref_cache_poll_wrap_h) cram/pooled_alloc.h
-ref_cache/poll_wrap_poll.o: ref_cache/poll_wrap_poll.c config.h $(ref_cache_poll_wrap_h) cram/pooled_alloc.h
+ref_cache/poll_wrap_poll.o: ref_cache/poll_wrap_poll.c config.h $(ref_cache_poll_wrap_h) $(htslib_hts_alloc_h) cram/pooled_alloc.h
 ref_cache/ref_files.o: ref_cache/ref_files.c config.h $(ref_cache_ref_files_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_upstream_h)
 ref_cache/request_handler.o: ref_cache/request_handler.c config.h $(ref_cache_request_handler_h) $(ref_cache_http_parser_h) $(ref_cache_misc_h) $(ref_cache_options_h) $(ref_cache_ref_files_h) $(ref_cache_transaction_h) $(ref_cache_upstream_h)
 ref_cache/sendfile_wrap.o: ref_cache/sendfile_wrap.c config.h $(ref_cache_sendfile_wrap_h)
@@ -681,6 +690,7 @@ SRC = $(srcprefix)
 #    MSYS2_ARG_CONV_EXCL="*" make check
 check test: all $(HTSCODECS_TEST_TARGETS)
 	test/hts_endian
+	test/test_alloc
 	test/test_expr
 	test/test_kfunc
 	test/test_khash
@@ -713,6 +723,11 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	else \
 	  REF_PATH=: ./test.pl $(REF_CACHE_TEST_OPTS) $${TEST_OPTS:-} ; \
 	fi
+	if test "x$(BUILT_PLUGINS)" != "x"; then \
+	  HTS_PATH=. ./test/with-shlib.sh test/test_hfile_libcurl ; \
+	else \
+	  test/test_hfile_libcurl ; \
+	fi
 
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
@@ -741,6 +756,9 @@ test/plugins-dlhts: test/plugins-dlhts.o
 
 test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
+
+test/test_alloc: test/test_alloc.o
+	$(CC) $(LDFLAGS) -o $@ test/test_alloc.o
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a $(LIBS) -lpthread
@@ -805,6 +823,9 @@ test/test_introspection: test/test_introspection.o libhts.a
 test/test-bcf_set_variant_type: test/test-bcf_set_variant_type.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf_set_variant_type.o libhts.a $(LIBS) -lpthread
 
+test/test_hfile_libcurl: test/test_hfile_libcurl.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_hfile_libcurl.o libhts.a $(LIBS) -lpthread
+
 # Extra tests for bundled htscodecs
 test_htscodecs_rans4x8: htscodecs/tests/rans4x8
 	cd htscodecs/tests && srcdir=. && export srcdir && ./rans4x8.test
@@ -863,10 +884,11 @@ test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
 test/pileup_mod.o: test/pileup_mod.c config.h $(htslib_sam_h)
 test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
+test/test_alloc.o: test/test_alloc.c config.h $(htslib_hts_alloc_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
-test/test_khash.o: test/test_khash.c config.h $(htslib_khash_h) $(htslib_kroundup_h)
+test/test_khash.o: test/test_khash.c config.h $(htslib_hts_alloc_h) $(htslib_khash_h) $(htslib_kroundup_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h) kstring.c
 test/test_mod.o: test/test_mod.c config.h $(htslib_sam_h)
 test/test_nibbles.o: test/test_nibbles.c config.h $(htslib_sam_h) $(sam_internal_h)
@@ -878,12 +900,13 @@ test/test_time_funcs.o: test/test_time_funcs.c config.h $(hts_time_funcs_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_hts_log_h)
 test/test_faidx.o: test/test_faidx.c config.h $(htslib_faidx_h)
 test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
-test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_vcfutils_h) $(htslib_kbitset_h) $(htslib_kstring_h) $(htslib_kseq_h)
+test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_hts_alloc_h) $(htslib_vcf_h) $(htslib_vcfutils_h) $(htslib_kbitset_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
-test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_hts_defs_h) $(htslib_synced_bcf_reader_h) $(htslib_hts_h) $(htslib_vcf_h)
+test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_hts_alloc_h) $(htslib_hts_defs_h) $(htslib_synced_bcf_reader_h) $(htslib_hts_h) $(htslib_vcf_h)
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
 test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c
+test/test_hfile_libcurl.o: test/test_hfile_libcurl.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(hts_internal_h)
 
 # Standalone target not added to $(BUILT_TEST_PROGRAMS) as some may not
 # have a compiler that compiles as C++ when given a .cpp source file.
@@ -1015,6 +1038,7 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
+	-rm -f test/hfile_libcurl.tmp
 	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* \
                test/longrefs/*.tmp.* test/ref_cache/*.tmp.* test/tabix/*.tmp.* \
                test/bgzf_boundaries/*.tmp.* test/*/FAIL* \

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2014, 2016, 2018, 2020 Genome Research Ltd.
+Copyright (c) 2012-2014, 2016, 2018, 2020, 2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram.h"
 #include "os.h"
+#include "../htslib/hts_alloc.h"
 
 cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
@@ -146,8 +147,8 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
-            int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
+            int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+            int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
             if (!vals_tmp || !freqs_tmp) {
                 free(vals_tmp  ? vals_tmp  : vals);
                 free(freqs_tmp ? freqs_tmp : freqs);
@@ -173,8 +174,8 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 
             if (nvals >= vals_alloc) {
                 vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
-                int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
+                int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+                int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
                 if (!vals_tmp || !freqs_tmp) {
                     free(vals_tmp  ? vals_tmp  : vals);
                     free(freqs_tmp ? freqs_tmp : freqs);
@@ -205,19 +206,7 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
      * Simple policy that everything is external unless it can be
      * encoded using zero bits as a unary item huffman table.
      */
-    if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-        // Note, we're assuming integer data here as we don't have the
-        // type passed in.  Cram_encoder_init does know the type and
-        // will convert to E_CONST_BYTE or E_EXTERNAL as appropriate.
-        if (nvals == 1)
-            return E_CONST_INT;
-        else if (nvals == 0 || min_val < 0)
-            return E_VARINT_SIGNED;
-        else
-            return E_VARINT_UNSIGNED;
-    } else {
-        return nvals <= 1 ? E_HUFFMAN : E_EXTERNAL;
-    }
+    return nvals <= 1 ? E_HUFFMAN : E_EXTERNAL;
 }
 
 void cram_stats_free(cram_stats *st) {

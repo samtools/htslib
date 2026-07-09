@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2025 Genome Research Ltd.
+Copyright (c) 2012-2026 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -76,6 +76,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
+#include "../htslib/hts_alloc.h"
 #include "../hts_internal.h"
 #include "open_trace_file.h"
 
@@ -85,7 +86,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <htscodecs/arith_dynamic.h>
 #include <htscodecs/tokenise_name3.h>
 #include <htscodecs/fqzcomp_qual.h>
-#include <htscodecs/varint.h> // CRAM v4.0 variable-size integers
 #else
 #include "../htscodecs/htscodecs/rANS_static.h"
 #include "../htscodecs/htscodecs/rANS_static4x16.h"
@@ -758,244 +758,6 @@ static int itf8_size(int64_t v) {
 
 //-----------------------------------------------------------------------------
 
-// CRAM v4.0 onwards uses a different variable sized integer encoding
-// that is size agnostic.
-
-// Local interface to varint.h inline version, so we can use in func ptr.
-// Note a lot of these use the unsigned interface but take signed int64_t.
-// This is because the old CRAM ITF8 inteface had signed -1 as unsigned
-// 0xffffffff.
-static int uint7_size(int64_t v) {
-    return var_size_u64(v);
-}
-
-static int64_t uint7_get_32(char **cp, const char *endp, int *err) {
-    uint32_t val;
-    int nb = var_get_u32((uint8_t *)(*cp), (const uint8_t *)endp, &val);
-    (*cp) += nb;
-    if (!nb && err) *err = 1;
-    return val;
-}
-
-static int64_t sint7_get_32(char **cp, const char *endp, int *err) {
-    int32_t val;
-    int nb = var_get_s32((uint8_t *)(*cp), (const uint8_t *)endp, &val);
-    (*cp) += nb;
-    if (!nb && err) *err = 1;
-    return val;
-}
-
-static int64_t uint7_get_64(char **cp, const char *endp, int *err) {
-    uint64_t val;
-    int nb = var_get_u64((uint8_t *)(*cp), (const uint8_t *)endp, &val);
-    (*cp) += nb;
-    if (!nb && err) *err = 1;
-    return val;
-}
-
-static int64_t sint7_get_64(char **cp, const char *endp, int *err) {
-    int64_t val;
-    int nb = var_get_s64((uint8_t *)(*cp), (const uint8_t *)endp, &val);
-    (*cp) += nb;
-    if (!nb && err) *err = 1;
-    return val;
-}
-
-static int uint7_put_32(char *cp, char *endp, int32_t val) {
-    return var_put_u32((uint8_t *)cp, (uint8_t *)endp, val);
-}
-
-static int sint7_put_32(char *cp, char *endp, int32_t val) {
-    return var_put_s32((uint8_t *)cp, (uint8_t *)endp, val);
-}
-
-static int uint7_put_64(char *cp, char *endp, int64_t val) {
-    return var_put_u64((uint8_t *)cp, (uint8_t *)endp, val);
-}
-
-static int sint7_put_64(char *cp, char *endp, int64_t val) {
-    return var_put_s64((uint8_t *)cp, (uint8_t *)endp, val);
-}
-
-// Put direct to to cram_block
-static int uint7_put_blk_32(cram_block *blk, int32_t v) {
-    uint8_t buf[10];
-    int sz = var_put_u32(buf, buf+10, v);
-    BLOCK_APPEND(blk, buf, sz);
-    return sz;
-
- block_err:
-    return -1;
-}
-
-static int sint7_put_blk_32(cram_block *blk, int32_t v) {
-    uint8_t buf[10];
-    int sz = var_put_s32(buf, buf+10, v);
-    BLOCK_APPEND(blk, buf, sz);
-    return sz;
-
- block_err:
-    return -1;
-}
-
-static int uint7_put_blk_64(cram_block *blk, int64_t v) {
-    uint8_t buf[10];
-    int sz = var_put_u64(buf, buf+10, v);
-    BLOCK_APPEND(blk, buf, sz);
-    return sz;
-
- block_err:
-    return -1;
-}
-
-static int sint7_put_blk_64(cram_block *blk, int64_t v) {
-    uint8_t buf[10];
-    int sz = var_put_s64(buf, buf+10, v);
-    BLOCK_APPEND(blk, buf, sz);
-    return sz;
-
- block_err:
-    return -1;
-}
-
-// Decode 32-bits with CRC update from cram_fd
-static int uint7_decode_crc32(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
-    uint8_t b[5], i = 0;
-    int c;
-    uint32_t v = 0;
-
-#ifdef VARINT2
-    b[0] = hgetc(fd->fp);
-    if (b[0] < 177) {
-    } else if (b[0] < 241) {
-        b[1] = hgetc(fd->fp);
-    } else if (b[0] < 249) {
-        b[1] = hgetc(fd->fp);
-        b[2] = hgetc(fd->fp);
-    } else {
-        int n = b[0]+2, z = 1;
-        while (n-- >= 249)
-            b[z++] = hgetc(fd->fp);
-    }
-    i = var_get_u32(b, NULL, &v);
-#else
-//    // Little endian
-//    int s = 0;
-//    do {
-//        b[i++] = c = hgetc(fd->fp);
-//        if (c < 0)
-//            return -1;
-//        v |= (c & 0x7f) << s;
-//      s += 7;
-//    } while (i < 5 && (c & 0x80));
-
-    // Big endian, see also htscodecs/varint.h
-    do {
-        b[i++] = c = hgetc(fd->fp);
-        if (c < 0)
-            return -1;
-        v = (v<<7) | (c & 0x7f);
-    } while (i < 5 && (c & 0x80));
-#endif
-    *crc = crc32(*crc, b, i);
-
-    *val_p = v;
-    return i;
-}
-
-// Decode 32-bits with CRC update from cram_fd
-static int sint7_decode_crc32(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
-    uint8_t b[5], i = 0;
-    int c;
-    uint32_t v = 0;
-
-#ifdef VARINT2
-    b[0] = hgetc(fd->fp);
-    if (b[0] < 177) {
-    } else if (b[0] < 241) {
-        b[1] = hgetc(fd->fp);
-    } else if (b[0] < 249) {
-        b[1] = hgetc(fd->fp);
-        b[2] = hgetc(fd->fp);
-    } else {
-        int n = b[0]+2, z = 1;
-        while (n-- >= 249)
-            b[z++] = hgetc(fd->fp);
-    }
-    i = var_get_u32(b, NULL, &v);
-#else
-//    // Little endian
-//    int s = 0;
-//    do {
-//        b[i++] = c = hgetc(fd->fp);
-//        if (c < 0)
-//            return -1;
-//        v |= (c & 0x7f) << s;
-//      s += 7;
-//    } while (i < 5 && (c & 0x80));
-
-    // Big endian, see also htscodecs/varint.h
-    do {
-        b[i++] = c = hgetc(fd->fp);
-        if (c < 0)
-            return -1;
-        v = (v<<7) | (c & 0x7f);
-    } while (i < 5 && (c & 0x80));
-#endif
-    *crc = crc32(*crc, b, i);
-
-    *val_p = (v>>1) ^ -(v&1);
-    return i;
-}
-
-
-// Decode 64-bits with CRC update from cram_fd
-static int uint7_decode_crc64(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
-    uint8_t b[10], i = 0;
-    int c;
-    uint64_t v = 0;
-
-#ifdef VARINT2
-    b[0] = hgetc(fd->fp);
-    if (b[0] < 177) {
-    } else if (b[0] < 241) {
-        b[1] = hgetc(fd->fp);
-    } else if (b[0] < 249) {
-        b[1] = hgetc(fd->fp);
-        b[2] = hgetc(fd->fp);
-    } else {
-        int n = b[0]+2, z = 1;
-        while (n-- >= 249)
-            b[z++] = hgetc(fd->fp);
-    }
-    i = var_get_u64(b, NULL, &v);
-#else
-//    // Little endian
-//    int s = 0;
-//    do {
-//        b[i++] = c = hgetc(fd->fp);
-//        if (c < 0)
-//            return -1;
-//        v |= (c & 0x7f) << s;
-//      s += 7;
-//    } while (i < 10 && (c & 0x80));
-
-    // Big endian, see also htscodecs/varint.h
-    do {
-        b[i++] = c = hgetc(fd->fp);
-        if (c < 0)
-            return -1;
-        v = (v<<7) | (c & 0x7f);
-    } while (i < 5 && (c & 0x80));
-#endif
-    *crc = crc32(*crc, b, i);
-
-    *val_p = v;
-    return i;
-}
-
-//-----------------------------------------------------------------------------
-
 /*
  * Decodes a 32-bit little endian value from fd and stores in val.
  *
@@ -1664,7 +1426,7 @@ int cram_uncompress_block(cram_block *b) {
 #endif
 
     case RANS: {
-        unsigned int usize = b->uncomp_size, usize2;
+        unsigned int usize = b->uncomp_size, usize2 = 0;
         uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
         if (!uncomp)
             return -1;
@@ -1695,7 +1457,7 @@ int cram_uncompress_block(cram_block *b) {
     }
 
     case RANS_PR0: {
-        unsigned int usize = b->uncomp_size, usize2;
+        unsigned int usize = b->uncomp_size, usize2 = 0;
         uncomp = (char *)rans_uncompress_4x16(b->data, b->comp_size, &usize2);
         if (!uncomp)
             return -1;
@@ -1714,7 +1476,7 @@ int cram_uncompress_block(cram_block *b) {
     }
 
     case ARITH_PR0: {
-        unsigned int usize = b->uncomp_size, usize2;
+        unsigned int usize = b->uncomp_size, usize2 = 0;
         uncomp = (char *)arith_uncompress_to(b->data, b->comp_size, NULL, &usize2);
         if (!uncomp)
             return -1;
@@ -2427,10 +2189,10 @@ static void ref_entry_free_seq(ref_entry *e) {
 void refs_free(refs_t *r) {
     RP("refs_free()\n");
 
-    if (--r->count > 0)
+    if (!r)
         return;
 
-    if (!r)
+    if (--r->count > 0)
         return;
 
     if (r->pool)
@@ -2661,7 +2423,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
             int x;
 
             id_alloc = id_alloc ?id_alloc*2 : 16;
-            new_refs = realloc(r->ref_id, id_alloc * sizeof(*r->ref_id));
+            new_refs = hts_realloc_p(r->ref_id, sizeof(*r->ref_id), id_alloc);
             if (!new_refs)
                 goto err;
             r->ref_id = new_refs;
@@ -2788,7 +2550,8 @@ static int refs_from_header(cram_fd *fd) {
     //fprintf(stderr, "refs_from_header for %p mode %c\n", fd, fd->mode);
 
     /* Existing refs are fine, as long as they're compatible with the hdr. */
-    ref_entry **new_ref_id = realloc(r->ref_id, (r->nref + h->hrecs->nref) * sizeof(*r->ref_id));
+    ref_entry **new_ref_id = hts_realloc_ps(r->ref_id, sizeof(*r->ref_id),
+                                            r->nref, h->hrecs->nref);
     if (!new_ref_id)
         return -1;
     r->ref_id = new_ref_id;
@@ -3434,24 +3197,13 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
 
 
     /* Sanity checking: does this ID exist? */
-    if (id >= fd->refs->nref) {
+    if (!fd->refs || id < 0 || id >= fd->refs->nref || !fd->refs->ref_id[id]) {
         hts_log_error("No reference found for id %d", id);
         pthread_mutex_unlock(&fd->ref_lock);
         return NULL;
     }
 
-    if (!fd->refs || !fd->refs->ref_id[id]) {
-        hts_log_error("No reference found for id %d", id);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
-
-    if (!(r = fd->refs->ref_id[id])) {
-        hts_log_error("No reference found for id %d", id);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
-
+    r = fd->refs->ref_id[id];
 
     /*
      * It has an entry, but may not have been populated yet.
@@ -3703,10 +3455,10 @@ cram_container *cram_new_container(int nrec, int nslice) {
     return NULL;
 }
 
-static void free_bam_list(bam_seq_t **bams, int max_rec) {
+static void free_bam_list(bam_seq_t *bams, int max_rec) {
     int i;
     for (i = 0; i < max_rec; i++)
-        bam_free(bams[i]);
+        bam_free(&bams[i]);
 
     free(bams);
 }
@@ -3825,28 +3577,13 @@ cram_container *cram_read_container(cram_fd *fd) {
         }
         len = le_int4(c2.length);
         crc = crc32(0L, (unsigned char *)&len, 4);
-    } else {
-        if ((s = fd->vv.varint_decode32_crc(fd, &c2.length, &crc))   == -1) {
-            fd->eof = fd->empty_container ? 1 : 2;
-            return NULL;
-        } else {
-            rd+=s;
-        }
     }
     if ((s = fd->vv.varint_decode32s_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
-    if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-        int64_t i64;
-        if ((s = fd->vv.varint_decode64_crc(fd, &i64, &crc))== -1) return NULL; else rd+=s;
-        c2.ref_seq_start = i64;
-        if ((s = fd->vv.varint_decode64_crc(fd, &i64, &crc)) == -1) return NULL; else rd+=s;
-        c2.ref_seq_span = i64;
-    } else {
-        int32_t i32;
-        if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc))== -1) return NULL; else rd+=s;
-        c2.ref_seq_start = i32;
-        if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc)) == -1) return NULL; else rd+=s;
-        c2.ref_seq_span = i32;
-    }
+    int32_t i32;
+    if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc))== -1) return NULL; else rd+=s;
+    c2.ref_seq_start = i32;
+    if ((s = fd->vv.varint_decode32_crc(fd, &i32, &crc)) == -1) return NULL; else rd+=s;
+    c2.ref_seq_span = i32;
     if ((s = fd->vv.varint_decode32_crc(fd, &c2.num_records, &crc))  == -1) return NULL; else rd+=s;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -3895,7 +3632,7 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
     }
 #endif
-    if (c->num_landmarks && !(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
+    if (c->num_landmarks && !(c->landmark = hts_malloc_p(sizeof(*c->landmark), c->num_landmarks))) {
         fd->err = errno;
         cram_free_container(c);
         return NULL;
@@ -3988,13 +3725,8 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
         cp += fd->vv.varint_put32(cp, NULL, 0);
     } else {
         cp += fd->vv.varint_put32s(cp, NULL, c->ref_seq_id);
-        if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_start);
-            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_span);
-        } else {
-            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_start);
-            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_span);
-        }
+        cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_start);
+        cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_span);
     }
     cp += fd->vv.varint_put32(cp, NULL, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
@@ -4054,13 +3786,8 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
         cp += fd->vv.varint_put32(cp, NULL, 0);
     } else {
         cp += fd->vv.varint_put32s(cp, NULL, c->ref_seq_id);
-        if (CRAM_MAJOR_VERS(fd->version) >= 4) {
-            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_start);
-            cp += fd->vv.varint_put64(cp, NULL, c->ref_seq_span);
-        } else {
-            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_start);
-            cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_span);
-        }
+        cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_start);
+        cp += fd->vv.varint_put32(cp, NULL, c->ref_seq_span);
     }
     cp += fd->vv.varint_put32(cp, NULL, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) >= 3)
@@ -4431,6 +4158,11 @@ void cram_free_slice(cram_slice *s) {
     if (!s)
         return;
 
+    if (s->bl) {
+        free_bam_list(s->bl->bams, s->bl->nbams);
+        free(s->bl);
+    }
+
     if (s->hdr_block)
         cram_free_block(s->hdr_block);
 
@@ -4525,9 +4257,9 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block = NULL;
     s->block_by_id = NULL;
     s->last_apos = 0;
-    if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))  goto err;
+    if (!(s->crecs = hts_malloc_p(sizeof(*s->crecs), nrecs)))  goto err;
     s->cigar_alloc = 1024;
-    if (!(s->cigar = malloc(s->cigar_alloc * sizeof(*s->cigar)))) goto err;
+    if (!(s->cigar = hts_malloc_p(sizeof(*s->cigar), s->cigar_alloc))) goto err;
     s->ncigar = 0;
 
     if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))       goto err;
@@ -4631,7 +4363,7 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 
     /* Initialise encoding/decoding tables */
     s->cigar_alloc = 1024;
-    if (!(s->cigar = malloc(s->cigar_alloc * sizeof(*s->cigar)))) goto err;
+    if (!(s->cigar = hts_malloc_p(sizeof(*s->cigar), s->cigar_alloc))) goto err;
     s->ncigar = 0;
 
     if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))      goto err;
@@ -5136,41 +4868,22 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
  * vv is the vector table (probably &cram_fd->vv)
  */
 static void cram_init_varint(varint_vec *vv, int version) {
-    if (version >= 4) {
-        vv->varint_get32 = uint7_get_32; // FIXME: varint.h API should be size agnostic
-        vv->varint_get32s = sint7_get_32;
-        vv->varint_get64 = uint7_get_64;
-        vv->varint_get64s = sint7_get_64;
-        vv->varint_put32 = uint7_put_32;
-        vv->varint_put32s = sint7_put_32;
-        vv->varint_put64 = uint7_put_64;
-        vv->varint_put64s = sint7_put_64;
-        vv->varint_put32_blk = uint7_put_blk_32;
-        vv->varint_put32s_blk = sint7_put_blk_32;
-        vv->varint_put64_blk = uint7_put_blk_64;
-        vv->varint_put64s_blk = sint7_put_blk_64;
-        vv->varint_size = uint7_size;
-        vv->varint_decode32_crc = uint7_decode_crc32;
-        vv->varint_decode32s_crc = sint7_decode_crc32;
-        vv->varint_decode64_crc = uint7_decode_crc64;
-    } else {
-        vv->varint_get32 = safe_itf8_get;
-        vv->varint_get32s = safe_itf8_get;
-        vv->varint_get64 = safe_ltf8_get;
-        vv->varint_get64s = safe_ltf8_get;
-        vv->varint_put32 = safe_itf8_put;
-        vv->varint_put32s = safe_itf8_put;
-        vv->varint_put64 = safe_ltf8_put;
-        vv->varint_put64s = safe_ltf8_put;
-        vv->varint_put32_blk = itf8_put_blk;
-        vv->varint_put32s_blk = itf8_put_blk;
-        vv->varint_put64_blk = ltf8_put_blk;
-        vv->varint_put64s_blk = ltf8_put_blk;
-        vv->varint_size = itf8_size;
-        vv->varint_decode32_crc = itf8_decode_crc;
-        vv->varint_decode32s_crc = itf8_decode_crc;
-        vv->varint_decode64_crc = ltf8_decode_crc;
-    }
+    vv->varint_get32 = safe_itf8_get;
+    vv->varint_get32s = safe_itf8_get;
+    vv->varint_get64 = safe_ltf8_get;
+    vv->varint_get64s = safe_ltf8_get;
+    vv->varint_put32 = safe_itf8_put;
+    vv->varint_put32s = safe_itf8_put;
+    vv->varint_put64 = safe_ltf8_put;
+    vv->varint_put64s = safe_ltf8_put;
+    vv->varint_put32_blk = itf8_put_blk;
+    vv->varint_put32s_blk = itf8_put_blk;
+    vv->varint_put64_blk = ltf8_put_blk;
+    vv->varint_put64s_blk = ltf8_put_blk;
+    vv->varint_size = itf8_size;
+    vv->varint_decode32_crc = itf8_decode_crc;
+    vv->varint_decode32s_crc = itf8_decode_crc;
+    vv->varint_decode64_crc = ltf8_decode_crc;
 }
 
 /*
@@ -5545,15 +5258,6 @@ int cram_write_eof_block(cram_fd *fd) {
         // 00 01 00 06 06             // Comp.HDR blk
         // 01 00 01 00 01 00          // Comp.HDR blk
         // ee 63 01 4b                // CRC32
-
-        // V4.0 bytes:
-        // 0f 00 00 00 8f ff ff ff    // Cont HDR: size, ref seq id
-        // 82 95 9e 46 00 00 00       // Cont HDR: pos, span, nrec, counter
-        // 00 01 00                   // Cont HDR: nbase, nblk, landmark
-        // ac d6 05 bc                // CRC32
-        // 00 01 00 06 06             // Comp.HDR blk
-        // 01 00 01 00 01 00          // Comp.HDR blk
-        // ee 63 01 4b                // CRC32
     }
 
     return 0;
@@ -5565,7 +5269,7 @@ int cram_write_eof_block(cram_fd *fd) {
  *        -1 on failure
  */
 int cram_close(cram_fd *fd) {
-    spare_bams *bl, *next;
+    bam_list *bl, *next;
     int i, ret = 0;
 
     if (!fd)
@@ -5608,10 +5312,8 @@ int cram_close(cram_fd *fd) {
     }
 
     for (bl = fd->bl; bl; bl = next) {
-        int max_rec = fd->seqs_per_slice * fd->slices_per_container;
-
         next = bl->next;
-        free_bam_list(bl->bams, max_rec);
+        free_bam_list(bl->bams, bl->nbams);
         free(bl);
     }
 
@@ -5840,27 +5542,19 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         }
         if (!((major == 1 &&  minor == 0) ||
               (major == 2 && (minor == 0 || minor == 1)) ||
-              (major == 3 && (minor == 0 || minor == 1)) ||
-              (major == 4 &&  minor == 0))) {
-            hts_log_error("Unknown version string; use 1.0, 2.0, 2.1, 3.0, 3.1 or 4.0");
+              (major == 3 && (minor == 0 || minor == 1)))) {
+            hts_log_error("Unknown version string; use 1.0, 2.0, 2.1, "
+                          "3.0 or 3.1");
             errno = EINVAL;
             return -1;
-        }
-
-        if (major > 3 || (major == 3 && minor > 1)) {
-            hts_log_warning(
-                "CRAM version %s is still a draft and subject to change.\n"
-                "This is a technology demonstration that should not be "
-                "used for archival data.", s);
         }
 
         fd->version = major*256 + minor;
 
         fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3) ? 1 : 0;
 
-        fd->use_tok = ((CRAM_MAJOR_VERS(fd->version) == 3 &&
-                        CRAM_MINOR_VERS(fd->version) >= 1) ||
-                        CRAM_MAJOR_VERS(fd->version) >= 4) ? 1 : 0;
+        fd->use_tok = (CRAM_MAJOR_VERS(fd->version) == 3 &&
+                       CRAM_MINOR_VERS(fd->version) >= 1);
         cram_init_tables(fd);
 
         break;

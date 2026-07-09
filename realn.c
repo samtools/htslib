@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include <assert.h>
 #include "htslib/hts.h"
+#include "htslib/hts_alloc.h"
 #include "htslib/sam.h"
 
 int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres)
@@ -219,7 +220,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
         }
 
         assert(bq == NULL); // bq was used above, but should now be NULL
-        bq = malloc(align_lqseq * 3 + lref);
+        bq = hts_malloc_pse(3, align_lqseq, 0, lref);
         if (!bq) goto fail;
         q = bq + align_lqseq;
         tseq = q + align_lqseq;
@@ -233,7 +234,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
             tref[i-xb] = seq_nt16_int[seq_nt16_table[(unsigned char)ref[i]]];
         }
 
-        state = malloc(c->l_qseq * sizeof(int));
+        state = hts_malloc_p(sizeof(int), c->l_qseq);
         if (!state) goto fail;
         if (probaln_glocal(tref, xe-xb, tseq, c->l_qseq, qual,
                            &conf, state, q) == INT_MIN) {
