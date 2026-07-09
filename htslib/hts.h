@@ -490,7 +490,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 102202
+#define HTS_VERSION 102203
 
 /*! @abstract Introspection on the features enabled in htslib
  *
