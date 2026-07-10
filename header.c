@@ -86,7 +86,8 @@ static int sam_hrecs_init_type_order(sam_hrecs_t *hrecs, char *type_list) {
     return 0;
 }
 
-static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref, const char *list) {
+static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref,
+                                      const char *list, hts_pos_t offset) {
     const char *token;
     ks_tokaux_t aux;
 
@@ -101,13 +102,35 @@ static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref, const char *
         if (!name)
             return -1;
         int r;
-        khint_t k = kh_put(m_s2i, hrecs->ref_hash, name, &r);
-        if (r < 0) return -1;
 
-        if (r > 0)
-            kh_val(hrecs->ref_hash, k) = nref;
-        else if (kh_val(hrecs->ref_hash, k) != nref)
-            hts_log_warning("Duplicate entry AN:\"%s\" in sam header", name);
+        if (!offset) {
+            // AN field for alternate name
+            khint_t k = kh_put(m_s2i, hrecs->ref_hash, name, &r);
+            if (r < 0) return -1;
+
+            if (r > 0)
+                kh_val(hrecs->ref_hash, k) = nref;
+            else if (kh_val(hrecs->ref_hash, k) != nref)
+                hts_log_warning("Duplicate entry AN:\"%s\" in sam header", name);
+            hrecs->ref[nref].next = NULL;
+            hrecs->ref[nref].offset = 0;
+        } else {
+            // PN field for original chromosome (before splitting).
+            // Note we call this once per SQ line, with 'list' as the PN field
+            khint_t k = kh_put(m_s2i, hrecs->PN_hash, name, &r);
+            if (r < 0) return -1;
+
+            hrecs->ref[nref].offset = offset;
+            if (r > 0) {
+                // new
+                kh_val(hrecs->PN_hash, k) = nref;
+                hrecs->ref[nref].next = NULL;
+            } else {
+                // previous; add to linked list and update PN_hash pointer
+                hrecs->ref[nref].next = &hrecs->ref[kh_val(hrecs->PN_hash, k)];
+                kh_val(hrecs->PN_hash, k) = nref;
+            }
+        }
     }
 
     return 0;
@@ -151,6 +174,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         hts_pos_t len = -1;
         int r, invLN = 0;
         khint_t k;
+        hts_pos_t offset = 0;
 
         while (tag) {
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
@@ -163,7 +187,13 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 if (tmp != -1 && tmp != len) {  //duplicate and different LN
                     invLN = 1;
                 }
+            } else if (tag->str[0] == 'P' && tag->str[1] == 'O') {
+                assert(tag->len >= 3);
+                offset = strtoll(tag->str+3, NULL, 10);
             } else if (tag->str[0] == 'A' && tag->str[1] == 'N') {
+                assert(tag->len >= 3);
+                altnames = tag->str+3;
+            } else if (tag->str[0] == 'P' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
                 altnames = tag->str+3;
             }
@@ -206,11 +236,13 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                         return -1;
                     ref_changed_flag = 1;
                 }
-                if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+                hrecs->ref[nref].next = NULL;
+                if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames, offset) < 0)
                     return -1;
 
                 if (ref_changed_flag && (hrecs->refs_changed < 0 || hrecs->refs_changed > nref))
                     hrecs->refs_changed = nref;
+
                 return 0;
             }
 
@@ -224,7 +256,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                     hrecs->ref[nref].name = name;
                     ref_changed_flag = 1;
                 }
-                if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+                if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames, offset) < 0)
                     return -1;
 
                 if (ref_changed_flag && (hrecs->refs_changed < 0 || hrecs->refs_changed > nref))
@@ -264,7 +296,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         if (-1 == r) return -1;
         kh_val(hrecs->ref_hash, k) = nref;
 
-        if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+        if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames, offset) < 0)
             return -1;
 
         if (hrecs->refs_changed < 0 || hrecs->refs_changed > hrecs->nref)
@@ -2749,6 +2781,8 @@ sam_hrecs_t *sam_hrecs_new(void) {
     if (!(hrecs->ref_hash = kh_init(m_s2i)))
         goto err;
     hrecs->refs_changed = -1;
+    if (!(hrecs->PN_hash = kh_init(m_s2i)))
+        goto err;
 
     hrecs->nrg = 0;
     hrecs->rg_sz = 0;
@@ -2820,6 +2854,9 @@ void sam_hrecs_free(sam_hrecs_t *hrecs) {
 
     if (hrecs->ref_hash)
         kh_destroy(m_s2i, hrecs->ref_hash);
+
+    if (hrecs->PN_hash)
+        kh_destroy(m_s2i, hrecs->PN_hash);
 
     if (hrecs->ref)
         free(hrecs->ref);
@@ -3173,4 +3210,162 @@ enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs) {
     }
 
     return go;
+}
+
+typedef struct {
+    sam_hrec_sq_t *sq;
+    hts_pos_t offset;
+} tids_t;
+
+static int tid_sort(const void *v1, const void *v2) {
+    tids_t *s1 = (tids_t *)v1;
+    tids_t *s2 = (tids_t *)v2;
+    // s1->offset - s2->offset is too big for an int.
+    return (s1->offset > s2->offset) - (s1->offset < s2->offset);
+    //return s1->offset > s2->offset ? 1 : (s1->offset < s2->offset ? -1 : 0);
+}
+
+/*! Expands a coordinate for a split chromosome to one or more regions.
+ *
+ * SQ lines can have PN and PO fields holding the original name and offset
+ * to a larger split chromosome.  For example we have have Chr1a, Chr1b and
+ * Chr1c all having PN:Chr1 and PO fields of 1, 2000000000 and 4000000000 to
+ * work around the 2Gbp length limitation.
+ *
+ * We are able to query Chr1:3e9-5e9 and turn this into a region list
+ * of split chromosomes, which we can then use with the multi-region
+ * iterator.  Note: for simplicity we can supply a normal chromosome
+ * name and be returned the original string, so it's a pass-through,
+ * however even in this case the caller must free the returned string.
+ *
+ * @param hdr     A SAM header
+ * @param region  Region to split
+ * @param nsub    [Out] the count of the number of regions returned
+ *
+ * @return An array (size *nsub) of region strings on success,
+ *         NULL on failure.
+ */
+char **sam_hdr_expand_split_chr(sam_hdr_t *hdr, const char *region,
+                                int *nsub) {
+    // Basic region tokenisation to look for the chromosome name.
+    const char *chr = NULL, *chr_end = NULL;
+    if (*region == '{') {
+        chr = region+1;
+        chr_end = strchr(region, '}');
+        if (!chr_end)
+            return NULL;
+        chr_end--;
+    } else {
+        chr = region;
+        chr_end = strchr(region, ':');
+        if (chr_end)
+            chr_end--;
+        else
+            chr_end = chr + strlen(chr);
+    }
+
+    // A known SQ name means we just pass it straight through
+    kstring_t s = KS_INITIALIZE;
+    if (kputsn(chr, chr_end-chr+1, &s) < 0)
+        return NULL;
+
+    if (sam_hdr_name2tid(hdr, s.s) >= 0) {
+        free(s.s);
+        char **reg_array = malloc(sizeof(*reg_array));
+        if (!reg_array)
+            return NULL;
+        reg_array[0] = strdup(region);
+        *nsub = 1;
+        return reg_array;
+    }
+
+    // Otherwise we check PN_hash
+    sam_hrecs_t *hrecs = hdr->hrecs;
+    if (!hrecs)
+        return NULL;
+
+    khiter_t k = kh_get(m_s2i, hrecs->PN_hash, s.s);
+
+    // A standard SQ line (or at least a non-split chromosome)
+    if (k == kh_end(hrecs->PN_hash)) {
+        free(s.s);
+        return NULL; // an unknown SQ SN or PN field
+    }
+
+    // A split chromosome
+    hts_pos_t beg, end;
+    if (hts_parse_reg64(region, &beg, &end) == NULL)
+        return NULL;
+
+    beg++; // beg to end inclusive, 1-based
+
+    // Sort sequences by offset.
+    // Maybe we should do this always on header load?
+    int nrefs = 0;
+    sam_hrec_sq_t *sq = &hrecs->ref[kh_val(hrecs->PN_hash, k)];
+    while (sq) {
+        nrefs++;
+        sq = sq->next;
+    }
+    *nsub = 0;
+    char **reg_array = NULL;
+    tids_t *tids = NULL;
+
+    reg_array = calloc(nrefs, sizeof(*reg_array));
+    tids = malloc(nrefs * sizeof(*tids));
+
+    if (!reg_array || !tids)
+        goto error;
+
+    nrefs = 0;
+    sq = &hrecs->ref[kh_val(hrecs->PN_hash, k)];
+    while (sq) {
+        tids[nrefs].sq = sq;
+        tids[nrefs].offset = sq->offset;
+        nrefs++;
+        sq = sq->next;
+    }
+    qsort(tids, nrefs, sizeof(*tids), tid_sort);
+
+    int err = 0, j = 0, i;
+    for (i = 0; i < nrefs; i++) {
+        sq = tids[i].sq;
+        hts_pos_t s_beg = sq->offset;
+        hts_pos_t s_end = sq->offset + sq->len-1;
+
+        if (s_beg < end && s_end >= beg) {
+            s_beg = beg - sq->offset;
+            s_end = end - sq->offset;
+            if (s_beg <= 0)
+                s_beg = 1;
+            if (s_end > sq->len)
+                s_end = sq->len;
+            ks_clear(&s);
+            err |= ksprintf(&s, "%s:%"PRIhts_pos"-%"PRIhts_pos,
+                            sq->name, s_beg+1, s_end+1) < 0;
+            puts(s.s);
+            if (!(reg_array[j++] = strdup(s.s)))
+                goto error;
+        }
+    }
+    *nsub = j;
+
+    free(tids);
+    free(s.s);
+
+    if (!err)
+        return reg_array;
+
+ error:
+    free(s.s);
+
+    if (reg_array) {
+        int i;
+        for (i = 0; i < *nsub; i++)
+            free(reg_array[i]);
+        free(reg_array);
+    }
+
+    free(tids);
+    return NULL;
 }

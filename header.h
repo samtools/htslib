@@ -126,10 +126,13 @@ typedef struct sam_hrec_type_s {
 } sam_hrec_type_t;
 
 /*! Parsed \@SQ lines */
-typedef struct {
+typedef struct sam_hrec_sq_s {
     const char *name;
     hts_pos_t len;
     sam_hrec_type_t *ty;
+    hts_pos_t offset;
+    //int is_PN;
+    struct sam_hrec_sq_s *next;   // link PN chains together
 } sam_hrec_sq_t;
 
 /*! Parsed \@RG lines */
@@ -192,6 +195,7 @@ struct sam_hrecs_t {
     int ref_sz;                //!< Number of entries available in ref[]
     sam_hrec_sq_t *ref;        //!< Array of parsed \@SQ lines
     khash_t(m_s2i) *ref_hash;  //!< Maps SQ SN field to ref[] index
+    khash_t(m_s2i) *PN_hash;   //!< Maps SQ PN field to ref[] index
 
     // @RG lines / read-groups
     int nrg;                   //!< Number of \@RG lines
@@ -326,6 +330,29 @@ enum sam_sort_order sam_hrecs_sort_order(sam_hrecs_t *hrecs);
 
 /*! Returns the group order from the @HD SO: field */
 enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs);
+
+/*! Expands a coordinate for a split chromosome to one or more regions.
+ *
+ * SQ lines can have PN and PO fields holding the original name and offset
+ * to a larger split chromosome.  For example we have have Chr1a, Chr1b and
+ * Chr1c all having PN:Chr1 and PO fields of 1, 2000000000 and 4000000000 to
+ * work around the 2Gbp length limitation.
+ *
+ * We are able to query Chr1:3e9-5e9 and turn this into a region list
+ * of split chromosomes, which we can then use with the multi-region
+ * iterator.  Note: for simplicity we can supply a normal chromosome
+ * name and be returned the original string, so it's a pass-through,
+ * however even in this case the caller must free the returned string.
+ *
+ * @param hdr     A SAM header
+ * @param region  Region to split
+ * @param nsub    [Out] the count of the number of regions returned
+ *
+ * @return An array (size *nsub) of region strings on success,
+ *         NULL on failure.
+ */
+char **sam_hdr_expand_split_chr(sam_hdr_t *hdr, const char *region,
+                                int *nsub);
 
 #ifdef __cplusplus
 }

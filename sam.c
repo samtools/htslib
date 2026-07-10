@@ -1743,10 +1743,20 @@ static int cram_name2id(void *fdv, const char *ref)
 
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *region)
 {
-    const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    return hts_itr_querys(idx, region, bam_name2id_wrapper, hdr,
-                          cidx->fmt == HTS_FMT_CRAI ? cram_itr_query : hts_itr_query,
-                          sam_readrec);
+    hts_itr_t *iter = NULL;
+
+    int nregs;
+    char **reg_list = sam_hdr_expand_split_chr(hdr, region, &nregs);
+    if (!reg_list)
+        return NULL;
+
+    iter = sam_itr_regarray(idx, hdr, reg_list, nregs);
+    int i;
+    for (i = 0; i < nregs; i++)
+        free(reg_list[i]);
+    free(reg_list);
+
+    return iter;
 }
 
 hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarray, unsigned int regcount)
