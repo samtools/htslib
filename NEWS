@@ -1,6 +1,12 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* New environment variable HTS_GCS_HOST, analogous to the existing
+  HTS_S3_HOST, to redirect gs:// URLs to a caller-specified endpoint
+  (e.g. a local GCS emulator such as fake-gcs-server) using path-style
+  addressing instead of the normal BUCKET.storage.googleapis.com
+  virtual-hosted-style addressing.
+
 Noteworthy changes in release 1.24 (9th July 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
