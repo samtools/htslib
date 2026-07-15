@@ -1932,6 +1932,19 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     int ret = 0;
     while ( !ret )
     {
+        if ( reg->is_bin && !reg->itr )
+        {
+            // Have an index, but no iterator set yet.  Create one that
+            // reads the entire file from the start.
+
+            reg->itr = tbx_itr_queryi(reg->tbx, HTS_IDX_START, 0, 0);
+            if ( !reg->itr )
+            {
+                hts_log_error("Couldn't make iterator over %s", reg->fname);
+                return -2;
+            }
+        }
+
         if ( reg->itr )
         {
             // tabix index present, reading a chromosome block
@@ -1940,22 +1953,6 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
         }
         else
         {
-            if ( reg->is_bin )
-            {
-                // Waited for seek which never came. Reopen in text mode and stream
-                // through the regions, otherwise hts_getline would fail
-                hts_close(reg->file);
-                reg->file = hts_open(reg->fname, "r");
-                if ( !reg->file )
-                {
-                    hts_log_error("Could not open file: %s", reg->fname);
-                    reg->file = NULL;
-                    bcf_sr_regions_destroy(reg);
-                    return -2;
-                }
-                reg->is_bin = 0;
-            }
-
             // tabix index absent, reading the whole file
             ret = reg->file ? hts_getline(reg->file, KS_SEP_LINE, &reg->line) : -1;
             if ( ret<-1)
