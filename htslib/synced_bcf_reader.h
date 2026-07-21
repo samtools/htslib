@@ -292,8 +292,21 @@ HTSLIB_EXPORT
 int bcf_sr_add_hreader(bcf_srs_t *readers, htsFile *file_ptr, int autoclose,
     const char *idxname);
 
+
+/**
+ *  Remove a reader
+ *  @param  files      holder of the open readers
+ *  @param  reader_idx index of the reader in the bcf_srs_t::readers array
+ *
+ *  Removes the specified reader, and cleans up associated internal data
+ *  structures.  If @p reader_idx was not the last one, all later readers
+ *  will be renumbered to fill the gap.
+ *
+ *  If autoclose was true when adding the reader via bcf_sr_add_hreader(),
+ *  the underlying file handle will also be closed.
+ */
 HTSLIB_EXPORT
-void bcf_sr_remove_reader(bcf_srs_t *files, int i);
+void bcf_sr_remove_reader(bcf_srs_t *files, int reader_idx);
 
 /**
  * Synced reader iterator
