@@ -70,6 +70,7 @@ shlib-exports-*.txt
 /test/test_introspection
 /test/test_kfunc
 /test/test_khash
+/test/test_ksort
 /test/test_kstring
 /test/test_mod
 /test/test_hfile_libcurl
