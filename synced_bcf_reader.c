@@ -589,21 +589,24 @@ static void decr_multi_running(region_t *reg)
     reg->creg = reg->multi_end;
 }
 
-void bcf_sr_remove_reader(bcf_srs_t *files, int i)
+void bcf_sr_remove_reader(bcf_srs_t *files, int reader_idx)
 {
     assert( !files->samples );  // not ready for this yet
     int *autoclose = BCF_SR_AUX(files)->closefile;
 
-    if (i < 0 || i >= files->nreaders)
+    if (reader_idx < 0 || reader_idx >= files->nreaders)
         return;
 
-    bcf_sr_sort_remove_reader(files, &BCF_SR_AUX(files)->sort, i);
-    int had_itr = bcf_sr_destroy1(&files->readers[i], autoclose[i]);
-    if ( i+1 < files->nreaders )
+    bcf_sr_sort_remove_reader(files, &BCF_SR_AUX(files)->sort, reader_idx);
+    int had_itr = bcf_sr_destroy1(&files->readers[reader_idx], autoclose[reader_idx]);
+    if ( reader_idx+1 < files->nreaders )
     {
-        memmove(&files->readers[i], &files->readers[i+1], (files->nreaders-i-1)*sizeof(bcf_sr_t));
-        memmove(&files->has_line[i], &files->has_line[i+1], (files->nreaders-i-1)*sizeof(int));
-        memmove(&autoclose[i], &autoclose[i+1], (files->nreaders-i-1)*sizeof(int));
+        memmove(&files->readers[reader_idx], &files->readers[reader_idx+1],
+                (files->nreaders-reader_idx-1)*sizeof(bcf_sr_t));
+        memmove(&files->has_line[reader_idx], &files->has_line[reader_idx+1],
+                (files->nreaders-reader_idx-1)*sizeof(int));
+        memmove(&autoclose[reader_idx], &autoclose[reader_idx+1],
+                (files->nreaders-reader_idx-1)*sizeof(int));
     }
     if (files->regions && files->regions->regs)
     {
@@ -613,9 +616,9 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i)
             region_t *reg = &files->regions->regs[seq];
             if (reg->multi_curr)
             {
-                if (i + 1 < files->nreaders)
-                    memmove(&reg->multi_curr[i], &reg->multi_curr[i + 1],
-                            (files->nreaders-i-1)*sizeof(*reg->multi_curr));
+                if (reader_idx + 1 < files->nreaders)
+                    memmove(&reg->multi_curr[reader_idx], &reg->multi_curr[reader_idx + 1],
+                            (files->nreaders-reader_idx-1)*sizeof(*reg->multi_curr));
                 if (had_itr)
                     decr_multi_running(reg);
             }
