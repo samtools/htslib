@@ -161,12 +161,14 @@ typedef struct {
 	SCOPE void ks_heapmake##name(size_t lsize, type_t l[])				\
 	{																	\
 		size_t i;														\
-		for (i = (lsize >> 1) - 1; i != (size_t)(-1); --i)				\
-			ks_heapadjust##name(i, lsize, l);							\
+		for (i = (lsize >> 1); i != 0; --i)								\
+			ks_heapadjust##name(i - 1, lsize, l);	   					\
 	}																	\
 	SCOPE void ks_heapsort##name(size_t lsize, type_t l[])				\
 	{																	\
+		/* N.B.: Call ks_heapmake before calling this function */		\
 		size_t i;														\
+		if (lsize < 1) return;											\
 		for (i = lsize - 1; i > 0; --i) {								\
 			type_t tmp;													\
 			tmp = *l; *l = l[i]; l[i] = tmp; ks_heapadjust##name(0, i, l); \
