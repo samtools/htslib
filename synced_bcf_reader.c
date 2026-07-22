@@ -782,6 +782,27 @@ static int reader_seek_multi(bcf_sr_t *reader, hts_reglist_t *reglist_in,
     assert(reader->itr == NULL);
 
     hts_reglist_t *reglist = NULL;
+    int tid;
+
+    // Look up the id for the reference for this reader.  It's OK for it
+    // to be absent, especially for tabix-indexed files, to allow for
+    // inputs that contain different subsets of the full list of references.
+
+    if (reader->tbx_idx) {
+        tid = tbx_name2id(reader->tbx_idx, reglist_in->reg);
+    } else if (reader->bcf_idx) {
+        tid = bcf_hdr_name2id(reader->header, reglist_in->reg);
+    } else {
+        hts_log_error("Attempted to make an iterator without an index!");
+        goto fail;
+    }
+    if (tid < -1) {
+        hts_log_error("Failed to parse header");
+        goto fail;
+    } else if (tid < 0) {
+        // Region not present, create an iterator that returns no data
+        tid = HTS_IDX_NONE;
+    }
 
     if (copy_reglist) {
         // The iterator takes ownership of the region list, so take
@@ -790,25 +811,32 @@ static int reader_seek_multi(bcf_sr_t *reader, hts_reglist_t *reglist_in,
         if (!reglist)
             goto memfail;
         memcpy(reglist, reglist_in, sizeof(*reglist));
-        reglist->intervals = hts_malloc_p(sizeof(*reglist->intervals),
-                                          reglist_in->count);
-        if (!reglist->intervals)
-            goto memfail;
-        memcpy(reglist->intervals, reglist_in->intervals,
-               sizeof(*reglist->intervals) * reglist_in->count);
+        if (tid != HTS_IDX_NONE) {
+            reglist->intervals = hts_malloc_p(sizeof(*reglist->intervals),
+                                              reglist_in->count);
+            if (!reglist->intervals)
+                goto memfail;
+            memcpy(reglist->intervals, reglist_in->intervals,
+                   sizeof(*reglist->intervals) * reglist_in->count);
+        } else {
+            // No need to copy intervals if the reference was absent
+            reglist->intervals = NULL;
+            reglist->count = 0;
+        }
     } else {
         // Use the one passed in
         reglist = reglist_in;
     }
+
+    // Prevent lookup of tid in tbx_itr_regions()/bcf_itr_regions()
+    reglist->tid = tid;
+    reglist->reg = NULL;
 
     if (reader->tbx_idx) {
         reader->itr = tbx_itr_regions(reader->tbx_idx, reglist, 1);
     } else if (reader->bcf_idx) {
         reader->itr = bcf_itr_regions(reader->bcf_idx, reader->header,
                                       reglist, 1);
-    } else {
-        hts_log_error("Attempted to make an iterator without an index!");
-        goto fail;
     }
     if (!reader->itr)
         return -2;  // reglist will have been cleaned up by hts_itr_regions
