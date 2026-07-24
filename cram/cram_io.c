@@ -4729,6 +4729,13 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
         }
     }
 
+    if (fd->remove_ur) {
+        if (sam_hdr_remove_tag_all(hdr, "SQ", "UR") < 0) {
+            hts_log_error("Unable to remove UR tags");
+            return -1;
+        }
+    }
+
     /* Length */
     header_len = sam_hdr_length(hdr);
     if (header_len > INT32_MAX) {
@@ -5610,6 +5617,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_STORE_NM:
         fd->store_nm = va_arg(args, int);
+        break;
+
+    case CRAM_OPT_RM_UR:
+        fd->remove_ur = va_arg(args, int);
         break;
 
     case HTS_OPT_COMPRESSION_LEVEL:

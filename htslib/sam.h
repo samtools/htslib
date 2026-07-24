@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2023, 2025 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2023, 2025-26 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -831,6 +831,15 @@ char *stringify_argv(int argc, char *argv[]);
  */
 HTSLIB_EXPORT
 void sam_hdr_incr_ref(sam_hdr_t *h);
+
+/// Remove the tag from all lines identified by type.
+/*!
+ * @param type      Type of the line to which the tag belongs. Eg. "SQ"
+ * @param tag_id    The name of the targeted tag. Eg. "UR"
+ * @return          the number of tags removed (can be 0); -1 on error
+ */
+HTSLIB_EXPORT
+int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id);
 
 /*
  * Macros for changing the \@HD line. They eliminate the need to use NULL method arguments.
