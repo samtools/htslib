@@ -1,7 +1,7 @@
 /// @file htslib/hts.h
 /// Format-neutral I/O, indexing, and iterator API functions.
 /*
-    Copyright (C) 2012-2022 Genome Research Ltd.
+    Copyright (C) 2012-2022, 2026 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
     Portions copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3@live.co.uk>
 
@@ -322,6 +322,7 @@ enum hts_fmt_option {
     CRAM_OPT_USE_FQZ,
     CRAM_OPT_USE_ARITH,
     CRAM_OPT_POS_DELTA,  // force delta for AP, even on non-pos sorted data
+    CRAM_OPT_RM_UR,  // remove any UR tags
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,

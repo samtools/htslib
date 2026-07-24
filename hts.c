@@ -1170,11 +1170,11 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         o->opt = CRAM_OPT_PREFIX, o->val.s = val;
 
     else if (strcmp(o->arg, "store_md") == 0 ||
-             strcmp(o->arg, "store_md") == 0)
+             strcmp(o->arg, "STORE_MD") == 0)
         o->opt = CRAM_OPT_STORE_MD, o->val.i = atoi(val);
 
     else if (strcmp(o->arg, "store_nm") == 0 ||
-             strcmp(o->arg, "store_nm") == 0)
+             strcmp(o->arg, "STORE_NM") == 0)
         o->opt = CRAM_OPT_STORE_NM, o->val.i = atoi(val);
 
     else if (strcmp(o->arg, "block_size") == 0 ||
@@ -1216,6 +1216,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     else if (strcmp(o->arg, "fastq_umi_regex") == 0 ||
         strcmp(o->arg, "FASTQ_UMI_REGEX") == 0)
         o->opt = FASTQ_OPT_UMI_REGEX, o->val.s = val;
+
+    else if (strcmp(o->arg, "remove_ur") == 0 ||
+        strcmp(o->arg, "REMOVE_UR") == 0)
+        o->opt = CRAM_OPT_RM_UR, o->val.i = atoi(val);
 
     else {
         hts_log_error("Unknown option '%s'", o->arg);
