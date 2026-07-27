@@ -3206,17 +3206,12 @@ int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id) 
     t1 = t2 = kh_val(hrecs->h, k);
 
     do {
-        sam_hrec_tag_t *tag;
-        for (tag = t1->tag; tag; tag = tag->next) {
-            if (tag->str[0] == tag_id[0] && tag->str[1] == tag_id[1]) {
-                if ((ret = sam_hrecs_remove_key(hrecs, t1, tag_id)) > 0) {
-                    deleted++;
-                    break;
-                } else {
-                    return -1;
-                }
-            }
+        if ((ret = sam_hrecs_remove_key(hrecs, t1, tag_id)) == 1) {
+            deleted++;
+        } else if (ret == -1) {
+            return -1;
         }
+
         t1 = t1->next;
     } while (t1 != t2);
 
