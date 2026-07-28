@@ -26,7 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <getopt.h>
+#include <unistd.h>
 #ifdef HAVE_CLOCK_GETTIME_CPUTIME
 #include <time.h>
 #else
