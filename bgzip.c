@@ -39,6 +39,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "htslib/hts_alloc.h"
+#include "htslib/hts_defs.h"
 #include "htslib/hfile.h"
 
 #ifdef _WIN32
@@ -49,7 +50,8 @@
 
 static const int WINDOW_SIZE = BGZF_BLOCK_SIZE;
 
-static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) error(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -324,6 +326,7 @@ int main(int argc, char **argv)
             hFILE* f_src = NULL;
             char out_mode[3] = "w\0";
             char out_mode_exclusive[4] = "wx\0";
+            const char *input_name = !isstdin ? argv[optind] : "stdin";
 
             if (compress_level < -1 || compress_level > 9) {
                 fprintf(stderr, "[bgzip] Invalid compress-level: %d\n", compress_level);
@@ -349,14 +352,17 @@ int main(int argc, char **argv)
                 }
             } else if ( argc>optind && !isstdin )            //named input file that isn't an explicit "-"
             {
-                if (pstdout)
+                if (pstdout) {
                     fp = bgzf_open("-", out_mode);
-                else
-                {
-                    char *name = hts_malloc_ps(sizeof(*name),
-                                               strlen(argv[optind]), 5);
-                    strcpy(name, argv[optind]);
-                    strcat(name, ".gz");
+                    if (!fp)
+                        error("[bgzip] Couldn't open BGZF stream to stdout: %s\n",
+                              strerror(errno));
+                } else {
+                    size_t len = strlen(argv[optind]);
+                    char *name = hts_malloc_ps(sizeof(*name), len, 5);
+                    if (!name)
+                        error("[bgzip] Couldn't allocate space for output file name\n");
+                    snprintf(name, len + 5, "%s.gz", argv[optind]);
                     fp = bgzf_open(name, is_forced? out_mode : out_mode_exclusive);
                     if (fp == NULL && errno == EEXIST) {
                         if (confirm_overwrite(name)) {
@@ -383,11 +389,17 @@ int main(int argc, char **argv)
             {
                 fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
                 return 1;
-            }
-            else
+            } else {
                 fp = bgzf_open("-", out_mode);
+                if (!fp)
+                    error("[bgzip] Couldn't open BGZF stream to stdout: %s\n",
+                          strerror(errno));
+            }
 
-            if ( index ) bgzf_index_build_init(fp);
+            if ( index ) {
+                if (bgzf_index_build_init(fp) < 0)
+                    error("[bgzip] Couldn't allocate index structure\n");
+            }
             if (threads > 1)
                 bgzf_mt(fp, threads, 256);
 
@@ -403,6 +415,9 @@ int main(int argc, char **argv)
 
                 while ((c = hread(f_src, buffer, WINDOW_SIZE)) > 0)
                     if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+                if (c < 0)
+                    error("[bgzip] Error reading %s: %s\n",
+                          input_name, strerror(errno));
             }
             else {
                 htsFormat fmt;
@@ -431,6 +446,9 @@ int main(int argc, char **argv)
                         if (bgzf_write(fp, buffer, c) < 0)
                             error("Could not write %d bytes: Error %d\n",
                                 c, fp->errcode);
+                    if (c < 0)
+                        error("[bgzip] Error reading %s: %s\n",
+                              input_name, strerror(errno));
                 } else {
                     /* Text mode, try a flush after a newline */
                     int in_header = 1, n = 0, long_line = 0;
@@ -491,6 +509,9 @@ int main(int argc, char **argv)
                         memmove(buffer, buffer+n, c2-n);
                         n = c2-n;
                     }
+                    if (c < 0)
+                        error("[bgzip] Error reading %s: %s\n",
+                              input_name, strerror(errno));
 
                     // Trailing data.
                     if (bgzf_write(fp, buffer, n) < 0)
@@ -554,7 +575,10 @@ int main(int argc, char **argv)
             }
 
             buffer = malloc(BGZF_BLOCK_SIZE);
-            bgzf_index_build_init(fp);
+            if (!buffer)
+                error("[bgzip] Couldn't allocate read buffer\n");
+            if (bgzf_index_build_init(fp) < 0)
+                error("[bgzip] Couldn't allocate index structure\n");
             int ret;
             while ( (ret=bgzf_read(fp, buffer, BGZF_BLOCK_SIZE))>0 ) ;
             free(buffer);
@@ -677,6 +701,8 @@ int main(int argc, char **argv)
             }
 
             buffer = malloc(WINDOW_SIZE);
+            if (!buffer)
+                error("[bgzip] Couldn't allocate read buffer\n");
             if ( start>0 )
             {
                 if (index_fname) {
