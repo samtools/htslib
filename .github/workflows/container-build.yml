@@ -62,7 +62,7 @@ jobs:
 
       - name: Build
         run: |
-          make -j5
+          make -j5 -k
 
       - name: Test
         run: |

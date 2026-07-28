@@ -46,7 +46,7 @@ jobs:
       - name: Build
         shell: freebsd {0}
         run: |
-          gmake -j5
+          gmake -j5 -k
 
       - name: Test
         shell: freebsd {0}
@@ -89,7 +89,7 @@ jobs:
       - name: Build
         shell: openbsd {0}
         run: |
-          gmake -j5
+          gmake -j5 -k
 
       - name: Test
         shell: openbsd {0}
@@ -135,7 +135,7 @@ jobs:
       - name: Build
         shell: solaris {0}
         run: |
-          gmake -j5
+          gmake -j5 -k
 
       - name: Test
         shell: solaris {0}
