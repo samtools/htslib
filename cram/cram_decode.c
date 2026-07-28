@@ -1231,7 +1231,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     const char *refp = s->ref + ref_pos - s->ref_start + 1;
                     const int frag_len = pos - seq_pos;
                     if (decode_md || decode_nm) {
-                        char *N = memchr(refp, 'N', frag_len);
+                        const char *N = memchr(refp, 'N', frag_len);
                         if (N) {
                             int i;
                             for (i = 0; i < frag_len; i++) {

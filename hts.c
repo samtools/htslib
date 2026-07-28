@@ -939,7 +939,8 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
             *mode_c = 'z';
     }
 
-    char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
+    char *rmme = NULL;
+    const char *fnidx = strstr(fn, HTS_IDX_DELIM);
     if ( fnidx ) {
         rmme = strdup(fn);
         if ( !rmme ) goto error;
@@ -1466,7 +1467,8 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     hFILE *hfile_orig = hfile;
     hFILE *hfile_cleanup = hfile;
     htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
-    char simple_mode[101], *cp, *opts;
+    char simple_mode[101];
+    const char *cp, *opts;
     simple_mode[100] = '\0';
 
     if (fp == NULL) goto error;
@@ -4926,18 +4928,19 @@ char *hts_idx_locatefn(const char *fn, const char *ext)
 
 static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)
 {
-    char *fnidx = strstr(fn, HTS_IDX_DELIM);
+    const char *fnidx_delim = strstr(fn, HTS_IDX_DELIM);
+    char *fnidx = NULL;
     hts_idx_t *idx;
 
-    if ( fnidx ) {
+    if ( fnidx_delim ) {
         char *fn2 = strdup(fn);
         if (!fn2) {
             hts_log_error("%s", strerror(errno));
             return NULL;
         }
-        fn2[fnidx - fn] = '\0';
-        fnidx += strlen(HTS_IDX_DELIM);
-        idx = hts_idx_load3(fn2, fnidx, fmt, flags);
+        fn2[fnidx_delim - fn] = '\0';
+        fnidx_delim += strlen(HTS_IDX_DELIM);
+        idx = hts_idx_load3(fn2, fnidx_delim, fmt, flags);
         free(fn2);
         return idx;
     }

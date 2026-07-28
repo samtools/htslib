@@ -465,7 +465,7 @@ static void *boyer_moore(const void *str_, size_t n, const void *pat_, int m,
 	if (n < m)  // Input shorter than pattern can't match
 		return NULL;
 	if (m == 1) // Switch to memchr for 1 byte patterns (likely faster)
-		return memchr(str, pat[0], n);
+		return (void *)memchr(str, pat[0], n);
 
 	if (stored_prep_ptr && *stored_prep_ptr) {
 		prep = *stored_prep_ptr;

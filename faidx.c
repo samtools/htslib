@@ -1064,7 +1064,7 @@ char *fai_path(const char *fa) {
     if (!fa) {
         hts_log_error("No reference file specified");
     } else {
-        char *fai_tmp = strstr(fa, HTS_IDX_DELIM);
+        const char *fai_tmp = strstr(fa, HTS_IDX_DELIM);
         if (fai_tmp) {
             fai_tmp += strlen(HTS_IDX_DELIM);
             fai = strdup(fai_tmp);

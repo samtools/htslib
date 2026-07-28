@@ -5195,7 +5195,8 @@ char *sam_open_mode_opts(const char *fn,
 {
     char *mode_opts = malloc((format ? strlen(format) : 1) +
                              (mode   ? strlen(mode)   : 1) + 12);
-    char *opts, *cp;
+    char *cp;
+    const char *opts;
     int format_len;
 
     if (!mode_opts)

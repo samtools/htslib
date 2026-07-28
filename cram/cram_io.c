@@ -2320,7 +2320,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
     r->fp = NULL;
 
     /* Look for a FASTA##idx##FAI format */
-    char *fn_delim = strstr(fn, HTS_IDX_DELIM);
+    const char *fn_delim = strstr(fn, HTS_IDX_DELIM);
     if (fn_delim) {
         if (!(r->fn = string_ndup(r->pool, fn, fn_delim - fn)))
             goto err;
@@ -5010,7 +5010,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
  */
 cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     int i;
-    char *cp;
+    const char *cp;
     cram_fd *fd = calloc(1, sizeof(*fd));
     if (!fd)
         return NULL;

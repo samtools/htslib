@@ -146,7 +146,7 @@ static inline bcf_hdr_aux_t *get_hdr_aux(const bcf_hdr_t *hdr)
 static int bcf_get_version(const bcf_hdr_t *hdr, const char *verstr)
 {
     const char *version = NULL, vcf[] = "VCFv";
-    char *major = NULL, *minor = NULL;
+    const char *major = NULL, *minor = NULL;
     int ver = -1;
     long tmp = 0;
     bcf_hdr_aux_t *aux = NULL;
