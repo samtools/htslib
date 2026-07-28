@@ -17,18 +17,14 @@ jobs:
         include:
           - os:      alpine
             image:   alpine:3.23
-            cflags:  -Wno-sign-conversion
           - os:      archlinux
             image:   archlinux:base-devel
-            cflags:  -Wno-sign-conversion -Wno-discarded-qualifiers
           - os:      centos
             image:   quay.io/centos/centos:10
           - os:      rockylinux
             image:   quay.io/rockylinux/rockylinux:10
-            cflags:  -Wno-sign-conversion
           - os:      opensuse
             image:   opensuse/tumbleweed
-            cflags:  -Wno-discarded-qualifiers
 
     steps:
       - name: Install dependencies
@@ -62,7 +58,7 @@ jobs:
       - name: Configure
         run: |
           autoreconf -i
-          ./configure --enable-werror --enable-plugins CFLAGS="-g -O3 -std=c99 -pedantic ${{ matrix.cflags }}"
+          ./configure --enable-werror --enable-plugins CFLAGS="-g -O3"
 
       - name: Build
         run: |
