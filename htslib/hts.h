@@ -1406,23 +1406,40 @@ void hts_reglist_free(hts_reglist_t *reglist, int count);
     int hts_file_type(const char *fname);
 
 
-/***************************
- * Revised MAQ error model *
- ***************************/
+/***************************************************
+ * Revised MAQ error model                         *
+ * See https://genome.cshlp.org/content/18/11/1851 *
+ ***************************************************/
 
 struct errmod_t;
 typedef struct errmod_t errmod_t;
 
+/**
+   Initialise error model structures
+   @param depcorr  correction factor for dependency of errors
+   @return errmod_t structure on success; NULL on failure
+ */
+
 HTSLIB_EXPORT
 errmod_t *errmod_init(double depcorr);
+
+/**
+   Free error model structures
+   @param em       error model
+*/
+
 HTSLIB_EXPORT
 void errmod_destroy(errmod_t *em);
 
-/*
-    n: number of bases
-    m: maximum base
-    bases[i]: qual:6, strand:1, base:4
-    q[i*m+j]: phred-scaled likelihood of (i,j)
+/**
+   Calculate error model
+
+   @param em       error model to fit to data
+   @param n        number of bases
+   @param m        number of alleles across all samples
+   @param bases    qual:6, strand:1, base:4
+   @param q        phred-scaled likelihood of (i,j) is stored in q[i*m+j]
+   @return 0 on success; -1 on error
  */
 HTSLIB_EXPORT
 int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q);
