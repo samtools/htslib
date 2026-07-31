@@ -1784,9 +1784,6 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarra
                    hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
     }
 
-    if (!itr)
-        hts_reglist_free(r_list, r_count);
-
     return itr;
 }
 
