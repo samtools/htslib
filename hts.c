@@ -4258,6 +4258,10 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
             hts_itr_destroy(itr);
             itr = NULL;
         }
+    } else {
+        // Ensure reglist is cleaned up, matching behaviour on getid()
+        // or itr_specific() failure.
+        hts_reglist_free(reglist, count);
     }
 
     return itr;
