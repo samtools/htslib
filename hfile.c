@@ -689,7 +689,8 @@ error:
 static hFILE *hpreload(hFILE *fp) {
     hFILE *mem_fp;
     char *buf = NULL;
-    off_t buf_sz = 0, buf_a = 0, buf_inc = 8192, len;
+    size_t buf_sz = 0, buf_a = 0, buf_inc = 8192;
+    ssize_t len;
 
     for (;;) {
         if (buf_a - buf_sz < 5000) {
@@ -706,20 +707,22 @@ static hFILE *hpreload(hFILE *fp) {
             break;
     }
 
-    if (len < 0) goto err;
-    mem_fp = hfile_init_fixed(sizeof(hFILE), "r", buf, buf_sz, buf_a);
-    if (!mem_fp) goto err;
-    mem_fp->backend = &mem_backend;
+    if (len < 0) goto err;   // Read error
 
-    if (hclose(fp) < 0) {
-        hclose_abruptly(mem_fp);
-        goto err;
-    }
+    if (hclose(fp) < 0)
+        goto err_fp_closed;
+
+    mem_fp = hfile_init_fixed(sizeof(hFILE), "r", buf, buf_sz, buf_a);
+    if (!mem_fp)
+        goto err_fp_closed;
+
+    mem_fp->backend = &mem_backend;
     return mem_fp;
 
  err:
-    free(buf);
     hclose_abruptly(fp);
+ err_fp_closed:
+    free(buf);
     return NULL;
 }
 
