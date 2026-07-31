@@ -515,6 +515,7 @@ static int renew_auth_token(auth_token *tok, int *changed) {
 
         tok->expiry = 0; // Prevent retry
         free(tok->token); // Just in case it was set
+        tok->token = NULL;
         return 0;
     }
 
