@@ -707,9 +707,6 @@ hts_itr_t *tbx_itr_regarray(tbx_t *tbx, char **regarray, unsigned int regcount)
     itr = hts_itr_regions(tbx->idx, r_list, r_count, tbx_name2id_wrapper, tbx,
                           hts_itr_multi_bam, tbx_multi_readrec,
                           bgzf_pseek, bgzf_ptell);
-    if (!itr)
-        hts_reglist_free(r_list, r_count);
-
     return itr;
 
 }
