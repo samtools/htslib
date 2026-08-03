@@ -2947,6 +2947,7 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (absent <  0) return -2; // No memory
             if (absent == 0) return -3; // Duplicate bin number
             p = &kh_val(h, k);
+            p->list = NULL;
             if (fmt == HTS_FMT_CSI) {
                 if (bgzf_read(fp, &p->loff, 8) != 8) return -1;
                 if (is_be) ed_swap_8p(&p->loff);
