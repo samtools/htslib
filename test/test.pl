@@ -1344,7 +1344,17 @@ sub test_bcf_sr_range {
                  ['t', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
                  ['t', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
                  ['t', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
-                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef] # Expected failure
+                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef], # Expected failure
+                 # Check for correct ordering of output with regions-overlap
+                 # and targets-overlap = "variant".
+
+                 # These should only print 20:136.  20:135 is skipped as its
+                 # variant is really at 143
+                 ['-regions-overlap=variant -r', '20:135-136', 'overlap.vcf', 'overlap.1.out'],
+                 ['-targets-overlap=variant -t', '20:135-136', 'overlap.vcf', 'overlap.1.out'],
+                 # These should print 20:135, 20:136 and 20:140 in that order
+                 ['-regions-overlap=variant -r', '20:135-136,20:140-145', 'overlap.vcf', 'overlap.2.out'],
+                 ['-targets-overlap=variant -t', '20:135-136,20:140-145', 'overlap.vcf', 'overlap.2.out'],
         );
 
     my $count = 0;

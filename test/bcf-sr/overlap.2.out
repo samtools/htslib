@@ -1,0 +1,9 @@
+##fileformat=VCFv4.5
+##FILTER=<ID=PASS,Description="All filters passed">
+##contig=<ID=12,length=133851895>
+##contig=<ID=20,length=63025520>
+##reference=file://hs37d5.fa
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+20	135	.	ACGTACGTA	ACGTACGTC	.	.	.
+20	136	.	G	T	.	.	.
+20	140	.	G	A	.	.	.
