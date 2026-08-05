@@ -820,7 +820,11 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
             goto err;
-        assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
+        if (c->comp_hdr_block->content_type != COMPRESSION_HEADER) {
+            hts_log_error("Expected a compression header block at pos %lld",
+                          (long long)hpos);
+            goto err;
+        }
 
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
         if (!c->comp_hdr)
