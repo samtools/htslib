@@ -81,7 +81,7 @@ KHASH_MAP_INIT_STR(s, faidx1_t)
 
 struct faidx_t {
     BGZF *bgzf;
-    int n, m;
+    uint32_t n, m;
     char **name;
     khash_t(s) *hash;
     enum fai_format_options format;
@@ -115,26 +115,38 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len,
         return -1;
     }
 
+    if (idx->n == idx->m) {
+        char **tmp;
+        uint32_t new_m = idx->m ? idx->m << 1 : 16;
+        if (new_m < idx->m
+            || !(tmp = hts_realloc_p(idx->name, sizeof(char*), new_m))) {
+            hts_log_error("Out of memory");
+            return -1;
+        }
+        idx->m = new_m;
+        idx->name = tmp;
+    }
+
     char *name_key = strdup(name);
+    if (!name_key) {
+        hts_log_error("Couldn't duplicate name: %s", strerror(errno));
+        return -1;
+    }
+
     int absent;
     khint_t k = kh_put(s, idx->hash, name_key, &absent);
-    faidx1_t *v = &kh_value(idx->hash, k);
-
+    if (absent < 0) {
+        hts_log_error("Couldn't add name to hash table: %s", strerror(errno));
+        free(name_key);
+        return -1;
+    }
     if (! absent) {
         hts_log_warning("Ignoring duplicate sequence \"%s\" at byte offset %" PRIu64, name, seq_offset);
         free(name_key);
         return 0;
     }
+    faidx1_t *v = &kh_value(idx->hash, k);
 
-    if (idx->n == idx->m) {
-        char **tmp;
-        idx->m = idx->m? idx->m<<1 : 16;
-        if (!(tmp = hts_realloc_p(idx->name, sizeof(char*), idx->m))) {
-            hts_log_error("Out of memory");
-            return -1;
-        }
-        idx->name = tmp;
-    }
     v->id = idx->n;
     idx->name[idx->n++] = name_key;
     v->len = len;
@@ -222,13 +234,15 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
 
                 do {
                     if (!isspace(c)) {
-                        kputc(c, &name);
+                        if (kputc_(c, &name) < 0)
+                            goto fail;
                     } else if (name.l > 0 || c == '\n') {
                         break;
                     }
                 } while ((c = bgzf_getc(bgzf)) >= 0);
 
-                kputsn("", 0, &name);
+                if (kputsn("", 0, &name) < 0)
+                    goto fail;
 
                 if (c < 0) {
                     hts_log_error("The last entry '%s' has no sequence at line %d", name.s, line_num);
