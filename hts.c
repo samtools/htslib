@@ -3104,7 +3104,7 @@ int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* 
     bidx_t *h = idx->bidx[tid];
     if (!h) return -1;
     khint_t k = kh_get(bin, h, META_BIN(idx));
-    if (k != kh_end(h)) {
+    if (k != kh_end(h) && kh_val(h, k).n > 1) {
         *mapped = kh_val(h, k).list[1].u;
         *unmapped = kh_val(h, k).list[1].v;
         return 0;
@@ -3363,7 +3363,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
         for (i = 0; i < idx->n; i++) {
             bidx = idx->bidx[i];
             k = kh_get(bin, bidx, META_BIN(idx));
-            if (k == kh_end(bidx))
+            if (k == kh_end(bidx) || kh_val(bidx, k).n < 1)
                 continue;
 
             if (off0 > kh_val(bidx, k).list[0].u)
@@ -3383,7 +3383,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
         for (i = 0; i < idx->n; i++) {
             bidx = idx->bidx[i];
             k = kh_get(bin, bidx, META_BIN(idx));
-            if (k != kh_end(bidx)) {
+            if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
                 if (off0 == (uint64_t) -1 || off0 < kh_val(bidx, k).list[0].v) {
                     off0 = kh_val(bidx, k).list[0].v;
                 }
@@ -3446,7 +3446,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             k = kh_get(bin, bidx, META_BIN(idx));
-            if (k != kh_end(bidx))
+            if (k != kh_end(bidx) && kh_val(bidx, k).n > 1)
                 unmapped = kh_val(bidx, k).list[1].v;
             else
                 unmapped = 1;
@@ -3624,7 +3624,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 continue;
 
             k = kh_get(bin, bidx, META_BIN(idx));
-            if (k != kh_end(bidx))
+            if (k != kh_end(bidx) && kh_val(bidx, k).n > 1)
                 unmapped = kh_val(bidx, k).list[1].v;
             else
                 unmapped = 1;
