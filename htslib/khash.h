@@ -247,6 +247,14 @@ static const double __ac_HASH_UPPER = 0.77;
 	}																	\
 	SCOPE int kh_resize_##name(kh_##name##_t *h, khint_t new_n_buckets) \
 	{ /* This function uses 0.25*n_buckets bytes of working space instead of [sizeof(key_t+val_t)+.25]*n_buckets. */ \
+		const int small_size_t = sizeof(size_t)/2 < sizeof(khint_t);	\
+		const int big_keys = sizeof(khkey_t) > ((size_t) 1 << sizeof(size_t) * 4); \
+		const int big_vals = sizeof(khval_t) > ((size_t) 1 << sizeof(size_t) * 4); \
+		const khint_t max_n_buckets = (khint_t) 1 << (sizeof(khint_t) * 8 - 1); \
+		if (new_n_buckets > max_n_buckets) { /* Prevent overflow on roundup */ \
+			errno = ENOMEM; /* Not quite true, but close enough*/ 		\
+			return -1;													\
+		}																\
 		khint32_t *new_flags = 0;										\
 		khint_t j = 1;													\
 		{																\
@@ -258,10 +266,22 @@ static const double __ac_HASH_UPPER = 0.77;
 				if (!new_flags) return -1;								\
 				memset(new_flags, 0xaa, __ac_fsize(new_n_buckets) * sizeof(khint32_t)); \
 				if (h->n_buckets < new_n_buckets) {	/* expand */		\
+					if ((small_size_t || big_keys)						\
+						&& SIZE_MAX / new_n_buckets < sizeof(khkey_t)) { \
+						kfree(new_flags);								\
+						errno = ENOMEM;									\
+						return -1;										\
+					}													\
 					khkey_t *new_keys = (khkey_t*)krealloc((void *)h->keys, new_n_buckets * sizeof(khkey_t)); \
 					if (!new_keys) { kfree(new_flags); return -1; }		\
 					h->keys = new_keys;									\
 					if (kh_is_map) {									\
+						if ((small_size_t || big_vals)					\
+							&& SIZE_MAX / new_n_buckets < sizeof(khkey_t)) { \
+							kfree(new_flags);							\
+							errno = ENOMEM;								\
+							return -1;									\
+						}												\
 						khval_t *new_vals = (khval_t*)krealloc((void *)h->vals, new_n_buckets * sizeof(khval_t)); \
 						if (!new_vals) { kfree(new_flags); return -1; }	\
 						h->vals = new_vals;								\
