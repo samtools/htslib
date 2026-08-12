@@ -113,17 +113,20 @@ static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref, const char *
     return 0;
 }
 
-static void sam_hrecs_remove_ref_altnames(sam_hrecs_t *hrecs, int expected, const char *list) {
+static int sam_hrecs_remove_ref_altnames(sam_hrecs_t *hrecs, int expected, const char *list) {
     const char *token, *sn;
     ks_tokaux_t aux;
     kstring_t str = KS_INITIALIZE;
 
     if (expected < 0 || expected >= hrecs->nref)
-        return;
+        return 0;
     sn = hrecs->ref[expected].name;
 
     for (token = kstrtok(list, ",", &aux); token; token = kstrtok(NULL, NULL, &aux)) {
-        kputsn(token, aux.p - token, ks_clear(&str));
+        if (kputsn(token, aux.p - token, ks_clear(&str)) < 0) {
+            free(str.s);
+            return -1;
+        }
         khint_t k = kh_get(m_s2i, hrecs->ref_hash, str.s);
         if (k != kh_end(hrecs->ref_hash)
             && kh_val(hrecs->ref_hash, k) == expected
@@ -132,6 +135,7 @@ static void sam_hrecs_remove_ref_altnames(sam_hrecs_t *hrecs, int expected, cons
     }
 
     free(str.s);
+    return 0;
 }
 
 /* Updates the hash tables in the sam_hrecs_t structure.
@@ -440,11 +444,13 @@ static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, khint32_t type, sam_h
             k = kh_get(m_s2i, hrecs->ref_hash, key);
             if (k != kh_end(hrecs->ref_hash)) {
                 int idx = kh_val(hrecs->ref_hash, k);
+                if (altnames) {
+                    if (sam_hrecs_remove_ref_altnames(hrecs, idx, altnames) < 0)
+                        return -1;
+                }
                 if (idx + 1 < hrecs->nref)
                     memmove(&hrecs->ref[idx], &hrecs->ref[idx+1],
                             sizeof(sam_hrec_sq_t)*(hrecs->nref - idx - 1));
-                if (altnames)
-                    sam_hrecs_remove_ref_altnames(hrecs, idx, altnames);
                 kh_del(m_s2i, hrecs->ref_hash, k);
                 hrecs->nref--;
                 if (hrecs->refs_changed < 0 || hrecs->refs_changed > idx)
@@ -1383,7 +1389,8 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
         if (fp->line.l == 3 && strncmp(fp->line.s, "@CO", 3) == 0) {
             // HTSlib's original SAM reader let you get away with an untabbed
             // @CO line
-            kputc('\t', &fp->line);
+            if (kputc('\t', &fp->line) < 0)
+                goto error;
         }
 
         if (!valid_sam_header_type(fp->line.s)) {
@@ -1506,8 +1513,10 @@ int sam_hdr_build_from_sam_file(sam_hdr_t *hdr, htsFile* fp) {
         } while (h_type != last_h_type);
     }
 
-    if (str.l == 0)
-        kputsn("", 0, &str);
+    if (str.l == 0) {
+        if (kputsn("", 0, &str) < 0)
+            goto error;
+    }
     hdr->l_text = str.l;
     hdr->text = ks_release(&str);
 
@@ -3045,8 +3054,10 @@ int sam_hrecs_remove_key(sam_hrecs_t *hrecs,
         if (sn_tag) {
             assert(sn_tag->len >= 3);
             khint_t k = kh_get(m_s2i, hrecs->ref_hash, sn_tag->str + 3);
-            if (k != kh_end(hrecs->ref_hash))
-                sam_hrecs_remove_ref_altnames(hrecs, kh_val(hrecs->ref_hash, k), tag->str + 3);
+            if (k != kh_end(hrecs->ref_hash)) {
+                if (sam_hrecs_remove_ref_altnames(hrecs, kh_val(hrecs->ref_hash, k), tag->str + 3) < 0)
+                    return -1;
+            }
         }
     }
 
