@@ -1452,6 +1452,20 @@ error:
     return headers;
 }
 
+static CURLcode set_common_easy_options(hFILE_s3 *fp) {
+    CURLcode err = CURLE_OK;
+
+    err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
+    err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+
+    char *ca_bundle = getenv("CURL_CA_BUNDLE");
+    if (ca_bundle) {
+        err |= curl_easy_setopt(fp->curl, CURLOPT_CAINFO, ca_bundle);
+    }
+
+    return err;
+}
+
 
 /*
 
@@ -1537,9 +1551,8 @@ static int abort_upload(hFILE_s3 *fp) {
     curl_easy_reset(fp->curl);
 
     err = curl_easy_setopt(fp->curl, CURLOPT_CUSTOMREQUEST, http_request);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_URL, url.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+    err |= set_common_easy_options(fp);
 
     if (err != CURLE_OK) {
         errno = EINVAL;
@@ -1612,8 +1625,7 @@ static int complete_upload(hFILE_s3 *fp, kstring_t *resp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEFUNCTION, response_callback);
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEDATA, (void *)resp);
     err |= curl_easy_setopt(fp->curl, CURLOPT_URL, url.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+    err |= set_common_easy_options(fp);
 
     if (err != CURLE_OK) {
         errno = EINVAL;
@@ -1696,8 +1708,7 @@ static int upload_part(hFILE_s3 *fp, kstring_t *resp) {
     err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERFUNCTION, response_callback);
     err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERDATA, (void *)resp);
     err |= curl_easy_setopt(fp->curl, CURLOPT_URL, url.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+    err |= set_common_easy_options(fp);
 
     if (err != CURLE_OK) {
         errno = EINVAL;
@@ -1921,8 +1932,7 @@ static int initialise_upload(hFILE_s3 *fp, kstring_t *head, kstring_t *resp, int
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEDATA, (void *)resp);
     err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERFUNCTION, response_callback);
     err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERDATA, (void *)head);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+    err |= set_common_easy_options(fp);
 
     if (err != CURLE_OK) {
         errno = EINVAL;
@@ -2032,8 +2042,7 @@ static int get_part(hFILE_s3 *fp, kstring_t *resp) {
     err = curl_easy_setopt(fp->curl, CURLOPT_URL, fp->url.s);
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEFUNCTION, recv_callback);
     err |= curl_easy_setopt(fp->curl, CURLOPT_WRITEDATA, (void *)fp);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_USERAGENT, curl.useragent.s);
-    err |= curl_easy_setopt(fp->curl, CURLOPT_VERBOSE, fp->verbose);
+    err |= set_common_easy_options(fp);
 
     if (resp) {
         err |= curl_easy_setopt(fp->curl, CURLOPT_HEADERFUNCTION, response_callback);
