@@ -762,8 +762,10 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             q++;
         }
     }
-    if ( nopen )
-        hts_log_warning("Incomplete header line, trying to proceed anyway:\n\t[%s]\n\t[%d]",line,q[0]);
+    if ( nopen ) {
+        reason = "incomplete";
+        goto malformed_line;
+    }
 
     // Skip to end of line
     int nonspace = 0;
