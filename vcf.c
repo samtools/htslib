@@ -656,14 +656,18 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
 {
     bcf_hrec_t *hrec = NULL;
     const char *p = line;
+    char *reason = "unknown";
     if (p[0] != '#' || p[1] != '#') { *len = 0; return NULL; }
     p += 2;
 
     const char *q = p;
     while ( *q && *q!='=' && *q != '\n' ) q++;
     ptrdiff_t n = q-p;
-    if ( *q!='=' || !n ) // wrong format
+    if ( *q!='=' || !n ) {
+        // wrong format
+        reason = "missing '='";
         goto malformed_line;
+    }
 
     hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
     if (!hrec) { *len = -1; return NULL; }
@@ -702,8 +706,10 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         n = q-p;
         int m = 0;
         while ( *q && *q==' ' ) { q++; m++; }
-        if ( *q!='=' || !n )
+        if ( *q!='=' || !n ) {
+            reason = "missing '='";
             goto malformed_line;
+        }
 
         if (bcf_hrec_add_key(hrec, p, q-p-m) < 0) goto fail;
         p = ++q;
@@ -742,11 +748,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
                 q++;
                 quoted = 0;
             } else {
-                char buffer[320];
-                hts_log_error("Missing ']' in header line %s",
-                              hts_strprint(buffer, sizeof(buffer), '"',
-                                           line, q-line));
-                goto fail;
+                reason = "missing ']'";
+                goto malformed_line;
             }
         }
         while ( r > p && r[-1] == ' ' ) r--;
@@ -785,7 +788,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     {
         char buffer[320];
         while ( *q && *q!='\n' ) q++;  // Ensure *len includes full line
-        hts_log_error("Could not parse the header line: %s",
+        hts_log_error("Could not parse the header line (%s): %s", reason,
                       hts_strprint(buffer, sizeof(buffer),
                                    '"', line, q - line));
         *len = q - line + (*q ? 1 : 0);
