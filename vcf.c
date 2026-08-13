@@ -846,9 +846,16 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         i = bcf_hrec_find_key(hrec,"length");
         if ( i<0 ) len = 0;
         else {
-            char *end = hrec->vals[i];
-            len = strtoll(hrec->vals[i], &end, 10);
-            if (end == hrec->vals[i] || len < 0) return 0;
+            char *start = hrec->vals[i] + (*hrec->vals[i] == '"'), *end;
+            len = strtoll(start, &end, 10);
+            if (start == end || len < 0) {
+                int id_i = bcf_hrec_find_key(hrec,"ID");
+                if ( i<0 ) return 0;
+                hts_log_warning("Could not parse the length attribute of "
+                                "contig \"%s\": \"%s\". Using zero.",
+                                hrec->vals[id_i], hrec->vals[i]);
+                len = 0;
+            }
         }
 
         i = bcf_hrec_find_key(hrec,"ID");
