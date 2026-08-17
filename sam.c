@@ -5330,8 +5330,8 @@ char *bam_flag2str(int flag)
  *******************/
 
 typedef struct {
-    int k, y;
-    hts_pos_t x, end;
+    int k;
+    hts_pos_t x, y, end;
 } cstate_t;
 
 static cstate_t g_cstate_null = { -1, 0, 0, 0 };
@@ -5388,18 +5388,24 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
 /* s->k: the index of the CIGAR operator that has just been processed.
    s->x: the reference coordinate of the start of s->k
    s->y: the query coordinate of the start of s->k
+
+   Returns 1 on success
+           0 on error
  */
 static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 {
 #define _cop(c) ((c)&BAM_CIGAR_MASK)
 #define _cln(c) ((c)>>BAM_CIGAR_SHIFT)
 
+    // Take 64-bit copies of 32-bit values so we can detect overflows.
+    hts_pos_t indel = p->indel;
+
     bam1_t *b = p->b;
     bam1_core_t *c = &b->core;
     uint32_t *cigar = bam_get_cigar(b);
     int k;
     // determine the current CIGAR operation
-    //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
+    //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%ld)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
         p->qpos = 0;
         if (c->n_cigar == 1) { // just one operation, save a loop
@@ -5440,25 +5446,25 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
     { // collect pileup information
         int op, l;
         op = _cop(cigar[s->k]); l = _cln(cigar[s->k]);
-        p->is_del = p->indel = p->is_refskip = 0;
+        p->is_del = indel = p->is_refskip = 0;
         if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) { // peek the next operation
             int op2 = _cop(cigar[s->k+1]);
             int l2 = _cln(cigar[s->k+1]);
             if (op2 == BAM_CDEL && op != BAM_CDEL) {
                 // At start of a new deletion, merge e.g. 1D2D to 3D.
-                // Within a deletion (the 2D in 1D2D) we keep p->indel=0
+                // Within a deletion (the 2D in 1D2D) we keep indel=0
                 // and rely on is_del=1 as we would for 3D.
-                p->indel = -(int)l2;
+                indel = -(int)l2;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
                     op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CDEL) p->indel -= l2;
+                    if (op2 == BAM_CDEL) indel -= l2;
                     else break;
                 }
             } else if (op2 == BAM_CINS) {
-                p->indel = l2;
+                indel = l2;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
                     op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CINS) p->indel += l2;
+                    if (op2 == BAM_CINS) indel += l2;
                     else if (op2 != BAM_CPAD) break;
                 }
             } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
@@ -5468,7 +5474,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
                     if (op2 == BAM_CINS) l3 += l2;
                     else if (op2 == BAM_CDEL || op2 == BAM_CMATCH || op2 == BAM_CREF_SKIP || op2 == BAM_CEQUAL || op2 == BAM_CDIFF) break;
                 }
-                if (l3 > 0) p->indel = l3;
+                if (l3 > 0) indel = l3;
             }
         }
         if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
@@ -5480,7 +5486,19 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
         p->is_head = (pos == c->pos); p->is_tail = (pos == s->end);
     }
     p->cigar_ind = s->k;
-    return 1;
+
+    // Check for overflows and write our 64-bit values back to their 32-bit
+    // locations.
+    int ret = 1;
+    if (s->y > INT_MAX)
+        ret = 0;
+
+    if (indel >= INT_MIN && indel <= INT_MAX)
+        p->indel = indel;
+    else
+        ret = 0;
+
+    return ret;
 }
 
 /*******************************
@@ -6018,7 +6036,14 @@ const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, 
                     }
                     iter->plp[n_plp].b = &p->b;
                     iter->plp[n_plp].cd = p->cd;
-                    if (resolve_cigar2(iter->plp + n_plp, iter->pos, &p->s)) ++n_plp; // actually always true...
+                    if (resolve_cigar2(iter->plp + n_plp, iter->pos, &p->s)) {
+                        ++n_plp;
+                    } else {
+                        hts_log_error("Excessive element size in CIGAR");
+                        iter->error = 1;
+                        *_n_plp = -1;
+                        return NULL;
+                    }
                 }
                 pptr = &(*pptr)->next;
             }
