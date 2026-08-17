@@ -3632,6 +3632,15 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
     }
 #endif
+    // We already have an upper limit of 10,000 blocks per slice to prevent
+    // bad data using excessive memory.  We could in theory have many slices
+    // per container, but in practice we only ever stick to 1 in modern
+    // implementations.  Nonetheless, let's use a limit here too on
+    // landmarks (which are offsets relative to this container position).
+    if (c->num_landmarks > 1000000) {
+        cram_free_container(c);
+        return NULL;
+    }
     if (c->num_landmarks && !(c->landmark = hts_malloc_p(sizeof(*c->landmark), c->num_landmarks))) {
         fd->err = errno;
         cram_free_container(c);
