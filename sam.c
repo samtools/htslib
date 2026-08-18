@@ -5385,6 +5385,12 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
  *** CIGAR resolver ***
  **********************/
 
+// Lookup variables, so we can do "if (MEX & (1<<op))" instead of
+// "if (op==BAM_CMATCH || op==BAM_CEQUAL || op==BAM_CDIFF)".
+static const int MEX = (1<<BAM_CMATCH) | (1<<BAM_CEQUAL) | (1<<BAM_CDIFF);
+static const int MEXDN = MEX | (1<<BAM_CDEL) | (1<<BAM_CREF_SKIP);
+static const int IS = (1<<BAM_CINS) | (1<<BAM_CSOFT_CLIP);
+
 /* s->k: the index of the CIGAR operator that has just been processed.
    s->x: the reference coordinate of the start of s->k
    s->y: the query coordinate of the start of s->k
@@ -5397,9 +5403,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 #define _cop(c) ((c)&BAM_CIGAR_MASK)
 #define _cln(c) ((c)>>BAM_CIGAR_SHIFT)
 
-    // Take 64-bit copies of 32-bit values so we can detect overflows.
-    hts_pos_t indel = p->indel;
-
+    hts_pos_t indel;
     bam1_t *b = p->b;
     bam1_core_t *c = &b->core;
     uint32_t *cigar = bam_get_cigar(b);
@@ -5409,46 +5413,42 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
     //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%ld)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
         p->qpos = 0;
-        if (c->n_cigar == 1) { // just one operation, save a loop
-            int op = _cop(cigar[0]);
-            if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF)
-                s->k = 0, s->x = c->pos, s->y = 0;
+        if (c->n_cigar == 1 && (MEX & (1<<_cop(cigar[0])))) {
+            // just one M/=/X operation, save a loop
+            s->k = 0, s->x = c->pos, s->y = 0;
         } else { // find the first reference base (match, mismatch or deletion)
             for (k = 0, s->x = c->pos, s->y = 0; k < c->n_cigar; ++k) {
-                int op = _cop(cigar[k]);
-                int l = _cln(cigar[k]);
+                const int op = _cop(cigar[k]);
                 if (bam_cigar_type(op) & 2)      // consumes ref
                     break;
                 else if (bam_cigar_type(op) & 1) // consumes query
-                    s->y += l;
+                    s->y += _cln(cigar[k]);
             }
             assert(k < c->n_cigar);
             s->k = k;
         }
 
     } else { // the read has been processed before
-        int op = _cop(cigar[s->k]);
-        int l  = _cln(cigar[s->k]);
+        const int l  = _cln(cigar[s->k]);
         if (pos - s->x >= l) { // jump to the next operation
             // otherwise a bug: this function should not be called in this case
-            assert(s->k < c->n_cigar);
-            int next_op = _cop(cigar[s->k+1]);
-            if (bam_cigar_type(next_op) & 2) { // consumes ref
+            assert(s->k+1 < c->n_cigar);
+
+            // Common bit between M=X and M=XDN
+            if (MEX & (1 << _cop(cigar[s->k])))
+                s->y += l;
+            s->x += l;
+
+            if (MEXDN & (1 << _cop(cigar[s->k+1]))) { // next op consumes ref
                 // jump to the next without a loop
-                if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF)
-                    s->y += l;
-                s->x += l;
                 ++s->k;
             } else { // find the next M/D/N/=/X
-                if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF)
-                    s->y += l;
-                s->x += l;
                 for (k = s->k + 1; k < c->n_cigar; ++k) {
-                    op = _cop(cigar[k]), l = _cln(cigar[k]);
-                    if (bam_cigar_type(op) & 2)      // consumes ref
+                    const int op = _cop(cigar[k]);
+                    if (MEXDN & (1 << op))
                         break;
-                    else if (bam_cigar_type(op) & 1) // consumes query
-                        s->y += l;
+                    else if (IS & (1<<op))
+                        s->y += _cln(cigar[k]);
                 }
                 s->k = k;
             }
@@ -5458,49 +5458,49 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 
     // collect pileup information
     {
-        int op = _cop(cigar[s->k]);
-        int l  = _cln(cigar[s->k]);
+        const int op = _cop(cigar[s->k]);
+        const int l  = _cln(cigar[s->k]);
         p->is_del = indel = p->is_refskip = 0;
 
         // peek the next operation
         if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) {
-            int op2 = _cop(cigar[s->k+1]);
-            int l2  = _cln(cigar[s->k+1]);
+            const int op2 = _cop(cigar[s->k+1]);
+            const int l2  = _cln(cigar[s->k+1]);
             if (op2 == BAM_CDEL && op != BAM_CDEL) {
                 // At start of a new deletion, merge e.g. 1D2D to 3D.
                 // Within a deletion (the 2D in 1D2D) we keep indel=0
                 // and rely on is_del=1 as we would for 3D.
                 indel = -l2;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]);
-                    l2  = _cln(cigar[k]);
+                    const int op2 = _cop(cigar[k]);
                     if (op2 == BAM_CDEL)
-                        indel -= l2;
+                        indel -= _cln(cigar[k]);
                     else
                         break;
                 }
             } else if (op2 == BAM_CINS) {
                 indel = l2;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]);
-                    l2  = _cln(cigar[k]);
+                    const int op2 = _cop(cigar[k]);
                     if (op2 == BAM_CINS)
-                        indel += l2;
+                        indel += _cln(cigar[k]);
                     else if (op2 != BAM_CPAD)
                         break;
                 }
             } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
                 for (k = s->k + 2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]);
-                    l2  = _cln(cigar[k]);
+                    const int op2 = _cop(cigar[k]);
                     if (op2 == BAM_CINS)
-                        indel += l2;
+                        indel += _cln(cigar[k]);
                     else if (bam_cigar_type(op2) & 2) // consumes ref
                         break;
                 }
             }
         }
-        if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
+        if (MEX & (1<<op)) {
+            // Could overflow if pos - s->x pushes s->y from +ve to -ve.
+            // For this to happen we need over 2billion bases in our SEQ.
+            // We rely on b->core.l_qseq having been sanity checked first.
             p->qpos = s->y + (pos - s->x);
         } else if (op == BAM_CDEL || op == BAM_CREF_SKIP) {
             p->is_del = 1; // FIXME: distinguish D and N!!!!!
