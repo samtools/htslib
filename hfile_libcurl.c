@@ -1373,7 +1373,7 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
 
     // Avoid many repeated CWD calls with FTP, instead requesting the filename
     // by full path (but not strictly compliant with RFC1738).
-    // Note as this is just an optimation, we don't care if it succeeds.
+    // Note as this is just an optimisation, we don't care if it succeeds.
     // Some libcurls are built without ftp support and this would fail in such
     // cases (even if our URL is http://).  If we attempt to do an ftp on such
     // a machine we'll then get a more informative error, such as protocol

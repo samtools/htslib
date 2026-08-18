@@ -94,7 +94,7 @@ typedef struct {
  * growing too large and serial numbers to ensure
  * sequential consumption of the output.
  *
- * The thread pool may have many hetergeneous tasks, each
+ * The thread pool may have many heterogeneous tasks, each
  * using its own io_queue mixed into the same thread pool.
  */
 struct hts_tpool_process {

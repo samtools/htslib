@@ -58,7 +58,7 @@ DEALINGS IN THE SOFTWARE.  */
 // This helps on Intel a bit, often 6-7% faster VCF parsing.
 // Conversely sometimes harms AMD Zen4 as ~9% slower.
 // Possibly related to IPC differences.  However for now it's just a
-// curiousity we ignore and stick with the simpler code.
+// curiosity we ignore and stick with the simpler code.
 //
 // Left here as a hint for future explorers.
 static inline int xstreq(const char *a, const char *b) {
@@ -109,7 +109,7 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
 #define BCF_IS_64BIT (1<<30)
 
 
-// Opaque structure with auxilary data which allows to extend bcf_hdr_t without breaking ABI.
+// Opaque structure with auxiliary data which allows to extend bcf_hdr_t without breaking ABI.
 // Note that this preserving API and ABI requires that the first element is vdict_t struct
 // rather than a pointer, as user programs may (and in some cases do) access the dictionary
 // directly as (vdict_t*)hdr->dict.
@@ -6374,7 +6374,7 @@ const char *bcf_strerror(int errorcode, char *buffer, size_t maxbuffer) {
         }
     }
 
-    if (errorcode && (ret >= 0))  {     //undescribed error is present in error code and had enough buffer, try to add unkonwn error as well§
+    if (errorcode && (ret >= 0))  {     //undescribed error is present in error code and had enough buffer, try to add unknown error as well
         add_desc_to_buffer(buffer, &usedup, maxbuffer, "Unknown error");
     }
     return buffer;

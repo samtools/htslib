@@ -50,7 +50,7 @@ typedef struct orderedwrite {
     samFile *outfile;           //output file handle
     sam_hdr_t *samhdr;          //header used to write data
     hts_tpool_process *queue;   //queue from which results to be retrieved
-    datacache *cache;           //to re-use allocated storage
+    datacache *cache;           //to reuse allocated storage
     int result;                 //result code returned by writer thread
 } orderedwrite;
 

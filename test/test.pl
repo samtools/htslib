@@ -1643,7 +1643,7 @@ sub test_ref_cache {
 
         my $pid1 = fork();
         if (!defined($pid1)) {
-            die "Coudn't fork: $!";
+            die "Couldn't fork: $!";
         }
         if ($pid1 == 0) {
             setpgrp(0, 0);

@@ -232,7 +232,7 @@ static int test_malloc(unsigned long max_mb, int verbose) {
 
         for (i = 0; i < 2; i++) {
             // i == 0 start with a NULL pointer
-            // i == 1 start with an allocted pointer
+            // i == 1 start with an allocated pointer
             void *tmp = i ? malloc(1) : NULL;
             const char *prefix = i ? "hts_realloc_p(ptr, " : "hts_realloc_p(NULL, ";
             ptr = hts_realloc_p(tmp, tests[n].a, tests[n].b);

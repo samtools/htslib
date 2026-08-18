@@ -259,7 +259,7 @@ double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double
 
     if (q == 0.0) {
         /*
-          If here, the calculated probablility is so small it can't be stored
+          If here, the calculated probability is so small it can't be stored
           in a double, which is possible when the table contains fairly large
           numbers.  If this happens, most of the calculation can be skipped
           as 'left', 'right' and '*two' will be (to a good approximation) 0.0.

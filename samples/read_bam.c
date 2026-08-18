@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
 
         data = bam_get_seq(bamdata);                                                    //get the sequence data
         if (bamdata->core.l_qseq != bam_cigar2qlen(bamdata->core.n_cigar, cigar)) {     //checks the length with CIGAR and query
-            printf("\nLength doesnt matches to cigar data\n");
+            printf("\nLength doesn't match cigar data\n");
             goto end;
         }
 
@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
         }
         printf("\nQUAL: ");
         for (int i = 0; i < bamdata->core.l_qseq ; ++i) {
-            printf("%c", bam_get_qual(bamdata)[i]+33);                                  //retrives the quality value
+            printf("%c", bam_get_qual(bamdata)[i]+33);                                  //retrieves the quality value
         }
         printf("\n\n");
     }

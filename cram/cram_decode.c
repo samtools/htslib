@@ -2248,7 +2248,7 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
         }
 
         if (cr->tlen == INT64_MIN)
-            cr->tlen = 0; // Just incase
+            cr->tlen = 0; // Just in case
     }
 
     for (rec = 0; rec < s->hdr->num_records; rec++) {

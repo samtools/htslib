@@ -1049,7 +1049,7 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
  * went from 18.3s to 36.3s. So decompression suffers too, but not as bad
  * as compression times.
  *
- * For now we disable this functionality. If it's to be reenabled make sure you
+ * For now we disable this functionality. If it's to be re-enabled make sure you
  * improve the mem_inflate implementation as it's just a test hack at the
  * moment.
  */
@@ -1470,7 +1470,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
         b->method = RAW;
-        b->uncomp_size = usize2; // Just incase it differs
+        b->uncomp_size = usize2; // Just in case it differs
         //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
         break;
     }
@@ -1489,7 +1489,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
         b->method = RAW;
-        b->uncomp_size = usize2; // Just incase it differs
+        b->uncomp_size = usize2; // Just in case it differs
         //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
         break;
     }
@@ -1668,7 +1668,7 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
 /*
  * A copy of cram_compress_block2 with added recursion detection.
  * This is only called for error handling where the auto-tuning has failed.
- * The simplest way of doing this is recusion + an additional argument, but
+ * The simplest way of doing this is recursion + an additional argument, but
  * we didn't want to complicate the existing code hence this is static.
  */
 static int cram_compress_block3(cram_fd *fd, cram_slice *s,
@@ -1888,7 +1888,7 @@ static int cram_compress_block3(cram_fd *fd, cram_slice *s,
                     1.05, // 8  tok3 (rans)
                     1.00, 1.00, // 9,10 reserved
 
-                    // Paramterised versions of above
+                    // Parameterised versions of above
                     1.01, // gzip rle
                     1.01, // gzip -1
 
@@ -4869,7 +4869,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
  * Sets CRAM variable sized integer decode function tables.
  * CRAM 1, 2, and 3.x all used ITF8 for uint32 and UTF8 for uint64.
  * CRAM 4.x uses the same encoding mechanism for 32-bit and 64-bit
- * (or anything inbetween), but also now supports signed values.
+ * (or anything in between), but also now supports signed values.
  *
  * Version is the CRAM major version number.
  * vv is the vector table (probably &cram_fd->vv)

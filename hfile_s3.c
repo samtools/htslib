@@ -663,7 +663,7 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
 
         if (url_style.l) {
             // Conforming to s3cmd's GitHub PR#416, host_bucket without the "%(bucket)s" string
-            // indicates use of path style adressing.
+            // indicates use of path-style addressing.
             if (strstr(url_style.s, "%(bucket)s") == NULL) {
                 ad->url_style = s3_path;
             } else {
@@ -1458,7 +1458,7 @@ error:
 S3 Multipart Upload
 -------------------
 
-There are several steps in the Mulitipart upload.
+There are several steps in the Multipart upload.
 
 
 1) Initiate Upload

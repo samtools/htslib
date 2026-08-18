@@ -888,7 +888,7 @@ static int hts_filter_eval_(hts_filter_t *filt,
     }
 
     // Strings evaluate to true.  An empty string is also true, but an
-    // absent (null) string is false, unless overriden by is_true.  An
+    // absent (null) string is false, unless overridden by is_true.  An
     // empty string has kstring length of zero, but a pointer as it's
     // nul-terminated.
     if (res->is_str) {

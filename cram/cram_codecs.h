@@ -162,7 +162,7 @@ cram_codec *cram_encoder_init(enum cram_encoding codec, cram_stats *st,
 #define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (--b->bit<0), b->bit&=7)
 
 /*
- * Check that enough bits are left in a block to satisy a bit-based decoder.
+ * Check that enough bits are left in a block to satisfy a bit-based decoder.
  * Return  0 if there are enough
  *         1 if not.
  */

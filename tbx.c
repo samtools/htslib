@@ -289,7 +289,7 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                             if ((t = strchr(s, ':'))) {
                                 s = t + 1;
                             } else {
-                                break;    //not in sycn with fmt def!
+                                break;    //not in sync with fmt def!
                             }
                         }
                         fmtlen = fmtlen < tmp ? tmp : fmtlen;

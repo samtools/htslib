@@ -119,7 +119,7 @@ static int getfilespec(const char *path, struct stat *status)
     if (!path || !status) {     //invalid
         return -1;
     }
-    if (!strcmp(path, "-")) {   //cant get / set for stdin/out, return success
+    if (!strcmp(path, "-")) {   //can't get / set for stdin/out, return success
         return 0;
     }
     if (stat(path, status) < 0) {
@@ -139,7 +139,7 @@ static int setfilespec(const char *path, const struct stat *status)
     if (!path || !status) {     //invalid
         return -1;
     }
-    if (!strcmp(path, "-")) {   //cant get / set for stdin/out, return success
+    if (!strcmp(path, "-")) {   //can't get / set for stdin/out, return success
         return 0;
     }
 
@@ -293,7 +293,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "[bgzip] Index file name expected with rebgzip.  See -I option.\n");
         return 1;
     }
-    /* avoid -I / indexfile with multiple inputs while index/reindex. these wont be set during
+    /* avoid -I / indexfile with multiple inputs while index/reindex. these won't be set during
     read/decompress and are not considered even if set */
     if ( (index || reindex) && !write_fname && index_fname && argc - optind > 1) {
         fprintf(stderr, "[bgzip] Cannot specify index filename with multiple data file on index, reindex.\n");
@@ -529,7 +529,7 @@ int main(int argc, char **argv)
                         error("Could not write index to '%s.gz.gzi'\n", argv[optind]);
                 }
                 else {
-                    //stdin, cant create index file as name is not present "-.gz.gzi" not a valid one!
+                    //stdin, can't create index file as name is not present "-.gz.gzi" not a valid one!
                     error("Can not write index for stdin data without index filename, use -I option to set index file.\n");
                 }
             }
@@ -592,7 +592,7 @@ int main(int argc, char **argv)
                     error("Could not write index to '%s.gzi'\n", argv[optind]);
             }
             else {
-                //stdin, cant create index file as name is not present "-.gzi" not a valid one!
+                //stdin, can't create index file as name is not present "-.gzi" not a valid one!
                 error("Can not write index for stdin data without index filename, use -I option to set index file.\n");
             }
 

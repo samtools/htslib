@@ -83,7 +83,7 @@ int readdata(void *data, bam1_t *b)
 {
     plpconf *conf = (plpconf*)data;
     if (!conf || !conf->infile) {
-        return -2;  //cant read data
+        return -2;  //can't read data
     }
 
     //read alignment and send

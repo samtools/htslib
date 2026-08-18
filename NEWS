@@ -91,7 +91,7 @@ Bug fixes
   (PR #2029.  Thanks to Sidhartha Kumar.
    https://github.com/samtools/htslib/security/advisories/GHSA-28r7-prwc-hf5c)
 
-* Improve checks of record consitency in the BCF reader, and disallow
+* Improve checks of record consistency in the BCF reader, and disallow
   excessively large FORMAT entries.
   (PR #2047.  Reported by VulnSeeker Security Research.
    https://github.com/samtools/htslib/security/advisories/GHSA-2wm6-8hgm-7g92)
@@ -1076,7 +1076,7 @@ Bug fixes
   requesting a deleted item via bcf_hdr_get_hrec() returning a stale pointer.
   (PR#1637)
 
-* Stop the gzip decompresser from finishing prematurely when an empty
+* Stop the gzip decompressor from finishing prematurely when an empty
   gzip block is followed by more data. (PR#1643, PR#1646)
 
 Noteworthy changes in release 1.17 (21st February 2023)
@@ -1135,7 +1135,7 @@ Noteworthy changes in release 1.17 (21st February 2023)
   be getting consistent results.
   (PR#1552, fixes the last remaining part of samtools#139)
 
-* Update the API documentation for bgzf_mt as it refered to a previous
+* Update the API documentation for bgzf_mt as it referred to a previous
   iteration.
   (PR#1556, fixes #1553.  Reported by Raghavendra Padmanabhan)
 

@@ -2727,7 +2727,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
     // 1:  Don't auto-decode MD (may be invalid)
     // 2:  Don't auto-decode NM (may be invalid)
     if (cf_tag && CRAM_MAJOR_VERS(fd->version) < 4) {
-        // Temporary copy of aux so we can ammend it.
+        // Temporary copy of aux so we can amend it.
         aux = hts_malloc_ps(sizeof(*aux), aux_size, 4);
         if (!aux)
             return NULL;
