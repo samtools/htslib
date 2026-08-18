@@ -5413,86 +5413,111 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
     bam1_core_t *c = &b->core;
     uint32_t *cigar = bam_get_cigar(b);
     int k;
+
     // determine the current CIGAR operation
     //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%ld)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
         p->qpos = 0;
         if (c->n_cigar == 1) { // just one operation, save a loop
-            if (_cop(cigar[0]) == BAM_CMATCH || _cop(cigar[0]) == BAM_CEQUAL || _cop(cigar[0]) == BAM_CDIFF) s->k = 0, s->x = c->pos, s->y = 0;
-        } else { // find the first match or deletion
+            int op = _cop(cigar[0]);
+            if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF)
+                s->k = 0, s->x = c->pos, s->y = 0;
+        } else { // find the first reference base (match, mismatch or deletion)
             for (k = 0, s->x = c->pos, s->y = 0; k < c->n_cigar; ++k) {
                 int op = _cop(cigar[k]);
                 int l = _cln(cigar[k]);
-                if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP ||
-                    op == BAM_CEQUAL || op == BAM_CDIFF) break;
-                else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) s->y += l;
+                if (bam_cigar_type(op) & 2)      // consumes ref
+                    break;
+                else if (bam_cigar_type(op) & 1) // consumes query
+                    s->y += l;
             }
             assert(k < c->n_cigar);
             s->k = k;
         }
+
     } else { // the read has been processed before
-        int op, l = _cln(cigar[s->k]);
+        int op = _cop(cigar[s->k]);
+        int l  = _cln(cigar[s->k]);
         if (pos - s->x >= l) { // jump to the next operation
-            assert(s->k < c->n_cigar); // otherwise a bug: this function should not be called in this case
-            op = _cop(cigar[s->k+1]);
-            if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP || op == BAM_CEQUAL || op == BAM_CDIFF) { // jump to the next without a loop
-                if (_cop(cigar[s->k]) == BAM_CMATCH|| _cop(cigar[s->k]) == BAM_CEQUAL || _cop(cigar[s->k]) == BAM_CDIFF) s->y += l;
+            // otherwise a bug: this function should not be called in this case
+            assert(s->k < c->n_cigar);
+            int next_op = _cop(cigar[s->k+1]);
+            if (bam_cigar_type(next_op) & 2) { // consumes ref
+                // jump to the next without a loop
+                if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF)
+                    s->y += l;
                 s->x += l;
                 ++s->k;
             } else { // find the next M/D/N/=/X
-                if (_cop(cigar[s->k]) == BAM_CMATCH|| _cop(cigar[s->k]) == BAM_CEQUAL || _cop(cigar[s->k]) == BAM_CDIFF) s->y += l;
+                if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF)
+                    s->y += l;
                 s->x += l;
                 for (k = s->k + 1; k < c->n_cigar; ++k) {
                     op = _cop(cigar[k]), l = _cln(cigar[k]);
-                    if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP || op == BAM_CEQUAL || op == BAM_CDIFF) break;
-                    else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) s->y += l;
+                    if (bam_cigar_type(op) & 2)      // consumes ref
+                        break;
+                    else if (bam_cigar_type(op) & 1) // consumes query
+                        s->y += l;
                 }
                 s->k = k;
             }
             assert(s->k < c->n_cigar); // otherwise a bug
         } // else, do nothing
     }
-    { // collect pileup information
-        int op, l;
-        op = _cop(cigar[s->k]); l = _cln(cigar[s->k]);
+
+    // collect pileup information
+    {
+        int op = _cop(cigar[s->k]);
+        int l  = _cln(cigar[s->k]);
         p->is_del = indel = p->is_refskip = 0;
-        if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) { // peek the next operation
+
+        // peek the next operation
+        if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) {
             int op2 = _cop(cigar[s->k+1]);
-            int l2 = _cln(cigar[s->k+1]);
+            int l2  = _cln(cigar[s->k+1]);
             if (op2 == BAM_CDEL && op != BAM_CDEL) {
                 // At start of a new deletion, merge e.g. 1D2D to 3D.
                 // Within a deletion (the 2D in 1D2D) we keep indel=0
                 // and rely on is_del=1 as we would for 3D.
-                indel = -(int)l2;
+                indel = -l2;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CDEL) indel -= l2;
-                    else break;
+                    op2 = _cop(cigar[k]);
+                    l2  = _cln(cigar[k]);
+                    if (op2 == BAM_CDEL)
+                        indel -= l2;
+                    else
+                        break;
                 }
             } else if (op2 == BAM_CINS) {
                 indel = l2;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CINS) indel += l2;
-                    else if (op2 != BAM_CPAD) break;
+                    op2 = _cop(cigar[k]);
+                    l2  = _cln(cigar[k]);
+                    if (op2 == BAM_CINS)
+                        indel += l2;
+                    else if (op2 != BAM_CPAD)
+                        break;
                 }
             } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
-                int l3 = 0;
                 for (k = s->k + 2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CINS) l3 += l2;
-                    else if (op2 == BAM_CDEL || op2 == BAM_CMATCH || op2 == BAM_CREF_SKIP || op2 == BAM_CEQUAL || op2 == BAM_CDIFF) break;
+                    op2 = _cop(cigar[k]);
+                    l2  = _cln(cigar[k]);
+                    if (op2 == BAM_CINS)
+                        indel += l2;
+                    else if (bam_cigar_type(op2) & 2) // consumes ref
+                        break;
                 }
-                if (l3 > 0) indel = l3;
             }
         }
         if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
             p->qpos = s->y + (pos - s->x);
         } else if (op == BAM_CDEL || op == BAM_CREF_SKIP) {
-            p->is_del = 1; p->qpos = s->y; // FIXME: distinguish D and N!!!!!
+            p->is_del = 1; // FIXME: distinguish D and N!!!!!
+            p->qpos = s->y;
             p->is_refskip = (op == BAM_CREF_SKIP);
         } // cannot be other operations; otherwise a bug
-        p->is_head = (pos == c->pos); p->is_tail = (pos == s->end);
+        p->is_head = (pos == c->pos);
+        p->is_tail = (pos == s->end);
     }
     p->cigar_ind = s->k;
 
