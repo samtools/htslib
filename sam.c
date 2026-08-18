@@ -5640,8 +5640,17 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
             break;
         case BAM_CDEL:
             // eg cigar 1M2I1D gives mpileup output in T+2AA-1C style
-            if (del_len)
-                *del_len = cigar[k]>>BAM_CIGAR_SHIFT;
+            if (del_len) {
+                uint64_t len64 = cigar[k]>>BAM_CIGAR_SHIFT;
+                while (k+1 < p->b->core.n_cigar &&
+                       (cigar[k+1] & BAM_CIGAR_MASK) == BAM_CDEL) {
+                    len64 += cigar[++k] >> BAM_CIGAR_SHIFT;
+                }
+                if (len64 < INT32_MAX)
+                    *del_len = len64;
+                else
+                    return -1;
+            }
             // fall through
         default:
             k = p->b->core.n_cigar;
