@@ -1044,7 +1044,6 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/hfile_libcurl.tmp
 	-rm -f test/*.tmp test/*.tmp.* test/faidx/*.tmp* \
                test/longrefs/*.tmp.* test/ref_cache/*.tmp.* test/tabix/*.tmp.* \
                test/bgzf_boundaries/*.tmp.* test/*/FAIL* \
