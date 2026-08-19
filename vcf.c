@@ -1002,8 +1002,26 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     if ( k != kh_end(d) )
     {
         // already present
+        int is_pass = strcmp(str, "PASS")==0;
         free(str);
-        if ( kh_val(d, k).hrec[info&0xf] ) return 0;
+        if ( kh_val(d, k).hrec[info&0xf] ) {
+            // Handle a duplicate ##FILTER=<ID=PASS,...> is possible as the
+            // user is permitted to add one, but we always interject our own
+            // after the ##fileformat line.
+            //
+            // I'm certain hdr->hrec[1] will always be our automatic
+            // PASS, but check anyway just incase.
+            if (is_pass && (info & 0xf) == BCF_HL_FLT &&
+                hdr->nhrec > 1 && hdr->hrec[1]->type == BCF_HL_FLT) {
+                if (idx == -1 && hrec_add_idx(hrec, kh_val(d, k).id) < 0) {
+                    return -1;
+                }
+                bcf_hrec_t hrec_pass = *hdr->hrec[1];
+                *hdr->hrec[1] = *hrec;
+                *hrec = hrec_pass;
+            }
+            return 0;
+        }
         kh_val(d, k).info[info&0xf] = info;
         kh_val(d, k).hrec[info&0xf] = hrec;
         if ( idx==-1 ) {
