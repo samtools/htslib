@@ -174,6 +174,7 @@
 		kseq_t *s = (kseq_t*)calloc(1, sizeof(kseq_t));					\
 		if (!s) return NULL;											\
 		s->f = ks_init(fd);												\
+		if (!s->f) { free(s); return NULL; }							\
 		return s;														\
 	}																	\
 	SCOPE void kseq_destroy(kseq_t *ks)									\
