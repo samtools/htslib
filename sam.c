@@ -559,6 +559,14 @@ int bam_set1(bam1_t *bam,
     }
 
     // validate parameters
+    if (l_seq > INT32_MAX) {
+        // Unfortunately b->core.l_qseq is int32, so signed.
+        // Note an "(int)l_seq < 0" check is already covered by >INT32_MAX
+        hts_log_error("Sequence length too long");
+        errno = EINVAL;
+        return -1;
+    }
+
     if (l_qname > BAM_MAX_QNAME_LEN) {
         hts_log_error("Query name too long");
         errno = EINVAL;
