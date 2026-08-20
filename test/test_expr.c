@@ -347,8 +347,11 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         hts_expr_val_t v = HTS_EXPR_VAL_INIT;
         hts_filter_t *filt = hts_filter_init(argv[1]);
-        if (hts_filter_eval2(filt, NULL, lookup, &v))
+        if (hts_filter_eval2(filt, NULL, lookup, &v)) {
+            hts_expr_val_free(&v);
+            hts_filter_free(filt);
             return 1;
+        }
 
         printf("%s\t", v.is_true ? "true":"false");
 
