@@ -48,7 +48,16 @@ struct hts_filter_t {
     int parsed;
     int curr_regex, max_regex;
     regex_t preg[MAX_REGEX];
+    int depth;
 };
+
+/*
+ * Valid ranges for int64 arithmetic when operating on doubles.
+ * The mantissa is 53 bits, and we only accept 'normal' floating point too
+ */
+static inline int IS_VALID(double d) {
+    return isfinite(d) && d > -((int64_t)1<<53) && d < ((int64_t)1<<53);
+}
 
 /*
  * This is designed to be mostly C like with mostly same the precedence rules,
@@ -393,9 +402,12 @@ static int unary_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         } else if (res->is_str) {
             // !null = true, !"foo" = false, NOTE: !"" = false also
             res->d = res->is_true = (res->s.s == NULL);
-        } else {
+        } else if (IS_VALID(res->d)) {
             res->d = !(int64_t)res->d;
             res->is_true = res->d != 0;
+        } else {
+            hts_expr_val_undef(res);
+            err = 1;
         }
         res->is_str = 0;
     } else if (*str == '~') {
@@ -406,9 +418,11 @@ static int unary_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             err |= res->is_str;
             if (!hts_expr_val_exists(res)) {
                 hts_expr_val_undef(res);
-            } else {
+            } else if (IS_VALID(res->d)) {
                 res->d = ~(int64_t)res->d;
                 res->is_true = res->d != 0;
+            } else {
+                hts_expr_val_undef(res);
             }
         }
     } else {
@@ -453,7 +467,7 @@ static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         else if (*str == '/')
             res->d /= val.d;
         else if (*str == '%') {
-            if (val.d)
+            if (IS_VALID(res->d) && IS_VALID(val.d) && (int64_t)val.d)
                 res->d = (int64_t)res->d % (int64_t)val.d;
             else
                 hts_expr_val_undef(res);
@@ -542,9 +556,13 @@ static int bitand_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val);
                 return -1;
-            } else {
+            } else if (IS_VALID(res->d) && IS_VALID(val.d)) {
                 res->is_true =
                     (res->d = ((int64_t)res->d & (int64_t)val.d)) != 0;
+            } else {
+                hts_expr_val_undef(res);
+                hts_expr_val_free(&val);
+                return -1;
             }
         } else {
             break;
@@ -580,9 +598,13 @@ static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val);
                 return -1;
-            } else {
+            } else if (IS_VALID(res->d) && IS_VALID(val.d)) {
                 res->is_true =
                     (res->d = ((int64_t)res->d ^ (int64_t)val.d)) != 0;
+            } else {
+                hts_expr_val_undef(res);
+                hts_expr_val_free(&val);
+                return -1;
             }
         } else {
             break;
@@ -618,9 +640,13 @@ static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val);
                 return -1;
-            } else {
+            } else if (IS_VALID(res->d) && IS_VALID(val.d)) {
                 res->is_true =
                     (res->d = ((int64_t)res->d | (int64_t)val.d)) != 0;
+            } else {
+                hts_expr_val_undef(res);
+                hts_expr_val_free(&val);
+                return -1;
             }
         } else {
             break;
@@ -870,7 +896,14 @@ static int and_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 
 static int expression(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                       char *str, char **end, hts_expr_val_t *res) {
-    return and_expr(filt, data, fn, str, end, res);
+    if (++filt->depth > 100) {
+        hts_log_error("Expression depth too high");
+        hts_expr_val_undef(res);
+        return -1;
+    }
+    int ret = and_expr(filt, data, fn, str, end, res);
+    filt->depth--;
+    return ret;
 }
 
 hts_filter_t *hts_filter_init(const char *str) {
@@ -905,6 +938,7 @@ static int hts_filter_eval_(hts_filter_t *filt,
     char *end = NULL;
 
     filt->curr_regex = 0;
+    filt->depth = 0;
     if (expression(filt, data, fn, filt->str, &end, res))
         return -1;
 
