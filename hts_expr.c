@@ -169,7 +169,10 @@ static int func_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 return -1;
             (*end)++;
             hts_expr_val_t val = HTS_EXPR_VAL_INIT;
-            if (expression(filt, data, fn, ws(*end), end, &val)) return -1;
+            if (expression(filt, data, fn, ws(*end), end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             func_ok = 1;
             if (!hts_expr_val_existsT(res)) {
                 kstring_t swap = res->s;
@@ -230,7 +233,10 @@ static int func_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 return -1;
             (*end)++;
             hts_expr_val_t val = HTS_EXPR_VAL_INIT;
-            if (expression(filt, data, fn, ws(*end), end, &val)) return -1;
+            if (expression(filt, data, fn, ws(*end), end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_exists(res) || !hts_expr_val_exists(&val)) {
                 hts_expr_val_undef(res);
             } else if (res->is_str || val.is_str) {
@@ -430,7 +436,10 @@ static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
     while (*str) {
         str = ws(str);
         if (*str == '*' || *str == '/' || *str == '%') {
-            if (unary_expr(filt, data, fn, str+1, end, &val)) return -1;
+            if (unary_expr(filt, data, fn, str+1, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_exists(&val) || !hts_expr_val_exists(res)) {
                 hts_expr_val_undef(res);
             } else if (val.is_str || res->is_str) {
@@ -478,7 +487,10 @@ static int add_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         str = ws(str);
         int undef = 0;
         if (*str == '+' || *str == '-') {
-            if (mul_expr(filt, data, fn, str+1, end, &val)) return -1;
+            if (mul_expr(filt, data, fn, str+1, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_exists(&val) || !hts_expr_val_exists(res)) {
                 undef = 1;
             } else if (val.is_str || res->is_str) {
@@ -521,7 +533,10 @@ static int bitand_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
     for (;;) {
         str = ws(*end);
         if (*str == '&' && str[1] != '&') {
-            if (add_expr(filt, data, fn, str+1, end, &val)) return -1;
+            if (add_expr(filt, data, fn, str+1, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_exists(&val) || !hts_expr_val_exists(res)) {
                 undef = 1;
             } else if (res->is_str || val.is_str) {
@@ -556,7 +571,10 @@ static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
     for (;;) {
         str = ws(*end);
         if (*str == '^') {
-            if (bitand_expr(filt, data, fn, str+1, end, &val)) return -1;
+            if (bitand_expr(filt, data, fn, str+1, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_exists(&val) || !hts_expr_val_exists(res)) {
                 undef = 1;
             } else if (res->is_str || val.is_str) {
@@ -591,7 +609,10 @@ static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
     for (;;) {
         str = ws(*end);
         if (*str == '|' && str[1] != '|') {
-            if (bitxor_expr(filt, data, fn, str+1, end, &val)) return -1;
+            if (bitxor_expr(filt, data, fn, str+1, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_exists(&val) || !hts_expr_val_exists(res)) {
                 undef = 1;
             } else if (res->is_str || val.is_str) {
@@ -800,7 +821,10 @@ static int and_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
         hts_expr_val_t val = HTS_EXPR_VAL_INIT;
         str = ws(*end);
         if (str[0] == '&' && str[1] == '&') {
-            if (eq_expr(filt, data, fn, str+2, end, &val)) return -1;
+            if (eq_expr(filt, data, fn, str+2, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_existsT(res) || !hts_expr_val_existsT(&val)) {
                 hts_expr_val_undef(res);
                 res->d = 0;
@@ -811,7 +835,10 @@ static int and_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 res->is_str = 0;
             }
         } else if (str[0] == '|' && str[1] == '|') {
-            if (eq_expr(filt, data, fn, str+2, end, &val)) return -1;
+            if (eq_expr(filt, data, fn, str+2, end, &val)) {
+                hts_expr_val_free(&val);
+                return -1;
+            }
             if (!hts_expr_val_existsT(res) && !hts_expr_val_existsT(&val)) {
                 // neither defined
                 hts_expr_val_undef(res);
