@@ -1096,23 +1096,28 @@ int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
         break;
     }
     assert( k<kh_end(aux->gen) );   // something went wrong, should never happen
+
+    kstring_t str = {0,0,NULL};
+    char *val = NULL;
+
+    if ( ksprintf(&str, "##%s=%s", tmp->key,tmp->value) < 0 )
+        goto fail;
+    val = strdup(tmp->value);
+    if (!val)
+        goto fail;
+
+    // Remove old entry
     free((char*)kh_key(aux->gen,k));
     kh_del(hdict,aux->gen,k);
-    kstring_t str = {0,0,0};
-    if ( ksprintf(&str, "##%s=%s", tmp->key,tmp->value) < 0 )
-    {
-        free(str.s);
-        return -1;
-    }
+
+    // Add new one (should succeed as we just cleared out a slot)
     k = kh_put(hdict, aux->gen, str.s, &ret);
     if ( ret<0 )
-    {
-        free(str.s);
-        return -1;
-    }
+        goto fail;
+
+    // str.s is now owned by the hash table
     free(hrec->value);
-    hrec->value = strdup(tmp->value);
-    if ( !hrec->value ) return -1;
+    hrec->value = val;
     kh_val(aux->gen,k) = hrec;
 
     if (!strcmp(hrec->key,"fileformat")) {
@@ -1120,6 +1125,11 @@ int bcf_hdr_update_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec, const bcf_hrec_t *tmp)
         get_hdr_aux(hdr)->version = bcf_get_version(NULL, hrec->value);
     }
     return 0;
+
+ fail:
+    ks_free(&str);
+    free(val);
+    return -1;
 }
 
 int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
@@ -1615,6 +1625,8 @@ int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
         if ( ksprintf(&str,"##fileformat=%s", version) < 0 ) return -1;
         hrec = bcf_hdr_parse_line(hdr, str.s, &len);
         free(str.s);
+        if (!hrec)
+            return -1;
 
         get_hdr_aux(hdr)->version = bcf_get_version(NULL, hrec->value);
     }
@@ -1630,7 +1642,7 @@ int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
     }
     hdr->dirty = 1;
     //TODO rlen may change, deal with it
-    return 0; // FIXME: check for errs in this function (return < 0 if so)
+    return 0;
 }
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
