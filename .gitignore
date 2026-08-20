@@ -86,5 +86,7 @@ shlib-exports-*.txt
 /test/thrash_threads[1-7]
 /test/*.tmp
 /test/*.tmp.*
+/test/fuzz/corpus.expr/*
 
 /TAGS
+

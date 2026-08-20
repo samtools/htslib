@@ -741,6 +741,25 @@ test/hts_endian: test/hts_endian.o
 test/fuzz/hts_open_fuzzer: test/fuzz/hts_open_fuzzer.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fuzz/hts_open_fuzzer.o libhts.a $(LIBS) -lpthread
 
+# Expression language fuzzer
+test/fuzz/corpus.expr:
+	mkdir test/fuzz/corpus.expr
+	while read -r e; \
+	do \
+	    echo -n "$$e" > test/fuzz/corpus.expr/`printf "e.%03d" $$n`; \
+	    n=`expr $$n + 1`; \
+	done < test/fuzz/corpus.expr.dat
+
+# Recommended build process:
+#   make CC=clang21 test/fuzz/fuzz_expr
+# Comment out the sub-make below for full rebuild
+test/fuzz/fuzz_expr: test/fuzz/fuzz_expr.c test/fuzz/corpus.expr
+	# make clean
+	# make CFLAGS="-fsanitize=address,undefined,fuzzer -g -O3" libhts.a -j8
+	$(CC) -fsanitize=address,undefined,fuzzer $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) -o $@ test/fuzz/fuzz_expr.c $(LDFLAGS) libhts.a $(LIBS) -lpthread
+	@echo "Run with: (cd test/fuzz; ASAN_OPTIONS=allow_addr2line=1:abort_on_error=1:detect_leaks=1 ./fuzz_expr corpus.expr)"
+
+
 test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LIBS) -lpthread
 

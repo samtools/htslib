@@ -1,0 +1,158 @@
+1
++1
+-1
+!7
+!0
+!(!7)
+!!7
+2+3
+2+-3
+1+2+3
+-2+3
+1+null
+null-1
+-null
+2*3
+1*2*3
+2*0
+(7)
+((7))
+(1+2)*(3+4)
+(4*5)-(-2*-3)
+2*null
+null/2
+0/0
+(1+2)*3==9
+(1+2)*3!=8
+(1+2)*3!=9
+(1+2)*3==8
+1>2
+1<2
+3<3
+3>3
+9<=9
+9>=9
+2*4==8
+16==0x10
+15<0x10
+17>0x10
+2*4!=8
+4+2<3+4
+4*2<3+4
+4*(2<3)+4
+(1<2) == (3>2)
+1<2 == 3>2
+null <= 0
+null >= 0
+null < 0
+null > 0
+null == null
+null != null
+null < 10
+10 > null
+2 && 1
+2 && 0
+0 && 2
+2 || 1
+2 || 0
+0 || 2
+1 || 2 && 3
+2 && 3 || 1
+0 && 3 || 2
+0 && 3 || 0
+ 5 - 5 && 1
++5 - 5 && 1
+null && 1
+1 && null
+!null && 1
+1 && !null
+1 && null-but-true
+null || 0
+0 || null
+!null || 0
+0 || !null
+0 || null-but-true
+null || 1
+1 || null
+3 & 1
+3 & 2
+1 | 2
+1 | 3
+1 | 6
+1 ^ 3
+1 | null
+null | 1
+1 & null
+null & 1
+0 ^ null
+null ^ 0
+1 ^ null
+null ^ 1
+(1^0)&(4^3)
+1 ^(0&4)^ 3
+1 ^ 0&4 ^ 3
+(1|0)^(4|3)
+1 |(0^4)| 3
+1 | 0^4 | 3
+4 & 2 || 1
+(4 & 2) || 1
+4 & (2 || 1)
+1 || 4 & 2
+1 || (4 & 2)
+(1 || 4) & 2
+ (2*3)&7  > 4
+ (2*3)&(7 > 4)
+((2*3)&7) > 4
+((2*3)&7) > 4 && 2*2 <= 4
+magic == "plugh"
+magic != "xyzzy"
+"abc" < "def"
+"abc" <= "abc"
+"abc" < "ab"
+"abc" <= "ab"
+"abc" > "def"
+"abc" >= "abc"
+"abc" > "ab"
+"abc" >= "ab"
+null == "x"
+null != "x"
+null < "x"
+null > "x"
+"abbc" =~ "^a+b+c+$"
+"aBBc" =~ "^a+b+c+$"
+"aBBc" !~ "^a+b+c+$"
+"xyzzy plugh abracadabra" =~ magic
+empty-but-true
+!empty-but-true
+!!empty-but-true
+1 && empty-but-true && 1
+1 && empty-but-true && 0
+null
+!null
+!!null
+!"foo"
+!!"foo"
+null-but-true
+!null-but-true
+!!null-but-true
+zero-but-true
+!zero-but-true
+!!zero-but-true
+log(2)
+exp(9)
+log(exp(9))
+pow(2,3)
+sqrt(9)
+sqrt(-9)
+default(2,3)
+default(null,3)
+default(null,0)
+default(null-but-true,0)
+default(null-but-true,null)
+default(null,null-but-true)
+exists("foo")
+exists(12)
+exists("")
+exists(0)
+exists(null)
+exists(null-but-true)
