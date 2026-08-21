@@ -101,6 +101,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-sweep \
 	test/test-bcf-sr \
 	test/fuzz/hts_open_fuzzer.o \
+	test/fuzz/fai_build_fuzzer.o \
 	test/test-bcf-translate \
 	test/test-parse-reg \
 	test/test_introspection \
@@ -741,6 +742,9 @@ test/hts_endian: test/hts_endian.o
 test/fuzz/hts_open_fuzzer: test/fuzz/hts_open_fuzzer.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fuzz/hts_open_fuzzer.o libhts.a $(LIBS) -lpthread
 
+test/fuzz/fai_build_fuzzer: test/fuzz/fai_build_fuzzer.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/fuzz/fai_build_fuzzer.o libhts.a $(LIBS) -lpthread
+
 test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LIBS) -lpthread
 
@@ -883,6 +887,7 @@ htscodecs/tests/varint_test.o: htscodecs/tests/varint_test.c config.h $(htscodec
 
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
 test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
+test/fuzz/fai_build_fuzzer.o: test/fuzz/fai_build_fuzzer.c config.h $(htslib_faidx_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
