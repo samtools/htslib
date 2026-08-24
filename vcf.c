@@ -839,7 +839,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     // contig
     int i, ret, replacing = 0;
     khint_t k;
-    char *str = NULL;
+    char *id_copy = NULL;
 
     bcf_hrec_set_type(hrec);
 
@@ -847,38 +847,40 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     {
         hts_pos_t len = 0;
 
-        // Get the contig ID ($str) and length ($j)
-        i = bcf_hrec_find_key(hrec,"length");
-        if ( i<0 ) len = 0;
-        else {
-            char *start = hrec->vals[i] + (*hrec->vals[i] == '"'), *end;
+        // Get the contig ID and length
+        int id_i = bcf_hrec_find_key(hrec,"ID");
+        if ( id_i<0 ) return 0;
+        const char *id = hrec->vals[id_i];
+        int len_i = bcf_hrec_find_key(hrec,"length");
+        if ( len_i >= 0 ) {
+            const char *length = hrec->vals[len_i];
+            const char *start = length + (*length == '"');
+            char *end;
             len = strtoll(start, &end, 10);
             if (start == end || len < 0) {
-                int id_i = bcf_hrec_find_key(hrec,"ID");
-                if ( i<0 ) return 0;
                 hts_log_warning("Could not parse the length attribute of "
                                 "contig \"%s\": \"%s\". Using zero.",
-                                hrec->vals[id_i], hrec->vals[i]);
+                                id, length);
                 len = 0;
             }
+        } else {
+            len = 0;
         }
 
-        i = bcf_hrec_find_key(hrec,"ID");
-        if ( i<0 ) return 0;
-        str = strdup(hrec->vals[i]);
-        if (!str) return -1;
+        id_copy = strdup(id);
+        if (!id_copy) return -1;
 
         // Register in the dictionary
         vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
-        khint_t k = kh_get(vdict, d, str);
+        khint_t k = kh_get(vdict, d, id_copy);
         if ( k != kh_end(d) ) { // already present
-            free(str); str=NULL;
+            free(id_copy); id_copy=NULL;
             if (kh_val(d, k).hrec[0] != NULL) // and not removed
                 return 0;
             replacing = 1;
         } else {
-            k = kh_put(vdict, d, str, &ret);
-            if (ret < 0) { free(str); return -1; }
+            k = kh_put(vdict, d, id_copy, &ret);
+            if (ret < 0) { free(id_copy); return -1; }
         }
 
         int idx = bcf_hrec_find_key(hrec,"IDX");
@@ -890,7 +892,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             {
                 if (!replacing) {
                     kh_del(vdict, d, k);
-                    free(str);
+                    free(id_copy);
                 }
                 hts_log_warning("Error parsing the IDX tag, skipping");
                 return 0;
@@ -904,7 +906,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
             if (!replacing) {
                 kh_del(vdict, d, k);
-                free(str);
+                free(id_copy);
             }
             return -1;
         }
@@ -994,16 +996,16 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
                      (((uint32_t) hrec->type) & 0xf));
 
     if ( !id ) return 0;
-    str = strdup(id);
-    if (!str) return -1;
+    id_copy = strdup(id);
+    if (!id_copy) return -1;
 
     vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_ID];
-    k = kh_get(vdict, d, str);
+    k = kh_get(vdict, d, id_copy);
     if ( k != kh_end(d) )
     {
         // already present
-        int is_pass = strcmp(str, "PASS")==0;
-        free(str);
+        int is_pass = strcmp(id_copy, "PASS")==0;
+        free(id_copy);
         if ( kh_val(d, k).hrec[info&0xf] ) {
             // Handle a duplicate ##FILTER=<ID=PASS,...> is possible as the
             // user is permitted to add one, but we always interject our own
@@ -1031,9 +1033,9 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         }
         return 1;
     }
-    k = kh_put(vdict, d, str, &ret);
+    k = kh_put(vdict, d, id_copy, &ret);
     if (ret < 0) {
-        free(str);
+        free(id_copy);
         return -1;
     }
     kh_val(d, k) = bcf_idinfo_def;
@@ -1042,7 +1044,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     kh_val(d, k).id = idx;
     if (bcf_hdr_set_idx(hdr, BCF_DT_ID, kh_key(d,k), &kh_val(d,k)) < 0) {
         kh_del(vdict, d, k);
-        free(str);
+        free(id_copy);
         return -1;
     }
     if ( idx==-1 ) {
