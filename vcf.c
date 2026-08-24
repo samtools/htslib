@@ -833,99 +833,96 @@ static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_i
     return 0;
 }
 
-// returns: 1 when hdr needs to be synced, -1 on error, 0 otherwise
-static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
-{
-    // contig
-    int i, ret, replacing = 0;
-    khint_t k;
+// Sub-function of bcf_hdr_register_hrec for type==BCF_HL_CTG
+// Returns 1 when hdr needs to be synced, -1 on error, 0 otherwise
+static int bcf_hdr_register_hrec_ctg(bcf_hdr_t *hdr, bcf_hrec_t *hrec) {
     char *id_copy = NULL;
+    hts_pos_t len = 0;
+    int ret, replacing = 0;
 
-    bcf_hrec_set_type(hrec);
-
-    if ( hrec->type==BCF_HL_CTG )
-    {
-        hts_pos_t len = 0;
-
-        // Get the contig ID and length
-        int id_i = bcf_hrec_find_key(hrec,"ID");
-        if ( id_i<0 ) return 0;
-        const char *id = hrec->vals[id_i];
-        int len_i = bcf_hrec_find_key(hrec,"length");
-        if ( len_i >= 0 ) {
-            const char *length = hrec->vals[len_i];
-            const char *start = length + (*length == '"');
-            char *end;
-            len = strtoll(start, &end, 10);
-            if (start == end || len < 0) {
-                hts_log_warning("Could not parse the length attribute of "
-                                "contig \"%s\": \"%s\". Using zero.",
-                                id, length);
-                len = 0;
-            }
-        } else {
+    // Get the contig ID and length
+    int id_i = bcf_hrec_find_key(hrec,"ID");
+    if ( id_i<0 ) return 0;
+    const char *id = hrec->vals[id_i];
+    int len_i = bcf_hrec_find_key(hrec,"length");
+    if ( len_i >= 0 ) {
+        const char *length = hrec->vals[len_i];
+        const char *start = length + (*length == '"');
+        char *end;
+        len = strtoll(start, &end, 10);
+        if (start == end || len < 0) {
+            hts_log_warning("Could not parse the length attribute of "
+                            "contig \"%s\": \"%s\". Using zero.",
+                            id, length);
             len = 0;
         }
+    } else {
+        len = 0;
+    }
 
-        id_copy = strdup(id);
-        if (!id_copy) return -1;
+    id_copy = strdup(id);
+    if (!id_copy) return -1;
 
-        // Register in the dictionary
-        vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
-        khint_t k = kh_get(vdict, d, id_copy);
-        if ( k != kh_end(d) ) { // already present
-            free(id_copy); id_copy=NULL;
-            if (kh_val(d, k).hrec[0] != NULL) // and not removed
-                return 0;
-            replacing = 1;
-        } else {
-            k = kh_put(vdict, d, id_copy, &ret);
-            if (ret < 0) { free(id_copy); return -1; }
-        }
+    // Register in the dictionary
+    vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
+    khint_t k = kh_get(vdict, d, id_copy);
+    if ( k != kh_end(d) ) { // already present
+        free(id_copy); id_copy=NULL;
+        if (kh_val(d, k).hrec[0] != NULL) // and not removed
+            return 0;
+        replacing = 1;
+    } else {
+        k = kh_put(vdict, d, id_copy, &ret);
+        if (ret < 0) { free(id_copy); return -1; }
+    }
 
-        int idx = bcf_hrec_find_key(hrec,"IDX");
-        if ( idx!=-1 )
+    int idx = bcf_hrec_find_key(hrec,"IDX");
+    if ( idx!=-1 )
+    {
+        char *tmp = hrec->vals[idx];
+        idx = strtol(hrec->vals[idx], &tmp, 10);
+        if ( *tmp || idx < 0 || idx >= INT_MAX - 1)
         {
-            char *tmp = hrec->vals[idx];
-            idx = strtol(hrec->vals[idx], &tmp, 10);
-            if ( *tmp || idx < 0 || idx >= INT_MAX - 1)
-            {
-                if (!replacing) {
-                    kh_del(vdict, d, k);
-                    free(id_copy);
-                }
-                hts_log_warning("Error parsing the IDX tag, skipping");
-                return 0;
-            }
-        }
-
-        kh_val(d, k) = bcf_idinfo_def;
-        kh_val(d, k).id = idx;
-        kh_val(d, k).info[0] = len;
-        kh_val(d, k).hrec[0] = hrec;
-        if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
             if (!replacing) {
                 kh_del(vdict, d, k);
                 free(id_copy);
             }
-            return -1;
+            hts_log_warning("Error parsing the IDX tag, skipping");
+            return 0;
         }
-        if ( idx==-1 ) {
-            if (hrec_add_idx(hrec, kh_val(d,k).id) < 0) {
-               return -1;
-            }
-        }
-
-        return 1;
     }
 
-    if ( hrec->type==BCF_HL_STR ) return 1;
-    if ( hrec->type!=BCF_HL_INFO && hrec->type!=BCF_HL_FLT && hrec->type!=BCF_HL_FMT ) return 0;
+    kh_val(d, k) = bcf_idinfo_def;
+    kh_val(d, k).id = idx;
+    kh_val(d, k).info[0] = len;
+    kh_val(d, k).hrec[0] = hrec;
+    if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
+        if (!replacing) {
+            kh_del(vdict, d, k);
+            free(id_copy);
+        }
+        return -1;
+    }
+    if ( idx==-1 ) {
+        if (hrec_add_idx(hrec, kh_val(d,k).id) < 0) {
+            return -1;
+        }
+    }
 
-    // INFO/FILTER/FORMAT
+    return 1;
+}
+
+// Sub-function of bcf_hdr_register_hrec for type is BCF_HL_INFO,
+// BCF_HL_FLT or BCF_HL_FMT.
+// Returns 1 when hdr needs to be synced, -1 on error, 0 otherwise
+static int bcf_hdr_register_hrec_info(bcf_hdr_t *hdr, bcf_hrec_t *hrec) {
+    int i, ret;
+    khint_t k;
+    char *id_copy = NULL;
     char *id = NULL;
     uint32_t type = UINT32_MAX, var = UINT32_MAX;
     int num = -1, idx = -1;
+
     for (i=0; i<hrec->nkeys; i++)
     {
         if ( !strcmp(hrec->keys[i], "ID") ) id = hrec->vals[i];
@@ -1024,6 +1021,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             }
             return 0;
         }
+
         kh_val(d, k).info[info&0xf] = info;
         kh_val(d, k).hrec[info&0xf] = hrec;
         if ( idx==-1 ) {
@@ -1054,6 +1052,28 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     }
 
     return 1;
+}
+
+// returns: 1 when hdr needs to be synced, -1 on error, 0 otherwise
+static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
+{
+    bcf_hrec_set_type(hrec);
+
+    switch (hrec->type) {
+    case BCF_HL_CTG:
+        return bcf_hdr_register_hrec_ctg(hdr, hrec);
+
+    case BCF_HL_INFO:
+    case BCF_HL_FLT:
+    case BCF_HL_FMT:
+        return bcf_hdr_register_hrec_info(hdr, hrec);
+
+    case BCF_HL_STR:
+        return 1;
+
+    default:
+        return 0;
+    }
 }
 
 static void bcf_hdr_unregister_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
