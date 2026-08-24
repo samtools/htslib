@@ -1515,7 +1515,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         } else goto bad_aux;
     } else if (type == 'A') {
         r |= kputsn_("A:", 2, ks) < 0;
-        r |= kputc_(*s, ks) < 0;
+        r |= kputc(*s, ks) < 0;
         ++s;
     } else if (type == 'f') {
         if (end - s >= 4) {
