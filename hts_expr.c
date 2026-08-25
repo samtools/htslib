@@ -188,8 +188,8 @@ static int func_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                 kstring_t swap = res->s;
                 *res = val;
                 val.s = swap;
-                hts_expr_val_free(&val);
             }
+            hts_expr_val_free(&val);
         }
         break;
 
@@ -249,6 +249,7 @@ static int func_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             }
             if (!hts_expr_val_exists(res) || !hts_expr_val_exists(&val)) {
                 hts_expr_val_undef(res);
+                hts_expr_val_free(&val);
             } else if (res->is_str || val.is_str) {
                 hts_expr_val_free(&val); // arith on strings
                 return -1;
