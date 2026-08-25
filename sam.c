@@ -1407,6 +1407,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
                 return -1;
             memcpy(res->s.s, bam_get_qual(b), b->core.l_qseq);
             res->s.l = b->core.l_qseq;
+            res->s.s[res->s.l] = 0;
             res->is_str = 1;
             return 0;
         }
