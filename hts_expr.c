@@ -803,7 +803,24 @@ static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                     filt->max_regex++;
                 }
 
-                int ec = regcomp(preg, val.s.s, REG_EXTENDED | REG_NOSUB);
+                // Sanity check for known cases that can cause memory
+                // exhaustion.
+                const char *cp = val.s.s, *cp_end = val.s.s + val.s.l;
+#define MAX_NQUANT 5
+                int nquant = 0;
+                while (cp < cp_end) {
+                    if (*cp == '+' || *cp == '*' || *cp == '?') {
+                        if (++nquant >= MAX_NQUANT)
+                            break;
+                    } else if (*cp != ')') {
+                        nquant = 0;
+                    }
+                    cp++;
+                }
+
+                int ec = REG_BADRPT;
+                if (nquant < MAX_NQUANT)
+                    ec = regcomp(preg, val.s.s, REG_EXTENDED | REG_NOSUB);
                 if (ec != 0) {
                     char errbuf[1024];
                     regerror(ec, preg, errbuf, 1024);
