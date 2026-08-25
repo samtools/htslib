@@ -807,6 +807,9 @@ static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                     char errbuf[1024];
                     regerror(ec, preg, errbuf, 1024);
                     fprintf(stderr, "Failed regex: %.1024s\n", errbuf);
+                    if (preg != &preg_)
+                        filt->max_regex--;
+                    hts_expr_val_undef(res);
                     hts_expr_val_free(&val);
                     return -1;
                 }
