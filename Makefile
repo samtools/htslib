@@ -748,16 +748,16 @@ test/fuzz/corpus.expr:
 	do \
 	    echo -n "$$e" > test/fuzz/corpus.expr/`printf "e.%03d" $$n`; \
 	    n=`expr $$n + 1`; \
-	done < test/fuzz/corpus.expr.dat
+	done < $(srcdir)/test/fuzz/corpus.expr.dat
 
 # Recommended build process:
 #   make CC=clang21 test/fuzz/fuzz_expr
-# Comment out the sub-make below for full rebuild
-test/fuzz/fuzz_expr: test/fuzz/fuzz_expr.c test/fuzz/corpus.expr
+# Uncomment the sub-make below for full rebuild
+test/fuzz/fuzz_expr: $(srcdir)/test/fuzz/fuzz_expr.c test/fuzz/corpus.expr
 	# make clean
 	# make CFLAGS="-fsanitize=address,undefined,fuzzer -g -O3" libhts.a -j8
-	$(CC) -fsanitize=address,undefined,fuzzer $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) -o $@ test/fuzz/fuzz_expr.c $(LDFLAGS) libhts.a $(LIBS) -lpthread
-	@echo "Run with: (cd test/fuzz; ASAN_OPTIONS=allow_addr2line=1:abort_on_error=1:detect_leaks=1 ./fuzz_expr corpus.expr)"
+	$(CC) -fsanitize=address,undefined,fuzzer $(CFLAGS) $(TARGET_CFLAGS) $(ALL_CPPFLAGS) -o $@ $(srcdir)/test/fuzz/fuzz_expr.c $(LDFLAGS) libhts.a $(LIBS) -lpthread
+	@echo "Run with: ASAN_OPTIONS=allow_addr2line=1:abort_on_error=1:detect_leaks=1 ./test/fuzz/fuzz_expr -dict=$(srcdir)/test/fuzz/corpus.expr.dict test/fuzz/corpus.expr 2>&1 | cat -v"
 
 
 test/fieldarith: test/fieldarith.o libhts.a
@@ -1082,6 +1082,7 @@ mostlyclean: testclean
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) $(BUILT_TEST_PROGRAMS) $(BUILT_THRASH_PROGRAMS) $(REF_CACHE_PROGRAMS)
 	-rm -f htscodecs/tests/rans4x8 htscodecs/tests/rans4x16pr htscodecs/tests/arith_dynamic htscodecs/tests/tokenise_name3 htscodecs/tests/fqzcomp_qual htscodecs/tests/varint
+	-rm -f test/fuzz/fuzz_expr test/fuzz/hts_open_fuzzer
 
 distclean maintainer-clean: clean
 	-rm -f config.cache config.h config.log config.mk config.status
