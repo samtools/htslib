@@ -2389,7 +2389,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     // factor (*=1.5) is never applied.
     {
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-        int qsize=0, nsize=0, q_id=0;
+        int qsize=0, nsize=0;
 #else
         int qsize, nsize, q_id;
         cram_decode_estimate_sizes(c->comp_hdr, s, &qsize, &nsize, &q_id);
