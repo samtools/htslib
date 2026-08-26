@@ -1433,8 +1433,11 @@ int next_cigar_op(uint32_t *cigar, uint32_t ncigar, int *skip, int *spos,
     return *cig_op;
 }
 
+typedef uint8_t hist_t;
+#define MAX_HIST_T UINT8_MAX
+
 // Ensure ref and hist are large enough.
-static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
+static inline int extend_ref(char **ref, hist_t (**hist)[6], hts_pos_t pos,
                              hts_pos_t ref_start, hts_pos_t *ref_end,
                              hts_pos_t *ref_end_alloc) {
     if (*ref_end < pos && pos < *ref_end_alloc)
@@ -1454,7 +1457,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
     // Refuse to work on excessively large blocks.
     // We'll just switch to referenceless encoding, which is probably better
     // here as this must be very sparse data anyway.
-    if (new_end - ref_start > UINT_MAX/sizeof(**hist)/2)
+    if (new_end - ref_start > UINT_MAX/sizeof(**hist)/8)
         return -2;
 
     char *tmp = realloc(*ref, new_end-ref_start+1);
@@ -1462,11 +1465,12 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
         return -1;
     *ref = tmp;
 
-    uint32_t (*tmp5)[5] = hts_realloc_p(**hist, sizeof(**hist),
-                                        new_end - ref_start);
-    if (!tmp5)
+    // hist[6] = {A C G T N total}
+    hist_t (*tmp_hist)[6] = hts_realloc_p(**hist, sizeof(**hist),
+                                          new_end - ref_start);
+    if (!tmp_hist)
         return -1;
-    *hist = tmp5;
+    *hist = tmp_hist;
     *ref_end_alloc = new_end;
 
     // initialise
@@ -1483,7 +1487,7 @@ static inline int extend_ref(char **ref, uint32_t (**hist)[5], hts_pos_t pos,
 
 // Walk through MD + seq to generate ref
 // Returns 1 on success, <0 on failure
-static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
+static int cram_add_to_ref_MD(bam1_t *b, char **ref, hist_t (**hist)[6],
                               hts_pos_t ref_start, hts_pos_t *ref_end,
                               hts_pos_t *ref_end_alloc, const uint8_t *MD) {
     uint8_t *seq = bam_get_seq(b);
@@ -1589,7 +1593,7 @@ static int cram_add_to_ref_MD(bam1_t *b, char **ref, uint32_t (**hist)[5],
 //
 // Returns >=0 on success,
 //         -1 on failure (eg inconsistent data)
-static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
+static int cram_add_to_ref(bam1_t *b, char **ref, hist_t (**hist)[6],
                            hts_pos_t ref_start, hts_pos_t *ref_end,
                            hts_pos_t *ref_end_alloc) {
     const uint8_t *MD = bam_aux_get(b, "MD");
@@ -1632,8 +1636,16 @@ static int cram_add_to_ref(bam1_t *b, char **ref, uint32_t (**hist)[5],
                 if (ret < 0)
                     memset(&(*ref)[iref], 0, len);
 
-                for (j = 0; j < len; j++, iref++, iseq++)
-                    (*hist)[iref][L16[bam_seqi(seq, iseq)]]++;
+                for (j = 0; j < len; j++, iref++, iseq++) {
+                    if ((*hist)[iref][5] < MAX_HIST_T) {
+                        (*hist)[iref][5]++;
+                        (*hist)[iref][L16[bam_seqi(seq, iseq)]]++;
+                    }
+                    // else overly deep and compute the consensus on the
+                    // first alignments only.  Equivalent to a (biased)
+                    // subsampling of data.  We could unbias it by selectively
+                    // discarding, but it's likely unnecessary.
+                }
             } else {
                 // Probably a 2ndary read with seq "*"
                 iseq += len;
@@ -1673,7 +1685,7 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
     // TODO: if we can find an external reference then use it, even if the
     // user told us to do embed_ref=2.
     char *ref = NULL;
-    uint32_t (*hist)[5] = NULL;
+    hist_t (*hist)[6] = NULL;
     hts_pos_t ref_start = c->bams[r1].core.pos, ref_end = 0,
         ref_end_alloc = 0;
     if (ref_start < 0)
@@ -1686,6 +1698,8 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
                    ref_start, &ref_end, &ref_end_alloc) < 0)
         return -1;
 
+    size_t nbase = 0;
+
     // Add each bam file to the reference/consensus arrays
     int r2;
     hts_pos_t last_pos = -1;
@@ -1695,16 +1709,22 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
             goto err;
         }
         last_pos = c->bams[r1].core.pos;
+        nbase += c->bams[r1].core.l_qseq;
         if (cram_add_to_ref(&c->bams[r1], &ref, &hist, ref_start, &ref_end,
                             &ref_end_alloc) < 0)
             goto err;
     }
 
+    // Skip if the reference is mostly N due to very sparse data or
+    // huge deletions / ref-skips.
+    if (nbase < 0.01 * (ref_end - ref_start))
+        goto err;
+
     // Compute the consensus
     hts_pos_t i;
     for (i = 0; i < ref_end-ref_start; i++) {
         if (!ref[i]) {
-            int max_v = 0, max_j = 4, j;
+            hist_t max_v = 0, max_j = 4, j;
             for (j = 0; j < 4; j++)
                 // don't call N (j==4) unless no coverage
                 if (max_v < hist[i][j])
@@ -3967,8 +3987,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          * The multi_seq var here refers to our intention for the next slice.
          * This slice has already been encoded so we output as-is.
          */
-        if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
-            fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
+        if (fd->multi_seq == -1 && c->curr_rec+8 < (c->max_rec+8)/4 &&
+            fd->last_slice && fd->last_slice+8 < (c->max_rec+8)/4 &&
             embed_ref<=0) {
             if (!c->multi_seq)
                 hts_log_info("Multi-ref enabled for next container");
