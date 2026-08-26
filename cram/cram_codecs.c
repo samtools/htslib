@@ -1245,16 +1245,11 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         hts_log_error("Invalid number of symbols in huffman stream");
         return NULL;
     }
-    if (ncodes >= SIZE_MAX / sizeof(*codes)) {
-        errno = ENOMEM;
+    if (ncodes >= 1000000) {
+        errno = ERANGE;
         return NULL;
     }
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-    if (ncodes > FUZZ_ALLOC_LIMIT / sizeof(*codes)) {
-        errno = ENOMEM;
-        return NULL;
-    }
-#endif
+
     h = calloc(1, sizeof(*h));
     if (!h)
         return NULL;
