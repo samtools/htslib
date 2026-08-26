@@ -835,8 +835,6 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     }
 
     uint8_t *data = NULL, *new_data;
-    if (!*size)
-        *size = csize*2;
     for(;;) {
         new_data = realloc(data, *size);
         if (!new_data) {
@@ -850,7 +848,7 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
         // Auto grow output buffer size if needed and try again.
         // Fortunately for all bar one call of this we know the size already.
         if (ret == LIBDEFLATE_INSUFFICIENT_SPACE) {
-            (*size) *= 1.5;
+            *size = (*size + 1) + (*size >> 1);
             continue;
         }
 
