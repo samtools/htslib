@@ -5443,7 +5443,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
             // otherwise a bug: this function should not be called in this case
             assert(s->k+1 < c->n_cigar);
 
-            // Common bit between M=X and M=XDN
+            // Update cstate_t ref and query positions for the next CIGAR op
             if (MEX & (1 << _cop(cigar[s->k])))
                 s->y += l;
             s->x += l;
@@ -5473,13 +5473,13 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 
         // peek the next operation
         if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) {
-            const int op2 = _cop(cigar[s->k+1]);
-            const int l2  = _cln(cigar[s->k+1]);
-            if (op2 == BAM_CDEL && op != BAM_CDEL) {
+            const int op_next = _cop(cigar[s->k+1]);
+            const int l_next  = _cln(cigar[s->k+1]);
+            if (op_next == BAM_CDEL && op != BAM_CDEL) {
                 // At start of a new deletion, merge e.g. 1D2D to 3D.
                 // Within a deletion (the 2D in 1D2D) we keep indel=0
                 // and rely on is_del=1 as we would for 3D.
-                indel = -l2;
+                indel = -l_next;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
                     const int op2 = _cop(cigar[k]);
                     if (op2 == BAM_CDEL)
@@ -5487,8 +5487,8 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
                     else
                         break;
                 }
-            } else if (op2 == BAM_CINS) {
-                indel = l2;
+            } else if (op_next == BAM_CINS) {
+                indel = l_next;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
                     const int op2 = _cop(cigar[k]);
                     if (op2 == BAM_CINS)
@@ -5496,7 +5496,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
                     else if (op2 != BAM_CPAD)
                         break;
                 }
-            } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
+            } else if (op_next == BAM_CPAD && s->k + 2 < c->n_cigar) {
                 for (k = s->k + 2; k < c->n_cigar; ++k) {
                     const int op2 = _cop(cigar[k]);
                     if (op2 == BAM_CINS)
