@@ -1704,7 +1704,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     CURLSHcode errsh;
 
     err = curl_global_init(CURL_GLOBAL_ALL);
-    if (err != CURLE_OK) { errno = easy_errno(NULL, err); return -1; }
+    if (err != CURLE_OK) { errno = ENETDOWN; return -1; }
 
     curl.share = curl_share_init();
     if (curl.share == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
