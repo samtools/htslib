@@ -711,13 +711,13 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	fi
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
-	cd test/faidx && ./test-faidx.sh faidx.tst
-	cd test/sam_filter && ./filter.sh filter.tst
-	cd test/tabix && ./test-tabix.sh tabix.tst
-	cd test/mpileup && ./test-pileup.sh mpileup.tst
-	cd test/fastq && ./test-fastq.sh
-	cd test/base_mods && ./base-mods.sh base-mods.tst
-	cd test/tlen && ./tlen.sh tlen.tst
+	cd test/faidx && bash ./test-faidx.sh faidx.tst
+	cd test/sam_filter && bash ./filter.sh filter.tst
+	cd test/tabix && bash ./test-tabix.sh tabix.tst
+	cd test/mpileup && bash ./test-pileup.sh mpileup.tst
+	cd test/fastq && bash ./test-fastq.sh
+	cd test/base_mods && bash ./base-mods.sh base-mods.tst
+	cd test/tlen && bash ./tlen.sh tlen.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx/faidx.fa test/faidx/fastqs.fq
 	test/test-regidx
 	cd test && \
