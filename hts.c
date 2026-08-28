@@ -3637,6 +3637,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 case HTS_IDX_START:
                 case HTS_IDX_REST:
                     iter->curr_off = t_off;
+                    // reglist is no longer needed
+                    hts_reglist_free(iter->reg_list, iter->n_reg);
                     iter->n_reg = 0;
                     iter->reg_list = NULL;
                     iter->read_rest = 1;
