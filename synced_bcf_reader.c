@@ -520,7 +520,6 @@ static void bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
 {
     if (!reader)
         return;
-    free(reader->fname);
     if ( reader->tbx_idx ) tbx_destroy(reader->tbx_idx);
     if ( reader->bcf_idx ) hts_idx_destroy(reader->bcf_idx);
     bcf_hdr_destroy(reader->header);
@@ -532,6 +531,7 @@ static void bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
     int j;
     for (j=0; j<reader->mbuffer; j++)
         bcf_destroy1(reader->buffer[j]);
+    free(reader->fname);
     free(reader->buffer);
     free(reader->samples);
     free(reader->filter_ids);
