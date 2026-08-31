@@ -116,7 +116,7 @@ static inline int cpu_supports_neon(void) {
 
 #ifdef BUILDING_SIMD_NIBBLE2BASE
 
-void (*htslib_nibble2base)(uint8_t *nib, char *seq, int len) = nibble2base_default;
+void (*htslib_nibble2base)(const uint8_t *nib, char *seq, int len) = nibble2base_default;
 
 #if defined __x86_64__
 
@@ -130,10 +130,10 @@ void (*htslib_nibble2base)(uint8_t *nib, char *seq, int len) = nibble2base_defau
  */
 
 __attribute__((target("ssse3")))
-static void nibble2base_ssse3(uint8_t *nib, char *seq, int len) {
+static void nibble2base_ssse3(const uint8_t *nib, char *seq, int len) {
     const char *seq_end_ptr = seq + len;
     char *seq_cursor = seq;
-    uint8_t *nibble_cursor = nib;
+    const uint8_t *nibble_cursor = nib;
     const char *seq_vec_end_ptr = seq_end_ptr - (2 * sizeof(__m128i) - 1);
     __m128i nuc_lookup_vec = _mm_lddqu_si128((__m128i *)seq_nt16_str);
     /* Nucleotides are encoded 4-bits per nucleotide and stored in 8-bit bytes
@@ -170,7 +170,7 @@ static void nibble2base_resolve(void) {
 
 #elif defined __ARM_NEON
 
-static void nibble2base_neon(uint8_t *nib, char *seq0, int len) {
+static void nibble2base_neon(const uint8_t *nib, char *seq0, int len) {
     uint8x16_t low_nibbles_mask = vdupq_n_u8(0x0f);
     uint8x16_t nuc_lookup_vec = vld1q_u8((const uint8_t *) seq_nt16_str);
 #ifndef __aarch64__

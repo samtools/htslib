@@ -69,7 +69,7 @@ static inline int possibly_expand_bam_data(bam1_t *b, size_t bytes) {
  * for (i = 0; i < len; i++)
  *    seq[i] = seq_nt16_str[bam_seqi(nib, i)];
  */
-static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
+static inline void nibble2base_default(const uint8_t *nib, char *seq, int len) {
     static const char code2base[512] =
         "===A=C=M=G=R=S=V=T=W=Y=H=K=D=B=N"
         "A=AAACAMAGARASAVATAWAYAHAKADABAN"
@@ -108,9 +108,9 @@ static inline void nibble2base_default(uint8_t *nib, char *seq, int len) {
 #define BUILDING_SIMD_NIBBLE2BASE
 #endif
 
-static inline void nibble2base(uint8_t *nib, char *seq, int len) {
+static inline void nibble2base(const uint8_t *nib, char *seq, int len) {
 #ifdef BUILDING_SIMD_NIBBLE2BASE
-    extern void (*htslib_nibble2base)(uint8_t *nib, char *seq, int len);
+    extern void (*htslib_nibble2base)(const uint8_t *nib, char *seq, int len);
     htslib_nibble2base(nib, seq, len);
 #else
     nibble2base_default(nib, seq, len);
