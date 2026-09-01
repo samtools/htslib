@@ -1340,6 +1340,13 @@ int cram_uncompress_block(cram_block *b) {
         return 0;
 
     case GZIP:
+        if (b->uncomp_size / 2048 > b->comp_size) {
+            // The maximum compression ratio of gzip is 1032
+            // (LZ match of 258 bytes encoded in a 2bit huffman code)
+            // so catch blocks that claim to be wildly over this.
+            hts_log_error("GZIP cram block has impossibly large compression ratio");
+            return -1;
+        }
         uncomp_size = b->uncomp_size;
         uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
 
