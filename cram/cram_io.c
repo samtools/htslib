@@ -827,39 +827,26 @@ int int32_put_blk(cram_block *b, int32_t val) {
 
 // Named the same as the version that uses zlib as we always use libdeflate for
 // decompression when available.
-char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
+static char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     struct libdeflate_decompressor *z = libdeflate_alloc_decompressor();
     if (!z) {
         hts_log_error("Call to libdeflate_alloc_decompressor failed");
         return NULL;
     }
 
-    uint8_t *data = NULL, *new_data;
-    if (!*size)
-        *size = csize*2;
-    for(;;) {
-        new_data = realloc(data, *size);
-        if (!new_data) {
-            hts_log_error("Memory allocation failure");
-            goto fail;
-        }
-        data = new_data;
+    assert (*size > 0);
+    uint8_t *data = malloc(*size);
+    if (!data) {
+        hts_log_error("Memory allocation failure");
+        goto fail;
+    }
 
-        int ret = libdeflate_gzip_decompress(z, cdata, csize, data, *size, size);
 
-        // Auto grow output buffer size if needed and try again.
-        // Fortunately for all bar one call of this we know the size already.
-        if (ret == LIBDEFLATE_INSUFFICIENT_SPACE) {
-            (*size) *= 1.5;
-            continue;
-        }
+    int ret = libdeflate_gzip_decompress(z, cdata, csize, data, *size, size);
 
-        if (ret != LIBDEFLATE_SUCCESS) {
-            hts_log_error("Inflate operation failed: %d", ret);
-            goto fail;
-        } else {
-            break;
-        }
+    if (ret != LIBDEFLATE_SUCCESS) {
+        hts_log_error("Inflate operation failed: %d", ret);
+        goto fail;
     }
 
     libdeflate_free_decompressor(z);
@@ -919,23 +906,27 @@ static char *libdeflate_deflate(char *data, size_t size, size_t *cdata_size,
 char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     z_stream s;
     unsigned char *data = NULL; /* Uncompressed output */
-    int data_alloc = 0;
     int err;
 
-    /* Starting point at uncompressed size, and scale after that */
-    data = malloc(data_alloc = csize*1.2+100);
+    assert(*size > 0);
+    // These should always be true due to type of cram_block::comp_size
+    // and cram_block::uncomp_size
+    assert(*size < UINT_MAX);
+    assert(csize < UINT_MAX);
+    data = malloc(*size);
     if (!data)
         return NULL;
 
     /* Initialise zlib stream */
     s.zalloc = Z_NULL; /* use default allocation functions */
     s.zfree  = Z_NULL;
+    s.msg    = Z_NULL;
     s.opaque = Z_NULL;
     s.next_in  = (unsigned char *)cdata;
-    s.avail_in = csize;
+    s.avail_in = (uInt) csize;
     s.total_in = 0;
     s.next_out  = data;
-    s.avail_out = data_alloc;
+    s.avail_out = (uInt) *size;
     s.total_out = 0;
 
     //err = inflateInit(&s);
@@ -947,32 +938,16 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     }
 
     /* Decode to 'data' array */
-    for (;s.avail_in;) {
-        unsigned char *data_tmp;
-        int alloc_inc;
+    err = inflate(&s, Z_FINISH);
 
-        s.next_out = &data[s.total_out];
-        err = inflate(&s, Z_NO_FLUSH);
-        if (err == Z_STREAM_END)
-            break;
-
-        if (err != Z_OK) {
-            hts_log_error("Call to zlib inflate failed: %s", s.msg);
-            free(data);
-            inflateEnd(&s);
-            return NULL;
-        }
-
-        /* More to come, so realloc based on growth so far */
-        alloc_inc = (double)s.avail_in/s.total_in * s.total_out + 100;
-        data = realloc((data_tmp = data), data_alloc += alloc_inc);
-        if (!data) {
-            free(data_tmp);
-            inflateEnd(&s);
-            return NULL;
-        }
-        s.avail_out += alloc_inc;
+    if (err != Z_STREAM_END) {
+        hts_log_error("Call to zlib inflate failed: %s",
+                      err != Z_OK ? s.msg : "not enough data");
+        free(data);
+        inflateEnd(&s);
+        return NULL;
     }
+
     inflateEnd(&s);
 
     *size = s.total_out;
