@@ -1,0 +1,97 @@
+# S3 (MinIO) integration tests.
+#
+# Kept as a separate workflow from linux-build.yml: it needs Docker to run a
+# MinIO server and exercises a much narrower slice of htslib (the hfile_s3
+# backend), so it shouldn't block or slow down the main build matrix.
+name: S3 integration (MinIO)
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin
+  MINIO_TEST_BUCKET: htslib-test
+
+jobs:
+  minio-s3:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        submodules: true
+        persist-credentials: false
+
+    - name: Build MinIO test image
+      run: docker build -t htslib-minio-test test/docker/minio
+
+    - name: Start MinIO
+      run: |
+        docker run -d --name minio-test -p 9000:9000 \
+          -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+          -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+          -e MINIO_TEST_BUCKET="$MINIO_TEST_BUCKET" \
+          htslib-minio-test
+
+    - name: Wait for MinIO to be ready
+      run: |
+        # /minio/health/ready only reflects the server itself coming up; it
+        # goes green *before* bootstrap.sh's own `mc mb` finishes creating
+        # the test bucket, which is a real race (writes fail with ENOENT
+        # against the not-yet-existent bucket if you only wait on this).
+        for i in $(seq 1 60); do
+          if curl -sf http://localhost:9000/minio/health/ready >/dev/null 2>&1; then
+            echo "MinIO server is up"
+            break
+          fi
+          sleep 1
+        done
+
+        # So also wait for bootstrap.sh's own completion marker before
+        # treating the container as ready for use.
+        for i in $(seq 1 60); do
+          if docker logs minio-test 2>&1 | grep -q "^bootstrap: bucket .* ready$"; then
+            echo "MinIO bucket is ready"
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "MinIO did not become ready in time" >&2
+        docker logs minio-test || true
+        exit 1
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-suggests --no-install-recommends \
+          autoconf automake make gcc perl zlib1g-dev libbz2-dev liblzma-dev \
+          libcurl4-gnutls-dev libssl-dev
+
+    - name: Configure and build
+      run: |
+        autoreconf -i
+        ./configure --enable-werror --enable-plugins
+        make -j5
+
+    - name: Run S3 integration tests
+      env:
+        HTS_PATH: .
+        HTS_S3_HOST: localhost:9000
+        HTS_S3_ADDRESS_STYLE: path
+        AWS_ACCESS_KEY_ID: minioadmin
+        AWS_SECRET_ACCESS_KEY: minioadmin
+        HTS_ALLOW_UNENCRYPTED_AUTHORIZATION_HEADER: I understand the risks
+        HTSLIB_TEST_S3_BUCKET: htslib-test
+      run: make check-s3
+
+    - name: MinIO container logs
+      if: always()
+      run: docker logs minio-test || true
+
+    - name: Stop MinIO
+      if: always()
+      run: docker rm -f minio-test || true
