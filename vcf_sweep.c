@@ -26,9 +26,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
 #include "htslib/vcf_sweep.h"
 #include "htslib/bgzf.h"
+#include "htslib/hts_log.h"
 
 #define SW_FWD 0
 #define SW_BWD 1
@@ -114,15 +118,38 @@ static int sw_fill_buffer(bcf_sweep_t *sw)
 bcf_sweep_t *bcf_sweep_init(const char *fname)
 {
     bcf_sweep_t *sw = (bcf_sweep_t*) calloc(1,sizeof(bcf_sweep_t));
+    if (!sw)
+        return NULL;
     sw->file = hts_open(fname, "r");
+    if (!sw->file) {
+        hts_log_error("Couldn't open \"%s\": %s", fname, strerror(errno));
+        goto fail;
+    }
     sw->fp   = hts_get_bgzfp(sw->file);
-    if (sw->fp) bgzf_index_build_init(sw->fp);
+    if (sw->fp) {
+        if (bgzf_index_build_init(sw->fp) < 0)
+            goto fail;
+    }
     sw->hdr  = bcf_hdr_read(sw->file);
+    if (!sw->hdr) {
+        hts_log_error("Couldn't read header from \"%s\"", fname);
+        goto fail;
+    }
     sw->mrec = 1;
     sw->rec  = (bcf1_t*) calloc(sw->mrec,(sizeof(bcf1_t)));
+    if (!sw->rec)
+        goto fail;
     sw->block_size = 1024*1024*3;
     sw->direction = SW_FWD;
     return sw;
+
+ fail:
+    free(sw->rec);
+    bcf_hdr_destroy(sw->hdr);
+    if (sw->file)
+        hts_close(sw->file);
+    free(sw);
+    return NULL;
 }
 
 void bcf_sweep_destroy(bcf_sweep_t *sw)
