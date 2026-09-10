@@ -2573,7 +2573,10 @@ static int compress_binning(hts_idx_t *idx, int i)
             bins_t *p, *q;
             if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins || kh_key(bidx, k) < start) continue;
             p = &kh_value(bidx, k);
-            if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
+            if (l < idx->n_lvls && p->n > 1) {
+                if (ks_introsort(_off, p->n, p->list) < 0)
+                    return -1;
+            }
             if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
                 khint_t kp;
                 kp = kh_get(bin, bidx, hts_bin_parent(kh_key(bidx, k)));
@@ -2597,7 +2600,10 @@ static int compress_binning(hts_idx_t *idx, int i)
         }
     }
     k = kh_get(bin, bidx, 0);
-    if (k != kh_end(bidx)) ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list);
+    if (k != kh_end(bidx)) {
+        if (ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list) < 0)
+            return -1;
+    }
     // merge adjacent chunks that start from the same BGZF block
     for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
         bins_t *p;
@@ -3446,7 +3452,8 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
         return res;
 
     if (iter->n_off - start_n_off > 1) {
-        ks_introsort(_off_max, iter->n_off - start_n_off, iter->off + start_n_off);
+        if (ks_introsort(_off_max, iter->n_off - start_n_off, iter->off + start_n_off) < 0)
+            return -2;
         for (i = start_n_off, j = start_n_off + 1; j < iter->n_off; j++) {
             if (iter->off[i].v >= iter->off[j].u) {
                 if (iter->off[i].v < iter->off[j].v)
@@ -3549,10 +3556,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (iter) {
         if (tid < 0) {
-            uint64_t off = hts_itr_off(idx, tid);
-            if (off != (uint64_t) -1) {
+            uint64_t curr_off = hts_itr_off(idx, tid);
+            if (curr_off != (uint64_t) -1) {
                 iter->read_rest = 1;
-                iter->curr_off = off;
+                iter->curr_off = curr_off;
                 iter->readrec = readrec;
                 if (tid == HTS_IDX_NONE)
                     iter->finished = 1;
@@ -3644,10 +3651,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // retrieve bins
-            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, bidx) < 0) {
-                hts_itr_destroy(iter);
-                return NULL;
-            }
+            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, bidx) < 0)
+                goto fail;
 
             for (i = n_off = 0; i < iter->bins.n; ++i)
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
@@ -3658,6 +3663,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 return iter;
             }
             off = calloc(n_off, sizeof(*off));
+            if (!off)
+                goto fail;
             for (i = n_off = 0; i < iter->bins.n; ++i) {
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
                     int j;
@@ -3683,7 +3690,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 iter->finished = 1;
                 return iter;
             }
-            ks_introsort(_off_max, n_off, off);
+            if (ks_introsort(_off_max, n_off, off) < 0) {
+                free(off);
+                goto fail;
+            }
+
             // resolve completely contained adjacent blocks
             for (i = 1, l = 0; i < n_off; ++i)
                 if (off[l].v < off[i].v) off[++l] = off[i];
@@ -3702,6 +3713,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     }
 
     return iter;
+
+ fail:
+    hts_itr_destroy(iter);
+    return NULL;
 }
 
 int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
@@ -3843,8 +3858,10 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
         }
     }
 
-    if (iter->n_off > 1)
-        ks_introsort(_off_max, iter->n_off, iter->off);
+    if (iter->n_off > 1) {
+        if (ks_introsort(_off_max, iter->n_off, iter->off) < 0)
+            return -1;
+    }
 
     if(!iter->n_off && !iter->nocoor)
         iter->finished = 1;
@@ -3959,7 +3976,8 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
     }
 
     if (n_off) {
-        ks_introsort(_off_max, n_off, off);
+        if (ks_introsort(_off_max, n_off, off) < 0)
+            goto err;
         iter->n_off = n_off; iter->off = off;
     }
 
