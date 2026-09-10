@@ -1047,7 +1047,8 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     }
     if (ret < -1) goto err; // corrupted BAM file
 
-    hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
+    if (hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf)) != 0)
+        goto err;
     sam_hdr_destroy(h);
     bam_destroy1(b);
     return idx;
