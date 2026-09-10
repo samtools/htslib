@@ -4798,7 +4798,8 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
         if (ret < 0) goto fail;
     }
     if (r < -1) goto fail;
-    hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
+    if (hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf)) < 0)
+        goto fail;
     bcf_destroy1(b);
     bcf_hdr_destroy(h);
     return idx;
