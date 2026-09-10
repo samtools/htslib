@@ -155,8 +155,14 @@ static int test_sort(algorithm algo, size_t n, item *a,
     ncomp = 0;
     t0 = get_time();
     switch (algo) {
-      case MERGESORT: ks_mergesort(item, n, c, NULL); break;
-      case INTROSORT: ks_introsort(item, n, c); break;
+      case MERGESORT:
+          if (ks_mergesort(item, n, c, NULL) < 0)
+              return 1;
+          break;
+      case INTROSORT:
+          if (ks_introsort(item, n, c) < 0)
+              return 1;
+          break;
       case COMBSORT:  ks_combsort(item, n, c); break;
       case HEAPSORT:
           ks_heapmake(item, n, c);
