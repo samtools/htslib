@@ -687,7 +687,9 @@ hts_pos_t bam_endpos(const bam1_t *b)
     return b->core.pos + rlen;
 }
 
-// return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+// Return 0 if CIGAR is untouched,
+//        1 if CIGAR is updated with CG,
+//       <0 on error
 int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning)
 {
     bam1_core_t *c = &b->core;
@@ -742,6 +744,17 @@ int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning)
         b->core.bin = hts_reg2bin(b->core.pos, bam_endpos(b), 14, 5);
     if (give_warning)
         hts_log_warning("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
+
+    // Check SEQ and CIGAR consistency.  (Do this after parsing the CG tag)
+    if (c->l_qseq && c->n_cigar) {
+        hts_pos_t ql = bam_cigar2qlen(c->n_cigar,
+                                      (uint32_t*)(b->data + c->l_qname));
+        if (ql != c->l_qseq) {
+            hts_log_error("CIGAR and query sequence are of different length");
+            return -1;
+        }
+    }
+
     return 1;
 }
 
@@ -850,7 +863,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read_small(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-    if (bam_tag2cigar(b, 0, 0) < 0)
+
+    int t2c = bam_tag2cigar(b, 0, 0);
+    if (t2c < 0)
         return -4;
 
     // TODO: consider making this conditional
@@ -860,7 +875,8 @@ int bam_read1(BGZF *fp, bam1_t *b)
         if ((b->core.flag & BAM_FUNMAP) || rlen == 0) rlen = 1;
         b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
         // Sanity check for broken CIGAR alignments
-        if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
+        if (t2c == 0 && c->l_qseq > 0 &&
+            !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
             hts_log_error("CIGAR and query sequence lengths differ for %s",
                     bam_get_qname(b));
             return -4;
@@ -2765,6 +2781,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     _parse_err(HTS_POS_MAX - cigreflen <= c->pos,
                "read ends beyond highest supported position");
     c->bin = hts_reg2bin(c->pos, c->pos + cigreflen, 14, 5);
+
     // mate chr
     q = _read_token(p);
     if (strcmp(q, "=") == 0) {
@@ -2776,6 +2793,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(c->mtid < -1, "failed to parse header");
         _parse_warn(c->mtid < 0, "unrecognized mate reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     }
+
     // mpos
     c->mpos = hts_str2uint(p, &p, 62, &overflow) - 1;
     if (*p++ != '\t') goto err_ret;
@@ -2783,17 +2801,17 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_warn(1, "mapped mate cannot have zero coordinate; treated as unmapped");
         c->mtid = -1;
     }
+
     // tlen
     c->isize = hts_str2int(p, &p, 63, &overflow);
     if (*p++ != '\t') goto err_ret;
     _parse_err(overflow, "number outside allowed range");
+
     // seq
     q = _read_token(p);
     if (strcmp(q, "*")) {
         _parse_err(p - q - 1 > INT32_MAX, "read sequence is too long");
         c->l_qseq = p - q - 1;
-        hts_pos_t ql = bam_cigar2qlen(c->n_cigar, (uint32_t*)(b->data + c->l_qname));
-        _parse_err(c->n_cigar && ql != c->l_qseq, "CIGAR and query sequence are of different length");
         i = (c->l_qseq + 1) >> 1;
         _get_mem(uint8_t, &t, b, i);
 
@@ -2803,6 +2821,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         for (; i < c->l_qseq; ++i)
             t[i>>1] = seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
     } else c->l_qseq = 0;
+
     // qual
     _get_mem(uint8_t, &t, b, c->l_qseq);
     if (p[0] == '*' && (p[1] == '\t' || p[1] == '\0')) {
@@ -2822,8 +2841,19 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (aux_parse(p, s->s + s->l, b, 0, NULL) < 0)
         goto err_ret;
 
-    if (bam_tag2cigar(b, 1, 1) < 0)
+    int t2c = bam_tag2cigar(b, 1, 1);
+    if (t2c == 0) {
+        // Check SEQ and CIGAR consistency.  (Do this after parsing the CG tag)
+        if (c->l_qseq) {
+            hts_pos_t ql = bam_cigar2qlen(c->n_cigar,
+                                          (uint32_t*)(b->data + c->l_qname));
+            _parse_err(c->n_cigar && ql != c->l_qseq,
+                       "CIGAR and query sequence are of different length");
+        }
+    } else if (t2c < 0) {
         return -2;
+    }
+
     return 0;
 
 #undef _parse_warn
