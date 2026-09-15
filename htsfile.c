@@ -282,6 +282,11 @@ int main(int argc, char **argv)
             }
 
             char *description = hts_format_description(&fmt);
+            if (!description) {
+                error("out of memory");
+                hclose_abruptly(fp);
+                continue;
+            }
             printf("%s:\t%s\n", argv[i], description);
             free(description);
         }

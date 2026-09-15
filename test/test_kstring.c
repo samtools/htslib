@@ -377,7 +377,7 @@ static int test_kgetline(void) {
     int mock_state = 0;
 
     // normal line, \n terminated, called with non-empty s
-    kputs("_", &s);
+    if (kputs("_", &s) < 0) return -1;
     if (0 != kgetline(&s, mock_fgets, &mock_state) || 0 != strcmp("_ABCD", s.s) || 5 != s.l) return -1;
     s.l = 0;
     // empty line, \n terminated
@@ -433,7 +433,7 @@ static int test_kgetline2(void) {
     int mock_state = 0;
 
     // normal line, \n terminated, called with non-empty s
-    kputs("_", &s);
+    if (kputs("_", &s) < 0) return -1;
     if (0 != kgetline2(&s, mock_fgets2, &mock_state) || 0 != strcmp("_ABCD", s.s) || 5 != s.l) return -1;
     s.l = 0;
     // empty line, \n terminated
@@ -468,7 +468,10 @@ static int test_kinsertchar(void) {
 
     for (i = -1; i < 6; ++i) {
         kstring_t s = KS_INITIALIZE;
-        kputs("0123", &s);
+        if (kputs("0123", &s) < 0) {
+            ks_free(&s);
+            return -1;
+        }
         if (kinsert_char('X', i, &s) < 0) {
             if ( i < 0 || i > 4) { ks_free(&s); continue; }  //expected failures
             fprintf(stderr, "kinsert_char failed\n");
@@ -489,7 +492,10 @@ static int test_kinsertchar(void) {
     }
     //realloc checks
     for (i = 0; i < 7; ++i) {
-        kputc('A' + i, &res);
+        if (kputc('A' + i, &res) < 0) {
+            ks_free(&res); ks_free(&t);
+            return -1;
+        }
         if (kinsert_char('A' + i, t.l, &t) < 0) {
             fprintf(stderr, "kinsert_char failed in realloc\n");
             ks_free(&res); ks_free(&t);
@@ -524,7 +530,10 @@ static int test_kinsertstr(void) {
 
     for (i = -1; i < 6; ++i) {
         kstring_t s = KS_INITIALIZE;
-        kputs("0123", &s);
+        if (kputs("0123", &s) < 0) {
+            ks_free(&s);
+            return -1;
+        }
         if (kinsert_str("XYZ", i, &s) < 0) {
             if ( i < 0 || i > 4) { ks_free(&s); continue; }  //expected failures
             fprintf(stderr, "kinsert_str failed\n");
@@ -543,10 +552,11 @@ static int test_kinsertstr(void) {
     //realloc checks
     for (i = 0; i < 15; ++i) {
         kstring_t val = KS_INITIALIZE;
-        ksprintf(&val, "%c", 'A' + i);
-        kputs(val.s, &res);
-        if (kinsert_str(val.s, t.l, &t) < 0) {
-            ks_free(&val);
+        int nomem = 0;
+        ksprintf_chk(&nomem, &val, "%c", 'A' + i);
+        kputs_chk(&nomem, ks_c_str(&val), &res);
+        if (nomem || kinsert_str(val.s, t.l, &t) < 0) {
+            ks_free(&val); ks_free(&res);
             fprintf(stderr, "kinsert_str failed in realloc\n");
             return -1;
         }
