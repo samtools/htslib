@@ -334,7 +334,8 @@ static int simple_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                     e++;
             }
 
-            kputsn(str+1, e-(str+1), ks_clear(&res->s));
+            if (kputsn(str+1, e-(str+1), ks_clear(&res->s)) < 0)
+                return -1;
             if (backslash) {
                 size_t i, j;
                 for (i = j = 0; i < res->s.l; i++) {

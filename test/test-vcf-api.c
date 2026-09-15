@@ -389,16 +389,22 @@ void bcf_to_vcf(char *fname)
     }
 
     kstring_t line = {0,0,0};
-    while ( hts_getline(gz_in, KS_SEP_LINE, &line)>0 )
+    while ( (ret = hts_getline(gz_in, KS_SEP_LINE, &line))>0 )
     {
-        kputc('\n',&line);
-        fwrite(line.s,1,line.l,stdout);
+        if (kputc('\n',&line) < 0) { ret = -2; break; }
+        if (fwrite(line.s,1,line.l,stdout) != line.l) { ret = -2; break; }
     }
-
+    if (ret < -1)
+    {
+        fprintf(stderr,"Could not copy to stdout \"%s\": %s\n",
+                gz_fname, strerror(errno));
+        hts_close(gz_in);
+        exit(1);
+    }
     if ( (ret=hts_close(gz_in)) )
     {
         fprintf(stderr,"hts_close(%s): non-zero status %d\n",gz_fname,ret);
-        exit(ret);
+        exit(1);
     }
     free(line.s);
     free(gz_fname);
@@ -1034,20 +1040,23 @@ static void test_undeclared_names_grow_header(void)
     hts_set_log_level(logging);
 
     for (c = 0; c < n_ctg; c++) {
-        ksprintf(ks_clear(&name), "ctg%d", c);
+        if (ksprintf(ks_clear(&name), "ctg%d", c) < 0)
+            error("Out of memory");
         id = bcf_hdr_name2id(hdr, name.s);
         if (id < 0 || strcmp(bcf_hdr_id2name(hdr, id), name.s) != 0)
             error("Contig %s not found after header growth", name.s);
     }
     for (i = 0; i < n_info; i++) {
-        ksprintf(ks_clear(&name), "I%d", i);
+        if (ksprintf(ks_clear(&name), "I%d", i) < 0)
+            error("Out of memory");
         id = bcf_hdr_id2int(hdr, BCF_DT_ID, name.s);
         if (id < 0 || !bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, id)
             || strcmp(bcf_hdr_int2id(hdr, BCF_DT_ID, id), name.s) != 0)
             error("INFO/%s not found after header growth", name.s);
     }
     for (i = 0; i < n_fmt; i++) {
-        ksprintf(ks_clear(&name), "F%d", i);
+        if (ksprintf(ks_clear(&name), "F%d", i) < 0)
+            error("Out of memory");
         id = bcf_hdr_id2int(hdr, BCF_DT_ID, name.s);
         if (id < 0 || !bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, id)
             || strcmp(bcf_hdr_int2id(hdr, BCF_DT_ID, id), name.s) != 0)

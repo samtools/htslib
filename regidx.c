@@ -117,17 +117,19 @@ int regidx_insert_list(regidx_t *idx, char *line, char delim)
     {
         char *se = ss;
         while ( *se && *se!=delim ) se++;
-        kputsn(ss, se-ss, ks_clear(&tmp));
+        if (kputsn(ss, se-ss, ks_clear(&tmp)) < 0)
+            goto fail;
         if ( regidx_insert(idx,tmp.s) < 0 )
-        {
-            ks_free(&tmp);
-            return -1;
-        }
+            goto fail;
         if ( !*se ) break;
         ss = se+1;
     }
     ks_free(&tmp);
     return 0;
+
+ fail:
+    ks_free(&tmp);
+    return -1;
 }
 
 static inline int cmp_regs(reg_t *a, reg_t *b)
