@@ -3580,6 +3580,12 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 break;
 
             case BAM_CINS:
+                if (cr->len && spos + cig_len > cr->len) {
+                    if (cr->len >= spos)
+                        cig_len = cr->len - spos;
+                    else
+                        return -1;
+                }
                 if (cram_add_insertion(c, s, cr, spos, cig_len,
                                        cr->len ? &seq[spos] : NULL))
                     return -1;
@@ -3594,6 +3600,12 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 break;
 
             case BAM_CSOFT_CLIP:
+                if (cr->len && spos + cig_len > cr->len) {
+                    if (cr->len >= spos)
+                        cig_len = cr->len - spos;
+                    else
+                        return -1;
+                }
                 if (cram_add_softclip(c, s, cr, spos, cig_len,
                                       cr->len ? &seq[spos] : NULL,
                                       fd->version))
