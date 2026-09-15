@@ -401,12 +401,13 @@ void parse_header(dat_t *dat, char *fname, int nth_row, int autodetect)
     {
         // create a dummy header with numeric field names
         kstring_t str = {0,0,0};
-        int i, n = cols->n;
+        int i, n = cols->n, nomem = 0;
         for (i=0; i<n; i++)
         {
-            if ( i>0 ) kputc(dat->delim, &str);
-            kputw(i+1, &str);
+            if ( i>0 ) kputc_chk(&nomem, dat->delim, &str);
+            kputw_chk(&nomem, i+1, &str);
         }
+        if (nomem) error("Out of memory\n");
         cols_destroy(cols);
         cols = cols_split(str.s, NULL, dat->delim);
         free(str.s);
@@ -442,24 +443,25 @@ void write_header(args_t *args, dat_t *dat)
 {
     if ( dat->hdr.dummy ) return;
     if ( args->no_write_hdr>1 ) return;
-    int i;
+    int i, nomem = 0;
     kstring_t str = {0,0,0};
-    kputc('#', &str);
+    kputc_chk(&nomem, '#', &str);
     for (i=0; i<dat->hdr.cols->n; i++)
     {
-        if ( i>0 ) kputc(dat->delim, &str);
-        if ( !args->no_write_hdr ) ksprintf(&str,"[%d]", i+1);
-        kputs(dat->hdr.cols->off[i], &str);
+        if ( i>0 ) kputc_chk(&nomem, dat->delim, &str);
+        if ( !args->no_write_hdr ) ksprintf_chk(&nomem, &str,"[%d]", i+1);
+        kputs_chk(&nomem, dat->hdr.cols->off[i], &str);
     }
     if ( dat->hdr.annots )
     {
         for (i=0; i<dat->hdr.annots->n; i++)
         {
-            if ( str.l > 1 ) kputc(dat->delim, &str);
-            kputs(dat->hdr.annots->off[i], &str);
+            if ( str.l > 1 ) kputc_chk(&nomem, dat->delim, &str);
+            kputs_chk(&nomem, dat->hdr.annots->off[i], &str);
         }
     }
-    kputc('\n',&str);
+    kputc_chk(&nomem, '\n',&str);
+    if (nomem) error("Out of memory\n");
     if ( bgzf_write(args->out_fp, str.s, str.l) != str.l ) error("Failed to write %zd bytes\n", str.l);
     free(str.s);
 }
@@ -712,26 +714,27 @@ static void write_annots(args_t *args)
     if ( !args->dst.annots ) return;
 
     args->tmp_kstr.l = 0;
-    int i;
+    int i, nomem = 0;
     hts_pos_t len = nbp_length(args->nbp);
     for (i=0; i<args->dst.annots->n; i++)
     {
         if ( args->dst.annots_idx[i]==ANN_NBP )
         {
-            kputc(args->dst.delim,&args->tmp_kstr);
-            kputw(len,&args->tmp_kstr);
+            kputc_chk(&nomem, args->dst.delim,&args->tmp_kstr);
+            kputw_chk(&nomem, len,&args->tmp_kstr);
         }
         else if ( args->dst.annots_idx[i]==ANN_FRAC )
         {
-            kputc(args->dst.delim,&args->tmp_kstr);
-            kputd((double)len/(args->nbp->end - args->nbp->beg + 1),&args->tmp_kstr);
+            kputc_chk(&nomem, args->dst.delim,&args->tmp_kstr);
+            kputd_chk(&nomem, (double)len/(args->nbp->end - args->nbp->beg + 1),&args->tmp_kstr);
         }
         else if ( args->dst.annots_idx[i]==ANN_CNT )
         {
-            kputc(args->dst.delim,&args->tmp_kstr);
-            kputw(args->nbp->n/2,&args->tmp_kstr);
+            kputc_chk(&nomem, args->dst.delim,&args->tmp_kstr);
+            kputw_chk(&nomem, args->nbp->n/2,&args->tmp_kstr);
         }
     }
+    if (nomem) error("Out of memory\n");
     write_string(args, args->tmp_kstr.s, args->tmp_kstr.l);
 }
 
@@ -850,7 +853,8 @@ void process_line(args_t *args, char *line, size_t size)
 
     size_t len;
     args->tmp_kstr.l = 0;
-    ks_resize(&args->tmp_kstr, annot_len*3 + args->src.transfer->n*2);
+    if (ks_resize(&args->tmp_kstr, annot_len*3 + args->src.transfer->n*2) < 0)
+        error("Out of memory\n");
     for (i=0; i<args->src.transfer->n; i++)
     {
         char *off = dst_cols->off[ args->dst.transfer_idx[i] ] = args->tmp_kstr.s + args->tmp_kstr.l;
@@ -1060,12 +1064,13 @@ int main(int argc, char **argv)
     write_header(args, &args->dst);
     while ( read_next_line(&args->dst) )
     {
-        int i;
+        int i, nomem = 0;
         for (i=0; i<args->dst.grow_n; i++)
         {
-            kputc(args->dst.delim, &args->dst.line);
-            kputc('.', &args->dst.line);
+            kputc_chk(&nomem, args->dst.delim, &args->dst.line);
+            kputc_chk(&nomem, '.', &args->dst.line);
         }
+        if (nomem) error("Out of memory\n");
         process_line(args, args->dst.line.s, args->dst.line.l);
         args->dst.line.l = 0;
     }
