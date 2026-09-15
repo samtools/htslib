@@ -185,8 +185,11 @@ parse_ga4gh_body_json(hFILE_multipart *fp, hFILE *json,
                             if (hts_json_fnext(json, &t, b) != 's')
                                 return t.type;
 
-                            kputs(": ", header);
-                            kputs(t.str, header);
+                            int nomem = 0;
+                            kputs_chk(&nomem, ": ", header);
+                            kputs_chk(&nomem, t.str, header);
+                            if (nomem)
+                                return '?';
                             n++;
                             hts_expand(char *, n+1, max, part->headers);
                             part->headers[n-1] = ks_release(header);

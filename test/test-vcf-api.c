@@ -389,16 +389,22 @@ void bcf_to_vcf(char *fname)
     }
 
     kstring_t line = {0,0,0};
-    while ( hts_getline(gz_in, KS_SEP_LINE, &line)>0 )
+    while ( (ret = hts_getline(gz_in, KS_SEP_LINE, &line))>0 )
     {
-        kputc('\n',&line);
-        fwrite(line.s,1,line.l,stdout);
+        if (kputc('\n',&line) < 0) { ret = -2; break; }
+        if (fwrite(line.s,1,line.l,stdout) != line.l) { ret = -2; break; }
     }
-
+    if (ret < -1)
+    {
+        fprintf(stderr,"Could not copy to stdout \"%s\": %s\n",
+                gz_fname, strerror(errno));
+        hts_close(gz_in);
+        exit(1);
+    }
     if ( (ret=hts_close(gz_in)) )
     {
         fprintf(stderr,"hts_close(%s): non-zero status %d\n",gz_fname,ret);
-        exit(ret);
+        exit(1);
     }
     free(line.s);
     free(gz_fname);
