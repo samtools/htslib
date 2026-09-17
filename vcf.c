@@ -173,14 +173,12 @@ static int bcf_get_version(const bcf_hdr_t *hdr, const char *verstr)
         goto fail;
     }
     tmp = strtol(major, NULL, 10);
-    if ((!tmp && errno == EINVAL) ||
-        ((tmp == LONG_MIN || tmp == LONG_MAX) && errno == ERANGE)) {    //failed
+    if ((!tmp && errno == EINVAL) || tmp < 0 || tmp >= 1000) {    //failed
         goto fail;
     }
     ver = tmp * 100 * 10000;
     tmp = strtol(++minor, NULL, 10);
-    if ((!tmp && errno == EINVAL) ||
-        ((tmp == LONG_MIN || tmp == LONG_MAX) && errno == ERANGE)) {    //failed
+    if ((!tmp && errno == EINVAL) || tmp < 0 || tmp >= 1000) {    //failed
         goto fail;
     }
     ver += tmp * 1000;
