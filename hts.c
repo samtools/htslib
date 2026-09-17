@@ -2062,7 +2062,8 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
         break;
 
     default:
-        abort();
+        hts_log_error("Unsupported compressed format");
+        return -2;
     }
 
     ++fp->lineno;
