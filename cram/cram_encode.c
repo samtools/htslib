@@ -3967,6 +3967,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
  */
 int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
     cram_container *c;
+    int32_t ref_id = bam_ref(b);
+
+    if (ref_id < -1 || (ref_id >= 0 &&
+                        (!fd->refs || ref_id >= fd->refs->nref))) {
+        hts_log_error("Reference id %" PRId32 " is outside the header range", ref_id);
+        errno = EINVAL;
+        return -1;
+    }
 
     if (!fd->ctr) {
         fd->ctr = cram_new_container(fd->seqs_per_slice,
