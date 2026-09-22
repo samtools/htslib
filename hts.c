@@ -1973,8 +1973,10 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 
 int hts_set_filter_expression(htsFile *fp, const char *expr)
 {
-    if (fp->filter)
+    if (fp->filter) {
         hts_filter_free(fp->filter);
+        fp->filter = NULL;
+    }
 
     if (!expr)
         return 0;
