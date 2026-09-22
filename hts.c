@@ -1014,6 +1014,49 @@ scan_keyword(const char *str, char delim, char *buf, size_t buflen)
     return *str? str+1 : str;
 }
 
+// Parses an integer and checks valid ranges.
+// min_val and max_val are the legal ranges.
+// If "kmg" is true then we support k, m and g suffix multipliers.
+//
+// Returns the value in *val if non-null.
+//
+// Returns <0 on error.
+// If *val is >= it's also the function return value, for ease of use,
+// otherwise we return 0.
+static int get_int_kmg(const char *str, int min_val, int max_val,
+                       int kmg, int *val) {
+    char *endptr;
+    int64_t l = strtol(str, &endptr, 10);
+
+    if (kmg) {
+        switch (*endptr) {
+        case 'g': case 'G': l *= 1024; // fall through
+        case 'm': case 'M': l *= 1024; // fall through
+        case 'k': case 'K': l *= 1024; endptr++; break;
+        case '\0': break;
+        }
+    }
+    if (*endptr) {
+        hts_log_error("Unrecognised suffix '%s'", endptr);
+        return -1;
+    }
+
+    if (l < min_val || l > max_val) {
+        hts_log_error("Value of out range: expected >= %d_val and <= %d",
+                      min_val, max_val);
+        return -1;
+    }
+
+    if (val)
+        *val = l;
+
+    return l >= 0 ? l : 0;
+}
+
+static int get_int(const char *str, int min_val, int max_val, int *val) {
+    return get_int_kmg(str, min_val, max_val, 0, val);
+}
+
 /*
  * Parses arg and appends it to the option list.
  *
@@ -1047,182 +1090,217 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         *val++ = '\0';
 
     if (strcmp(o->arg, "decode_md") == 0 ||
-        strcmp(o->arg, "DECODE_MD") == 0)
-        o->opt = CRAM_OPT_DECODE_MD, o->val.i = atoi(val);
+        strcmp(o->arg, "DECODE_MD") == 0) {
+        o->opt = CRAM_OPT_DECODE_MD;
+        if (get_int(val, -1, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "verbosity") == 0 ||
-             strcmp(o->arg, "VERBOSITY") == 0)
-        o->opt = CRAM_OPT_VERBOSITY, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "verbosity") == 0 ||
+               strcmp(o->arg, "VERBOSITY") == 0) {
+        o->opt = CRAM_OPT_VERBOSITY;
+        if (get_int(val, 0, INT_MAX, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "seqs_per_slice") == 0 ||
-             strcmp(o->arg, "SEQS_PER_SLICE") == 0)
-        o->opt = CRAM_OPT_SEQS_PER_SLICE, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "seqs_per_slice") == 0 ||
+               strcmp(o->arg, "SEQS_PER_SLICE") == 0) {
+        o->opt = CRAM_OPT_SEQS_PER_SLICE;
+        if (get_int(val, 1, INT_MAX / 512, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "bases_per_slice") == 0 ||
-             strcmp(o->arg, "BASES_PER_SLICE") == 0)
-        o->opt = CRAM_OPT_BASES_PER_SLICE, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "bases_per_slice") == 0 ||
+               strcmp(o->arg, "BASES_PER_SLICE") == 0) {
+        o->opt = CRAM_OPT_BASES_PER_SLICE;
+        if (get_int(val, 1, INT_MAX, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "slices_per_container") == 0 ||
-             strcmp(o->arg, "SLICES_PER_CONTAINER") == 0)
-        o->opt = CRAM_OPT_SLICES_PER_CONTAINER, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "slices_per_container") == 0 ||
+               strcmp(o->arg, "SLICES_PER_CONTAINER") == 0) {
+        o->opt = CRAM_OPT_SLICES_PER_CONTAINER;
+        if (get_int(val, 1, 512, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "embed_ref") == 0 ||
-             strcmp(o->arg, "EMBED_REF") == 0)
-        o->opt = CRAM_OPT_EMBED_REF, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "embed_ref") == 0 ||
+               strcmp(o->arg, "EMBED_REF") == 0) {
+        o->opt = CRAM_OPT_EMBED_REF;
+        if (get_int(val, -1, 2, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "no_ref") == 0 ||
-             strcmp(o->arg, "NO_REF") == 0)
-        o->opt = CRAM_OPT_NO_REF, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "no_ref") == 0 ||
+               strcmp(o->arg, "NO_REF") == 0) {
+        o->opt = CRAM_OPT_NO_REF;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "pos_delta") == 0 ||
-             strcmp(o->arg, "POS_DELTA") == 0)
-        o->opt = CRAM_OPT_POS_DELTA, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "pos_delta") == 0 ||
+               strcmp(o->arg, "POS_DELTA") == 0) {
+        o->opt = CRAM_OPT_POS_DELTA;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "ignore_md5") == 0 ||
-             strcmp(o->arg, "IGNORE_MD5") == 0)
-        o->opt = CRAM_OPT_IGNORE_MD5, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "ignore_md5") == 0 ||
+               strcmp(o->arg, "IGNORE_MD5") == 0) {
+        o->opt = CRAM_OPT_IGNORE_MD5;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "use_bzip2") == 0 ||
-             strcmp(o->arg, "USE_BZIP2") == 0)
-        o->opt = CRAM_OPT_USE_BZIP2, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "use_bzip2") == 0 ||
+               strcmp(o->arg, "USE_BZIP2") == 0) {
+        o->opt = CRAM_OPT_USE_BZIP2;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "use_rans") == 0 ||
-             strcmp(o->arg, "USE_RANS") == 0)
-        o->opt = CRAM_OPT_USE_RANS, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "use_rans") == 0 ||
+               strcmp(o->arg, "USE_RANS") == 0) {
+        o->opt = CRAM_OPT_USE_RANS;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "use_lzma") == 0 ||
-             strcmp(o->arg, "USE_LZMA") == 0)
-        o->opt = CRAM_OPT_USE_LZMA, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "use_lzma") == 0 ||
+               strcmp(o->arg, "USE_LZMA") == 0) {
+        o->opt = CRAM_OPT_USE_LZMA;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "use_tok") == 0 ||
-             strcmp(o->arg, "USE_TOK") == 0)
-        o->opt = CRAM_OPT_USE_TOK, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "use_tok") == 0 ||
+               strcmp(o->arg, "USE_TOK") == 0) {
+        o->opt = CRAM_OPT_USE_TOK;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "use_fqz") == 0 ||
-             strcmp(o->arg, "USE_FQZ") == 0)
-        o->opt = CRAM_OPT_USE_FQZ, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "use_fqz") == 0 ||
+               strcmp(o->arg, "USE_FQZ") == 0) {
+        o->opt = CRAM_OPT_USE_FQZ;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "use_arith") == 0 ||
-             strcmp(o->arg, "USE_ARITH") == 0)
-        o->opt = CRAM_OPT_USE_ARITH, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "use_arith") == 0 ||
+               strcmp(o->arg, "USE_ARITH") == 0) {
+        o->opt = CRAM_OPT_USE_ARITH;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "fast") == 0 ||
-             strcmp(o->arg, "FAST") == 0)
+    } else if (strcmp(o->arg, "fast") == 0 ||
+               strcmp(o->arg, "FAST") == 0) {
         o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_FAST;
 
-    else if (strcmp(o->arg, "normal") == 0 ||
-             strcmp(o->arg, "NORMAL") == 0)
+    } else if (strcmp(o->arg, "normal") == 0 ||
+               strcmp(o->arg, "NORMAL") == 0) {
         o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_NORMAL;
 
-    else if (strcmp(o->arg, "small") == 0 ||
-             strcmp(o->arg, "SMALL") == 0)
+    } else if (strcmp(o->arg, "small") == 0 ||
+               strcmp(o->arg, "SMALL") == 0) {
         o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_SMALL;
 
-    else if (strcmp(o->arg, "archive") == 0 ||
-             strcmp(o->arg, "ARCHIVE") == 0)
+    } else if (strcmp(o->arg, "archive") == 0 ||
+               strcmp(o->arg, "ARCHIVE") == 0) {
         o->opt = HTS_OPT_PROFILE, o->val.i = HTS_PROFILE_ARCHIVE;
 
-    else if (strcmp(o->arg, "reference") == 0 ||
-             strcmp(o->arg, "REFERENCE") == 0)
+    } else if (strcmp(o->arg, "reference") == 0 ||
+               strcmp(o->arg, "REFERENCE") == 0) {
         o->opt = CRAM_OPT_REFERENCE, o->val.s = val;
 
-    else if (strcmp(o->arg, "version") == 0 ||
-             strcmp(o->arg, "VERSION") == 0)
-        o->opt = CRAM_OPT_VERSION, o->val.s =val;
+    } else if (strcmp(o->arg, "version") == 0 ||
+               strcmp(o->arg, "VERSION") == 0) {
+        o->opt = CRAM_OPT_VERSION, o->val.s = val;
 
-    else if (strcmp(o->arg, "multi_seq_per_slice") == 0 ||
-             strcmp(o->arg, "MULTI_SEQ_PER_SLICE") == 0)
+    } else if (strcmp(o->arg, "multi_seq_per_slice") == 0 ||
+               strcmp(o->arg, "MULTI_SEQ_PER_SLICE") == 0) {
         o->opt = CRAM_OPT_MULTI_SEQ_PER_SLICE, o->val.i = atoi(val);
+        if (get_int(val, -1, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "nthreads") == 0 ||
-             strcmp(o->arg, "NTHREADS") == 0)
-        o->opt = HTS_OPT_NTHREADS, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "nthreads") == 0 ||
+               strcmp(o->arg, "NTHREADS") == 0) {
+        o->opt = HTS_OPT_NTHREADS;
+        if (get_int(val, 0, INT_MAX/2, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "cache_size") == 0 ||
-             strcmp(o->arg, "CACHE_SIZE") == 0) {
-        char *endp;
+    } else if (strcmp(o->arg, "cache_size") == 0 ||
+               strcmp(o->arg, "CACHE_SIZE") == 0) {
         o->opt = HTS_OPT_CACHE_SIZE;
-        o->val.i = strtol(val, &endp, 0);
-        // NB: Doesn't support floats, eg 1.5g
-        // TODO: extend hts_parse_decimal? See also samtools sort.
-        switch (*endp) {
-        case 'g': case 'G': o->val.i *= 1024; // fall through
-        case 'm': case 'M': o->val.i *= 1024; // fall through
-        case 'k': case 'K': o->val.i *= 1024; break;
-        case '\0': break;
-        default:
-            hts_log_error("Unrecognised cache size suffix '%c'", *endp);
-            free(o->arg);
-            free(o);
-            return -1;
-        }
-    }
+        if (get_int_kmg(val, 0, INT_MAX/2, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "required_fields") == 0 ||
-             strcmp(o->arg, "REQUIRED_FIELDS") == 0)
-        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
+    } else if (strcmp(o->arg, "required_fields") == 0 ||
+               strcmp(o->arg, "REQUIRED_FIELDS") == 0) {
+        o->opt = CRAM_OPT_REQUIRED_FIELDS;
+        if (get_int(val, 0, SAM_RGAUX*2-1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "lossy_names") == 0 ||
-             strcmp(o->arg, "LOSSY_NAMES") == 0)
-        o->opt = CRAM_OPT_LOSSY_NAMES, o->val.i = strtol(val, NULL, 0);
+    } else if (strcmp(o->arg, "lossy_names") == 0 ||
+               strcmp(o->arg, "LOSSY_NAMES") == 0) {
+        o->opt = CRAM_OPT_LOSSY_NAMES;
+        // Also used for cram_fd->tlen_approx window sizeq
+        if (get_int(val, 0, INT_MAX, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "name_prefix") == 0 ||
-             strcmp(o->arg, "NAME_PREFIX") == 0)
+    } else if (strcmp(o->arg, "name_prefix") == 0 ||
+               strcmp(o->arg, "NAME_PREFIX") == 0) {
         o->opt = CRAM_OPT_PREFIX, o->val.s = val;
 
-    else if (strcmp(o->arg, "store_md") == 0 ||
-             strcmp(o->arg, "STORE_MD") == 0)
-        o->opt = CRAM_OPT_STORE_MD, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "store_md") == 0 ||
+               strcmp(o->arg, "STORE_MD") == 0) {
+        o->opt = CRAM_OPT_STORE_MD;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "store_nm") == 0 ||
-             strcmp(o->arg, "STORE_NM") == 0)
-        o->opt = CRAM_OPT_STORE_NM, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "store_nm") == 0 ||
+               strcmp(o->arg, "STORE_NM") == 0) {
+        o->opt = CRAM_OPT_STORE_NM;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "block_size") == 0 ||
-             strcmp(o->arg, "BLOCK_SIZE") == 0)
-        o->opt = HTS_OPT_BLOCK_SIZE, o->val.i = strtol(val, NULL, 0);
+    } else if (strcmp(o->arg, "block_size") == 0 ||
+             strcmp(o->arg, "BLOCK_SIZE") == 0) {
+        o->opt = HTS_OPT_BLOCK_SIZE;
+        if (get_int_kmg(val, 0, INT_MAX, 1, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "level") == 0 ||
-             strcmp(o->arg, "LEVEL") == 0)
-        o->opt = HTS_OPT_COMPRESSION_LEVEL, o->val.i = strtol(val, NULL, 0);
+    } else if (strcmp(o->arg, "level") == 0 ||
+               strcmp(o->arg, "LEVEL") == 0) {
+        o->opt = HTS_OPT_COMPRESSION_LEVEL;
+        if (get_int(val, -1, INT_MAX, &o->val.i) < 0)
+            goto err;
 
-    else if (strcmp(o->arg, "filter") == 0 ||
-             strcmp(o->arg, "FILTER") == 0)
+    } else if (strcmp(o->arg, "filter") == 0 ||
+               strcmp(o->arg, "FILTER") == 0) {
         o->opt = HTS_OPT_FILTER, o->val.s = val;
 
-    else if (strcmp(o->arg, "fastq_aux") == 0 ||
-        strcmp(o->arg, "FASTQ_AUX") == 0)
+    } else if (strcmp(o->arg, "fastq_aux") == 0 ||
+               strcmp(o->arg, "FASTQ_AUX") == 0) {
         o->opt = FASTQ_OPT_AUX, o->val.s = val;
 
-    else if (strcmp(o->arg, "fastq_barcode") == 0 ||
-        strcmp(o->arg, "FASTQ_BARCODE") == 0)
+    } else if (strcmp(o->arg, "fastq_barcode") == 0 ||
+               strcmp(o->arg, "FASTQ_BARCODE") == 0) {
         o->opt = FASTQ_OPT_BARCODE, o->val.s = val;
 
-    else if (strcmp(o->arg, "fastq_rnum") == 0 ||
-        strcmp(o->arg, "FASTQ_RNUM") == 0)
+    } else if (strcmp(o->arg, "fastq_rnum") == 0 ||
+               strcmp(o->arg, "FASTQ_RNUM") == 0) {
         o->opt = FASTQ_OPT_RNUM, o->val.i = 1;
 
-    else if (strcmp(o->arg, "fastq_casava") == 0 ||
-        strcmp(o->arg, "FASTQ_CASAVA") == 0)
+    } else if (strcmp(o->arg, "fastq_casava") == 0 ||
+               strcmp(o->arg, "FASTQ_CASAVA") == 0) {
         o->opt = FASTQ_OPT_CASAVA, o->val.i = 1;
 
-    else if (strcmp(o->arg, "fastq_name2") == 0 ||
-        strcmp(o->arg, "FASTQ_NAME2") == 0)
+    } else if (strcmp(o->arg, "fastq_name2") == 0 ||
+               strcmp(o->arg, "FASTQ_NAME2") == 0) {
         o->opt = FASTQ_OPT_NAME2, o->val.i = 1;
 
-    else if (strcmp(o->arg, "fastq_umi") == 0 ||
-        strcmp(o->arg, "FASTQ_UMI") == 0)
+    } else if (strcmp(o->arg, "fastq_umi") == 0 ||
+               strcmp(o->arg, "FASTQ_UMI") == 0) {
         o->opt = FASTQ_OPT_UMI, o->val.s = val;
 
-    else if (strcmp(o->arg, "fastq_umi_regex") == 0 ||
-        strcmp(o->arg, "FASTQ_UMI_REGEX") == 0)
+    } else if (strcmp(o->arg, "fastq_umi_regex") == 0 ||
+               strcmp(o->arg, "FASTQ_UMI_REGEX") == 0) {
         o->opt = FASTQ_OPT_UMI_REGEX, o->val.s = val;
 
-    else if (strcmp(o->arg, "remove_ur") == 0 ||
-        strcmp(o->arg, "REMOVE_UR") == 0)
-        o->opt = CRAM_OPT_RM_UR, o->val.i = atoi(val);
+    } else if (strcmp(o->arg, "remove_ur") == 0 ||
+               strcmp(o->arg, "REMOVE_UR") == 0) {
+        o->opt = CRAM_OPT_RM_UR;
+        if (get_int(val, 0, 1, &o->val.i) < 0)
+            goto err;
 
-    else {
+    } else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
         free(o);
@@ -1242,6 +1320,11 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     }
 
     return 0;
+
+ err:
+    free(o->arg);
+    free(o);
+    return -1;
 }
 
 /*
