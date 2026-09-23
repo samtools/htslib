@@ -6335,19 +6335,19 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
         for (i = 0; i < svleninfo->len && i + 1 < v->n_allele; ++i) {
             switch(svleninfo->type) {
                 case BCF_BT_INT8:
-                    tmp = ((int8_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i8(&svleninfo->vptr[i]);
                     tmp = tmp == bcf_int8_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT16:
-                    tmp = ((int16_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i16(&svleninfo->vptr[i * 2]);
                     tmp = tmp == bcf_int16_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT32:
-                    tmp = ((int32_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i32(&svleninfo->vptr[i * 4]);
                     tmp = tmp == bcf_int32_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT64:
-                    tmp = ((int64_t*)svleninfo->vptr)[i];
+                    tmp = le_to_i64(&svleninfo->vptr[i * 8]);
                     tmp = tmp == bcf_int64_missing ? 0 : tmp;
                 break;
                 default: //invalid
@@ -6382,19 +6382,19 @@ static int64_t get_rlen(const bcf_hdr_t *h, bcf1_t *v)
             for (j = 0; j < lenfmt->n; ++j) {
                 switch(lenfmt->type) {
                 case BCF_BT_INT8:
-                    tmp = (((int8_t*)lenfmt->p + offset))[j];
+                    tmp = le_to_i8(lenfmt->p + offset + j);
                     tmp = tmp == bcf_int8_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT16:
-                    tmp = ((int16_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i16(lenfmt->p + offset + j * 2);
                     tmp = tmp == bcf_int16_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT32:
-                    tmp = ((int32_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i32(lenfmt->p + offset + j * 4);
                     tmp = tmp == bcf_int32_missing ? 0 : tmp;
                 break;
                 case BCF_BT_INT64:
-                    tmp = ((int64_t*)(lenfmt->p + offset))[j];
+                    tmp = le_to_i64(lenfmt->p + offset + j * 8);
                     tmp = tmp == bcf_int64_missing ? 0 : tmp;
                 break;
                 default: //invalid
