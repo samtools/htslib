@@ -5420,7 +5420,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     switch (opt) {
     case CRAM_OPT_DECODE_MD:
-        CHECK_RANGE(fd->decode_md = va_arg(args, int), -1, 1);
+        CHECK_RANGE(fd->decode_md = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_PREFIX:

@@ -1028,6 +1028,13 @@ static int get_int_kmg(const char *str, int min_val, int max_val,
     char *endptr;
     int64_t l = strtol(str, &endptr, 10);
 
+    if (l < INT32_MIN || l > INT32_MAX) {
+        // Just enough to ensure multiplications do not overflow
+        hts_log_error("Value of out range: expected >= %d_val and <= %d",
+                      min_val, max_val);
+        return -1;
+    }
+
     if (kmg) {
         switch (*endptr) {
         case 'g': case 'G': l *= 1024; // fall through
@@ -1092,7 +1099,7 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     if (strcmp(o->arg, "decode_md") == 0 ||
         strcmp(o->arg, "DECODE_MD") == 0) {
         o->opt = CRAM_OPT_DECODE_MD;
-        if (get_int(val, -1, 1, &o->val.i) < 0)
+        if (get_int(val, 0, 1, &o->val.i) < 0)
             goto err;
 
     } else if (strcmp(o->arg, "verbosity") == 0 ||
