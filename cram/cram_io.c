@@ -5393,6 +5393,16 @@ int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...) {
     return r;
 }
 
+// Check valid range for options.
+#define CHECK_RANGE(v,min,max)                  \
+    do {                                        \
+        int val = (v);                          \
+        if((val) < (min) || (val) > (max)) {    \
+            errno = ERANGE;                     \
+            return -1;                          \
+        }                                       \
+    } while (0);
+
 /*
  * Sets options on the cram_fd. See CRAM_OPT_* definitions in cram_structs.h.
  * Use this immediately after opening.
@@ -5410,7 +5420,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     switch (opt) {
     case CRAM_OPT_DECODE_MD:
-        fd->decode_md = va_arg(args, int);
+        CHECK_RANGE(fd->decode_md = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_PREFIX:
@@ -5424,37 +5434,37 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         break;
 
     case CRAM_OPT_SEQS_PER_SLICE:
-        fd->seqs_per_slice = va_arg(args, int);
+        CHECK_RANGE(fd->seqs_per_slice = va_arg(args, int), 1, INT_MAX/512);
         if (fd->bases_per_slice == BASES_PER_SLICE)
             fd->bases_per_slice = fd->seqs_per_slice * 500;
         break;
 
     case CRAM_OPT_BASES_PER_SLICE:
-        fd->bases_per_slice = va_arg(args, int);
+        CHECK_RANGE(fd->bases_per_slice = va_arg(args, int), 1, INT_MAX);
         break;
 
     case CRAM_OPT_SLICES_PER_CONTAINER:
-        fd->slices_per_container = va_arg(args, int);
+        CHECK_RANGE(fd->slices_per_container = va_arg(args, int), 1, 512);
         break;
 
     case CRAM_OPT_EMBED_REF:
-        fd->embed_ref = va_arg(args, int);
+        CHECK_RANGE(fd->embed_ref = va_arg(args, int), -1, 2);
         break;
 
     case CRAM_OPT_NO_REF:
-        fd->no_ref = va_arg(args, int);
+        CHECK_RANGE(fd->no_ref = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_POS_DELTA:
-        fd->ap_delta = va_arg(args, int);
+        CHECK_RANGE(fd->ap_delta = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_IGNORE_MD5:
-        fd->ignore_md5 = va_arg(args, int);
+        CHECK_RANGE(fd->ignore_md5 = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_LOSSY_NAMES:
-        fd->lossy_read_names = va_arg(args, int);
+        CHECK_RANGE(fd->lossy_read_names = va_arg(args, int), 0, INT_MAX);
         // Currently lossy read names required paired (attached) reads.
         // TLEN 0 or being 1 out causes read pairs to be detached, breaking
         // the lossy read name compression, so we have extra options to
@@ -5464,27 +5474,27 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         break;
 
     case CRAM_OPT_USE_BZIP2:
-        fd->use_bz2 = va_arg(args, int);
+        CHECK_RANGE(fd->use_bz2 = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_RANS:
-        fd->use_rans = va_arg(args, int);
+        CHECK_RANGE(fd->use_rans = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_TOK:
-        fd->use_tok = va_arg(args, int);
+        CHECK_RANGE(fd->use_tok = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_FQZ:
-        fd->use_fqz = va_arg(args, int);
+        CHECK_RANGE(fd->use_fqz = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_ARITH:
-        fd->use_arith = va_arg(args, int);
+        CHECK_RANGE(fd->use_arith = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_LZMA:
-        fd->use_lzma = va_arg(args, int);
+        CHECK_RANGE(fd->use_lzma = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_SHARED_REF:
@@ -5559,11 +5569,13 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     }
 
     case CRAM_OPT_MULTI_SEQ_PER_SLICE:
-        fd->multi_seq_user = fd->multi_seq = va_arg(args, int);
+        CHECK_RANGE(fd->multi_seq_user = fd->multi_seq = va_arg(args, int),
+                    -1, 1);
         break;
 
     case CRAM_OPT_NTHREADS: {
         int nthreads =  va_arg(args, int);
+        CHECK_RANGE(nthreads, 0, INT_MAX/2);
         if (fd->pool)
             return -2;  //already exists!
         if (nthreads >= 1) {
@@ -5597,25 +5609,25 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     }
 
     case CRAM_OPT_REQUIRED_FIELDS:
-        fd->required_fields = va_arg(args, int);
+        CHECK_RANGE(fd->required_fields = va_arg(args, int), 0, SAM_RGAUX*2-1);
         if (fd->range.refid != -2)
             fd->required_fields |= SAM_POS;
         break;
 
     case CRAM_OPT_STORE_MD:
-        fd->store_md = va_arg(args, int);
+        CHECK_RANGE(fd->store_md = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_STORE_NM:
-        fd->store_nm = va_arg(args, int);
+        CHECK_RANGE(fd->store_nm = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_RM_UR:
-        fd->remove_ur = va_arg(args, int);
+        CHECK_RANGE(fd->remove_ur = va_arg(args, int), 0, 1);
         break;
 
     case HTS_OPT_COMPRESSION_LEVEL:
-        fd->level = va_arg(args, int);
+        CHECK_RANGE(fd->level = va_arg(args, int), -1, INT_MAX);
         break;
 
     case HTS_OPT_PROFILE: {
