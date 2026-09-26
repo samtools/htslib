@@ -59,6 +59,7 @@ shlib-exports-*.txt
 /test/sam
 /test/ref_cache/*.tmp.*
 /test/tabix/*.tmp.*
+/test/s3/*.tmp*
 /test/test_alloc
 /test/test-bcf-sr
 /test/test-bcf-translate
