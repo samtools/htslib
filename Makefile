@@ -731,16 +731,16 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	  test/test_hfile_libcurl ; \
 	fi
 
-# S3 (MinIO) integration tests.  Not part of `check`/`test`: they need a
-# live S3-compatible endpoint configured via HTS_S3_HOST and friends (see
-# test/docker/minio/ and test/s3_io_inventory.md).  The test binary itself
-# skips (exit 0) if HTS_S3_HOST isn't set, so running this without MinIO
-# configured is harmless, just a no-op.
-check-s3 test-s3: test/test_hfile_s3
+# S3 tests.  Not part of `check` as they need an S3-compatible server,
+# set via HTS_S3_HOST and friends (see .github/workflows/s3-integration.yml).
+# Both skip themselves if HTS_S3_HOST is not set.
+check-s3 test-s3: all test/test_hfile_s3
 	if test "x$(BUILT_PLUGINS)" != "x"; then \
-	  HTS_PATH=. ./test/with-shlib.sh test/test_hfile_s3 ; \
+	  HTS_PATH=. ./test/with-shlib.sh test/test_hfile_s3 && \
+	  cd test/s3 && REF_PATH=: HTS_PATH=../.. ../with-shlib.sh ./test-s3.sh s3.tst ; \
 	else \
-	  test/test_hfile_s3 ; \
+	  test/test_hfile_s3 && \
+	  cd test/s3 && REF_PATH=: ./test-s3.sh s3.tst ; \
 	fi
 
 test/hts_endian: test/hts_endian.o
@@ -928,7 +928,7 @@ test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
 test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c
 test/test_hfile_libcurl.o: test/test_hfile_libcurl.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(hts_internal_h)
-test/test_hfile_s3.o: test/test_hfile_s3.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_tbx_h) $(htslib_faidx_h) $(htslib_bgzf_h) $(htslib_cram_h)
+test/test_hfile_s3.o: test/test_hfile_s3.c config.h $(htslib_hfile_h)
 
 # Standalone target not added to $(BUILT_TEST_PROGRAMS) as some may not
 # have a compiler that compiles as C++ when given a .cpp source file.

@@ -26,37 +26,24 @@ jobs:
         submodules: true
         persist-credentials: false
 
-    - name: Build MinIO test image
-      run: docker build -t htslib-minio-test test/docker/minio
-
+    # The official MinIO images are no longer published, so this uses
+    # Chainguard's build, pinned by digest.
     - name: Start MinIO
       run: |
         docker run -d --name minio-test -p 9000:9000 \
           -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
           -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
-          -e MINIO_TEST_BUCKET="$MINIO_TEST_BUCKET" \
-          htslib-minio-test
+          cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 \
+          server /tmp/data
 
-    - name: Wait for MinIO to be ready
+    - name: Create test bucket
       run: |
-        # /minio/health/ready only reflects the server itself coming up; it
-        # goes green *before* bootstrap.sh's own `mc mb` finishes creating
-        # the test bucket, which is a real race (writes fail with ENOENT
-        # against the not-yet-existent bucket if you only wait on this).
         for i in $(seq 1 60); do
-          if curl -sf http://localhost:9000/minio/health/ready >/dev/null 2>&1; then
-            echo "MinIO server is up"
-            break
-          fi
-          sleep 1
-        done
-
-        # So also wait for bootstrap.sh's own completion marker before
-        # treating the container as ready for use.
-        for i in $(seq 1 60); do
-          if docker logs minio-test 2>&1 | grep -q "^bootstrap: bucket .* ready$"; then
-            echo "MinIO bucket is ready"
-            exit 0
+          if curl -sf http://localhost:9000/minio/health/ready >/dev/null; then
+            curl -sf --aws-sigv4 aws:amz:us-east-1:s3 \
+              --user "$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD" \
+              -X PUT "http://localhost:9000/$MINIO_TEST_BUCKET"
+            exit
           fi
           sleep 1
         done
