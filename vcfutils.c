@@ -243,13 +243,15 @@ int bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 {
     int i;
     kbitset_t *rm_set = kbs_init(line->n_allele);
+    if (!rm_set)
+        return -1;
     for (i=1; i<line->n_allele; i++)
         if ( rm_mask & 1<<i ) kbs_insert(rm_set, i);
 
-    bcf_remove_allele_set(header, line, rm_set);
+    int res = bcf_remove_allele_set(header, line, rm_set);
     kbs_destroy(rm_set);
 
-    return 0; // FIXME: check for errs in this function
+    return res;
 }
 
 static inline int is_special_info_type(const char *name)
