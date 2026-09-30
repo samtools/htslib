@@ -38,7 +38,8 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
     // Use INFO/AC,AN field only when asked
     if ( which&BCF_UN_INFO )
     {
-        bcf_unpack(line, BCF_UN_INFO);
+        if (bcf_unpack(line, BCF_UN_INFO) < 0)
+            goto fail;
         int an_id = bcf_hdr_id2int(header, BCF_DT_ID, "AN");
         int ac_id = bcf_hdr_id2int(header, BCF_DT_ID, "AC");
         int i, an=-1, ac_len=0, ac_type=0;
@@ -96,7 +97,8 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
     {
         int i, gt_id = bcf_hdr_id2int(header,BCF_DT_ID,"GT");
         if ( gt_id<0 ) return 0;
-        bcf_unpack(line, BCF_UN_FMT);
+        if (bcf_unpack(line, BCF_UN_FMT) < 0)
+            goto fail;
         bcf_fmt_t *fmt_gt = NULL;
         for (i=0; i<(int)line->n_fmt; i++)
             if ( line->d.fmt[i].id==gt_id ) { fmt_gt = &line->d.fmt[i]; break; }
@@ -129,6 +131,10 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         #undef BRANCH_INT
         return 1;
     }
+    return 0;
+
+ fail:
+    hts_log_error("Out of memory");
     return 0;
 }
 
@@ -675,14 +681,15 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     uint8_t *dat = NULL;
     int num_laa, laa_size = 0, laa_map_stride = 0;
     int have_cnv_tr = 0, e = 0;
+    kstring_t str = {0,0,0};
 
     if (!map)
         return -1;
 
-    bcf_unpack(line, BCF_UN_ALL);
+    if (bcf_unpack(line, BCF_UN_ALL) < 0)
+        goto err;
 
     // create map of indexes from old to new ALT numbering and modify ALT
-    kstring_t str = {0,0,0};
     kputs_chk(&e, line->d.allele[0], &str);
 
     int nrm = 0, i,j;  // i: ori alleles, j: new alleles
@@ -724,7 +731,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     int nG_ori = nR_ori*(nR_ori + 1)/2;
     int nG_new = nR_new*(nR_new + 1)/2;
 
-    bcf_update_alleles_str(header, line, str.s);
+    if (bcf_update_alleles_str(header, line, str.s) < 0)
+    {
+        hts_log_error("Out of memory");
+        goto err;
+    }
 
     if (have_cnv_tr)
     {
