@@ -1722,9 +1722,11 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
 
     if ( strchr(mode,'w') )
     {
-        bcf_hdr_append(h, "##fileformat=VCFv4.2");
+        if (bcf_hdr_append(h, "##fileformat=VCFv4.2") < 0)
+            goto fail;
         // The filter PASS must appear first in the dictionary
-        bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">");
+        if (bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">") < 0)
+            goto fail;
         aux->version = VCF_DEF;
     }
     return h;
@@ -2436,7 +2438,8 @@ static int bcf1_sync(bcf1_t *line)
     {
         // The line was edited, update the BCF data block.
 
-        if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line,BCF_UN_STR);
+        if ( !(line->unpacked & BCF_UN_STR) )
+            nomem |= bcf_unpack(line,BCF_UN_STR) < 0;
 
         // ptr_ori points to the original unchanged BCF data.
         uint8_t *ptr_ori = (uint8_t *) line->shared.s;
@@ -3172,8 +3175,13 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
 {
     int x, type;
+    size_t orig_l = s->l;
     x = bcf_dec_size(ptr, &ptr, &type);
-    bcf_fmt_array(s, x, type, ptr);
+    if (bcf_fmt_array(s, x, type, ptr) < 0)
+    {
+        s->l = orig_l;
+        if (s->s) s->s[s->l] = '\0';
+    }
     return ptr + (x << bcf_type_shift[type]);
 }
 
@@ -3951,15 +3959,15 @@ static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char 
         a_flt[i++] = kh_val(d, k).id;
     }
 
-    bcf_enc_vint(str, n_flt, a_flt, -1);
+    int ret = bcf_enc_vint(str, n_flt, a_flt, -1);
     free(a_flt);
 
-    return 0;
+    return ret;
 }
 
 static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q) {
     static int extreme_int_warned = 0, negative_rlen_warned = 0;
-    int max_n_val = 0, overflow = 0;
+    int max_n_val = 0, overflow = 0, nomem = 0;
     char *r, *key;
     khint_t k;
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
@@ -4011,11 +4019,11 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
         }
         uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
         ++v->n_info;
-        bcf_enc_int1(str, kh_val(d, k).id);
+        nomem |= bcf_enc_int1(str, kh_val(d, k).id) < 0;
         if (val == 0) {
-            bcf_enc_size(str, 0, BCF_BT_NULL);
+            nomem |= bcf_enc_size(str, 0, BCF_BT_NULL) < 0;
         } else if ((y>>4&0xf) == BCF_HT_FLAG || (y>>4&0xf) == BCF_HT_STR) { // if Flag has a value, treat it as a string
-            bcf_enc_vchar(str, end - val, val);
+            nomem |= bcf_enc_vchar(str, end - val, val) < 0;
         } else { // int/float value/array
             int i, n_val;
             char *t, *te;
@@ -4080,16 +4088,16 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                     if ( is_int64 )
                     {
                         v->unpacked |= BCF_IS_64BIT;
-                        bcf_enc_long1(str, val1);
+                        nomem |= bcf_enc_long1(str, val1) < 0;
                     }
                     else
-                        bcf_enc_int1(str, (int32_t)val1);
+                        nomem |= bcf_enc_int1(str, (int32_t)val1) < 0;
 #else
                     val1 = a_val[0];
-                    bcf_enc_int1(str, (int32_t)val1);
+                    nomem |= bcf_enc_int1(str, (int32_t)val1) < 0;
 #endif
                 } else {
-                    bcf_enc_vint(str, n_val, a_val, -1);
+                    nomem |= bcf_enc_vint(str, n_val, a_val, -1) < 0;
                 }
                 if (n_val==1 && (val1!=bcf_int32_missing || is_int64)
                     && memcmp(key, "END", 4) == 0)
@@ -4113,12 +4121,20 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                         bcf_float_set_missing(val_f[i]);
                     for (t = te; *t && *t != ','; t++);
                 }
-                bcf_enc_vfloat(str, n_val, val_f);
+                nomem |= bcf_enc_vfloat(str, n_val, val_f) < 0;
             }
         }
         if (c == 0) break;
         r = end;
         key = r + 1;
+    }
+
+    if (nomem)
+    {
+        hts_log_error("Could not allocate memory at %s:%"PRIhts_pos,
+                      bcf_seqname_safe(h,v), v->pos+1);
+        v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
+        goto fail;
     }
 
     free(a_val);
@@ -4131,7 +4147,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
 
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 {
-    int ret = -2, overflow = 0;
+    int ret = -2, overflow = 0, nomem = 0;
     char *p, *q, *r, *t;
     kstring_t *str;
     khint_t k;
@@ -4214,16 +4230,17 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
         goto err;
     *(q = (char*)aux.p) = 0;
 
-    if (NOT_DOT(p)) bcf_enc_vchar(str, q - p, p);
-    else bcf_enc_size(str, 0, BCF_BT_CHAR);
+    if (NOT_DOT(p)) nomem |= bcf_enc_vchar(str, q - p, p) < 0;
+    else nomem |= bcf_enc_size(str, 0, BCF_BT_CHAR) < 0;
 
     // REF
     if (!(p = kstrtok(0, 0, &aux)))
         goto err;
     *(q = (char*)aux.p) = 0;
 
-    bcf_enc_vchar(str, q - p, p);
-    v->n_allele = 1, v->rlen = q - p;
+    nomem |= bcf_enc_vchar(str, q - p, p) < 0;
+    int n_allele = 1;
+    v->rlen = q - p;
 
     // ALT
     if (!(p = kstrtok(0, 0, &aux)))
@@ -4233,19 +4250,23 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     if (NOT_DOT(p)) {
         for (r = t = p;; ++r) {
             if (*r == ',' || *r == 0) {
-                if (v->n_allele == UINT16_MAX) {
+                if (n_allele == UINT16_MAX) {
                     hts_log_error("Too many ALT alleles at %s:%"PRIhts_pos,
                                   bcf_seqname_safe(h,v), v->pos+1);
                     v->errcode |= BCF_ERR_LIMITS;
                     goto err;
                 }
-                bcf_enc_vchar(str, r - t, t);
+                nomem |= bcf_enc_vchar(str, r - t, t) < 0;
                 t = r + 1;
-                ++v->n_allele;
+                ++n_allele;
             }
             if (r == q) break;
         }
     }
+
+    if (nomem)
+        goto err;
+    v->n_allele = n_allele;
 
     // QUAL
     if (!(p = kstrtok(0, 0, &aux)))
@@ -4265,7 +4286,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
         if (vcf_parse_filter(str, h, v, p, q)) {
             goto err;
         }
-    } else bcf_enc_vint(str, 0, 0, -1);
+    } else nomem |= bcf_enc_vint(str, 0, 0, -1) < 0;
     if ( v->max_unpack && !(v->max_unpack>>2) ) goto end; // BCF_UN_FLT
 
     // INFO
@@ -4291,6 +4312,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     }
 
  end:
+    if (nomem)
+        goto err;
+
     v->rlen = get_rlen(h, v);    //set rlen based on version
     ret = 0;
 
@@ -4416,7 +4440,10 @@ int bcf_unpack(bcf1_t *b, int which)
             d->allele[i] = d->als + (ptrdiff_t)d->allele[i];
 
         if (nomem)
+        {
+            hts_log_error("Out of memory");
             return -1;
+        }
 
         b->unpacked |= BCF_UN_STR;
     }
@@ -4464,7 +4491,8 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
         return -1;
     }
 
-    bcf_unpack((bcf1_t*)v, BCF_UN_ALL & ~(BCF_UN_INFO|BCF_UN_FMT));
+    if (bcf_unpack((bcf1_t *) v, BCF_UN_ALL & ~(BCF_UN_INFO|BCF_UN_FMT)) < 0)
+        return -1;
 
     // Cache of key lengths so we don't keep repeatedly using them.
     // This assumes we're not modifying the header between successive calls
@@ -5241,7 +5269,8 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         }
         if ( src_hdr->ntransl==-1 ) return 0;
     }
-    bcf_unpack(line,BCF_UN_ALL);
+    if (bcf_unpack(line,BCF_UN_ALL) < 0)
+        return -1;
 
     // CHROM
     if ( src_hdr->transl[BCF_DT_CTG][line->rid] >=0 ) line->rid = src_hdr->transl[BCF_DT_CTG][line->rid];
@@ -5368,7 +5397,8 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
         hts_log_error("Failed to get header text");
         goto err;
     }
-    bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
+    if (bcf_hdr_set_version(h,bcf_hdr_get_version(h0)) < 0)
+        goto err;
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
     if ( bcf_hdr_nsamples(h0) > 0) {
@@ -5562,9 +5592,12 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 int bcf_is_snp(bcf1_t *v)
 {
     int i;
-    bcf_unpack(v, BCF_UN_STR);
+    if (bcf_unpack(v, BCF_UN_STR) < 0)
+        return -1;
+
     for (i = 0; i < v->n_allele; ++i)
     {
+        // Tests must be kept in sync with bcf_is_snp_packed()
         if ( v->d.allele[i][1]==0 && v->d.allele[i][0]!='*' ) continue;
 
         // mpileup's <X> allele, see also below. This is not completely satisfactory,
@@ -5654,7 +5687,12 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
 
 static int bcf_set_variant_types(bcf1_t *b)
 {
-    if ( !(b->unpacked & BCF_UN_STR) ) bcf_unpack(b, BCF_UN_STR);
+    if ( !(b->unpacked & BCF_UN_STR) )
+    {
+        if (bcf_unpack(b, BCF_UN_STR) < 0)
+            return -1;
+    }
+
     bcf_dec_t *d = &b->d;
     if ( d->n_var < b->n_allele )
     {
@@ -5758,12 +5796,16 @@ int bcf_has_variant_types(bcf1_t *rec, uint32_t bitmask,
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     static int negative_rlen_warned = 0;
-    int is_end_tag, is_svlen_tag = 0;
+    int is_end_tag, is_svlen_tag = 0, nomem = 0;
 
     // Is the field already present?
     int i, inf_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,inf_id) ) return -1;    // No such INFO field in the header
-    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
+    if ( !(line->unpacked & BCF_UN_INFO) )
+    {
+        if (bcf_unpack(line, BCF_UN_INFO) < 0)
+            return -1;
+    }
 
     is_end_tag = strcmp(key, "END") == 0;
     is_svlen_tag = strcmp(key, "SVLEN") == 0;
@@ -5810,17 +5852,17 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
 
     // Encode the values and determine the size required to accommodate the values
     kstring_t str = {0,0,0};
-    bcf_enc_int1(&str, inf_id);
+    nomem |= bcf_enc_int1(&str, inf_id) < 0;
     if ( type==BCF_HT_INT )
-        bcf_enc_vint(&str, n, (int32_t*)values, -1);
+        nomem |= bcf_enc_vint(&str, n, (int32_t*)values, -1) < 0;
     else if ( type==BCF_HT_REAL )
-        bcf_enc_vfloat(&str, n, (float*)values);
+        nomem |= bcf_enc_vfloat(&str, n, (float*)values) < 0;
     else if ( type==BCF_HT_FLAG || type==BCF_HT_STR )
     {
         if ( values==NULL )
-            bcf_enc_size(&str, 0, BCF_BT_NULL);
+            nomem |= bcf_enc_size(&str, 0, BCF_BT_NULL) < 0;
         else
-            bcf_enc_vchar(&str, strlen((char*)values), (char*)values);
+            nomem |= bcf_enc_vchar(&str, strlen((char*)values), (char*)values) < 0;
     }
 #ifdef VCF_ALLOW_INT64
     else if ( type==BCF_HT_LONG )
@@ -5829,13 +5871,19 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
             hts_log_error("Only storing a single BCF_HT_LONG value is supported at %s:%"PRIhts_pos, bcf_seqname_safe(hdr,line), line->pos+1);
             abort();
         }
-        bcf_enc_long1(&str, *(int64_t *) values);
+        nomem |= bcf_enc_long1(&str, *(int64_t *) values) < 0;
     }
 #endif
     else
     {
         hts_log_error("The type %d not implemented yet at %s:%"PRIhts_pos, type, bcf_seqname_safe(hdr,line), line->pos+1);
         abort();
+    }
+
+    if (nomem)
+    {
+        ks_free(&str);
+        return -1;
     }
 
     // Is the INFO tag already present
@@ -5930,7 +5978,11 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
         return -1;  // the key not present in the header
     }
 
-    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+    if ( !(line->unpacked & BCF_UN_FMT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FMT) < 0)
+            return -1;
+    }
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==fmt_id ) break;
@@ -6042,7 +6094,11 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
 
 int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 {
-    if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
+    if ( !(line->unpacked & BCF_UN_FLT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FLT) < 0)
+            return -1;
+    }
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
     line->d.n_flt = n;
     if ( !n ) return 0;
@@ -6055,7 +6111,11 @@ int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 
 int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
 {
-    if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
+    if ( !(line->unpacked & BCF_UN_FLT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FLT) < 0)
+            return -1;
+    }
     int i;
     for (i=0; i<line->d.n_flt; i++)
         if ( flt_id==line->d.flt[i] ) break;
@@ -6073,7 +6133,11 @@ int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
 }
 int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass)
 {
-    if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
+    if ( !(line->unpacked & BCF_UN_FLT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FLT) < 0)
+            return -1;
+    }
     int i;
     for (i=0; i<line->d.n_flt; i++)
         if ( flt_id==line->d.flt[i] ) break;
@@ -6081,8 +6145,11 @@ int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass)
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
     if ( i!=line->d.n_flt-1 ) memmove(line->d.flt+i,line->d.flt+i+1,(line->d.n_flt-i-1)*sizeof(*line->d.flt));
     line->d.n_flt--;
-    if ( !line->d.n_flt && pass ) bcf_add_filter(hdr,line,0);
-    return 0;
+
+    if ( !line->d.n_flt && pass )
+        return bcf_add_filter(hdr,line,0) < 0 ? -1 : 0;
+    else
+        return 0;
 }
 
 int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter)
@@ -6091,7 +6158,11 @@ int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter)
     int id = bcf_hdr_id2int(hdr, BCF_DT_ID, filter);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FLT,id) ) return -1;  // not defined in the header
 
-    if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
+    if ( !(line->unpacked & BCF_UN_FLT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FLT) < 0)
+            return -2;
+    }
     if ( id==0 && !line->d.n_flt) return 1; // PASS
 
     int i;
@@ -6124,7 +6195,11 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
 }
 int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
-    if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
+    if ( !(line->unpacked & BCF_UN_STR) )
+    {
+        if (bcf_unpack(line, BCF_UN_STR) < 0)
+            return -1;
+    }
     char *free_old = NULL;
     char buffer[256];
     size_t used = 0;
@@ -6188,7 +6263,11 @@ int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles,
 
 int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
 {
-    if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
+    if ( !(line->unpacked & BCF_UN_STR) )
+    {
+        if (bcf_unpack(line, BCF_UN_STR) < 0)
+            return -1;
+    }
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
     int nomem = kputs(alleles_string, &tmp) < 0;
@@ -6208,7 +6287,11 @@ int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *allel
 
 int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 {
-    if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
+    if ( !(line->unpacked & BCF_UN_STR) )
+    {
+        if (bcf_unpack(line, BCF_UN_STR) < 0)
+            return -1;
+    }
     kstring_t tmp;
     int nomem;
     tmp.l = 0; tmp.s = line->d.id; tmp.m = line->d.m_id;
@@ -6226,7 +6309,11 @@ int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 {
     if ( !id ) return 0;
-    if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
+    if ( !(line->unpacked & BCF_UN_STR) )
+    {
+        if (bcf_unpack(line, BCF_UN_STR) < 0)
+            return -1;
+    }
 
     kstring_t tmp;
     int nomem = 0;
@@ -6272,7 +6359,11 @@ bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
 {
     int i;
-    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+    if ( !(line->unpacked & BCF_UN_FMT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FMT) < 0)
+            return NULL;
+    }
     for (i=0; i<line->n_fmt; i++)
     {
         if ( line->d.fmt[i].id==id ) return &line->d.fmt[i];
@@ -6283,7 +6374,11 @@ bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
 bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id)
 {
     int i;
-    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
+    if ( !(line->unpacked & BCF_UN_INFO) )
+    {
+        if (bcf_unpack(line, BCF_UN_INFO) < 0)
+            return NULL;
+    }
     for (i=0; i<line->n_info; i++)
     {
         if ( line->d.info[i].key==id ) return &line->d.info[i];
@@ -6298,7 +6393,11 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
     if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=(type & 0xff) ) return -2;     // expected different type
 
-    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
+    if ( !(line->unpacked & BCF_UN_INFO) )
+    {
+        if (bcf_unpack(line, BCF_UN_INFO) < 0)
+            return -4;
+    }
 
     for (i=0; i<line->n_info; i++)
         if ( line->d.info[i].key==tag_id ) break;
@@ -6382,7 +6481,11 @@ int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, c
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
     if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=BCF_HT_STR ) return -2;     // expected different type
 
-    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+    if ( !(line->unpacked & BCF_UN_FMT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FMT) < 0)
+            return -4;
+    }
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==tag_id ) break;
@@ -6426,7 +6529,11 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     }
     else if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
 
-    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+    if ( !(line->unpacked & BCF_UN_FMT) )
+    {
+        if (bcf_unpack(line, BCF_UN_FMT) < 0)
+            return -4;
+    }
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==tag_id ) break;
