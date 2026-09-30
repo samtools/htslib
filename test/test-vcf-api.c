@@ -419,7 +419,8 @@ void iterator(const char *fname)
     hts_idx_t *idx;
     hts_itr_t *iter;
 
-    bcf_index_build(fname, 0);
+    if (bcf_index_build(fname, 0) < 0)
+        error("bcf_index_build(\"%s\", 0) failed", fname);
     idx = bcf_index_load(fname);
 
     iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
