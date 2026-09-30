@@ -95,13 +95,15 @@ static int sw_fill_buffer(bcf_sweep_t *sw)
     sw->iidx--;
 
     int ret = hts_useek(sw->file, sw->idx[sw->iidx], 0);
-    assert( ret==0 );
+    if (ret)
+        return -1;
 
     sw->nrec = 0;
     bcf1_t *rec = &sw->rec[sw->nrec];
     while ( (ret=bcf_read1(sw->file, sw->hdr, rec))==0 )
     {
-        bcf_unpack(rec, BCF_UN_STR);
+        if (bcf_unpack(rec, BCF_UN_STR) < 0)
+            return -1;
 
         // if not in the last block, stop at the saved record
         if ( sw->iidx+1 < sw->nidx && sw_rec_equal(sw,rec) ) break;
@@ -110,9 +112,9 @@ static int sw_fill_buffer(bcf_sweep_t *sw)
         hts_expand0(bcf1_t, sw->nrec+1, sw->mrec, sw->rec);
         rec = &sw->rec[sw->nrec];
     }
-    sw_rec_save(sw, &sw->rec[0]);
-
-    return 0; // FIXME: check for errs in this function
+    if (ret < -1)
+        return -1;
+    return sw_rec_save(sw, &sw->rec[0]);
 }
 
 bcf_sweep_t *bcf_sweep_init(const char *fname)
@@ -208,7 +210,11 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
 bcf1_t *bcf_sweep_bwd(bcf_sweep_t *sw)
 {
     if ( sw->direction==SW_FWD ) sw_seek(sw, SW_BWD);
-    if ( !sw->nrec ) sw_fill_buffer(sw);
+    if ( !sw->nrec )
+    {
+        if (sw_fill_buffer(sw) < 0)
+            return NULL;
+    }
     if ( !sw->nrec ) return NULL;
     return &sw->rec[ --sw->nrec ];
 }

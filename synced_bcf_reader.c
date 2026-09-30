@@ -911,13 +911,14 @@ static int _readers_next_region(bcf_srs_t *files)
     return 0;
 }
 
-static void _set_variant_boundaries(bcf1_t *rec, hts_pos_t *beg, hts_pos_t *end)
+static int set_variant_boundaries(bcf1_t *rec, hts_pos_t *beg, hts_pos_t *end)
 {
     hts_pos_t off;
     if ( rec->n_allele )
     {
         off = rec->rlen;
-        bcf_unpack(rec, BCF_UN_STR);
+        if (bcf_unpack(rec, BCF_UN_STR) < 0)
+            return -1;
         int i;
         for (i=1; i<rec->n_allele; i++)
         {
@@ -938,6 +939,7 @@ static void _set_variant_boundaries(bcf1_t *rec, hts_pos_t *beg, hts_pos_t *end)
 
     *beg = rec->pos + off;
     *end = rec->pos + rec->rlen - 1;
+    return 0;
 }
 
 static int forward_check_overlap(region_t *reg, int idx,
@@ -1071,7 +1073,11 @@ static int reader_fill_buffer(bcf_srs_t *files, int reader_idx)
             ret = bcf_itr_next(reader->file, reader->itr, reader->buffer[reader->nbuffer+1]);
             if ( ret < -1 ) err = files->errnum = bcf_read_error;
             if ( ret < 0 ) break; // no more lines or an error
-            bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
+            if (bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]) < 0)
+            {
+                err = files->errnum = no_memory;
+                break;
+            }
         }
 
         // Prevent creation of duplicates from records overlapping multiple regions
@@ -1088,7 +1094,13 @@ static int reader_fill_buffer(bcf_srs_t *files, int reader_idx)
                 end = pos + reader->buffer[reader->nbuffer+1]->rlen - 1;
             }
             else if ( BCF_SR_AUX(files)->regions_overlap==2 )
-                _set_variant_boundaries(reader->buffer[reader->nbuffer+1], &beg,&end);
+            {
+                if (set_variant_boundaries(reader->buffer[reader->nbuffer+1], &beg,&end) < 0)
+                {
+                    err = files->errnum = no_memory;
+                    break;
+                }
+            }
             else
             {
                 hts_log_error("Invalid BCF_SR_REGIONS_OVERLAP value: %d",
@@ -1127,12 +1139,16 @@ static int reader_fill_buffer(bcf_srs_t *files, int reader_idx)
         }
 
         // apply filter
-        if ( !reader->nfilter_ids )
-            bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR);
-        else
+        if (bcf_unpack(reader->buffer[reader->nbuffer+1],
+                       BCF_UN_STR | (reader->nfilter_ids ? BCF_UN_FLT : 0)) < 0)
         {
-            bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
-            if ( !has_filter(reader, reader->buffer[reader->nbuffer+1]) ) continue;
+            err = files->errnum = no_memory;
+            break;
+        }
+        if ( reader->nfilter_ids )
+        {
+            if ( !has_filter(reader, reader->buffer[reader->nbuffer+1]) )
+                continue;
         }
         reader->nbuffer++;
 
@@ -1256,7 +1272,13 @@ static int next_line(bcf_srs_t *files)
                     end = min_pos + files->readers[i].buffer[1]->rlen - 1;
                 }
                 else if ( BCF_SR_AUX(files)->targets_overlap==2 )
-                    _set_variant_boundaries(files->readers[i].buffer[1], &beg,&end);
+                {
+                    if (set_variant_boundaries(files->readers[i].buffer[1], &beg,&end) < 0)
+                    {
+                        files->errnum = no_memory;
+                        return 0;
+                    }
+                }
                 else
                 {
                     hts_log_error("Invalid BCF_SR_TARGETS_OVERLAP value: %d",
