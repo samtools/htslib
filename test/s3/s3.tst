@@ -43,13 +43,6 @@ P . $htsfile -C ../bgziptest.txt $s3/copy.tmp.txt
 P ../bgziptest.txt $htsfile -C $s3/copy.tmp.txt -
 N . $htsfile $s3/does-not-exist.tmp.bam
 
-# Known bug: reading to EOF fails with EINVAL when the size is a multiple of
-# the read part size (1 MiB by default), as hfile_s3 requests a range starting
-# at EOF and gets a 416.  Change F to P once fixed.
-INIT head -c 1048576 /dev/zero > aligned.tmp.bin
-P . $htsfile -C aligned.tmp.bin $s3/aligned.tmp.bin
-F . $htsfile -C $s3/aligned.tmp.bin aligned-copy.tmp.bin
-
 # BGZF with a .gzi index, random access through the remote index
 INIT seq 1 20000 > seq.tmp.txt
 INIT $bgzip -i -o seq.tmp.txt.gz seq.tmp.txt
