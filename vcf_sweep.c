@@ -82,11 +82,12 @@ static int sw_rec_save(bcf_sweep_t *sw, bcf1_t *rec)
     char *t = rec->d.allele[sw->lnals-1];
     int len = t - rec->d.allele[0] + 1;
     while ( *t ) { t++; len++; }
+    if (hts_resize(char, len, &sw->mlals, &sw->lals, 0) < 0)
+        return -1;
     sw->lals_len = len;
-    hts_expand(char, len, sw->mlals, sw->lals);
     memcpy(sw->lals, rec->d.allele[0], len);
 
-    return 0; // FIXME: check for errs in this function
+    return 0;
 }
 
 static int sw_fill_buffer(bcf_sweep_t *sw)
@@ -109,7 +110,8 @@ static int sw_fill_buffer(bcf_sweep_t *sw)
         if ( sw->iidx+1 < sw->nidx && sw_rec_equal(sw,rec) ) break;
 
         sw->nrec++;
-        hts_expand0(bcf1_t, sw->nrec+1, sw->mrec, sw->rec);
+        if (hts_resize(bcf1_t, sw->nrec+1, &sw->mrec, &sw->rec, HTS_RESIZE_CLEAR) < 0)
+            return -1;
         rec = &sw->rec[sw->nrec];
     }
     if (ret < -1)
@@ -199,8 +201,9 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
     {
         if ( !sw->nidx || pos - sw->idx[sw->nidx-1] > sw->block_size )
         {
+            if (hts_resize(uint64_t, sw->nidx+1, &sw->midx, &sw->idx, 0) < 0)
+                return NULL;
             sw->nidx++;
-            hts_expand(uint64_t, sw->nidx, sw->midx, sw->idx);
             sw->idx[sw->nidx-1] = pos;
         }
     }
