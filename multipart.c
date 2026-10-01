@@ -163,7 +163,9 @@ parse_ga4gh_body_json(hFILE_multipart *fp, hFILE *json,
                 hfile_part *part;
                 size_t n = 0, max = 0;
 
-                hts_expand(hfile_part, fp->nparts+1, fp->maxparts, fp->parts);
+                if (hts_resize(hfile_part, fp->nparts+1, &fp->maxparts,
+                               &fp->parts, 0) < 0)
+                    return '?';
                 part = &fp->parts[fp->nparts++];
                 part->url = NULL;
                 part->headers = NULL;
@@ -191,7 +193,9 @@ parse_ga4gh_body_json(hFILE_multipart *fp, hFILE *json,
                             if (nomem)
                                 return '?';
                             n++;
-                            hts_expand(char *, n+1, max, part->headers);
+                            if (hts_resize(char *, n+1, &max,
+                                           &part->headers, 0) < 0)
+                                return '?';
                             part->headers[n-1] = ks_release(header);
                             part->headers[n] = NULL;
                         }
