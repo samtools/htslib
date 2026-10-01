@@ -2110,6 +2110,13 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
         } else {
             int ret;
 
+            // At EOF.  Don't ask for another part, as a range starting at
+            // the end of the file gets a 416 error.
+            if (fp->file_size >= 0 && fp->last_read >= (size_t) fp->file_size) {
+                fp->keep_going = 0;
+                break;
+            }
+
             ret = get_part(fp, NULL);
 
             if (!ret) {

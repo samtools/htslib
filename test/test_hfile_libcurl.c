@@ -61,8 +61,9 @@ static int failures = 0;
     failures++; \
 } while (0)
 
-// Start mock server, return its PID and port
-static pid_t start_server(const char *mode, int fail_count, int *port_out)
+// Start mock server serving file, return its PID and port
+static pid_t start_server_file(const char *mode, const char *file,
+                               int fail_count, int *port_out)
 {
     int pipefd[2];
     pid_t pid;
@@ -93,7 +94,7 @@ static pid_t start_server(const char *mode, int fail_count, int *port_out)
         close(pipefd[1]);
         execlp("python3", "python3", "test/mock_http_server.py",
                "--mode", mode,
-               "--file", "test/" TEST_DATA_FILE,
+               "--file", file,
                "--fail-count", fail_count_str,
                "--port", "0",
                NULL);
@@ -134,6 +135,11 @@ static pid_t start_server(const char *mode, int fail_count, int *port_out)
     // Give the server a moment to be ready for connections
     hts_usleep(100000);
     return pid;
+}
+
+static pid_t start_server(const char *mode, int fail_count, int *port_out)
+{
+    return start_server_file(mode, "test/" TEST_DATA_FILE, fail_count, port_out);
 }
 
 static void stop_server(pid_t pid)
@@ -461,6 +467,66 @@ static void test_retry_disabled(void)
     stop_server(pid);
 }
 
+// Test 8: hfile_s3 reading to EOF when the file size is a multiple of the
+// read part size, so the last part is full-sized (issue #2097)
+static void test_s3_eof_at_part_boundary(void)
+{
+    const char *name = "S3 read to EOF at a part boundary";
+    const char *file = "test/hfile_s3_eof.tmp";
+    const size_t size = 1024 * 1024; // the default S3 read part size
+    char host[64], buf[4096];
+    size_t i, total = 0;
+    ssize_t n = 0;
+    int port;
+    pid_t pid;
+    hFILE *fp;
+    FILE *f;
+
+    f = fopen(file, "wb");
+    if (!f) { FAIL(name, "could not write %s", file); return; }
+    for (i = 0; i < size; i++)
+        fputc((i * 7 + 13) & 0xFF, f);
+    fclose(f);
+
+    pid = start_server_file("s3", file, 0, &port);
+    if (pid < 0) { FAIL(name, "could not start server"); unlink(file); return; }
+
+    snprintf(host, sizeof(host), "127.0.0.1:%d", port);
+    setenv("HTS_S3_HOST", host, 1);
+    setenv("HTS_S3_ADDRESS_STYLE", "path", 1);
+    setenv("AWS_ACCESS_KEY_ID", "test", 1);
+    setenv("AWS_SECRET_ACCESS_KEY", "test", 1);
+    setenv("HTS_ALLOW_UNENCRYPTED_AUTHORIZATION_HEADER", "I understand the risks", 1);
+
+    fp = hopen("s3+http://bucket/object", "r");
+    if (!fp) {
+        if (errno == EPROTONOSUPPORT)
+            fprintf(stderr, "  SKIP: %s: S3 not supported\n", name);
+        else
+            FAIL(name, "hopen failed: %s", strerror(errno));
+    } else {
+        while ((n = hread(fp, buf, sizeof(buf))) > 0)
+            total += n;
+        if (n < 0)
+            FAIL(name, "hread failed after %zu bytes: %s", total, strerror(errno));
+        else if (total != size)
+            FAIL(name, "read %zu bytes, expected %zu", total, size);
+        else if (hseek(fp, size, SEEK_SET) < 0 || (n = hread(fp, buf, sizeof(buf))) != 0)
+            FAIL(name, "read after seeking to EOF returned %zd: %s", n, strerror(errno));
+        else
+            PASS(name);
+        hclose_abruptly(fp);
+    }
+
+    unsetenv("HTS_S3_HOST");
+    unsetenv("HTS_S3_ADDRESS_STYLE");
+    unsetenv("AWS_ACCESS_KEY_ID");
+    unsetenv("AWS_SECRET_ACCESS_KEY");
+    unsetenv("HTS_ALLOW_UNENCRYPTED_AUTHORIZATION_HEADER");
+    stop_server(pid);
+    unlink(file);
+}
+
 int main(void)
 {
     // Check python3 is available
@@ -497,6 +563,7 @@ int main(void)
     test_404_no_retry();
     test_retry_exhaustion();
     test_retry_disabled();
+    test_s3_eof_at_part_boundary();
 
     // Clean up test data
     unlink("test/" TEST_DATA_FILE);
