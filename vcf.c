@@ -2306,7 +2306,9 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
     int i, j;
     uint8_t *ptr = (uint8_t*)rec->indiv.s, *dst = NULL, *src;
     bcf_dec_t *dec = &rec->d;
-    hts_expand(bcf_fmt_t, rec->n_fmt, dec->m_fmt, dec->fmt);
+    if (hts_resize(bcf_fmt_t, rec->n_fmt, &dec->m_fmt, &dec->fmt, 0) < 0)
+        return -1;
+
     for (i=0; i<dec->m_fmt; ++i) dec->fmt[i].p_free = 0;
 
     for (i=0; i<rec->n_fmt; i++)
@@ -4444,7 +4446,10 @@ int bcf_unpack(bcf1_t *b, int which)
         d->id = tmp.s; d->m_id = tmp.m;
 
         // REF and ALT are in a single block (d->als) and d->alleles are pointers into this block
-        hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
+        if (nomem ||
+            hts_resize(char*, b->n_allele, &d->m_allele, &d->allele, 0) < 0)
+            goto oom;
+
         tmp.l = 0; tmp.s = d->als; tmp.m = d->m_als;
         ptr_ori = ptr;
         for (i = 0; i < b->n_allele; ++i) {
@@ -4461,10 +4466,7 @@ int bcf_unpack(bcf1_t *b, int which)
             d->allele[i] = d->als + (ptrdiff_t)d->allele[i];
 
         if (nomem)
-        {
-            hts_log_error("Out of memory");
-            return -1;
-        }
+            goto oom;
 
         b->unpacked |= BCF_UN_STR;
     }
@@ -4474,7 +4476,9 @@ int bcf_unpack(bcf1_t *b, int which)
         if (*ptr>>4) {
             int type;
             d->n_flt = bcf_dec_size(ptr, &ptr, &type);
-            hts_expand(int, d->n_flt, d->m_flt, d->flt);
+            if (hts_resize(int, d->n_flt, &d->m_flt, &d->flt, 0) < 0)
+                goto oom;
+
             for (i = 0; i < d->n_flt; ++i)
                 d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
         } else ++ptr, d->n_flt = 0;
@@ -4483,7 +4487,9 @@ int bcf_unpack(bcf1_t *b, int which)
     }
     if ((which&BCF_UN_INFO) && !(b->unpacked&BCF_UN_INFO)) { // INFO
         ptr = (uint8_t*)b->shared.s + b->unpack_size[0] + b->unpack_size[1] + b->unpack_size[2];
-        hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
+        if (hts_resize(bcf_info_t, b->n_info, &d->m_info, &d->info, 0) < 0)
+            goto oom;
+
         for (i = 0; i < d->m_info; ++i) d->info[i].vptr_free = 0;
         for (i = 0; i < b->n_info; ++i)
             ptr = bcf_unpack_info_core1(ptr, &d->info[i]);
@@ -4491,13 +4497,19 @@ int bcf_unpack(bcf1_t *b, int which)
     }
     if ((which&BCF_UN_FMT) && b->n_sample && !(b->unpacked&BCF_UN_FMT)) { // FORMAT
         ptr = (uint8_t*)b->indiv.s;
-        hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
+        if (hts_resize(bcf_fmt_t, b->n_fmt, &d->m_fmt, &d->fmt, 0) < 0)
+            goto oom;
+
         for (i = 0; i < d->m_fmt; ++i) d->fmt[i].p_free = 0;
         for (i = 0; i < b->n_fmt; ++i)
             ptr = bcf_unpack_fmt_core1(ptr, b->n_sample, &d->fmt[i]);
         b->unpacked |= BCF_UN_FMT;
     }
     return 0;
+
+ oom:
+    hts_log_error("Out of memory");
+    return -1;
 }
 
 int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
@@ -5949,8 +5961,12 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     else
     {
         // The tag is not present, create new one
+        if (hts_resize(bcf_info_t, line->n_info + 1, &line->d.m_info,
+                       &line->d.info, HTS_RESIZE_CLEAR) < 0) {
+            ks_free(&str);
+            return -1;
+        }
         line->n_info++;
-        hts_expand0(bcf_info_t, line->n_info, line->d.m_info , line->d.info);
         inf = &line->d.info[line->n_info-1];
         bcf_unpack_info_core1((uint8_t*)str.s, inf);
         inf->vptr_free = 1;
@@ -6080,8 +6096,13 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     if ( !fmt )
     {
         // Not present, new format field
+        if (hts_resize(bcf_fmt_t, line->n_fmt + 1, &line->d.m_fmt,
+                       &line->d.fmt, HTS_RESIZE_CLEAR) < 0)
+        {
+            ks_free(&str);
+            return -2;
+        }
         line->n_fmt++;
-        hts_expand0(bcf_fmt_t, line->n_fmt, line->d.m_fmt, line->d.fmt);
 
         // Special case: VCF specification requires that GT is always first
         if ( line->n_fmt > 1 && key[0]=='G' && key[1]=='T' && !key[2] )
@@ -6135,10 +6156,16 @@ int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
         if (bcf_unpack(line, BCF_UN_FLT) < 0)
             return -1;
     }
+
+    if (n > 0)
+    {
+        if (hts_resize(int, n, &line->d.m_flt, &line->d.flt, 0) < 0)
+            return -1;
+    }
+
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
     line->d.n_flt = n;
     if ( !n ) return 0;
-    hts_expand(int, line->d.n_flt, line->d.m_flt, line->d.flt);
     int i;
     for (i=0; i<n; i++)
         line->d.flt[i] = flt_ids[i];
@@ -6156,14 +6183,18 @@ int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
     for (i=0; i<line->d.n_flt; i++)
         if ( flt_id==line->d.flt[i] ) break;
     if ( i<line->d.n_flt ) return 0;    // this filter is already set
-    line->d.shared_dirty |= BCF1_DIRTY_FLT;
+
+    int new_n_flt;
     if ( flt_id==0 )    // set to PASS
-        line->d.n_flt = 1;
+        new_n_flt = 1;
     else if ( line->d.n_flt==1 && line->d.flt[0]==0 )
-        line->d.n_flt = 1;
+        new_n_flt = 1;
     else
-        line->d.n_flt++;
-    hts_expand(int, line->d.n_flt, line->d.m_flt, line->d.flt);
+        new_n_flt = line->d.n_flt + 1;
+    if (hts_resize(int, new_n_flt, &line->d.m_flt, &line->d.flt, 0) < 0)
+        return -1;
+    line->d.shared_dirty |= BCF1_DIRTY_FLT;
+    line->d.n_flt = new_n_flt;
     line->d.flt[line->d.n_flt-1] = flt_id;
     return 1;
 }
@@ -6209,11 +6240,12 @@ int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter)
 
 static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nals)
 {
+    if (hts_resize(char*, nals, &line->d.m_allele, &line->d.allele, 0) < 0)
+        return -1;
     line->d.shared_dirty |= BCF1_DIRTY_ALS;
     line->d.var_type = -1;
 
     line->n_allele = nals;
-    hts_expand(char*, line->n_allele, line->d.m_allele, line->d.allele);
 
     char *als = line->d.als;
     int n = 0;
