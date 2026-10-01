@@ -419,14 +419,20 @@ void iterator(const char *fname)
     hts_idx_t *idx;
     hts_itr_t *iter;
 
-    if (bcf_index_build(fname, 0) < 0)
+    if (bcf_index_build(fname, 14) < 0)
         error("bcf_index_build(\"%s\", 0) failed", fname);
     idx = bcf_index_load(fname);
+    if (!idx)
+        error("bcf_index_load() failed");
 
     iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
+    if (!iter)
+        error("bcf_itr_queryi() failed for region 20:1110600-1110800");
     bcf_itr_destroy(iter);
 
     iter = bcf_itr_querys(idx, hdr, "20:1110600-1110800");
+    if (!iter)
+        error("bcf_itr_querys() failed for region 20:1110600-1110800");
     bcf_itr_destroy(iter);
 
     hts_idx_destroy(idx);
