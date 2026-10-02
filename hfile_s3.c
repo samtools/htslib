@@ -1261,6 +1261,7 @@ static int http_status_errno(int status)
         case 407: return EPERM;
         case 408: return ETIMEDOUT;
         case 410: return ENOENT;
+        case 416: return ESPIPE;
         default:  return EINVAL;
         }
     else if (status >= 300)
@@ -2104,11 +2105,17 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
             got += to_copy;
             fp->last_read_buffer += to_copy;
 
-            if ((fp->buffer.l < fp->part_size) && (fp->last_read_buffer == fp->buffer.l)) {
+            if (((fp->buffer.l < fp->part_size) || (fp->file_size >= 0 && fp->last_read >= fp->file_size))
+                && (fp->last_read_buffer == fp->buffer.l)) {
                 fp->keep_going = 0;
             }
         } else {
             int ret;
+
+            if (fp->file_size >= 0 && fp->last_read >= fp->file_size) {
+                fp->keep_going = 0;
+                break;
+            }
 
             ret = get_part(fp, NULL);
 
@@ -2119,6 +2126,11 @@ static ssize_t s3_read(hFILE *fpv, void *bufferv, size_t nbytes) {
                 if (cret != CURLE_OK) {
                     errno = easy_errno(fp->curl, cret);
                     ret = -1;
+                } else if (response_code == 416) {
+                    // Range request at or beyond EOF indicates end-of-file
+                    fp->keep_going = 0;
+                    fp->buffer.l = 0;
+                    break;
                 } else if (response_code > 300) {
                     errno = http_status_errno(response_code);
                     ret = -1;
