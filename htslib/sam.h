@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2023, 2025 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2023, 2025-26 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -258,6 +258,9 @@ typedef struct bam1_t {
     uint32_t m_data;
     uint32_t mempolicy:2, :30 /* Reserved */;
 } bam1_t;
+
+//! @abstract Longest QNAME permitted by BAM
+#define BAM_MAX_QNAME_LEN 254
 
 /*! @function
  @abstract  Get whether the query is on the reverse strand
@@ -828,6 +831,15 @@ char *stringify_argv(int argc, char *argv[]);
  */
 HTSLIB_EXPORT
 void sam_hdr_incr_ref(sam_hdr_t *h);
+
+/// Remove the tag from all lines identified by type.
+/*!
+ * @param type      Type of the line to which the tag belongs. Eg. "SQ"
+ * @param tag_id    The name of the targeted tag. Eg. "UR"
+ * @return          the number of tags removed (can be 0); -1 on error
+ */
+HTSLIB_EXPORT
+int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id);
 
 /*
  * Macros for changing the \@HD line. They eliminate the need to use NULL method arguments.
@@ -1503,7 +1515,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         } else goto bad_aux;
     } else if (type == 'A') {
         r |= kputsn_("A:", 2, ks) < 0;
-        r |= kputc_(*s, ks) < 0;
+        r |= kputc(*s, ks) < 0;
         ++s;
     } else if (type == 'f') {
         if (end - s >= 4) {
@@ -2066,7 +2078,7 @@ typedef struct bam_mplp_s *bam_mplp_t;
      * @param ins     the kstring where the insertion sequence will be written
      * @param del_len location for deletion length
      * @return the number of insertion string on success, with string length
-     *         being accessable via ins->l; -1 on failure.
+     *         being accessible via ins->l; -1 on failure.
      *
      * Fills out the kstring with the padded insertion sequence for the current
      * location in 'p'.  If this is not an insertion site, the string is blank.
@@ -2167,7 +2179,7 @@ described in "Improving SNP discovery by base alignment quality", Heng Li,
 Bioinformatics, Volume 27, Issue 8 (https://doi.org/10.1093/bioinformatics/btr076).
 
 The @param flag value can be generated using the htsRealnFlags enum, but for
-backwards compatibilty reasons is retained as an "int".  An example usage
+backwards compatibility reasons is retained as an "int".  An example usage
 of the enum could be this, equivalent to flag 19:
 
     sam_prob_realn(b, ref, len, BAQ_APPLY | BAQ_EXTEND | BAQ_PACBIOCCS);
@@ -2342,7 +2354,7 @@ int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
  * @return The number of modifications found on success,
  *         -1 on failure.
  *
- * Note if called multipled times, qpos must be higher than the previous call.
+ * Note if called multiple times, qpos must be higher than the previous call.
  * Hence this is suitable for use from a pileup iterator.  If more random
  * access is required, bam_parse_basemod must be called each time to reset
  * the state although this has an efficiency cost.
@@ -2433,7 +2445,7 @@ int sam_hdr_set(samFile *fp, sam_hdr_t *h, int dup);
  * @param fp         File pointer from which header to be retrieved
  * @return pointer to header or NULL
  * For a valid file pointer, the returned header could be NULL when the header
- * is not read yet. sam_hdr_incr_ref has to be invoked where ever apropriate.
+ * is not read yet. sam_hdr_incr_ref has to be invoked wherever appropriate.
  */
 HTSLIB_EXPORT
 sam_hdr_t* sam_hdr_get(samFile* fp);

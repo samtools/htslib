@@ -62,6 +62,9 @@ typedef struct hts_expr_val_t {
  * [X0] aux tag will be the value of X0 (string or numeric) if set, or
  * a false nul-string (not the same as an empty one) when not set.
  */
+
+// FIXME: add IS_VALID in here too?  Maybe with a separate int64_t version
+// so we can have valid-as-double and valid-as-int64 alternatives
 static inline int hts_expr_val_exists(hts_expr_val_t *v) {
     return v && !(v->is_str == 1 && v->s.s == NULL)
              && !(v->is_str == 0 && isnan(v->d));

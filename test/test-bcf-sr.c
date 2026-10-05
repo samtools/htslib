@@ -124,6 +124,15 @@ void write_vcf_bcf_format(bcf_srs_t *sr, bcf_hdr_t *hdr, vcfFile *vcf_out,
     }
 }
 
+// Copied from bcftools version.c
+static int parse_overlap_option(const char *arg)
+{
+    if ( strcasecmp(arg, "pos") == 0 || strcmp(arg, "0") == 0 ) return 0;
+    else if ( strcasecmp(arg, "record") == 0 || strcmp(arg, "1") == 0 ) return 1;
+    else if ( strcasecmp(arg, "variant") == 0 || strcmp(arg, "2") == 0 ) return 2;
+    else return -1;
+}
+
 int main(int argc, char *argv[])
 {
     static struct option loptions[] =
@@ -135,11 +144,14 @@ int main(int argc, char *argv[])
         {"targets",required_argument,NULL,'t'},
         {"no-index",no_argument,NULL,1000},
         {"args",no_argument,NULL,1001},
+        {"regions-overlap",required_argument,NULL,1002},
+        {"targets-overlap",required_argument,NULL,1003},
         {"usefptr",no_argument,NULL,'u'},
         {NULL,0,NULL,0}
     };
 
     int c, pair = 0, use_index = 1, use_fofn = 1, usefptr = 0;
+    int regions_overlap = 1, targets_overlap = 0;
     enum htsExactFormat out_fmt = text_format; // for original pos + alleles
     const char *out_fn = NULL, *regions = NULL, *targets = NULL;
     htsFile **htsfp = NULL;
@@ -183,6 +195,16 @@ int main(int argc, char *argv[])
             case 1001:
                 use_fofn = 0;
                 break;
+            case 1002:
+                regions_overlap = parse_overlap_option(optarg);
+                if (regions_overlap < 0)
+                    error("Bad overlap option \"%s\"\n", optarg);
+                break;
+            case 1003:
+                targets_overlap = parse_overlap_option(optarg);
+                if (targets_overlap < 0)
+                    error("Bad overlap option \"%s\"\n", optarg);
+                break;
             case 'u':
                 usefptr = 1;    //use htsfile interface instead of fname i/f
                 break;
@@ -207,6 +229,8 @@ int main(int argc, char *argv[])
     bcf_srs_t *sr = bcf_sr_init();
     if (!sr) error("bcf_sr_init() failed\n");
     bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, pair);
+    bcf_sr_set_opt(sr, BCF_SR_REGIONS_OVERLAP, regions_overlap);
+    bcf_sr_set_opt(sr, BCF_SR_TARGETS_OVERLAP, targets_overlap);
     if (use_index) {
         bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
     } else {

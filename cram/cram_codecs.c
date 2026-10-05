@@ -601,10 +601,10 @@ cram_codec *cram_external_encode_init(cram_stats *st,
  */
 int cram_beta_decode_long(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int64_t *out_i = (int64_t *)out;
-    int i, n = *out_size;
+    uint32_t i, n = *out_size;
 
     if (c->u.beta.nbits) {
-        if (cram_not_enough_bits(in, c->u.beta.nbits * n))
+        if (cram_not_enough_bits(in, c->u.beta.nbits * (uint64_t)n))
             return -1;
 
         for (i = 0; i < n; i++)
@@ -619,10 +619,10 @@ int cram_beta_decode_long(cram_slice *slice, cram_codec *c, cram_block *in, char
 
 int cram_beta_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int32_t *out_i = (int32_t *)out;
-    int i, n = *out_size;
+    uint32_t i, n = *out_size;
 
     if (c->u.beta.nbits) {
-        if (cram_not_enough_bits(in, c->u.beta.nbits * n))
+        if (cram_not_enough_bits(in, c->u.beta.nbits * (uint64_t)n))
             return -1;
 
         for (i = 0; i < n; i++)
@@ -636,11 +636,11 @@ int cram_beta_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char 
 }
 
 int cram_beta_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
-    int i, n = *out_size;
+    uint32_t i, n = *out_size;
 
 
     if (c->u.beta.nbits) {
-        if (cram_not_enough_bits(in, c->u.beta.nbits * n))
+        if (cram_not_enough_bits(in, c->u.beta.nbits * (uint64_t)n))
             return -1;
 
         if (out)
@@ -1245,16 +1245,11 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         hts_log_error("Invalid number of symbols in huffman stream");
         return NULL;
     }
-    if (ncodes >= SIZE_MAX / sizeof(*codes)) {
-        errno = ENOMEM;
+    if (ncodes >= 1000000) {
+        errno = ERANGE;
         return NULL;
     }
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-    if (ncodes > FUZZ_ALLOC_LIMIT / sizeof(*codes)) {
-        errno = ENOMEM;
-        return NULL;
-    }
-#endif
+
     h = calloc(1, sizeof(*h));
     if (!h)
         return NULL;

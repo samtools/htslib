@@ -162,14 +162,13 @@ cram_codec *cram_encoder_init(enum cram_encoding codec, cram_stats *st,
 #define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (--b->bit<0), b->bit&=7)
 
 /*
- * Check that enough bits are left in a block to satisy a bit-based decoder.
+ * Check that enough bits are left in a block to satisfy a bit-based decoder.
  * Return  0 if there are enough
  *         1 if not.
  */
 
-static inline int cram_not_enough_bits(cram_block *blk, int nbits) {
-    if (nbits < 0 ||
-        (blk->byte >= blk->uncomp_size && nbits > 0) ||
+static inline int cram_not_enough_bits(cram_block *blk, uint64_t nbits) {
+    if ((blk->byte >= blk->uncomp_size && nbits > 0) ||
         (blk->uncomp_size - blk->byte <= INT32_MAX / 8 + 1 &&
          (blk->uncomp_size - blk->byte) * 8 + blk->bit - 7 < nbits)) {
         return 1;

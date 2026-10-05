@@ -77,7 +77,7 @@ int readdata(void *data, bam1_t *b)
 {
     plpconf *conf = (plpconf*)data;
     if (!conf || !conf->infile) {
-        return -2;  //cant read data
+        return -2;  //can't read data
     }
 
     //read alignment and send
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
         printf("%d\t%d\t", tid+1, refpos+1);
 
         for (j = 0; j < n; ++j) {
-            //doesnt detect succeeding insertion and deletion together here, only insertion is identified
+            //doesn't detect succeeding insertion and deletion together here, only insertion is identified
             //deletion is detected in plp->is_del as and when pos reaches the position
             //if detection ahead is required, use bam_plp_insertion here which gives deletion length along with insertion
             if (plp[j].is_del || plp[j].is_refskip) {

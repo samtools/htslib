@@ -1,5 +1,6 @@
-[![Build Status](https://api.cirrus-ci.com/github/samtools/htslib.svg?branch=develop)](https://cirrus-ci.com/github/samtools/htslib)
-[![Build status](https://github.com/samtools/htslib/actions/workflows/windows-build.yml/badge.svg)](https://github.com/samtools/htslib/actions/workflows/windows-build.yml?query=branch%3Adevelop)
+[![Linux Build Status](https://github.com/samtools/htslib/actions/workflows/linux-build.yml/badge.svg)](https://github.com/samtools/htslib/actions/workflows/linux-build.yml)
+[![macOS Build Status](https://github.com/samtools/htslib/actions/workflows/macos-build.yml/badge.svg)](https://github.com/samtools/htslib/actions/workflows/macos-build.yml)
+[![Windows Build Status](https://github.com/samtools/htslib/actions/workflows/windows-build.yml/badge.svg)](https://github.com/samtools/htslib/actions/workflows/windows-build.yml?query=branch%3Adevelop)
 [![Github All Releases](https://img.shields.io/github/downloads/samtools/htslib/total.svg)](https://github.com/samtools/htslib)
 
 HTSlib is an implementation of a unified C library for accessing common file

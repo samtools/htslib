@@ -169,7 +169,7 @@ bgzidx1_t;
 
 struct bgzidx_t
 {
-    int noffs, moffs;       // the size of the index, n:used, m:allocated
+    size_t noffs, moffs;    // the size of the index, n:used, m:allocated
     bgzidx1_t *offs;        // offsets
     uint64_t ublock_addr;   // offset of the current block (uncompressed data)
 };
@@ -291,8 +291,24 @@ static int bgzf_idx_flush(BGZF *fp,
 }
 
 void bgzf_index_destroy(BGZF *fp);
-int bgzf_index_add_block(BGZF *fp);
+static int bgzf_index_add_block(BGZF *fp);
 static int mt_destroy(mtaux_t *mt);
+
+static int bgzf_index_grow(bgzidx_t *idx)
+{
+    if (idx->noffs < idx->moffs)
+        return 0;
+
+    size_t new_moffs = idx->moffs > 0 ? idx->moffs * 2 : 4;
+    bgzidx1_t *new_offs = hts_realloc_p(idx->offs, sizeof(*new_offs),
+                                        new_moffs);
+    if (new_offs == NULL)
+        return -1;
+
+    idx->offs  = new_offs;
+    idx->moffs = new_moffs;
+    return 0;
+}
 
 static inline void packInt16(uint8_t *buffer, uint16_t value)
 {
@@ -1071,7 +1087,11 @@ int bgzf_read_block(BGZF *fp)
 
         if ( j->uncomp_len && j->fp->idx_build_otf )
         {
-            bgzf_index_add_block(j->fp);
+            if (bgzf_index_add_block(j->fp) < 1) {
+                fp->errcode |= BGZF_ERR_IO; // Strictly this should be out of memory
+                hts_tpool_delete_result(r, 0);
+                return -1;
+            }
             j->fp->idx->ublock_addr += j->uncomp_len;
         }
 
@@ -1232,7 +1252,10 @@ int bgzf_read_block(BGZF *fp)
     fp->block_length = count;
     if ( fp->idx_build_otf )
     {
-        bgzf_index_add_block(fp);
+        if (bgzf_index_add_block(fp) < 0) {
+            fp->errcode |= BGZF_ERR_IO; // Strictly this should be out of memory
+            return -1;
+        }
         fp->idx->ublock_addr += count;
     }
     cache_block(fp, size);
@@ -1413,17 +1436,12 @@ static void *bgzf_mt_writer(void *vp) {
         assert(j);
 
         if (fp->idx_build_otf) {
+            if (bgzf_index_grow(fp->idx) < 0)
+                goto err;
+
+            fp->idx->offs[ fp->idx->noffs ].uaddr = fp->idx->offs[ fp->idx->noffs-1 ].uaddr + j->uncomp_len;
+            fp->idx->offs[ fp->idx->noffs ].caddr = fp->idx->offs[ fp->idx->noffs-1 ].caddr + j->comp_len;
             fp->idx->noffs++;
-            if ( fp->idx->noffs > fp->idx->moffs )
-            {
-                fp->idx->moffs = fp->idx->noffs;
-                kroundup32(fp->idx->moffs);
-                fp->idx->offs = hts_realloc_p(fp->idx->offs, sizeof(bgzidx1_t),
-                                              fp->idx->moffs);
-                if ( !fp->idx->offs ) goto err;
-            }
-            fp->idx->offs[ fp->idx->noffs-1 ].uaddr = fp->idx->offs[ fp->idx->noffs-2 ].uaddr + j->uncomp_len;
-            fp->idx->offs[ fp->idx->noffs-1 ].caddr = fp->idx->offs[ fp->idx->noffs-2 ].caddr + j->comp_len;
         }
 
         // Flush any cached hts_idx_push calls
@@ -1977,7 +1995,8 @@ int bgzf_flush(BGZF *fp)
         int block_length;
         if ( fp->idx_build_otf )
         {
-            bgzf_index_add_block(fp);
+            if (bgzf_index_add_block(fp) < 0)
+                return -1;
             fp->idx->ublock_addr += fp->block_offset;
         }
         block_length = deflate_block(fp, fp->block_offset);
@@ -2371,19 +2390,13 @@ int bgzf_index_build_init(BGZF *fp)
     return 0;
 }
 
-int bgzf_index_add_block(BGZF *fp)
+static int bgzf_index_add_block(BGZF *fp)
 {
+    if (bgzf_index_grow(fp->idx) < 0)
+        return -1;
+    fp->idx->offs[ fp->idx->noffs ].uaddr = fp->idx->ublock_addr;
+    fp->idx->offs[ fp->idx->noffs ].caddr = fp->block_address;
     fp->idx->noffs++;
-    if ( fp->idx->noffs > fp->idx->moffs )
-    {
-        fp->idx->moffs = fp->idx->noffs;
-        kroundup32(fp->idx->moffs);
-        fp->idx->offs = hts_realloc_p(fp->idx->offs, sizeof(bgzidx1_t),
-                                      fp->idx->moffs);
-        if ( !fp->idx->offs ) return -1;
-    }
-    fp->idx->offs[ fp->idx->noffs-1 ].uaddr = fp->idx->ublock_addr;
-    fp->idx->offs[ fp->idx->noffs-1 ].caddr = fp->block_address;
     return 0;
 }
 
@@ -2409,7 +2422,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     // for reading. The terminating record is not present when opened for writing.
     // This is not a bug.
 
-    int i;
+    size_t i;
 
     if (!fp->idx) {
         hts_log_error("Called for BGZF handle with no index");
@@ -2505,7 +2518,7 @@ int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     if (fp->idx->offs == NULL) goto fail;
     fp->idx->offs[0].caddr = fp->idx->offs[0].uaddr = 0;
 
-    int i;
+    size_t i;
     for (i=1; i<fp->idx->noffs; i++)
     {
         if (hread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
@@ -2600,15 +2613,15 @@ int bgzf_useek(BGZF *fp, off_t uoffset, int where)
     }
 
     // binary search
-    int ilo = 0, ihi = fp->idx->noffs - 1;
+    size_t ilo = 0, ihi = fp->idx->noffs - 1;
     while ( ilo<=ihi )
     {
-        int i = (ilo+ihi)*0.5;
+        size_t i = ilo + (ihi - ilo) / 2;
         if ( uoffset < fp->idx->offs[i].uaddr ) ihi = i - 1;
         else if ( uoffset >= fp->idx->offs[i].uaddr ) ilo = i + 1;
         else break;
     }
-    int i = ilo-1;
+    size_t i = ilo > 0 ? ilo-1 : 0;
     off_t offset = 0;
     if (bgzf_seek_common(fp, fp->idx->offs[i].caddr, 0) < 0)
         return -1;

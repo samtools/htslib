@@ -563,7 +563,7 @@ void cram_block_set_offset(cram_block *b, size_t offset) { BLOCK_SIZE(b) = offse
  * If comp is CRAM_COMP_UNKNOWN, we attempt to auto-detect the compression
  * format, but this doesn't work for all methods.
  *
- * Retuns the detected or specified comp method, and fills out *cm
+ * Returns the detected or specified comp method, and fills out *cm
  * if non-NULL.
  */
 cram_method_details *cram_expand_method(uint8_t *data, int32_t size,

@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
     fileidx = malloc(sizeof(char) * c);
     outname = malloc(sizeof(char) * c);
     if (!fileidx || !outname) {
-        printf("Couldnt allocate memory\n");
+        printf("Couldn't allocate memory\n");
         goto end;
     }
     //initialize bam storage

@@ -840,7 +840,7 @@ static int init_multi_data(CURLM *multi, Multi_data *mdata) {
     mdata->multi     = multi;
     mdata->pw        = pw_init(0);
     if (mdata->pw == NULL) {
-        perror("Initalizing poller");
+        perror("Initializing poller");
         return -1;
     }
     mdata->downloads = NULL;

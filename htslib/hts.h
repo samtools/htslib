@@ -1,7 +1,7 @@
 /// @file htslib/hts.h
 /// Format-neutral I/O, indexing, and iterator API functions.
 /*
-    Copyright (C) 2012-2022 Genome Research Ltd.
+    Copyright (C) 2012-2022, 2026 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
     Portions copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3@live.co.uk>
 
@@ -322,6 +322,7 @@ enum hts_fmt_option {
     CRAM_OPT_USE_FQZ,
     CRAM_OPT_USE_ARITH,
     CRAM_OPT_POS_DELTA,  // force delta for AP, even on non-pos sorted data
+    CRAM_OPT_RM_UR,  // remove any UR tags
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
@@ -500,7 +501,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 102390
+#define HTS_VERSION 102490
 
 /*! @abstract Introspection on the features enabled in htslib
  *
@@ -1405,23 +1406,40 @@ void hts_reglist_free(hts_reglist_t *reglist, int count);
     int hts_file_type(const char *fname);
 
 
-/***************************
- * Revised MAQ error model *
- ***************************/
+/***************************************************
+ * Revised MAQ error model                         *
+ * See https://genome.cshlp.org/content/18/11/1851 *
+ ***************************************************/
 
 struct errmod_t;
 typedef struct errmod_t errmod_t;
 
+/**
+   Initialise error model structures
+   @param depcorr  correction factor for dependency of errors
+   @return errmod_t structure on success; NULL on failure
+ */
+
 HTSLIB_EXPORT
 errmod_t *errmod_init(double depcorr);
+
+/**
+   Free error model structures
+   @param em       error model
+*/
+
 HTSLIB_EXPORT
 void errmod_destroy(errmod_t *em);
 
-/*
-    n: number of bases
-    m: maximum base
-    bases[i]: qual:6, strand:1, base:4
-    q[i*m+j]: phred-scaled likelihood of (i,j)
+/**
+   Calculate error model
+
+   @param em       error model to fit to data
+   @param n        number of bases
+   @param m        number of alleles across all samples
+   @param bases    qual:6, strand:1, base:4
+   @param q        phred-scaled likelihood of (i,j) is stored in q[i*m+j]
+   @return 0 on success; -1 on error
  */
 HTSLIB_EXPORT
 int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q);

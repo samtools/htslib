@@ -994,7 +994,9 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->num_blocks      = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     hdr->num_content_ids = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     if (hdr->num_content_ids < 1 ||
-        hdr->num_content_ids >= 10000) {
+        hdr->num_content_ids >= 10000 ||
+        hdr->num_blocks < 1 ||
+        hdr->num_blocks >= 10000) {
         // Slice must have at least one data block, and there is no need
         // for more than 2 per possible aux-tag plus ancillary.
         free(hdr);
@@ -1231,7 +1233,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     const char *refp = s->ref + ref_pos - s->ref_start + 1;
                     const int frag_len = pos - seq_pos;
                     if (decode_md || decode_nm) {
-                        char *N = memchr(refp, 'N', frag_len);
+                        const char *N = memchr(refp, 'N', frag_len);
                         if (N) {
                             int i;
                             for (i = 0; i < frag_len; i++) {
@@ -2248,7 +2250,7 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
         }
 
         if (cr->tlen == INT64_MIN)
-            cr->tlen = 0; // Just incase
+            cr->tlen = 0; // Just in case
     }
 
     for (rec = 0; rec < s->hdr->num_records; rec++) {
@@ -2387,7 +2389,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     // factor (*=1.5) is never applied.
     {
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-        int qsize=0, nsize=0, q_id=0;
+        int qsize=0, nsize=0;
 #else
         int qsize, nsize, q_id;
         cram_decode_estimate_sizes(c->comp_hdr, s, &qsize, &nsize, &q_id);
@@ -2740,6 +2742,10 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                                 ->decode(s, c->comp_hdr->codecs[DS_RN], blk,
                                          (char *)s->name_blk, &out_sz2);
                 if (r) goto block_err;
+                if (out_sz2 > BAM_MAX_QNAME_LEN) {
+                    hts_log_error("Read name too long");
+                    goto block_err;
+                }
                 cr->name_len = out_sz2;
             }
         }
@@ -2784,6 +2790,10 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                                              blk, (char *)s->name_blk,
                                              &out_sz2);
                     if (r) goto block_err;
+                    if (out_sz2 > BAM_MAX_QNAME_LEN) {
+                        hts_log_error("Read name too long");
+                        goto block_err;
+                    }
                     cr->name_len = out_sz2;
                 }
             }
@@ -3115,7 +3125,7 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
 int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
                 cram_record *cr, int rec, bam_seq_t *bam) {
     int ret, rg_len;
-    char name_a[1024], *name;
+    char name_a[BAM_MAX_QNAME_LEN + 64], *name;
     int name_len;
     char *aux;
     char *seq, *qual;
@@ -3131,12 +3141,22 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
             if (cr->mate_line >= 0 && cr->mate_line < s->max_rec &&
                 s->crecs[cr->mate_line].name_len > 0) {
                 // Copy our mate if non-zero.
+                if (s->crecs[cr->mate_line].name_len > BAM_MAX_QNAME_LEN) {
+                    // Over-long mate names should already have been rejected
+                    // but just in case...
+                    hts_log_error("Mate name too long");
+                    return -1;
+                }
                 memcpy(name_a, BLOCK_DATA(s->name_blk)+s->crecs[cr->mate_line].name,
                        s->crecs[cr->mate_line].name_len);
                 name = name_a + s->crecs[cr->mate_line].name_len;
             } else {
                 // Otherwise generate a name based on prefix
                 name_len = strlen(fd->prefix);
+                // Deal with over-long names by truncating.
+                // 21 accounts for the ':' and longest possible uint64_t.
+                if (name_len > BAM_MAX_QNAME_LEN - 21)
+                    name_len = BAM_MAX_QNAME_LEN - 21;
                 memcpy(name, fd->prefix, name_len);
                 name += name_len;
                 *name++ = ':';

@@ -102,7 +102,7 @@ static inline void * hts_malloc(size_t size) {
  *  Allocate memory with checks for overflow, product of sizes
  *
  *  @param a First term of product
- *  @param b Secord term of product
+ *  @param b Second term of product
  *
  *  @return Pointer to the allocated memory, or NULL on error
  *
@@ -127,7 +127,7 @@ static inline void * hts_malloc_p(size_t a, size_t b) {
  *
  *  @param sz Size of item
  *  @param a  First term of sum
- *  @param b  Secord term of sum
+ *  @param b  Second term of sum
  *
  *  @return Pointer to the allocated memory, or NULL on error
  *
@@ -276,7 +276,7 @@ static inline void * hts_realloc(void *orig, size_t size) {
  *
  *  @param sz Size of item
  *  @param a  First term of sum
- *  @param b  Secord term of sum
+ *  @param b  Second term of sum
  *
  *  @return Pointer to the allocated memory, or NULL on error
  *

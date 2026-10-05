@@ -548,7 +548,7 @@ int bam_set1(bam1_t *bam,
     // documentation for the bam1_t struct.
     size_t qname_nuls = 4 - l_qname % 4;
 
-    // the aligment length, needed for bam_reg2bin(), is calculated as in bam_endpos().
+    // the alignment length, needed for bam_reg2bin(), is calculated as in bam_endpos().
     // can't use bam_endpos() directly as some fields not yet set up.
     hts_pos_t rlen = 0, qlen = 0;
     if (!(flag & BAM_FUNMAP)) {
@@ -559,7 +559,15 @@ int bam_set1(bam1_t *bam,
     }
 
     // validate parameters
-    if (l_qname > 254) {
+    if (l_seq > INT32_MAX) {
+        // Unfortunately b->core.l_qseq is int32, so signed.
+        // Note an "(int)l_seq < 0" check is already covered by >INT32_MAX
+        hts_log_error("Sequence length too long");
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (l_qname > BAM_MAX_QNAME_LEN) {
         hts_log_error("Query name too long");
         errno = EINVAL;
         return -1;
@@ -679,7 +687,9 @@ hts_pos_t bam_endpos(const bam1_t *b)
     return b->core.pos + rlen;
 }
 
-// return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+// Return 0 if CIGAR is untouched,
+//        1 if CIGAR is updated with CG,
+//       <0 on error
 int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning)
 {
     bam1_core_t *c = &b->core;
@@ -734,6 +744,17 @@ int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning)
         b->core.bin = hts_reg2bin(b->core.pos, bam_endpos(b), 14, 5);
     if (give_warning)
         hts_log_warning("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
+
+    // Check SEQ and CIGAR consistency.  (Do this after parsing the CG tag)
+    if (c->l_qseq && c->n_cigar) {
+        hts_pos_t ql = bam_cigar2qlen(c->n_cigar,
+                                      (uint32_t*)(b->data + c->l_qname));
+        if (ql != c->l_qseq) {
+            hts_log_error("CIGAR and query sequence are of different length");
+            return -1;
+        }
+    }
+
     return 1;
 }
 
@@ -842,7 +863,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read_small(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-    if (bam_tag2cigar(b, 0, 0) < 0)
+
+    int t2c = bam_tag2cigar(b, 0, 0);
+    if (t2c < 0)
         return -4;
 
     // TODO: consider making this conditional
@@ -852,7 +875,8 @@ int bam_read1(BGZF *fp, bam1_t *b)
         if ((b->core.flag & BAM_FUNMAP) || rlen == 0) rlen = 1;
         b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
         // Sanity check for broken CIGAR alignments
-        if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
+        if (t2c == 0 && c->l_qseq > 0 &&
+            !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
             hts_log_error("CIGAR and query sequence lengths differ for %s",
                     bam_get_qname(b));
             return -4;
@@ -867,7 +891,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
-    if (c->l_qname - c->l_extranul > 255) {
+    if (c->l_qname - c->l_extranul > BAM_MAX_QNAME_LEN + 1) { // +1 for NUL
         hts_log_error("QNAME \"%s\" is longer than 254 characters", bam_get_qname(b));
         errno = EOVERFLOW;
         return -1;
@@ -1031,6 +1055,7 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
 err:
     bam_destroy1(b);
     hts_idx_destroy(idx);
+    sam_hdr_destroy(h);
     return NULL;
 }
 
@@ -1398,6 +1423,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
                 return -1;
             memcpy(res->s.s, bam_get_qual(b), b->core.l_qseq);
             res->s.l = b->core.l_qseq;
+            res->s.s[res->s.l] = 0;
             res->is_str = 1;
             return 0;
         }
@@ -2352,7 +2378,7 @@ static int sam_parse_B_vals_r(char type, uint32_t nalloc, char *in,
     // An example string is "XX:B:C,-".  The lack of a number means min=0,
     // but it overflowed due to "-" and so we repeat ad-infinitum.
     //
-    // Loop detection is the safest solution incase there are other
+    // Loop detection is the safest solution in case there are other
     // strange corner cases with malformed inputs.
     if (++(*ctr) > 2) {
         hts_log_error("Malformed data in B:%c array", type);
@@ -2755,6 +2781,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     _parse_err(HTS_POS_MAX - cigreflen <= c->pos,
                "read ends beyond highest supported position");
     c->bin = hts_reg2bin(c->pos, c->pos + cigreflen, 14, 5);
+
     // mate chr
     q = _read_token(p);
     if (strcmp(q, "=") == 0) {
@@ -2766,6 +2793,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(c->mtid < -1, "failed to parse header");
         _parse_warn(c->mtid < 0, "unrecognized mate reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     }
+
     // mpos
     c->mpos = hts_str2uint(p, &p, 62, &overflow) - 1;
     if (*p++ != '\t') goto err_ret;
@@ -2773,17 +2801,17 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_warn(1, "mapped mate cannot have zero coordinate; treated as unmapped");
         c->mtid = -1;
     }
+
     // tlen
     c->isize = hts_str2int(p, &p, 63, &overflow);
     if (*p++ != '\t') goto err_ret;
     _parse_err(overflow, "number outside allowed range");
+
     // seq
     q = _read_token(p);
     if (strcmp(q, "*")) {
         _parse_err(p - q - 1 > INT32_MAX, "read sequence is too long");
         c->l_qseq = p - q - 1;
-        hts_pos_t ql = bam_cigar2qlen(c->n_cigar, (uint32_t*)(b->data + c->l_qname));
-        _parse_err(c->n_cigar && ql != c->l_qseq, "CIGAR and query sequence are of different length");
         i = (c->l_qseq + 1) >> 1;
         _get_mem(uint8_t, &t, b, i);
 
@@ -2793,6 +2821,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         for (; i < c->l_qseq; ++i)
             t[i>>1] = seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
     } else c->l_qseq = 0;
+
     // qual
     _get_mem(uint8_t, &t, b, c->l_qseq);
     if (p[0] == '*' && (p[1] == '\t' || p[1] == '\0')) {
@@ -2812,8 +2841,19 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (aux_parse(p, s->s + s->l, b, 0, NULL) < 0)
         goto err_ret;
 
-    if (bam_tag2cigar(b, 1, 1) < 0)
+    int t2c = bam_tag2cigar(b, 1, 1);
+    if (t2c == 0) {
+        // Check SEQ and CIGAR consistency.  (Do this after parsing the CG tag)
+        if (c->l_qseq) {
+            hts_pos_t ql = bam_cigar2qlen(c->n_cigar,
+                                          (uint32_t*)(b->data + c->l_qname));
+            _parse_err(c->n_cigar && ql != c->l_qseq,
+                       "CIGAR and query sequence are of different length");
+        }
+    } else if (t2c < 0) {
         return -2;
+    }
+
     return 0;
 
 #undef _parse_warn
@@ -5194,7 +5234,8 @@ char *sam_open_mode_opts(const char *fn,
 {
     char *mode_opts = malloc((format ? strlen(format) : 1) +
                              (mode   ? strlen(mode)   : 1) + 12);
-    char *opts, *cp;
+    char *cp;
+    const char *opts;
     int format_len;
 
     if (!mode_opts)
@@ -5328,8 +5369,8 @@ char *bam_flag2str(int flag)
  *******************/
 
 typedef struct {
-    int k, y;
-    hts_pos_t x, end;
+    int k;
+    hts_pos_t x, y, end;
 } cstate_t;
 
 static cstate_t g_cstate_null = { -1, 0, 0, 0 };
@@ -5383,102 +5424,145 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
  *** CIGAR resolver ***
  **********************/
 
+// Lookup variables, so we can do "if (MEX & (1<<op))" instead of
+// "if (op==BAM_CMATCH || op==BAM_CEQUAL || op==BAM_CDIFF)".
+static const int MEX = (1<<BAM_CMATCH) | (1<<BAM_CEQUAL) | (1<<BAM_CDIFF);
+static const int MEXDN = MEX | (1<<BAM_CDEL) | (1<<BAM_CREF_SKIP);
+static const int IS = (1<<BAM_CINS) | (1<<BAM_CSOFT_CLIP);
+
 /* s->k: the index of the CIGAR operator that has just been processed.
    s->x: the reference coordinate of the start of s->k
    s->y: the query coordinate of the start of s->k
+
+   Returns 1 on success
+           0 on error
  */
 static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 {
 #define _cop(c) ((c)&BAM_CIGAR_MASK)
 #define _cln(c) ((c)>>BAM_CIGAR_SHIFT)
 
+    hts_pos_t indel;
     bam1_t *b = p->b;
     bam1_core_t *c = &b->core;
     uint32_t *cigar = bam_get_cigar(b);
     int k;
+
     // determine the current CIGAR operation
-    //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
+    //fprintf(stderr, "%s\tpos=%ld\tend=%ld\t(%d,%ld,%ld)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
         p->qpos = 0;
-        if (c->n_cigar == 1) { // just one operation, save a loop
-          if (_cop(cigar[0]) == BAM_CMATCH || _cop(cigar[0]) == BAM_CEQUAL || _cop(cigar[0]) == BAM_CDIFF) s->k = 0, s->x = c->pos, s->y = 0;
-        } else { // find the first match or deletion
+        if (c->n_cigar == 1 && (MEX & (1<<_cop(cigar[0])))) {
+            // just one M/=/X operation, save a loop
+            s->k = 0, s->x = c->pos, s->y = 0;
+        } else { // find the first reference base (match, mismatch or deletion)
             for (k = 0, s->x = c->pos, s->y = 0; k < c->n_cigar; ++k) {
-                int op = _cop(cigar[k]);
-                int l = _cln(cigar[k]);
-                if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP ||
-                    op == BAM_CEQUAL || op == BAM_CDIFF) break;
-                else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) s->y += l;
+                const int op = _cop(cigar[k]);
+                if (bam_cigar_type(op) & 2)      // consumes ref
+                    break;
+                else if (bam_cigar_type(op) & 1) // consumes query
+                    s->y += _cln(cigar[k]);
             }
             assert(k < c->n_cigar);
             s->k = k;
         }
+
     } else { // the read has been processed before
-        int op, l = _cln(cigar[s->k]);
+        const int l  = _cln(cigar[s->k]);
         if (pos - s->x >= l) { // jump to the next operation
-            assert(s->k < c->n_cigar); // otherwise a bug: this function should not be called in this case
-            op = _cop(cigar[s->k+1]);
-            if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP || op == BAM_CEQUAL || op == BAM_CDIFF) { // jump to the next without a loop
-              if (_cop(cigar[s->k]) == BAM_CMATCH|| _cop(cigar[s->k]) == BAM_CEQUAL || _cop(cigar[s->k]) == BAM_CDIFF) s->y += l;
-                s->x += l;
+            // otherwise a bug: this function should not be called in this case
+            assert(s->k+1 < c->n_cigar);
+
+            // Update cstate_t ref and query positions for the next CIGAR op
+            if (MEX & (1 << _cop(cigar[s->k])))
+                s->y += l;
+            s->x += l;
+
+            if (MEXDN & (1 << _cop(cigar[s->k+1]))) { // next op consumes ref
+                // jump to the next without a loop
                 ++s->k;
             } else { // find the next M/D/N/=/X
-              if (_cop(cigar[s->k]) == BAM_CMATCH|| _cop(cigar[s->k]) == BAM_CEQUAL || _cop(cigar[s->k]) == BAM_CDIFF) s->y += l;
-                s->x += l;
                 for (k = s->k + 1; k < c->n_cigar; ++k) {
-                    op = _cop(cigar[k]), l = _cln(cigar[k]);
-                    if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP || op == BAM_CEQUAL || op == BAM_CDIFF) break;
-                    else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) s->y += l;
+                    const int op = _cop(cigar[k]);
+                    if (MEXDN & (1 << op))
+                        break;
+                    else if (IS & (1<<op))
+                        s->y += _cln(cigar[k]);
                 }
                 s->k = k;
             }
             assert(s->k < c->n_cigar); // otherwise a bug
         } // else, do nothing
     }
-    { // collect pileup information
-        int op, l;
-        op = _cop(cigar[s->k]); l = _cln(cigar[s->k]);
-        p->is_del = p->indel = p->is_refskip = 0;
-        if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) { // peek the next operation
-            int op2 = _cop(cigar[s->k+1]);
-            int l2 = _cln(cigar[s->k+1]);
-            if (op2 == BAM_CDEL && op != BAM_CDEL) {
+
+    // collect pileup information
+    {
+        const int op = _cop(cigar[s->k]);
+        const int l  = _cln(cigar[s->k]);
+        p->is_del = indel = p->is_refskip = 0;
+
+        // peek the next operation
+        if (s->x + l - 1 == pos && s->k + 1 < c->n_cigar) {
+            const int op_next = _cop(cigar[s->k+1]);
+            const int l_next  = _cln(cigar[s->k+1]);
+            if (op_next == BAM_CDEL && op != BAM_CDEL) {
                 // At start of a new deletion, merge e.g. 1D2D to 3D.
-                // Within a deletion (the 2D in 1D2D) we keep p->indel=0
+                // Within a deletion (the 2D in 1D2D) we keep indel=0
                 // and rely on is_del=1 as we would for 3D.
-                p->indel = -(int)l2;
+                indel = -l_next;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CDEL) p->indel -= l2;
-                    else break;
+                    const int op2 = _cop(cigar[k]);
+                    if (op2 == BAM_CDEL)
+                        indel -= _cln(cigar[k]);
+                    else
+                        break;
                 }
-            } else if (op2 == BAM_CINS) {
-                p->indel = l2;
+            } else if (op_next == BAM_CINS) {
+                indel = l_next;
                 for (k = s->k+2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CINS) p->indel += l2;
-                    else if (op2 != BAM_CPAD) break;
+                    const int op2 = _cop(cigar[k]);
+                    if (op2 == BAM_CINS)
+                        indel += _cln(cigar[k]);
+                    else if (op2 != BAM_CPAD)
+                        break;
                 }
-            } else if (op2 == BAM_CPAD && s->k + 2 < c->n_cigar) {
-                int l3 = 0;
+            } else if (op_next == BAM_CPAD && s->k + 2 < c->n_cigar) {
                 for (k = s->k + 2; k < c->n_cigar; ++k) {
-                    op2 = _cop(cigar[k]); l2 = _cln(cigar[k]);
-                    if (op2 == BAM_CINS) l3 += l2;
-                    else if (op2 == BAM_CDEL || op2 == BAM_CMATCH || op2 == BAM_CREF_SKIP || op2 == BAM_CEQUAL || op2 == BAM_CDIFF) break;
+                    const int op2 = _cop(cigar[k]);
+                    if (op2 == BAM_CINS)
+                        indel += _cln(cigar[k]);
+                    else if (bam_cigar_type(op2) & 2) // consumes ref
+                        break;
                 }
-                if (l3 > 0) p->indel = l3;
             }
         }
-        if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
+        if (MEX & (1<<op)) {
+            // Could overflow if pos - s->x pushes s->y from +ve to -ve.
+            // For this to happen we need over 2billion bases in our SEQ.
+            // We rely on b->core.l_qseq having been sanity checked first.
             p->qpos = s->y + (pos - s->x);
         } else if (op == BAM_CDEL || op == BAM_CREF_SKIP) {
-            p->is_del = 1; p->qpos = s->y; // FIXME: distinguish D and N!!!!!
+            p->is_del = 1; // FIXME: distinguish D and N!!!!!
+            p->qpos = s->y;
             p->is_refskip = (op == BAM_CREF_SKIP);
         } // cannot be other operations; otherwise a bug
-        p->is_head = (pos == c->pos); p->is_tail = (pos == s->end);
+        p->is_head = (pos == c->pos);
+        p->is_tail = (pos == s->end);
     }
     p->cigar_ind = s->k;
-    return 1;
+
+    // Check for overflows and write our 64-bit values back to their 32-bit
+    // locations.
+    int ret = 1;
+    if (s->y > INT_MAX)
+        ret = 0;
+
+    if (indel >= INT_MIN && indel <= INT_MAX)
+        p->indel = indel;
+    else
+        ret = 0;
+
+    return ret;
 }
 
 /*******************************
@@ -5492,7 +5576,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
  * This variant handles base modifications, but only when "m" is non-NULL.
  *
  * Returns the number of inserted base on success, with string length being
- *        accessable via ins->l;
+ *        accessible via ins->l;
  *        -1 on failure.
  */
 int bam_plp_insertion_mod(const bam_pileup1_t *p,
@@ -5586,8 +5670,17 @@ int bam_plp_insertion_mod(const bam_pileup1_t *p,
             break;
         case BAM_CDEL:
             // eg cigar 1M2I1D gives mpileup output in T+2AA-1C style
-            if (del_len)
-                *del_len = cigar[k]>>BAM_CIGAR_SHIFT;
+            if (del_len) {
+                uint64_t len64 = cigar[k]>>BAM_CIGAR_SHIFT;
+                while (k+1 < p->b->core.n_cigar &&
+                       (cigar[k+1] & BAM_CIGAR_MASK) == BAM_CDEL) {
+                    len64 += cigar[++k] >> BAM_CIGAR_SHIFT;
+                }
+                if (len64 < INT32_MAX)
+                    *del_len = len64;
+                else
+                    return -1;
+            }
             // fall through
         default:
             k = p->b->core.n_cigar;
@@ -6016,7 +6109,14 @@ const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, 
                     }
                     iter->plp[n_plp].b = &p->b;
                     iter->plp[n_plp].cd = p->cd;
-                    if (resolve_cigar2(iter->plp + n_plp, iter->pos, &p->s)) ++n_plp; // actually always true...
+                    if (resolve_cigar2(iter->plp + n_plp, iter->pos, &p->s)) {
+                        ++n_plp;
+                    } else {
+                        hts_log_error("Excessive element size in CIGAR");
+                        iter->error = 1;
+                        *_n_plp = -1;
+                        return NULL;
+                    }
                 }
                 pptr = &(*pptr)->next;
             }

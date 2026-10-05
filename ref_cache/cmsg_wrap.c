@@ -64,6 +64,19 @@ int make_scm_rights_cmsg(struct msghdr *msg, int fd,
     return 0;
 }
 
+// Musl's CMSG_NXTHDR is a buggy static inline which triggers compiler
+// warnings if we turn warning levels up to max.
+//
+// From the musl sys/socket.h
+// #define CMSG_NXTHDR(mhdr, cmsg) ((cmsg)->cmsg_len < sizeof (struct cmsghdr) || __CMSG_LEN(cmsg) + sizeof(struct cmsghdr) >= __MHDR_END(mhdr) - (unsigned char *)(cmsg) ? 0 : (struct cmsghdr *)__CMSG_NEXT(cmsg))
+//
+// It mixes pointer diffs with size_t (from sizeof) and cmsg_len which is
+// unsigned (socklen_t).
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
 int get_scm_rights_fd(struct msghdr *msg) {
     struct cmsghdr *cmsg;
     int fd = -1;
@@ -77,3 +90,7 @@ int get_scm_rights_fd(struct msghdr *msg) {
     }
     return fd;
 }
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+

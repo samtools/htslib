@@ -1089,7 +1089,7 @@ Once done, the pileup iterator to be discarded by sam_plp_destroy api.
     while ((plp = bam_plp_auto(plpiter, &tid, &refpos, &n))) {
         printf("%d\t%d\t", tid+1, refpos+1);
         for (j = 0; j < n; ++j) {
-            //doesnt detect succeeding insertion and deletion together here, only insertion is identified
+            //doesn't detect succeeding insertion and deletion together here, only insertion is identified
             //deletion is detected in plp->is_del as and when pos reaches the position
             //if detection ahead is required, use bam_plp_insertion here which gives deletion length along with insertion
             if (plp[j].is_del || plp[j].is_refskip) {
@@ -1467,7 +1467,7 @@ The order of execution of threads are decided based on many factors and load on
 each task may vary, so the completion of the tasks may not be in the order of
 their queueing. The queues can be used in two different ways, one where the
 result is enqueued to queue again to be read in same order as initial queueing,
-second where the resuls are not enqueued and completed possibly in a different
+second where the results are not enqueued and completed possibly in a different
 order than initial queueing. Explicitly created threads can also be used along
 with hts thread pool usage.
 

@@ -662,3 +662,13 @@ HTSLIB_1.23 {
     sam_hdr_get;
     sam_hdr_set;
 } HTSLIB_1.22;
+
+HTSLIB_1.24 {
+    bcf_itr_querys1;
+    bcf_itr_regarray;
+    kfgetline;
+    khgetline;
+    tbx_itr_next1;
+    tbx_itr_querys1;
+    tbx_itr_regarray;
+} HTSLIB_1.23;

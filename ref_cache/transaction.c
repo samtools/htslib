@@ -679,7 +679,7 @@ static void update_with_initial_size(Transaction *transact, int64_t size,
 
 void got_download_started(unsigned int id, int64_t val, int fd,
                           Client **write_stack) {
-    /* Handle a message from upstream to say that a refernce download has
+    /* Handle a message from upstream to say that a reference download has
        started. */
     Transaction *transact = transaction_by_id(id, NULL);
     if (transact == NULL) return;

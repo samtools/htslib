@@ -581,11 +581,11 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         }
         if (bgzf_close(bgzf_out) < 0) {
             RELEASE_TPOOL(tpool);
-            error_errno("Error %d closing output", bgzf_out->errcode);
+            error_errno("Error closing output");
         }
         if (bgzf_close(fp) < 0) {
             RELEASE_TPOOL(tpool);
-            error_errno("Error %d closing \"%s\"", bgzf_out->errcode, fname);
+            error_errno("Error closing \"%s\"", fname);
         }
         free(buf);
     }

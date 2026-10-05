@@ -43,6 +43,7 @@ gcs_rewrite(const char *gsurl, const char *mode, int mode_has_colon,
             va_list *argsp)
 {
     const char *bucket, *path, *access_token, *requester_pays_project;
+    const char *host_override;
     kstring_t mode_colon = { 0, 0, NULL };
     kstring_t url = { 0, 0, NULL };
     kstring_t auth_hdr = { 0, 0, NULL };
@@ -63,11 +64,23 @@ gcs_rewrite(const char *gsurl, const char *mode, int mode_has_colon,
 
     path = bucket + strcspn(bucket, "/?#");
 
-    kputsn(bucket, path - bucket, &url);
-    if (strchr(mode, 'r')) kputs(".storage-download", &url);
-    else if (strchr(mode, 'w')) kputs(".storage-upload", &url);
-    else kputs(".storage", &url);
-    kputs(".googleapis.com", &url);
+    host_override = getenv("HTS_GCS_HOST");
+    if (host_override) {
+        // Path-style addressing against a caller-specified endpoint, e.g. a
+        // local mock server such as fake-gcs-server used for testing.  Such
+        // servers can't offer the wildcard DNS needed for the normal
+        // virtual-hosted-style BUCKET.HOST addressing below.
+        kputs(host_override, &url);
+        kputc('/', &url);
+        kputsn(bucket, path - bucket, &url);
+    }
+    else {
+        kputsn(bucket, path - bucket, &url);
+        if (strchr(mode, 'r')) kputs(".storage-download", &url);
+        else if (strchr(mode, 'w')) kputs(".storage-upload", &url);
+        else kputs(".storage", &url);
+        kputs(".googleapis.com", &url);
+    }
 
     kputs(path, &url);
 

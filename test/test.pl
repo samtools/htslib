@@ -882,6 +882,14 @@ sub test_view
     testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
     testv $opts, "./compare_sam.pl $ersam $ersam2";
 
+    # Check embed_ref=2 and no_ref, which is a nonsensical case, on del only
+    $ersam = "embed_del.sam";
+    $ercram = "embed_del.tmp.cram";
+    $ersam2 = "${ercram}.sam";
+    testv $opts, "./test_view $tv_args -o embed_ref=2 -o no_ref -C -p $ercram $ersam";
+    testv $opts, "./test_view $tv_args -p $ersam2 $ercram";
+    testv $opts, "./compare_sam.pl $ersam $ersam2";
+
     if ($test_view_failures == 0) {
         passed($opts, "embed_ref=2 tests");
     } else {
@@ -1336,7 +1344,17 @@ sub test_bcf_sr_range {
                  ['t', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
                  ['t', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
                  ['t', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
-                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef] # Expected failure
+                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef], # Expected failure
+                 # Check for correct ordering of output with regions-overlap
+                 # and targets-overlap = "variant".
+
+                 # These should only print 20:136.  20:135 is skipped as its
+                 # variant is really at 143
+                 ['-regions-overlap=variant -r', '20:135-136', 'overlap.vcf', 'overlap.1.out'],
+                 ['-targets-overlap=variant -t', '20:135-136', 'overlap.vcf', 'overlap.1.out'],
+                 # These should print 20:135, 20:136 and 20:140 in that order
+                 ['-regions-overlap=variant -r', '20:135-136,20:140-145', 'overlap.vcf', 'overlap.2.out'],
+                 ['-targets-overlap=variant -t', '20:135-136,20:140-145', 'overlap.vcf', 'overlap.2.out'],
         );
 
     my $count = 0;
@@ -1625,7 +1643,7 @@ sub test_ref_cache {
 
         my $pid1 = fork();
         if (!defined($pid1)) {
-            die "Coudn't fork: $!";
+            die "Couldn't fork: $!";
         }
         if ($pid1 == 0) {
             setpgrp(0, 0);

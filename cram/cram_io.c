@@ -827,39 +827,26 @@ int int32_put_blk(cram_block *b, int32_t val) {
 
 // Named the same as the version that uses zlib as we always use libdeflate for
 // decompression when available.
-char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
+static char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     struct libdeflate_decompressor *z = libdeflate_alloc_decompressor();
     if (!z) {
         hts_log_error("Call to libdeflate_alloc_decompressor failed");
         return NULL;
     }
 
-    uint8_t *data = NULL, *new_data;
-    if (!*size)
-        *size = csize*2;
-    for(;;) {
-        new_data = realloc(data, *size);
-        if (!new_data) {
-            hts_log_error("Memory allocation failure");
-            goto fail;
-        }
-        data = new_data;
+    assert (*size > 0);
+    uint8_t *data = malloc(*size);
+    if (!data) {
+        hts_log_error("Memory allocation failure");
+        goto fail;
+    }
 
-        int ret = libdeflate_gzip_decompress(z, cdata, csize, data, *size, size);
 
-        // Auto grow output buffer size if needed and try again.
-        // Fortunately for all bar one call of this we know the size already.
-        if (ret == LIBDEFLATE_INSUFFICIENT_SPACE) {
-            (*size) *= 1.5;
-            continue;
-        }
+    int ret = libdeflate_gzip_decompress(z, cdata, csize, data, *size, size);
 
-        if (ret != LIBDEFLATE_SUCCESS) {
-            hts_log_error("Inflate operation failed: %d", ret);
-            goto fail;
-        } else {
-            break;
-        }
+    if (ret != LIBDEFLATE_SUCCESS) {
+        hts_log_error("Inflate operation failed: %d", ret);
+        goto fail;
     }
 
     libdeflate_free_decompressor(z);
@@ -919,23 +906,27 @@ static char *libdeflate_deflate(char *data, size_t size, size_t *cdata_size,
 char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     z_stream s;
     unsigned char *data = NULL; /* Uncompressed output */
-    int data_alloc = 0;
     int err;
 
-    /* Starting point at uncompressed size, and scale after that */
-    data = malloc(data_alloc = csize*1.2+100);
+    assert(*size > 0);
+    // These should always be true due to type of cram_block::comp_size
+    // and cram_block::uncomp_size
+    assert(*size < UINT_MAX);
+    assert(csize < UINT_MAX);
+    data = malloc(*size);
     if (!data)
         return NULL;
 
     /* Initialise zlib stream */
     s.zalloc = Z_NULL; /* use default allocation functions */
     s.zfree  = Z_NULL;
+    s.msg    = Z_NULL;
     s.opaque = Z_NULL;
     s.next_in  = (unsigned char *)cdata;
-    s.avail_in = csize;
+    s.avail_in = (uInt) csize;
     s.total_in = 0;
     s.next_out  = data;
-    s.avail_out = data_alloc;
+    s.avail_out = (uInt) *size;
     s.total_out = 0;
 
     //err = inflateInit(&s);
@@ -947,32 +938,16 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     }
 
     /* Decode to 'data' array */
-    for (;s.avail_in;) {
-        unsigned char *data_tmp;
-        int alloc_inc;
+    err = inflate(&s, Z_FINISH);
 
-        s.next_out = &data[s.total_out];
-        err = inflate(&s, Z_NO_FLUSH);
-        if (err == Z_STREAM_END)
-            break;
-
-        if (err != Z_OK) {
-            hts_log_error("Call to zlib inflate failed: %s", s.msg);
-            free(data);
-            inflateEnd(&s);
-            return NULL;
-        }
-
-        /* More to come, so realloc based on growth so far */
-        alloc_inc = (double)s.avail_in/s.total_in * s.total_out + 100;
-        data = realloc((data_tmp = data), data_alloc += alloc_inc);
-        if (!data) {
-            free(data_tmp);
-            inflateEnd(&s);
-            return NULL;
-        }
-        s.avail_out += alloc_inc;
+    if (err != Z_STREAM_END) {
+        hts_log_error("Call to zlib inflate failed: %s",
+                      err != Z_OK ? s.msg : "not enough data");
+        free(data);
+        inflateEnd(&s);
+        return NULL;
     }
+
     inflateEnd(&s);
 
     *size = s.total_out;
@@ -1049,7 +1024,7 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
  * went from 18.3s to 36.3s. So decompression suffers too, but not as bad
  * as compression times.
  *
- * For now we disable this functionality. If it's to be reenabled make sure you
+ * For now we disable this functionality. If it's to be re-enabled make sure you
  * improve the mem_inflate implementation as it's just a test hack at the
  * moment.
  */
@@ -1365,6 +1340,13 @@ int cram_uncompress_block(cram_block *b) {
         return 0;
 
     case GZIP:
+        if (b->uncomp_size / 2048 > b->comp_size) {
+            // The maximum compression ratio of gzip is 1032
+            // (LZ match of 258 bytes encoded in a 2bit huffman code)
+            // so catch blocks that claim to be wildly over this.
+            hts_log_error("GZIP cram block has impossibly large compression ratio");
+            return -1;
+        }
         uncomp_size = b->uncomp_size;
         uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
 
@@ -1470,7 +1452,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
         b->method = RAW;
-        b->uncomp_size = usize2; // Just incase it differs
+        b->uncomp_size = usize2; // Just in case it differs
         //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
         break;
     }
@@ -1489,7 +1471,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
         b->method = RAW;
-        b->uncomp_size = usize2; // Just incase it differs
+        b->uncomp_size = usize2; // Just in case it differs
         //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
         break;
     }
@@ -1668,7 +1650,7 @@ static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
 /*
  * A copy of cram_compress_block2 with added recursion detection.
  * This is only called for error handling where the auto-tuning has failed.
- * The simplest way of doing this is recusion + an additional argument, but
+ * The simplest way of doing this is recursion + an additional argument, but
  * we didn't want to complicate the existing code hence this is static.
  */
 static int cram_compress_block3(cram_fd *fd, cram_slice *s,
@@ -1888,7 +1870,7 @@ static int cram_compress_block3(cram_fd *fd, cram_slice *s,
                     1.05, // 8  tok3 (rans)
                     1.00, 1.00, // 9,10 reserved
 
-                    // Paramterised versions of above
+                    // Parameterised versions of above
                     1.01, // gzip rle
                     1.01, // gzip -1
 
@@ -2320,7 +2302,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
     r->fp = NULL;
 
     /* Look for a FASTA##idx##FAI format */
-    char *fn_delim = strstr(fn, HTS_IDX_DELIM);
+    const char *fn_delim = strstr(fn, HTS_IDX_DELIM);
     if (fn_delim) {
         if (!(r->fn = string_ndup(r->pool, fn, fn_delim - fn)))
             goto err;
@@ -3632,6 +3614,15 @@ cram_container *cram_read_container(cram_fd *fd) {
         return NULL;
     }
 #endif
+    // We already have an upper limit of 10,000 blocks per slice to prevent
+    // bad data using excessive memory.  We could in theory have many slices
+    // per container, but in practice we only ever stick to 1 in modern
+    // implementations.  Nonetheless, let's use a limit here too on
+    // landmarks (which are offsets relative to this container position).
+    if (c->num_landmarks > 1000000) {
+        cram_free_container(c);
+        return NULL;
+    }
     if (c->num_landmarks && !(c->landmark = hts_malloc_p(sizeof(*c->landmark), c->num_landmarks))) {
         fd->err = errno;
         cram_free_container(c);
@@ -4729,6 +4720,13 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
         }
     }
 
+    if (fd->remove_ur) {
+        if (sam_hdr_remove_tag_all(hdr, "SQ", "UR") < 0) {
+            hts_log_error("Unable to remove UR tags");
+            return -1;
+        }
+    }
+
     /* Length */
     header_len = sam_hdr_length(hdr);
     if (header_len > INT32_MAX) {
@@ -4862,7 +4860,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
  * Sets CRAM variable sized integer decode function tables.
  * CRAM 1, 2, and 3.x all used ITF8 for uint32 and UTF8 for uint64.
  * CRAM 4.x uses the same encoding mechanism for 32-bit and 64-bit
- * (or anything inbetween), but also now supports signed values.
+ * (or anything in between), but also now supports signed values.
  *
  * Version is the CRAM major version number.
  * vv is the vector table (probably &cram_fd->vv)
@@ -5010,7 +5008,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
  */
 cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     int i;
-    char *cp;
+    const char *cp;
     cram_fd *fd = calloc(1, sizeof(*fd));
     if (!fd)
         return NULL;
@@ -5395,6 +5393,16 @@ int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...) {
     return r;
 }
 
+// Check valid range for options.
+#define CHECK_RANGE(v,min,max)                  \
+    do {                                        \
+        int val = (v);                          \
+        if((val) < (min) || (val) > (max)) {    \
+            errno = ERANGE;                     \
+            return -1;                          \
+        }                                       \
+    } while (0);
+
 /*
  * Sets options on the cram_fd. See CRAM_OPT_* definitions in cram_structs.h.
  * Use this immediately after opening.
@@ -5412,7 +5420,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     switch (opt) {
     case CRAM_OPT_DECODE_MD:
-        fd->decode_md = va_arg(args, int);
+        CHECK_RANGE(fd->decode_md = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_PREFIX:
@@ -5426,37 +5434,37 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         break;
 
     case CRAM_OPT_SEQS_PER_SLICE:
-        fd->seqs_per_slice = va_arg(args, int);
+        CHECK_RANGE(fd->seqs_per_slice = va_arg(args, int), 1, INT_MAX/512);
         if (fd->bases_per_slice == BASES_PER_SLICE)
             fd->bases_per_slice = fd->seqs_per_slice * 500;
         break;
 
     case CRAM_OPT_BASES_PER_SLICE:
-        fd->bases_per_slice = va_arg(args, int);
+        CHECK_RANGE(fd->bases_per_slice = va_arg(args, int), 1, INT_MAX);
         break;
 
     case CRAM_OPT_SLICES_PER_CONTAINER:
-        fd->slices_per_container = va_arg(args, int);
+        CHECK_RANGE(fd->slices_per_container = va_arg(args, int), 1, 512);
         break;
 
     case CRAM_OPT_EMBED_REF:
-        fd->embed_ref = va_arg(args, int);
+        CHECK_RANGE(fd->embed_ref = va_arg(args, int), -1, 2);
         break;
 
     case CRAM_OPT_NO_REF:
-        fd->no_ref = va_arg(args, int);
+        CHECK_RANGE(fd->no_ref = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_POS_DELTA:
-        fd->ap_delta = va_arg(args, int);
+        CHECK_RANGE(fd->ap_delta = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_IGNORE_MD5:
-        fd->ignore_md5 = va_arg(args, int);
+        CHECK_RANGE(fd->ignore_md5 = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_LOSSY_NAMES:
-        fd->lossy_read_names = va_arg(args, int);
+        CHECK_RANGE(fd->lossy_read_names = va_arg(args, int), 0, INT_MAX);
         // Currently lossy read names required paired (attached) reads.
         // TLEN 0 or being 1 out causes read pairs to be detached, breaking
         // the lossy read name compression, so we have extra options to
@@ -5466,27 +5474,27 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         break;
 
     case CRAM_OPT_USE_BZIP2:
-        fd->use_bz2 = va_arg(args, int);
+        CHECK_RANGE(fd->use_bz2 = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_RANS:
-        fd->use_rans = va_arg(args, int);
+        CHECK_RANGE(fd->use_rans = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_TOK:
-        fd->use_tok = va_arg(args, int);
+        CHECK_RANGE(fd->use_tok = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_FQZ:
-        fd->use_fqz = va_arg(args, int);
+        CHECK_RANGE(fd->use_fqz = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_ARITH:
-        fd->use_arith = va_arg(args, int);
+        CHECK_RANGE(fd->use_arith = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_USE_LZMA:
-        fd->use_lzma = va_arg(args, int);
+        CHECK_RANGE(fd->use_lzma = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_SHARED_REF:
@@ -5561,11 +5569,13 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     }
 
     case CRAM_OPT_MULTI_SEQ_PER_SLICE:
-        fd->multi_seq_user = fd->multi_seq = va_arg(args, int);
+        CHECK_RANGE(fd->multi_seq_user = fd->multi_seq = va_arg(args, int),
+                    -1, 1);
         break;
 
     case CRAM_OPT_NTHREADS: {
         int nthreads =  va_arg(args, int);
+        CHECK_RANGE(nthreads, 0, INT_MAX/2);
         if (fd->pool)
             return -2;  //already exists!
         if (nthreads >= 1) {
@@ -5599,21 +5609,25 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     }
 
     case CRAM_OPT_REQUIRED_FIELDS:
-        fd->required_fields = va_arg(args, int);
+        CHECK_RANGE(fd->required_fields = va_arg(args, int), 0, SAM_RGAUX*2-1);
         if (fd->range.refid != -2)
             fd->required_fields |= SAM_POS;
         break;
 
     case CRAM_OPT_STORE_MD:
-        fd->store_md = va_arg(args, int);
+        CHECK_RANGE(fd->store_md = va_arg(args, int), 0, 1);
         break;
 
     case CRAM_OPT_STORE_NM:
-        fd->store_nm = va_arg(args, int);
+        CHECK_RANGE(fd->store_nm = va_arg(args, int), 0, 1);
+        break;
+
+    case CRAM_OPT_RM_UR:
+        CHECK_RANGE(fd->remove_ur = va_arg(args, int), 0, 1);
         break;
 
     case HTS_OPT_COMPRESSION_LEVEL:
-        fd->level = va_arg(args, int);
+        CHECK_RANGE(fd->level = va_arg(args, int), -1, INT_MAX);
         break;
 
     case HTS_OPT_PROFILE: {

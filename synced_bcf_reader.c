@@ -62,6 +62,10 @@ typedef struct bcf_sr_region_t
 {
     region1_t *regs;            // regions will sorted and merged, redundant records marked for skipping have start>end
     int nregs, mregs, creg;     // creg: the current active region
+    int from_itr;               // list built from iterator
+    int multi_end;              // end point for multi iterators
+    int multi_running;          // number of running multi iterators
+    int *multi_curr;            // current region for multi iterators
 }
 region_t;
 
@@ -71,12 +75,19 @@ typedef struct
     sr_sort_t sort;
     int regions_overlap, targets_overlap;
     int *closefile;             // close htsfile with sync reader close or not
+
+    // Storage for first region in the next chromosome,
+    // for use by bcf_sr_regions_next_()
+    int next_iseq;
+    hts_pos_t next_from;
+    hts_pos_t next_to;
 }
 aux_t;
 
 static bcf_sr_regions_t *bcf_sr_regions_alloc(void);
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end);
 static bcf_sr_regions_t *_regions_init_string(const char *str);
+static int bcf_sr_regions_next_(bcf_sr_regions_t *reg, aux_t *aux);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec, bcf_sr_error *errnum);
 static void _regions_sort_and_merge(bcf_sr_regions_t *reg);
 static int _bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end, int missed_reg_handler);
@@ -516,10 +527,10 @@ bcf_srs_t *bcf_sr_init(void)
     return files;
 }
 
-static void bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
+static int bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
 {
     if (!reader)
-        return;
+        return 0;
     free(reader->fname);
     if ( reader->tbx_idx ) tbx_destroy(reader->tbx_idx);
     if ( reader->bcf_idx ) hts_idx_destroy(reader->bcf_idx);
@@ -528,13 +539,15 @@ static void bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
         if (hts_close(reader->file) < 0)
             hts_log_error("Error on closing %s", reader->fname);
     }
-    if ( reader->itr ) tbx_itr_destroy(reader->itr);
+    int had_itr = reader->itr != NULL;
+    if ( had_itr ) tbx_itr_destroy(reader->itr);
     int j;
     for (j=0; j<reader->mbuffer; j++)
         bcf_destroy1(reader->buffer[j]);
     free(reader->buffer);
     free(reader->samples);
     free(reader->filter_ids);
+    return had_itr;
 }
 
 void bcf_sr_destroy(bcf_srs_t *files)
@@ -561,21 +574,55 @@ void bcf_sr_destroy(bcf_srs_t *files)
     free(files);
 }
 
-void bcf_sr_remove_reader(bcf_srs_t *files, int i)
+// Deal with completed multi iterators.  On closing the last free the
+// array tracking which region each iterator has reached and reset the
+// current region to all files to where the multi iterators finished
+static void decr_multi_running(region_t *reg)
+{
+    if (!reg->multi_curr)
+        return; // Not using multi iterators
+    if (--reg->multi_running >= 1)
+        return; // At least one iterator still running
+    // All multi iterators finished, tidy up ready to move on to the next
+    free(reg->multi_curr);
+    reg->multi_curr = NULL;
+    reg->creg = reg->multi_end;
+}
+
+void bcf_sr_remove_reader(bcf_srs_t *files, int reader_idx)
 {
     assert( !files->samples );  // not ready for this yet
     int *autoclose = BCF_SR_AUX(files)->closefile;
 
-    if (i < 0 || i >= files->nreaders)
+    if (reader_idx < 0 || reader_idx >= files->nreaders)
         return;
 
-    bcf_sr_sort_remove_reader(files, &BCF_SR_AUX(files)->sort, i);
-    bcf_sr_destroy1(&files->readers[i], autoclose[i]);
-    if ( i+1 < files->nreaders )
+    bcf_sr_sort_remove_reader(files, &BCF_SR_AUX(files)->sort, reader_idx);
+    int had_itr = bcf_sr_destroy1(&files->readers[reader_idx], autoclose[reader_idx]);
+    if ( reader_idx+1 < files->nreaders )
     {
-        memmove(&files->readers[i], &files->readers[i+1], (files->nreaders-i-1)*sizeof(bcf_sr_t));
-        memmove(&files->has_line[i], &files->has_line[i+1], (files->nreaders-i-1)*sizeof(int));
-        memmove(&autoclose[i], &autoclose[i+1], (files->nreaders-i-1)*sizeof(int));
+        memmove(&files->readers[reader_idx], &files->readers[reader_idx+1],
+                (files->nreaders-reader_idx-1)*sizeof(bcf_sr_t));
+        memmove(&files->has_line[reader_idx], &files->has_line[reader_idx+1],
+                (files->nreaders-reader_idx-1)*sizeof(int));
+        memmove(&autoclose[reader_idx], &autoclose[reader_idx+1],
+                (files->nreaders-reader_idx-1)*sizeof(int));
+    }
+    if (files->regions && files->regions->regs)
+    {
+        int seq;
+        for (seq = 0; seq < files->regions->nseqs; seq++)
+        {
+            region_t *reg = &files->regions->regs[seq];
+            if (reg->multi_curr)
+            {
+                if (reader_idx + 1 < files->nreaders)
+                    memmove(&reg->multi_curr[reader_idx], &reg->multi_curr[reader_idx + 1],
+                            (files->nreaders-reader_idx-1)*sizeof(*reg->multi_curr));
+                if (had_itr)
+                    decr_multi_running(reg);
+            }
+        }
     }
     files->nreaders--;
 }
@@ -659,6 +706,155 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, hts_pos_t start, hts_
     return 0;
 }
 
+static hts_reglist_t *build_reglist(bcf_sr_regions_t *regions, int nreaders)
+{
+    // Build a region list for the multi-region iterator
+
+    // Check internal state is consistent first.  Also don't bother
+    // if there's only one interval as the single-region iterator is
+    // more efficient in that case.
+
+    if (!regions->regs || regions->iseq < 0 || regions->iseq >= regions->nseqs)
+        return NULL;
+
+    region_t *reg = &regions->regs[regions->iseq];
+    if (reg->creg < 0 ||
+        reg->creg >= reg->nregs ||
+        reg->nregs - reg->creg < 2 ||
+        reg->regs[reg->creg].start != regions->start ||
+        reg->regs[reg->creg].end   != regions->end) {
+        return NULL;
+    }
+
+    hts_reglist_t *reglist = calloc(1, sizeof(*reglist));
+    if (!reglist)
+        return NULL;
+    reglist->intervals = hts_malloc_p(sizeof(*reglist->intervals),
+                                      reg->nregs - reg->creg);
+    if (!reglist->intervals) {
+        free(reglist);
+        return NULL;
+    }
+
+    reglist->reg = regions->seq_names[regions->iseq];
+    reglist->count = 0;
+
+    int32_t i;
+    for (i = reg->creg; i < reg->nregs; i++) {
+        if (reg->regs[i].start > reg->regs[i].end)
+            continue;  // Marked to skip by regions_merge
+        if (reglist->count > 0 &&
+            reglist->intervals[reglist->count - 1].beg > reg->regs[i].start)
+            break; // Backwards jump - hopefully shouldn't happen
+        reglist->intervals[reglist->count].beg = reg->regs[i].start;
+        reglist->intervals[reglist->count].end = reg->regs[i].end + 1;
+        ++reglist->count;
+    }
+
+    if (reglist->count == 0) { // Shouldn't happen...
+        free(reglist->intervals);
+        free(reglist);
+        return NULL;
+    }
+
+    reg->multi_curr = hts_malloc_p(sizeof(*reg->multi_curr), nreaders);
+    if (!reg->multi_curr) {
+        free(reglist->intervals);
+        free(reglist);
+        return NULL;
+    }
+
+    reg->multi_end = i;
+    reg->multi_running = nreaders;
+    for (i = 0; i < nreaders; i++)
+        reg->multi_curr[i] = reg->creg;
+
+    return reglist;
+}
+
+static int reader_seek_multi(bcf_sr_t *reader, hts_reglist_t *reglist_in,
+                             int copy_reglist)
+{
+    // There should be at least one region in reglist, corresponding
+    // to regions->start ... regions->end
+    assert(reglist_in->count > 0);
+    // And there should be no iterator set
+    assert(reader->itr == NULL);
+
+    hts_reglist_t *reglist = NULL;
+    int tid;
+
+    // Look up the id for the reference for this reader.  It's OK for it
+    // to be absent, especially for tabix-indexed files, to allow for
+    // inputs that contain different subsets of the full list of references.
+
+    if (reader->tbx_idx) {
+        tid = tbx_name2id(reader->tbx_idx, reglist_in->reg);
+    } else if (reader->bcf_idx) {
+        tid = bcf_hdr_name2id(reader->header, reglist_in->reg);
+    } else {
+        hts_log_error("Attempted to make an iterator without an index!");
+        goto fail;
+    }
+    if (tid < -1) {
+        hts_log_error("Failed to parse header");
+        goto fail;
+    } else if (tid < 0) {
+        // Region not present, create an iterator that returns no data
+        tid = HTS_IDX_NONE;
+    }
+
+    if (copy_reglist) {
+        // The iterator takes ownership of the region list, so take
+        // a copy if it's going to be used by multiple iterators.
+        reglist = malloc(sizeof(*reglist));
+        if (!reglist)
+            goto memfail;
+        memcpy(reglist, reglist_in, sizeof(*reglist));
+        if (tid != HTS_IDX_NONE) {
+            reglist->intervals = hts_malloc_p(sizeof(*reglist->intervals),
+                                              reglist_in->count);
+            if (!reglist->intervals)
+                goto memfail;
+            memcpy(reglist->intervals, reglist_in->intervals,
+                   sizeof(*reglist->intervals) * reglist_in->count);
+        } else {
+            // No need to copy intervals if the reference was absent
+            reglist->intervals = NULL;
+            reglist->count = 0;
+        }
+    } else {
+        // Use the one passed in
+        reglist = reglist_in;
+    }
+
+    // Prevent lookup of tid in tbx_itr_regions()/bcf_itr_regions()
+    reglist->tid = tid;
+    reglist->reg = NULL;
+
+    if (reader->tbx_idx) {
+        reader->itr = tbx_itr_regions(reader->tbx_idx, reglist, 1);
+    } else if (reader->bcf_idx) {
+        reader->itr = bcf_itr_regions(reader->bcf_idx, reader->header,
+                                      reglist, 1);
+    }
+    if (!reader->itr)
+        return -2;  // reglist will have been cleaned up by hts_itr_regions
+    return 0;
+
+ memfail:
+    hts_log_error("Out of memory");
+ fail:
+    if (reglist) {
+        // Note that this will free reglist_in if it wasn't copied, but
+        // we need to be consistent with the behaviour of hts_itr_regions
+        // which will also free the region list on failure.
+        free(reglist->intervals);
+        free(reglist);
+    }
+    return -2;
+}
+
 /*
  *  _readers_next_region() - jumps to next region if necessary
  *  Returns  0 on success
@@ -674,14 +870,14 @@ static int _readers_next_region(bcf_srs_t *files)
 
     if ( eos!=files->nreaders )
     {
-        // Some of the readers still has buffered lines
+        // Some of the readers still have buffered lines
         return 0;
     }
 
     // No lines in the buffer, need to open new region or quit.
     int prev_iseq = files->regions->iseq;
     hts_pos_t prev_end = files->regions->end;
-    int res = bcf_sr_regions_next(files->regions);
+    int res = bcf_sr_regions_next_(files->regions, BCF_SR_AUX(files));
     if ( res<0 )
     {
         if (res < -1) files->errnum = bcf_sr_seek_error;
@@ -689,13 +885,24 @@ static int _readers_next_region(bcf_srs_t *files)
     }
     files->regions->prev_end = prev_iseq==files->regions->iseq ? prev_end : -1;
 
+    // Build a reglist for the multi-iterator.  Will return NULL if not suitable
+    // in which case fall back to the single region one.
+    hts_reglist_t *reglist = build_reglist(files->regions, files->nreaders);
+
     for (i=0; i<files->nreaders; i++)
     {
-        res = _reader_seek(&files->readers[i],
-                           files->regions->seq_names[files->regions->iseq],
-                           files->regions->start,files->regions->end);
+        int copy_reglist = i < files->nreaders - 1;
+        if (reglist) {
+            res = reader_seek_multi(&files->readers[i], reglist, copy_reglist);
+        } else {
+            res = _reader_seek(&files->readers[i],
+                               files->regions->seq_names[files->regions->iseq],
+                               files->regions->start, files->regions->end);
+        }
         if (res < -1)
         {
+            if (reglist && copy_reglist)
+                hts_reglist_free(reglist, 1);
             files->errnum = bcf_sr_seek_error;
             return res;
         }
@@ -733,13 +940,64 @@ static void _set_variant_boundaries(bcf1_t *rec, hts_pos_t *beg, hts_pos_t *end)
     *end = rec->pos + rec->rlen - 1;
 }
 
+static int forward_check_overlap(region_t *reg, int idx,
+                                 hts_pos_t beg, hts_pos_t end)
+{
+    // Check ahead for regions that may overlap beg...end,
+    // also avoiding those marked for skipping by regions_merge()
+    do {
+        ++idx;
+    } while ( idx < reg->nregs
+              && ( beg > reg->regs[idx].end
+                   || reg->regs[idx].start > reg->regs[idx].end) );
+    return ( idx < reg->nregs
+             && reg->regs[idx].start <= end
+             && reg->regs[idx].end >= beg ) ? 1 : 0;
+}
+
+static int multi_check_overlap(region_t *reg, int reader_idx,
+                               hts_pos_t pos, hts_pos_t beg, hts_pos_t end)
+{
+    int midx = reg->multi_curr[reader_idx];
+    // Scan to find the next region ending after pos
+    while ( midx < reg->nregs )
+    {
+        if ( pos <= reg->regs[midx].end )
+            break;
+        do { // Advance, also avoiding regions marked to skip by regions_merge()
+            ++midx;
+        } while (midx < reg->nregs && reg->regs[midx].start > reg->regs[midx].end);
+    }
+    reg->multi_curr[reader_idx] = midx;
+    if ( midx >= reg->nregs )
+        return 0;  // pos is after all regions
+
+    // Reject records starting inside previous (non-skipped) region or
+    // ending before the current one starts.
+    int pidx = midx-1;
+    while (pidx >= 0 && reg->regs[pidx].start > reg->regs[pidx].end)
+        pidx--;
+    hts_pos_t prev_end = pidx >= 0 ? reg->regs[pidx].end : -1;
+    if ( beg <= prev_end || end < reg->regs[midx].start )
+        return 0;
+
+    // We know pos <= end, but beg can be bigger, so need to check it
+    // is within the current range
+    if ( beg <= reg->regs[midx].end )
+        return 1;
+
+    // If not, need to scan forward to see if it hits a later one
+    return forward_check_overlap(reg, midx, beg, end);
+}
+
 /*
- *  _reader_fill_buffer() - buffers all records with the same coordinate
+ *  reader_fill_buffer() - buffers all records with the same coordinate
  *  returns 0 on success, -1 on failure (also sets files->errnum)
  */
-static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
+static int reader_fill_buffer(bcf_srs_t *files, int reader_idx)
 {
     // Return if the buffer is full: the coordinate of the last buffered record differs
+    bcf_sr_t *reader = &files->readers[reader_idx];
     if ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) return 0;
 
     // No iterator (sequence not present in this file) and not streaming
@@ -821,12 +1079,13 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         if ( files->regions )
         {
             hts_pos_t beg, end;
+            hts_pos_t pos = reader->buffer[reader->nbuffer+1]->pos;
             if ( BCF_SR_AUX(files)->regions_overlap==0 )
-                beg = end = reader->buffer[reader->nbuffer+1]->pos;
+                beg = end = pos;
             else if ( BCF_SR_AUX(files)->regions_overlap==1 )
             {
-                beg = reader->buffer[reader->nbuffer+1]->pos;
-                end = reader->buffer[reader->nbuffer+1]->pos + reader->buffer[reader->nbuffer+1]->rlen - 1;
+                beg = pos;
+                end = pos + reader->buffer[reader->nbuffer+1]->rlen - 1;
             }
             else if ( BCF_SR_AUX(files)->regions_overlap==2 )
                 _set_variant_boundaries(reader->buffer[reader->nbuffer+1], &beg,&end);
@@ -837,7 +1096,34 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
                 err = files->errnum = api_usage_error;
                 break;
             }
-            if ( beg <= files->regions->prev_end || end < files->regions->start || beg > files->regions->end ) continue;
+
+            // Check for overlap with region and skip if the record does not.
+            // For multi region iterators case this is a bit complicated as
+            // the iterator may have skipped on to a later region.
+
+            region_t *reg = ((files->regions->regs && files->regions->iseq >= 0)
+                             ? &files->regions->regs[files->regions->iseq]
+                             : NULL );
+            if (reg && reg->multi_curr)
+            {
+                if ( multi_check_overlap(reg, reader_idx, pos, beg, end) == 0 )
+                    continue;
+            }
+            else
+            {
+                if ( pos <= files->regions->prev_end ||
+                     end < files->regions->start)
+                    continue;
+                if ( beg > files->regions->end )
+                {
+                    // Variant starts after current region but may overlap
+                    // a future one
+                    if (!reg) // Can't tell yet
+                        continue;
+                    if (!forward_check_overlap(reg, reg->creg, beg, end))
+                        continue;
+                }
+            }
         }
 
         // apply filter
@@ -858,6 +1144,11 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         // done for this region
         tbx_itr_destroy(reader->itr);
         reader->itr = NULL;
+        if (files->regions && files->regions->regs)
+        {
+            assert(files->regions->iseq >= 0 && files->regions->iseq < files->regions->nseqs);
+            decr_multi_running(&files->regions->regs[files->regions->iseq]);
+        }
     }
     if ( files->require_index==ALLOW_NO_IDX_ && reader->buffer[reader->nbuffer]->rid < reader->buffer[1]->rid )
     {
@@ -904,7 +1195,7 @@ static int next_line(bcf_srs_t *files)
         int i, min_rid = INT32_MAX;
         for (i=0; i<files->nreaders; i++)
         {
-            if (_reader_fill_buffer(files, &files->readers[i]) < 0)
+            if (reader_fill_buffer(files, i) < 0)
                 return 0; // Will have set files->errnum
             if ( files->require_index==ALLOW_NO_IDX_ )
             {
@@ -1031,7 +1322,15 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
     bcf_sr_regions_t *reg = readers->regions;
     int i;
     for (i=0; i<reg->nseqs; i++)
+    {
         reg->regs[i].creg = -1;
+        if (reg->regs[i].multi_curr)
+        {
+            free(reg->regs[i].multi_curr);
+            reg->regs[i].multi_curr = NULL;
+            reg->regs[i].multi_running = 0;
+        }
+    }
     reg->iseq = 0;
     reg->start = -1;
     reg->end   = -1;
@@ -1043,8 +1342,17 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
 
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos)
 {
+    int i;
     if ( !readers->regions ) return 0;
     bcf_sr_sort_reset(&BCF_SR_AUX(readers)->sort);
+    for (i=0; i<readers->nreaders; i++)
+    {
+        if (readers->readers[i].itr)
+        {
+            hts_itr_destroy(readers->readers[i].itr);
+            readers->readers[i].itr = NULL;
+        }
+    }
     if ( !seq && !pos )
     {
         // seek to start
@@ -1052,7 +1360,7 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos)
         return 0;
     }
 
-    int i, nret = 0;
+    int nret = 0;
 
     // Need to position both the readers and the regions. The latter is a bit of a mess
     // because we can have in memory or external regions. The safe way is:
@@ -1204,7 +1512,7 @@ static bcf_sr_regions_t *bcf_sr_regions_alloc(void)
 }
 
 // Add a new region into a list. On input the coordinates are 1-based, inclusive, then stored 0-based,
-// inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and merge_regions().
+// inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and regions_merge().
 // Returns 0 on success, -1 on failure
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end)
 {
@@ -1245,9 +1553,11 @@ static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start,
         if (!reg->seq_names[iseq])
             goto nomem;
         reg->regs[iseq].creg = -1;
+        reg->regs[iseq].multi_curr = NULL;
         if (khash_str2int_set(reg->seq_hash,reg->seq_names[iseq],iseq) < 0)
         {
             free(reg->seq_names[iseq]);
+            reg->seq_names[iseq] = NULL;
             goto nomem;
         }
         reg->nseqs++;
@@ -1577,18 +1887,25 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *reg)
     int i;
     free(reg->fname);
     if ( reg->itr ) tbx_itr_destroy(reg->itr);
-    if ( reg->tbx ) tbx_destroy(reg->tbx);
+    if ( reg->tbx )
+    {
+        tbx_destroy(reg->tbx);
+    }
+    else if (reg->seq_names)
+    {
+        // free only in-memory names, tbx names are const
+        for (i=0; i<reg->nseqs; i++) free(reg->seq_names[i]);
+    }
     if ( reg->file ) hts_close(reg->file);
     if ( reg->als ) free(reg->als);
     if ( reg->als_str.s ) free(reg->als_str.s);
     free(reg->line.s);
     if ( reg->regs )
     {
-         // free only in-memory names, tbx names are const
         for (i=0; i<reg->nseqs; i++)
         {
-            free(reg->seq_names[i]);
             free(reg->regs[i].regs);
+            free(reg->regs[i].multi_curr);
         }
     }
     free(reg->regs);
@@ -1621,13 +1938,72 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
 static int advance_creg(region_t *reg)
 {
     int i = reg->creg + 1;
-    while ( i<reg->nregs && reg->regs[i].start > reg->regs[i].end ) i++;    // regions with start>end are marked to skip by merge_regions()
+    while ( i<reg->nregs && reg->regs[i].start > reg->regs[i].end ) i++;    // regions with start>end are marked to skip by regions_merge()
     reg->creg = i;
     if ( i>=reg->nregs ) return -1;
     return 0;
 }
 
-int bcf_sr_regions_next(bcf_sr_regions_t *reg)
+static int get_next_region_from_file(bcf_sr_regions_t *reg, aux_t *aux,
+                                     int ichr, int ifrom, int ito, int is_bed,
+                                     int *iseq, hts_pos_t *from, hts_pos_t *to)
+{
+    char *chr, *chr_end;
+    int ret = 0;
+
+    if (aux && aux->next_iseq >= 0)
+    {
+        // Use deferred output from iterator
+        *iseq = aux->next_iseq;
+        *from = aux->next_from;
+        *to   = aux->next_to;
+        aux->next_iseq = -1;
+        return 0;
+    }
+
+    while ( !ret )
+    {
+        if ( reg->itr )
+        {
+            // tabix index present, reading a chromosome block
+            ret = tbx_itr_next(reg->file, reg->tbx, reg->itr, &reg->line);
+        }
+        else
+        {
+            // tabix index absent, reading the whole file
+            ret = reg->file ? hts_getline(reg->file, KS_SEP_LINE, &reg->line) : -1;
+            if ( ret<-1)
+            {
+                hts_log_error("Error reading \"%s\": %s\n",
+                              reg->fname, strerror(errno));
+                return -2;
+            }
+        }
+        if ( ret<0 ) { return ret; }
+        ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&chr_end,from,to);
+        if ( ret<0 )
+        {
+            hts_log_error("Could not parse the file %s, using the columns %d,%d,%d",
+                reg->fname,ichr+1,ifrom+1,ito+1);
+            return -2;
+        }
+    }
+    if ( is_bed ) ++(*from);
+
+    char tmp = *chr_end;
+    *chr_end = 0;
+    if ( khash_str2int_get(reg->seq_hash, chr, iseq)<0 )
+    {
+        hts_log_error("Broken tabix index? The sequence \"%s\" not in dictionary [%s]",
+                      chr, reg->line.s);
+        return -2;
+    }
+    *chr_end = tmp;
+    assert(*iseq >= 0 && *iseq < reg->nseqs);
+    return 0;
+}
+
+static int bcf_sr_regions_next_(bcf_sr_regions_t *reg, aux_t *aux)
 {
     if ( reg->iseq<0 ) return -1;
     reg->start = reg->end = -1;
@@ -1638,19 +2014,31 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     {
         while ( reg->iseq < reg->nseqs )
         {
-            if ( advance_creg(&reg->regs[reg->iseq])==0 ) break;    // a valid record was found
+            if ( advance_creg(&reg->regs[reg->iseq])==0 ) // a valid record was found
+            {
+                region1_t *creg = &reg->regs[reg->iseq].regs[reg->regs[reg->iseq].creg];
+                reg->start = creg->start;
+                reg->end   = creg->end;
+                return 0;
+            }
+            if ( reg->regs[reg->iseq].from_itr )
+            {
+                // This region list was built from the iterator and
+                // shouldn't be needed any more, so tidy up.
+                region_t *r = &reg->regs[reg->iseq];
+                free(r->regs);
+                r->regs = NULL;
+                r->creg = -1;
+                r->nregs = r->mregs = 0;
+                break;
+            }
             reg->iseq++;
         }
         if ( reg->iseq >= reg->nseqs ) { reg->iseq = -1; return -1; } // no more regions left
-        region1_t *creg = &reg->regs[reg->iseq].regs[reg->regs[reg->iseq].creg];
-        reg->start = creg->start;
-        reg->end   = creg->end;
-        return 0;
     }
 
     // reading from tabix
-    char *chr, *chr_end;
-    int ichr = 0, ifrom = 1, ito = 2, is_bed = 0;
+    int ichr = 0, ifrom = 1, ito = 2, is_bed = 0, iseq;
     hts_pos_t from, to;
     if ( reg->tbx )
     {
@@ -1661,65 +2049,87 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
         is_bed = reg->tbx->conf.preset==TBX_UCSC ? 1 : 0;
     }
 
-    int ret = 0;
-    while ( !ret )
+    if ( reg->is_bin && !reg->itr )
     {
-        if ( reg->itr )
-        {
-            // tabix index present, reading a chromosome block
-            ret = tbx_itr_next(reg->file, reg->tbx, reg->itr, &reg->line);
-            if ( ret<0 ) { reg->iseq = -1; return ret; }
-        }
-        else
-        {
-            if ( reg->is_bin )
-            {
-                // Waited for seek which never came. Reopen in text mode and stream
-                // through the regions, otherwise hts_getline would fail
-                hts_close(reg->file);
-                reg->file = hts_open(reg->fname, "r");
-                if ( !reg->file )
-                {
-                    hts_log_error("Could not open file: %s", reg->fname);
-                    reg->file = NULL;
-                    bcf_sr_regions_destroy(reg);
-                    return -2;
-                }
-                reg->is_bin = 0;
-            }
+        // Have an index, but no iterator set yet.  Create one that
+        // reads the entire file from the start.
 
-            // tabix index absent, reading the whole file
-            ret = reg->file ? hts_getline(reg->file, KS_SEP_LINE, &reg->line) : -1;
-            if ( ret<-1)
-            {
-                hts_log_error("Error reading \"%s\": %s\n",
-                              reg->fname, strerror(errno));
-                return -2;
-            }
-            if ( ret<0 ) { reg->iseq = -1; return ret; }
-        }
-        ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&chr_end,&from,&to);
-        if ( ret<0 )
+        reg->itr = tbx_itr_queryi(reg->tbx, HTS_IDX_START, 0, 0);
+        if ( !reg->itr )
         {
-            hts_log_error("Could not parse the file %s, using the columns %d,%d,%d",
-                reg->fname,ichr+1,ifrom+1,ito+1);
+            hts_log_error("Couldn't make iterator over %s", reg->fname);
             return -2;
         }
     }
-    if ( is_bed ) from++;
 
-    *chr_end = 0;
-    if ( khash_str2int_get(reg->seq_hash, chr, &reg->iseq)<0 )
+    int ret = get_next_region_from_file(reg, aux, ichr, ifrom, ito, is_bed,
+                                        &iseq, &from, &to);
+    if (ret < 0)
     {
-        hts_log_error("Broken tabix index? The sequence \"%s\" not in dictionary [%s]",
-            chr, reg->line.s);
-        return -2;
+        if (ret == -1) reg->iseq = -1; // No more regions left
+        return ret;
     }
-    *chr_end = '\t';
 
+    reg->iseq = iseq;
     reg->start = from - 1;
     reg->end   = to - 1;
+
+    if (aux && reg->is_bin)
+    {
+        // Build a region list for the next chromosome
+        if (!reg->regs)
+        {
+            reg->regs = calloc(reg->nseqs, sizeof(*reg->regs));
+            if (!reg->regs)
+                return -2;
+        }
+        region_t *r = &reg->regs[reg->iseq];
+        r->from_itr = 1;
+        r->creg = -1;
+        r->nregs = 0;
+        do {
+            if (r->nregs > 0 && r->regs[r->nregs - 1].end >= from - 2
+                && r->regs[r->nregs - 1].start <= from - 1)
+            {
+                // Merge adjacent regions
+                if (r->regs[r->nregs - 1].end < to - 1)
+                    r->regs[r->nregs - 1].end = to - 1;
+            }
+            else
+            {
+                if (hts_resize(region1_t, r->nregs + 1, &r->mregs, &r->regs, 0) < 0)
+                    return -2;
+                r->regs[r->nregs].start = from - 1;
+                r->regs[r->nregs].end = to - 1;
+                r->nregs++;
+            }
+
+            ret = get_next_region_from_file(reg, aux, ichr, ifrom, ito, is_bed,
+                                            &iseq, &from, &to);
+        } while (ret >= 0 && iseq == reg->iseq);
+
+        if (ret < -1)
+            return ret;
+        if (ret == 0 && iseq != reg->iseq)
+        {
+            // Iterator went on to a new chromosome.  Stash the result
+            // so that it can be used to start the next list.
+            aux->next_iseq = iseq;
+            aux->next_from = from;
+            aux->next_to   = to;
+        }
+        // Return the first element of the new region list
+        advance_creg(r);
+        reg->start = r->regs[r->creg].start;
+        reg->end   = r->regs[r->creg].end;
+    }
+
     return 0;
+}
+
+int bcf_sr_regions_next(bcf_sr_regions_t *reg)
+{
+    return bcf_sr_regions_next_(reg, NULL);
 }
 
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec, bcf_sr_error *errnum)

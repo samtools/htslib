@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008-2009, by Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013, 2015 Genome Research Ltd.
+   Copyright (C) 2013, 2015, 2026 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -28,6 +28,9 @@
 #define _AC_KLIST_H
 
 #include <stdlib.h>
+#include <assert.h>
+
+#include "hts_alloc.h"
 
 #ifndef klib_unused
 #if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
@@ -47,22 +50,33 @@
 	}																	\
 	SCOPE void kmp_destroy_##name(kmp_##name##_t *mp) {					\
 		size_t k;														\
-		for (k = 0; k < mp->n; ++k) {									\
-			kmpfree_f(mp->buf[k]); free(mp->buf[k]);					\
+		if (!mp) return;												\
+		if (mp->buf) {													\
+			for (k = 0; k < mp->n; ++k) {							   	\
+				kmpfree_f(mp->buf[k]); free(mp->buf[k]);		   		\
+			}												   			\
+			free(mp->buf);												\
 		}																\
-		free(mp->buf); free(mp);										\
+		free(mp);														\
 	}																	\
 	SCOPE kmptype_t *kmp_alloc_##name(kmp_##name##_t *mp) {				\
-		++mp->cnt;														\
-		if (mp->n == 0) return (kmptype_t *)calloc(1, sizeof(kmptype_t)); \
-		return mp->buf[--mp->n];										\
+		if (mp->n > 0) { ++mp->cnt; return mp->buf[--mp->n]; } 			\
+		if (mp->max <= mp->cnt) {										\
+			/* Ensure there's enough buf space for all items made */	\
+			size_t new_max = mp->max ? mp->max << 1 : 16;				\
+			assert(new_max > mp->cnt); 									\
+			kmptype_t **new_buf = (kmptype_t **)hts_realloc_p(mp->buf, sizeof(kmptype_t *), new_max); \
+			if (!new_buf) return NULL; 									\
+			mp->buf = new_buf; 											\
+			mp->max = new_max; 											\
+		}																\
+		kmptype_t *new_item = (kmptype_t *)calloc(1, sizeof(kmptype_t)); \
+		if (new_item) ++mp->cnt;										\
+		return new_item;												\
 	}																	\
 	SCOPE void kmp_free_##name(kmp_##name##_t *mp, kmptype_t *p) {		\
 		--mp->cnt;														\
-		if (mp->n == mp->max) {											\
-			mp->max = mp->max? mp->max<<1 : 16;							\
-			mp->buf = (kmptype_t **)realloc(mp->buf, sizeof(kmptype_t *) * mp->max); \
-		}																\
+		assert(mp->n < mp->max);										\
 		mp->buf[mp->n++] = p;											\
 	}
 
@@ -89,8 +103,15 @@
 	} kl_##name##_t;													\
 	SCOPE kl_##name##_t *kl_init_##name(void) {							\
 		kl_##name##_t *kl = (kl_##name##_t *)calloc(1, sizeof(kl_##name##_t)); \
+		if (!kl) return NULL;											\
 		kl->mp = kmp_init(name);										\
+		if (!kl->mp) { free(kl); return NULL; }							\
 		kl->head = kl->tail = kmp_alloc(name, kl->mp);					\
+		if (!kl->head) {												\
+			kmp_destroy(name, kl->mp);									\
+			free(kl);													\
+			return NULL;												\
+		}																\
 		kl->head->next = 0;												\
 		return kl;														\
 	}																	\
@@ -104,6 +125,7 @@
 	}																	\
 	SCOPE kltype_t *kl_pushp_##name(kl_##name##_t *kl) {				\
 		kl1_##name *q, *p = kmp_alloc(name, kl->mp);					\
+		if (!p) return NULL;											\
 		q = kl->tail; p->next = 0; kl->tail->next = p; kl->tail = p;	\
 		++kl->size;														\
 		return &q->data;												\
