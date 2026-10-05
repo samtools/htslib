@@ -425,7 +425,7 @@ cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
     case -1:
     case HTS_IDX_NOCOOR:
         refid = -1;
-        pos = 0;
+        pos = -1; // start 0, span 0 implies end -1
         break;
 
     case HTS_IDX_START: {

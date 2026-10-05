@@ -1081,9 +1081,11 @@ sub test_index
 
     # CRAM
     local $ENV{REF_PATH} = "$$opts{m5_dir}/\%2s/\%2s/\%s";
-    test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view $nthreads -o seqs_per_slice=40 -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
     unlink("$$opts{tmp}/index.cram.crai");
     test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+    # Check unmapped data query (samtools/samtools#2396)
+    test_compare($opts,"$$opts{path}/test_view -p $$opts{tmp}/index.unmapped.sam $$opts{tmp}/index.cram '*'", "$$opts{path}/index.unmapped.sam", "$$opts{tmp}/index.unmapped.sam");
 
     # CRAM container skipping test
     # Prepare a file with records split into multiple containers, the first two
