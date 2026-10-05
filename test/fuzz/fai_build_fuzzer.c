@@ -1,6 +1,6 @@
 /*  test/fuzz/fai_build_fuzzer.c -- Fuzz driver for the FASTA/FASTQ index parser.
 
-    Copyright (C) 2026 Genome Research Ltd.
+    Copyright (C) 2026 Ada Logics Ltd.
 
     Author: Arthur Chan <arthur.chan@adalogics.com>
 
