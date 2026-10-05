@@ -27,10 +27,16 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "htslib/sam.h"
+#include "sam_cache.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct state {
+    void *state;    //sam/fastq state data
+    rc_t *cache;    //sam read cache for sam/bam/cram
+} state;
 
 // Used internally in the SAM format multi-threading.
 int sam_state_destroy(samFile *fp);
