@@ -1,28 +1,28 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* New environment variable HTS_GCS_HOST, analogous to the existing
+* NEW. Added environment variable HTS_GCS_HOST, analogous to the existing
   HTS_S3_HOST, to redirect gs:// URLs to a caller-specified endpoint
   (e.g. a local GCS emulator such as fake-gcs-server) using path-style
   addressing instead of the normal BUCKET.storage.googleapis.com
   virtual-hosted-style addressing.
   (PR #2051.  Thanks to Peter Dowdy)
-  
-Updates  
+
+Updates
 -------
 
 * Various code quality improvements.  Added memory and error
   checks.  Some changes to better data types.
   (PR #2054, PR #2059, PR #2064, PR #2066, PR #2073, PR #2070, PR #2075,
    PR #2077)
-  
+
 * Add a new format option to strip UR tags from CRAM.
   (PR #2056, partial fix for samtools/samtools#2327.  Requested by
-   Florian Plaza Oñate) <-- FIX ENCODING
-   
+   Florian Plaza OÃ±ate)
+
 * Report when khash can no longer expand.
   (PR #2063)
-  
+
 * Use multi iterators in the synced reader.  This adds bcf_itr_regions() and
   tbx_itr_regions() interfaces as BCF and tabix equivalents to
   sam_itr_regions().  This can speed up `bcftools view`.
@@ -30,42 +30,38 @@ Updates
 
 * Apply CURL_CA_BUNDLE environment variable in the S3 backend.
   (PR #2069.  Thanks to John Marshall)
-  
+
 * Cram embed_ref=2 and huffman optimisation.
   (PR #2082)
-  
+
 * API fix. Protect against out of bounds ref id in cram_put_bam_seq.
   (PR #2087)
-  
+
 * Adds validation to options specified using hts_opt_add or cram_set_voption.
   Mostly for overflow detection.
   (PR #2095. Reported by Sn0wyDay)
-  
+
 * Return an error instead of calling abort in hts_getline().
   (PR #2093, fixes #2091.  Reported by an)
-
-
 
 Build Changes
 -------------
 
-* Add more CI tests for a variety of linux and non-linux platforms.
+* Add more CI tests for a variety of Linux and non-Linux platforms.
   (PR #2053)
-  
+
 * Update build badge, remove .cirrus.yml, spelling corrections.
   (PR #2071.  Thanks to John Marshall)
-  
+
 * Improved code testing with the addition of a fuzzer for the expression
   filters (hts_expr).
   (PR #2076)
-  
+
 * Make check_copyright.pl better at skipping auto-generated files.
   (PR #2080)
-  
+
 * Use bash and pipefail for tests using simple_test_driver.sh
   (PR #2083)
-
-
 
 Bug fixes
 ---------
@@ -75,46 +71,40 @@ Bug fixes
 
 * Fix heapsort bug and add ksort tests and improved documentation in comments.
   (PR #2055)
-  
+
 * Fix possible leak of bgzidx_t::offs and changes to bgzidx_t::noffs and
   bgzidx_t::moffs data types.
   (PR #2057)
-  
+
 * Remove an assert in cram_index_build and have it fail more gracefully.
   (PR #2061, fixes #2060.  Reported and co-authored by Shujie Xiang)
-  
+
 * Remove an infinite loop in bam_mods_at_qpos().
   (PR #2068)
-  
+
 * Make sam_format_aux1 'A' type be nul terminated.
   (PR #2079)
-  
+
 * Fix multiple VCF header parsing bugs.
-  (PR #2074.  Reported by Mark Woon)
-  
+  (PR #2074, fixes #2065  Reported by Mark Woon)
+
 * Resolve cigar2 overflow.
   (PR #2072)
-  
+
 * CG tag and SEQ/CIGAR consistency.
   (PR # 2089. Fixes oss-fuzz issue  560967311)
-  
+
 * Simplify crai reading and zlib_mem_inflate().
   (PR #2085, fixes #2081.  Reported by Sewon Ahn)
-  
+
 * Fix hts_set_filter_expression(fp, NULL) that did not previously reset the
   pointer to NULL.
   (PR #2094.  Reported and code fix suggestion by Sewon Ahn)
-  
+
 * Tighten version number limits in bcf_get_version()
   (PR #2092, fixes #2088. Reported by an)
 
-Documentation updates
----------------------
 
-
-  
-  
-  
 
 Noteworthy changes in release 1.24 (9th July 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
