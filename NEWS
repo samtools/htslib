@@ -50,11 +50,6 @@ Build Changes
 * Update build badge, remove .cirrus.yml, spelling corrections.
   (PR #2071.  Thanks to John Marshall)
 
-* Improved code testing with the addition of a fuzzer for the expression
-  filters (hts_expr).  This resulted in the detection and correction of several
-  serious expression parsing bugs.
-  (PR #2076)
-
 * Make check_copyright.pl better at skipping auto-generated files.
   (PR #2080)
 
@@ -80,7 +75,7 @@ Bug fixes
 * Remove an infinite loop in bam_mods_at_qpos().
   (PR #2068)
 
-* Make sam_format_aux1 'A' type be null terminated.
+* Make sam_format_aux1 'A' type be nul terminated.
   (PR #2079)
 
 * Fix multiple VCF header parsing bugs.
@@ -88,6 +83,11 @@ Bug fixes
 
 * Prevent integer overflow in resolve_cigar2().
   (PR #2072)
+
+* Improved code testing with the addition of a fuzzer for the expression
+  filters (hts_expr).  This resulted in the detection and correction of several
+  serious expression parsing bugs.
+  (PR #2076)
 
 * Improve checking of SEQ/CIGAR consistency when processing records with CG
   tags.
