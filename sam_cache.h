@@ -72,13 +72,8 @@ typedef struct rc_t {//read cache
     int *dpth;  //depth buffer
 } rc_t;
 
-/// @brief setup cache
-/// @param fp file pointer to which cache is assigned and used
-/// @param wndsz size of cache window
-/// @param maxdpth depth limit
-/// @return 0 on success others on failure
-int setup_readcache(htsFile *fp, int wndsz, int maxdpth);
-void destroy_readcache(htsFile *fp);
+int setup_readcache(struct hts_filter_t *f, int wndsz, int maxdpth);
+void destroy_readcache(struct hts_filter_t *f);
 // return an element to cache
 void ret_cache(rc_t *c, ce_t* elem);
 // get a cached storage from cache
@@ -99,6 +94,8 @@ void set_iter_access(htsFile *fp);
 int get_iter_access(htsFile *fp);
 //get cache pointer, for use in iterator
 void* get_sam_readcache(hts_itr_t *itr, void *data);
+//get bam storage from buffer
+bam1_t *get_readbuffer(ce_t *e);
 //retrieve a selected read from cached ones, wrapper for iterator
 int getfrom_readcache_iter(void *c, void *s, int *tid, hts_pos_t *beg, hts_pos_t* end);
 // get a cached storage from cache, wrapper for iterator

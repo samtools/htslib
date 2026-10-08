@@ -33,11 +33,6 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
-typedef struct state {
-    void *state;    //sam/fastq state data
-    rc_t *cache;    //sam read cache for sam/bam/cram
-} state;
-
 // Used internally in the SAM format multi-threading.
 int sam_state_destroy(samFile *fp);
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p);

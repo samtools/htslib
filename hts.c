@@ -1802,14 +1802,12 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
-    destroy_readcache(fp);
     sam_hdr_destroy(fp->bam_header);
     hts_idx_destroy(fp->idx);
     hts_filter_free(fp->filter);
     free(fp->fn);
     free(fp->fn_aux);
     free(fp->line.s);
-    free(fp->state);
     free(fp);
     errno = save;
     return ret;
@@ -2007,29 +2005,6 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
             }
         } // else CRAM manages this in its own way
         break;
-    }
-
-    case HTS_OPT_CACHE_FLT_DEPTH: {
-        va_start(args, opt);
-        int dpth = va_arg(args, int);
-        va_end(args);
-        if (dpth > 0) {
-            if(setup_readcache(fp, 0, dpth)) {
-                hts_log_warning("Failed to setup hts cache depth");
-            }
-        }
-        return 0;
-    }
-    case HTS_OPT_CACHE_FLT_SIZE: {
-        va_start(args, opt);
-        int wndsz = va_arg(args, int);
-        va_end(args);
-        if (wndsz > 0) {
-            if(setup_readcache(fp, wndsz, 0)) {
-                hts_log_warning("Failed to setup hts cache window size");
-            }
-        }
-        return 0;
     }
 
     default:
@@ -4438,7 +4413,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *s, void *data)
             sts = 0;
         }
         if (iter->read_rest) {
-        ret = iter->readrec(fp, data, r, &tid, &beg, &end);
+            ret = iter->readrec(fp, data, r, &tid, &beg, &end);
             if (ret < 0) {
                 if (c) {    //end of file or iterator, mark in cache as well
                     notify_end_iter(c, e);
@@ -4449,20 +4424,20 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *s, void *data)
                 }
                 break;
             } else if (!c) {
-        iter->curr_tid = tid;
-        iter->curr_beg = beg;
-        iter->curr_end = end;
-        return ret;
+                iter->curr_tid = tid;
+                iter->curr_beg = beg;
+                iter->curr_end = end;
+                return ret;
             } else {    //cache in use, add read to cache
                 if (addto_readcache_iter(c, e, &sts)) {
                     return -3;
-    }
+                }
                 if (sts >= 2)   //ready/wnd full/end
                     break;
                 continue;
             }
         } else {
-        if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
+            if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
                 if (iter->i == iter->n_off - 1) {
                     ret = -1;
                     if (c) {    //end of file or iterator, mark in cache as well
@@ -4470,26 +4445,26 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *s, void *data)
                     }
                     break;
                 } // no more chunks
-            if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
-                    hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
-                                  iter->off[iter->i+1].u,
-                                  errno ? ": " : "", strerror(errno));
-                    return -2;
+                if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
+                    if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                        hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
+                                    iter->off[iter->i+1].u,
+                                    errno ? ": " : "", strerror(errno));
+                        return -2;
+                    }
+                    iter->curr_off = bgzf_tell(fp);
                 }
-                iter->curr_off = bgzf_tell(fp);
+                ++iter->i;
             }
-            ++iter->i;
-        }
-        if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
-            iter->curr_off = bgzf_tell(fp);
-            if (tid != iter->tid || beg >= iter->end) { // no need to proceed
+            if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
+                iter->curr_off = bgzf_tell(fp);
+                if (tid != iter->tid || beg >= iter->end) { // no need to proceed
                     ret = -1;
                     if (c) {    //end of file or iterator, mark in cache as well
                         notify_end_iter(c, e);
                     }
                     break;
-            } else if (end > iter->beg && iter->end > beg) {
+                } else if (end > iter->beg && iter->end > beg) {
                     if (c) {    //cache in use, add read to cache
                         if (addto_readcache_iter(c, e, &sts)) {
                             return -3;
@@ -4498,14 +4473,14 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *s, void *data)
                             break;
                         continue;
                     }
-                iter->curr_tid = tid;
-                iter->curr_beg = beg;
-                iter->curr_end = end;
-                return ret;
+                    iter->curr_tid = tid;
+                    iter->curr_beg = beg;
+                    iter->curr_end = end;
+                    return ret;
                 } else {    //non interested data?
                     if (c)
                         ret_cache(c,e);
-            }
+                }
             } else {
                 if (c && ret == -1) { //eof
                     notify_end_iter(c, e);
@@ -4520,7 +4495,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *s, void *data)
             return -3;
         //get reads to be consumed
         if (!getfrom_readcache_iter(c, s, &iter->curr_tid, &iter->curr_beg, &iter->curr_end)) {
-    iter->finished = 1;
+            iter->finished = 1;
             reset_readcache_iter(c);
             return -1;
         } else if (ret < 0)
@@ -4539,7 +4514,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
     cs sts = NOTREADY;
     hts_pos_t beg, end;
     hts_reglist_t *found_reg;
-    void *c = (void*)fd->c;
+    void *c = get_sam_readcache(iter, fd);
     void *e = NULL;
     void *r = s;
 
@@ -4571,22 +4546,22 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
                 r = get_readbuffer_iter(e);  //get bam pointer from retrived storage
                 sts = 0;
             }
-        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+            ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
             if (ret < 0) {
                 if (c) {    //end of file or iterator, mark in cache as well
                     notify_end_iter(c, e);
                 }
                 break;
             } else if (!c) {
-        iter->curr_tid = tid;
-        iter->curr_beg = beg;
-        iter->curr_end = end;
+                iter->curr_tid = tid;
+                iter->curr_beg = beg;
+                iter->curr_end = end;
 
-        return ret;
+                return ret;
             } else {    //sam cache in use, add to read cache
                 if (addto_readcache_iter(c, e, &sts)) {
                     return -3;
-    }
+                }
                 if (sts >= 2)   //ready/wnd full/end
                     break;
                 continue;
@@ -4829,14 +4804,14 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
                         iter->curr_intv = 0;
                         iter->curr_tid = iter->reg_list[iter->curr_reg].tid;
                     }
-                        if (c) {    //end of file or iterator, mark in cache as well
-                            notify_end_iter(c, e);
-                        }
+                    if (c) {    //end of file or iterator, mark in cache as well
+                        notify_end_iter(c, e);
+                    }
                     continue;
                 } else {
-                        if (c) {    //end of file or iterator, mark in cache as well
-                            notify_end_iter(c, e);
-                        }
+                    if (c) {    //end of file or iterator, mark in cache as well
+                        notify_end_iter(c, e);
+                    }
                     break;
                 }
             }
@@ -4851,12 +4826,12 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
                                                     iter->n_reg,
                                                     sizeof(hts_reglist_t),
                                                     compare_regions);
-                    if (!found_reg) {
-                        if (c) {
-                            ret_cache(c,e);
-                        }
-                    continue;
+                if (!found_reg) {
+                    if (c) {
+                        ret_cache(c,e);
                     }
+                    continue;
+                }
 
                 iter->curr_reg = (found_reg - iter->reg_list);
                 iter->curr_tid = tid;
@@ -4903,7 +4878,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
                     ret_cache(c,e);
                 }
             }
-            }
+        }
     }
     if (c && ret >= -1) {   //sam cache in use
         //prcess reads in cache
@@ -4919,7 +4894,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *s)
             ret = 0;
         return ret;
     } else {
-    iter->finished = 1;
+        iter->finished = 1;
     }
 
     return ret;

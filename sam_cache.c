@@ -27,6 +27,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "sam_cache.h"
 #include "htslib/hts_alloc.h"
 
+typedef struct hts_filter_t hts_filter_t;
+extern rc_t *get_filter_cache(hts_filter_t *);
+extern void set_filter_cache(hts_filter_t *, rc_t *);
+
 
 #ifdef CACHE_DBG_LOG
 FILE *cachelog = NULL;
@@ -54,12 +58,14 @@ static int ensure_depthbuffer(rc_t *c, hts_pos_t sz)
 /// @param wndsz size of cache window
 /// @param maxdpth depth limit
 /// @return 0 on success and non-zero on failure
-int setup_readcache(htsFile *fp, int wndsz, int maxdpth)
+int setup_readcache(hts_filter_t *f, int wndsz, int maxdpth)
 {
     int i, j, first = 0;
-    rc_t *c = (rc_t*)fp->c;
+    rc_t *c = NULL;
     ce_t *elem = NULL, *tail = NULL, **p = NULL;
     const int def_wndsz = 3500, def_dpth = 1000;
+
+    c = get_filter_cache(f);
     /*create cache if it doesn't exists. set window and depth size during
     initialisation. when free cache slots are 1, allocate next chunk.*/
     if (!c) { //create cache
@@ -68,7 +74,7 @@ int setup_readcache(htsFile *fp, int wndsz, int maxdpth)
         maxdpth = maxdpth <= 0 ? def_dpth : maxdpth;
         if (!(c = hts_calloc(sizeof(rc_t), 1)))
             goto fail;
-        fp->c = c;
+        set_filter_cache(f, c);
     } else if (c->cache.f > 1) {    //re-init or retrieval
         //update depth buffer / dpth settings if needed
         if (wndsz || maxdpth) {
@@ -173,17 +179,19 @@ fail:
         free(c->dpth);
         c->dpth = NULL;
         free(c);
-        fp->c = NULL;
+        set_filter_cache(f, NULL);
     }
+    hts_log_warning("Failed to setup readcache");
     return 1;
 }
+
 /// @brief destroys the read cache
 /// @param fp htsFile pointer
-void destroy_readcache(htsFile *fp)
+void destroy_readcache(hts_filter_t *f)
 {
     int i, j;
     ce_t *elem = NULL;
-    rc_t *c = (rc_t*) fp->c;
+    rc_t *c = get_filter_cache(f);
     khint_t iter;
 
     if(!c)      //cache not in use
@@ -223,7 +231,7 @@ void destroy_readcache(htsFile *fp)
     free(c->inc);
     kh_destroy(pair, c->selpair);
     free(c);
-    fp->c = NULL;
+    set_filter_cache(f, NULL);
 }
 
 //implementation / internals
@@ -233,8 +241,8 @@ void set_iter_access(htsFile *fp) {
     /*when cache is used thr' iterator, cached read handling is done in itr_nxt
       when it is used on whole file, it is done in sam_read1. this flag
       helps to identify these scenarios and use cache appropriately*/
-    if (fp->c) {    //cache is in use
-        rc_t *c = (rc_t*)fp->c;
+    rc_t *c = get_filter_cache(fp->filter);
+    if (c) {    //cache is in use
         c->itr = 1;
     }
 }
@@ -243,8 +251,8 @@ void set_iter_access(htsFile *fp) {
 /// @param fp htsFile pointer for cache access
 /// @return 1 if thr' iterator and 0 if not in use / not thr' iterator
 int get_iter_access(htsFile *fp) {
-    if (fp->c) {    //cache in use
-        rc_t *c = (rc_t*) fp->c;
+    rc_t *c = get_filter_cache(fp->filter);
+    if (c) {    //cache in use
         return c->itr;
     }
     return 0;       //cache not in use
@@ -374,11 +382,11 @@ void ret_cache(rc_t *c, ce_t* elem)
 /// @return ce_t* on success or NULL on failure
 ce_t* get_cache(htsFile *fp)
 {
-    rc_t *c = (rc_t*)fp->c;
+    rc_t *c = get_filter_cache(fp->filter);
     ce_t *ret = NULL;
 
     //create enough space
-    if (setup_readcache(fp, 0, 0))   //passing 0 to avoid re-initialization
+    if (setup_readcache(fp->filter, 0, 0))   //passing 0 to avoid re-initialization
         goto fail;
 
     ret = c->cache.head;
@@ -724,7 +732,6 @@ static inline void reset_depth(rc_t* c)
         c->head_nsel = en;
     }
 
-    LG("reset: t %"PRIu64" s %"PRIu64" i %"PRIu64" n %"PRIu64"; nxt %d\n", c->rcnt, c->selcnt,c->inscnt, c->nselcnt, c->tid);
     c->tail_nsel = NULL;
 }
 /// @brief process the cached reads and find required ones
@@ -970,13 +977,19 @@ int process_readcache(rc_t *c)
             memset(c->dpth + c->dp_sz - adj, 0, adj * sizeof(int));
             c->dp_en += adj;
         }
-        LG("* wnd moved, %"PRIhts_pos" - %"PRIhts_pos", dpth %"PRIhts_pos" - %"PRIhts_pos"; s %"PRIu64" i %"PRIu64" ns %"PRIu64"\n", c->w_st, c->w_en, c->w_st, c->dp_en, c->selcnt, c->inscnt, c->nselcnt);
         c->sts = READY;    //reset full status n get already processed
     }
 
     return 0;
 fail:
     return -1;
+}
+/// @brief retrieves bam pointer from cache storage
+/// @param p cache storage retrieved
+/// @return bam pointer as void *
+bam1_t *get_readbuffer(ce_t *e)
+{
+    return e->r;
 }
 
 //wrappers for iterators
@@ -989,13 +1002,13 @@ fail:
 /// @return read cache pointer
 void* get_sam_readcache(hts_itr_t *itr, void *data)
 {
-    htsFile *fp = NULL;
+    hts_filter_t *f = NULL;
     /*invoked from itr_nxt, which is used by utilities like tabix as well.
     cache is in use only for sam data and to identify the invocation usecache
     flag is used. this flag is set when iterator is used in sam context.*/
     if (itr && itr->usecache)
-        fp = (htsFile*)data;
-    return fp ? fp->c : NULL;
+        f = ((htsFile*)data)->filter;
+    return get_filter_cache(f);
 }
 /// @brief wrapper to get read from cache
 /// @param p read cache pointer

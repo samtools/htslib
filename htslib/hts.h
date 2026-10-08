@@ -260,7 +260,6 @@ typedef struct htsFile {
     const char *fnidx;
     struct sam_hdr_t *bam_header;
     struct hts_filter_t *filter;
-    void *c;    //for cache
 } htsFile;
 
 // A combined thread pool and queue allocation size.
