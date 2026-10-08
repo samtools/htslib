@@ -260,7 +260,6 @@ typedef struct htsFile {
     const char *fnidx;
     struct sam_hdr_t *bam_header;
     struct hts_filter_t *filter;
-    void *c;    //for cache
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -333,8 +332,6 @@ enum hts_fmt_option {
     HTS_OPT_BLOCK_SIZE,
     HTS_OPT_FILTER,
     HTS_OPT_PROFILE,
-    HTS_OPT_CACHE_FLT_DEPTH,    //depth above which to discard reads
-    HTS_OPT_CACHE_FLT_SIZE,     //size of caching window
 
     // Fastq
 

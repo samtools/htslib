@@ -27,6 +27,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "sam_cache.h"
 #include "htslib/hts_alloc.h"
 
+typedef struct hts_filter_t hts_filter_t;
+extern rc_t *get_filter_cache(hts_filter_t *);
+extern void set_filter_cache(hts_filter_t *, rc_t *);
+
 
 #ifdef CACHE_DBG_LOG
 FILE *cachelog = NULL;
@@ -54,12 +58,14 @@ static int ensure_depthbuffer(rc_t *c, hts_pos_t sz)
 /// @param wndsz size of cache window
 /// @param maxdpth depth limit
 /// @return 0 on success and non-zero on failure
-int setup_readcache(htsFile *fp, int wndsz, int maxdpth)
+int setup_readcache(hts_filter_t *f, int wndsz, int maxdpth)
 {
     int i, j, first = 0;
-    rc_t *c = (rc_t*)fp->c;
+    rc_t *c = NULL;
     ce_t *elem = NULL, *tail = NULL, **p = NULL;
     const int def_wndsz = 3500, def_dpth = 1000;
+
+    c = get_filter_cache(f);
     /*create cache if it doesn't exists. set window and depth size during
     initialisation. when free cache slots are 1, allocate next chunk.*/
     if (!c) { //create cache
@@ -68,7 +74,7 @@ int setup_readcache(htsFile *fp, int wndsz, int maxdpth)
         maxdpth = maxdpth <= 0 ? def_dpth : maxdpth;
         if (!(c = hts_calloc(sizeof(rc_t), 1)))
             goto fail;
-        fp->c = c;
+        set_filter_cache(f, c);
     } else if (c->cache.f > 1) {    //re-init or retrieval
         //update depth buffer / dpth settings if needed
         if (wndsz || maxdpth) {
@@ -173,17 +179,19 @@ fail:
         free(c->dpth);
         c->dpth = NULL;
         free(c);
-        fp->c = NULL;
+        set_filter_cache(f, NULL);
     }
+    hts_log_warning("Failed to setup readcache");
     return 1;
 }
+
 /// @brief destroys the read cache
 /// @param fp htsFile pointer
-void destroy_readcache(htsFile *fp)
+void destroy_readcache(hts_filter_t *f)
 {
     int i, j;
     ce_t *elem = NULL;
-    rc_t *c = (rc_t*) fp->c;
+    rc_t *c = get_filter_cache(f);
     khint_t iter;
 
     if(!c)      //cache not in use
@@ -223,7 +231,7 @@ void destroy_readcache(htsFile *fp)
     free(c->inc);
     kh_destroy(pair, c->selpair);
     free(c);
-    fp->c = NULL;
+    set_filter_cache(f, NULL);
 }
 
 //implementation / internals
@@ -233,8 +241,8 @@ void set_iter_access(htsFile *fp) {
     /*when cache is used thr' iterator, cached read handling is done in itr_nxt
       when it is used on whole file, it is done in sam_read1. this flag
       helps to identify these scenarios and use cache appropriately*/
-    if (fp->c) {    //cache is in use
-        rc_t *c = (rc_t*)fp->c;
+    rc_t *c = get_filter_cache(fp->filter);
+    if (c) {    //cache is in use
         c->itr = 1;
     }
 }
@@ -243,8 +251,8 @@ void set_iter_access(htsFile *fp) {
 /// @param fp htsFile pointer for cache access
 /// @return 1 if thr' iterator and 0 if not in use / not thr' iterator
 int get_iter_access(htsFile *fp) {
-    if (fp->c) {    //cache in use
-        rc_t *c = (rc_t*) fp->c;
+    rc_t *c = get_filter_cache(fp->filter);
+    if (c) {    //cache in use
         return c->itr;
     }
     return 0;       //cache not in use
@@ -261,13 +269,12 @@ cs get_readcache_status(rc_t *c) {
 /// @brief update the depth buffer based on reads length
 /// @param c read cache
 /// @param e cache element holding the read under processing
-/// @param chk 1 checks whether the read is required or not; 0 to update depth
-/// @return -ve - error, 0 - read not required, 1 - read required
-static int update_depth(rc_t *c, ce_t *e, int chk)
+/// @return -ve - error, 0 - success
+static int update_depth(rc_t *c, ce_t *e)
 {
     int *dpth = NULL;
     uint32_t *cgr = bam_get_cigar(e->r), i, j;
-    int clen, off, req = 0;
+    int clen, off;
     hts_pos_t st, en, len = 0, h;
     if (!c->dpth) {     //setup depth buffer
         if (ensure_depthbuffer(c, c->dp_sz + 1))
@@ -305,40 +312,17 @@ static int update_depth(rc_t *c, ce_t *e, int chk)
     }
     len = 0;
     dpth = c->dpth;
-    if (chk) {  //check depth
-        for (i = 0; i < e->r->core.n_cigar; ++i) {
-            if (!(bam_cigar_type(bam_cigar_op(cgr[i])) & 2)) {
-                continue;       //not consuming ref
-            }
-            //deletion is counted!
-            //check depth for each position is above required limit or not
-            //read required if depth is <= the limit
-            clen = bam_cigar_oplen(cgr[i]);
-            for (j = 0; j < clen; ++j) {
-                if (off + j >= 0)
-                    req |= dpth[off + j] + 1 <= c->maxdpth;
-            }
-            off += clen;
-            if (req) {  //required, no need to check further
-                break;
-            }
+    for (i = 0; i < e->r->core.n_cigar; ++i) {
+        if (!(bam_cigar_type(bam_cigar_op(cgr[i])) & 2)) {   //not consuming ref
+            continue;
         }
-    } else {    //update depth
-        req = 1;
-        for (i = 0; i < e->r->core.n_cigar; ++i) {
-            if (!(bam_cigar_type(bam_cigar_op(cgr[i])) & 2)) {   //not consuming ref
-                continue;
-            }
-            clen = bam_cigar_oplen(cgr[i]);
-            //inc buffer is an attempt to force compiler to use intrinsics
-            for (j = 0; j < clen; ++j) {
-                dpth[off + len + j] += c->inc[j];
-            }
-            len += clen;
+        clen = bam_cigar_oplen(cgr[i]);
+        //inc buffer is an attempt to force compiler to use intrinsics
+        for (j = 0; j < clen; ++j) {
+            dpth[off + len + j] += c->inc[j];
         }
+        len += clen;
     }
-    if (req)
-        return 1;
     return 0;
 
 fail:
@@ -374,11 +358,11 @@ void ret_cache(rc_t *c, ce_t* elem)
 /// @return ce_t* on success or NULL on failure
 ce_t* get_cache(htsFile *fp)
 {
-    rc_t *c = (rc_t*)fp->c;
+    rc_t *c = get_filter_cache(fp->filter);
     ce_t *ret = NULL;
 
     //create enough space
-    if (setup_readcache(fp, 0, 0))   //passing 0 to avoid re-initialization
+    if (setup_readcache(fp->filter, 0, 0))   //passing 0 to avoid re-initialization
         goto fail;
 
     ret = c->cache.head;
@@ -423,7 +407,7 @@ int addto_readcache(rc_t *c, ce_t *e, cs *sts)
     }
     e->ord = ++(c->ord);
     e->len = bam_cigar2rlen(e->r->core.n_cigar, bam_get_cigar(e->r));
-    LG("+ %s %"PRIu64"\t\t%"PRIhts_pos" %"PRIhts_pos" %"PRIu64" %"PRIhts_pos"\n", bam_get_qname(e->r), e->ord, c->w_st, e->r->core.pos, e->len, c->w_en);
+    LG("+ %s %"PRIu64"\t\t%"PRIhts_pos" %"PRIhts_pos" %"PRIu64" %"PRIu64" %"PRIhts_pos"\n", bam_get_qname(e->r), e->ord, c->w_st, e->r->core.pos, e->len, e->r->core.pos + e->len, c->w_en);
     if (!c->head) {
         c->head = c->tail = e;
     } else {
@@ -724,7 +708,6 @@ static inline void reset_depth(rc_t* c)
         c->head_nsel = en;
     }
 
-    LG("reset: t %"PRIu64" s %"PRIu64" i %"PRIu64" n %"PRIu64"; nxt %d\n", c->rcnt, c->selcnt,c->inscnt, c->nselcnt, c->tid);
     c->tail_nsel = NULL;
 }
 /// @brief process the cached reads and find required ones
@@ -789,8 +772,8 @@ int process_readcache(rc_t *c)
                     }
                 } else {
                     LGlog(&e->log, "%s%"PRIhts_pos",", "nsel,", pos);
-                    move_read(c, ep, e, en, 0, 0);   //move to unselected
                     LG("* x %"PRIhts_pos" nsel2\n", e->ord);
+                    move_read(c, ep, e, en, 0, 0);   //move to unselected
                 }
             } else {
                 ep = e;
@@ -840,7 +823,7 @@ int process_readcache(rc_t *c)
         LG("* x %"PRIhts_pos" sel @ %"PRIhts_pos"\n", ep->ord, pos);
         LGlog(&ep->log, "%s%"PRIhts_pos, "sel,", pos);
         move_read(c, ep->prev, ep, ep->next, 1, 0);
-        if (update_depth(c, ep, 0) < 0) {
+        if (update_depth(c, ep) < 0) {
             goto fail;
         }
         //get/set for pair
@@ -970,13 +953,19 @@ int process_readcache(rc_t *c)
             memset(c->dpth + c->dp_sz - adj, 0, adj * sizeof(int));
             c->dp_en += adj;
         }
-        LG("* wnd moved, %"PRIhts_pos" - %"PRIhts_pos", dpth %"PRIhts_pos" - %"PRIhts_pos"; s %"PRIu64" i %"PRIu64" ns %"PRIu64"\n", c->w_st, c->w_en, c->w_st, c->dp_en, c->selcnt, c->inscnt, c->nselcnt);
         c->sts = READY;    //reset full status n get already processed
     }
 
     return 0;
 fail:
     return -1;
+}
+/// @brief retrieves bam pointer from cache storage
+/// @param p cache storage retrieved
+/// @return bam pointer as void *
+bam1_t *get_readbuffer(ce_t *e)
+{
+    return e->r;
 }
 
 //wrappers for iterators
@@ -989,13 +978,13 @@ fail:
 /// @return read cache pointer
 void* get_sam_readcache(hts_itr_t *itr, void *data)
 {
-    htsFile *fp = NULL;
+    hts_filter_t *f = NULL;
     /*invoked from itr_nxt, which is used by utilities like tabix as well.
     cache is in use only for sam data and to identify the invocation usecache
     flag is used. this flag is set when iterator is used in sam context.*/
     if (itr && itr->usecache)
-        fp = (htsFile*)data;
-    return fp ? fp->c : NULL;
+        f = ((htsFile*)data)->filter;
+    return get_filter_cache(f);
 }
 /// @brief wrapper to get read from cache
 /// @param p read cache pointer
