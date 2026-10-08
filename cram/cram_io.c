@@ -5596,7 +5596,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         fd->pool = p ? p->pool : NULL;
         if (fd->pool) {
             fd->rqueue = hts_tpool_process_init(fd->pool,
-                                                p->qsize ? p->qsize : hts_tpool_size(fd->pool)*2,
+                                                p->qsize ? p->qsize : hts_tpool_size(fd->pool)*1.3+1,
                                                 0);
         }
         fd->shared_ref = 1; // Needed to avoid clobbering ref between threads
