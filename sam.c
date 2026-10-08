@@ -3082,16 +3082,11 @@ static SAM_state *sam_state_create(htsFile *fp) {
     if (fp->format.format != sam && fp->format.format != text_format)
         return NULL;
 
-    if (!fp->state) {
-        if (!(fp->state = hts_calloc(sizeof(state), 1)))
-            return NULL;
-    }
-
     SAM_state *fd = calloc(1, sizeof(SAM_state));
     if (!fd)
         return NULL;
 
-    ((state*)fp->state)->state = fd;
+    fp->state = fd;
     fd->fp = fp;
 
     return fd;
@@ -3125,14 +3120,11 @@ static void sam_free_sp_bams(sp_bams *b) {
 // Destroys the state produce by sam_state_create.
 int sam_state_destroy(htsFile *fp) {
     int ret = 0;
-    state *s = fp->state;
 
-    if (!s)
-        return 0;
-    if (!s->state)
+    if (!fp->state)
         return 0;
 
-    SAM_state *fd = s->state;
+    SAM_state *fd = fp->state;
     if (fd->p) {
         if (fd->h) {
             // Notify sam_dispatcher we're closing
@@ -3228,8 +3220,9 @@ int sam_state_destroy(htsFile *fp) {
         bam_hdr_destroy(fd->h);
     }
 
-    free(s->state);
-    s->state = NULL;
+    free(fp->state);
+    fp->state = NULL;
+
     return ret;
 }
 
@@ -3363,7 +3356,7 @@ static void *sam_dispatcher_read(void *vp) {
     htsFile *fp = vp;
     kstring_t line = {0};
     int line_frag = 0;
-    SAM_state *fd = ((state*)fp->state)->state; //state is ensured already
+    SAM_state *fd = fp->state;
     sp_lines *l = NULL;
 
     // Pre-allocate buffer for left-over bits of line (exact size doesn't
@@ -3534,7 +3527,7 @@ static void *sam_dispatcher_read(void *vp) {
 // to our output stream.
 static void *sam_dispatcher_write(void *vp) {
     htsFile *fp = vp;
-    SAM_state *fd = ((state*)fp->state)->state; //state is ensured already
+    SAM_state *fd = fp->state;
     hts_tpool_result *r;
 
     // Iterates until result queue is shutdown, where it returns NULL.
@@ -3755,8 +3748,7 @@ static void *sam_format_worker(void *arg) {
 }
 
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
-    state *s = fp->state;
-    if (s && s->state)
+    if (fp->state)
         return -2;   //already exists!
 
     SAM_state *fd = sam_state_create(fp);
@@ -3797,7 +3789,7 @@ int sam_set_threads(htsFile *fp, int nthreads) {
         return ret;
     }
 
-    SAM_state *fd = (SAM_state *)((state*)fp->state)->state;    //state would be valid
+    SAM_state *fd = (SAM_state *)fp->state;
     fd->own_pool = 1;
 
     return 0;
@@ -3839,37 +3831,29 @@ static fastq_state *fastq_state_init(int name_char) {
 }
 
 void fastq_state_destroy(htsFile *fp) {
-    state *s = (state*)fp->state;
-    if (s && s->state) {
-        fastq_state *x = (fastq_state *)s->state;
+    if (fp->state) {
+        fastq_state *x = (fastq_state *)fp->state;
         if (x->tags)
             kh_destroy(tag, x->tags);
         ks_free(&x->name);
         ks_free(&x->seq);
         ks_free(&x->qual);
         regfree(&x->regex);
-        free(s->state);
-        s->state = NULL;
+        free(fp->state);
     }
 }
 
 int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
     va_list args;
-    state *s = NULL;
 
     if (!fp)
         return -1;
-    if (!fp->state) {
-        if (!(fp->state = hts_calloc(sizeof(state), 1)))
-            return -1;
-    }
-    s = (state*)fp->state;
-    if (!s->state)
-        if (!((s->state = fastq_state_init(fp->format.format == fastq_format
+    if (!fp->state)
+        if (!((fp->state = fastq_state_init(fp->format.format == fastq_format
                                            ? '@' : '>'))))
             return -1;
 
-    fastq_state *x = (fastq_state *)s->state;
+    fastq_state *x = (fastq_state *)fp->state;
 
     switch (opt) {
     case FASTQ_OPT_CASAVA:
@@ -3972,7 +3956,7 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
 }
 
 static int fastq_parse1(htsFile *fp, bam1_t *b) {
-    fastq_state *x = (fastq_state *)((state*)fp->state)->state; //state would be valid here
+    fastq_state *x = (fastq_state *)fp->state;
     size_t i, l;
     int ret = 0;
 
@@ -4200,7 +4184,6 @@ static inline int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
 // Internal component of sam_read1 below
 static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
     int ret;
-    state *s = (state*)fp->state;
 
     // Consume 1st line after header parsing as it wasn't using peek
     if (fp->line.l != 0) {
@@ -4209,8 +4192,8 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
         return ret;
     }
 
-    if (s && s->state) {
-        SAM_state *fd = (SAM_state *)s->state;
+    if (fp->state) {
+        SAM_state *fd = (SAM_state *)fp->state;
 
         if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
             // We don't support multi-threaded SAM parsing with seeks yet.
@@ -4305,7 +4288,7 @@ static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 
     return ret;
 }
-
+extern rc_t *get_filter_cache(hts_filter_t *);
 // Returns 0 on success,
 //        -1 on EOF,
 //       <-1 on error
@@ -4319,7 +4302,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *r)
     //if cache is in use and is not invoked thr' iterators, handle cache here itself
     //otherwise handle in itr_nxt - no cache handling here!
     if (!get_iter_access(fp)) {
-        c = (rc_t*)fp->c;
+        c = get_filter_cache(fp->filter);
     }
     if (c) {    //try to get cached reads
         if ((ret = getfrom_readcache(c, r, NULL)) > 0) {
@@ -4333,7 +4316,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *r)
         if (c) {        //get cached storage
             if (!(e = get_cache(fp)))
                 return -4;
-            b = e->r;   //get bam record from storage
+            b = get_readbuffer(e);   //get bam record from storage
         }
         switch (fp->format.format) {
         case bam:
@@ -4350,15 +4333,9 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *r)
 
         case fasta_format:
         case fastq_format: {
-            state *s = (state*)fp->state;
-            if (!s) {
-                if (!(s = hts_calloc(sizeof(state), 1)))
-                    return -2;
-                fp->state = s;
-            }
-            fastq_state *x = (fastq_state *)s->state;
+            fastq_state *x = (fastq_state *)fp->state;
             if (!x) {
-                if (!(s->state = fastq_state_init(fp->format.format
+                if (!(fp->state = fastq_state_init(fp->format.format
                                                    == fastq_format ? '@' : '>')))
                     return -2;
             }
@@ -4668,8 +4645,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         fp->format.format = sam;
         /* fall-through */
     case sam:
-        if (fp->state && ((state*)fp->state)->state) {
-            SAM_state *fd = (SAM_state *) ((state*)fp->state)->state;
+        if (fp->state) {
+            SAM_state *fd = (SAM_state *) fp->state;
 
             // Threaded output
             if (!fd->h) {
@@ -4783,20 +4760,14 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 
     case fasta_format:
     case fastq_format: {
-        state *s = (state*)fp->state;
-        if (!s) {
-            if (!(s = hts_calloc(sizeof(state), 1)))
-                return -2;
-            fp->state = s;
-        }
-        fastq_state *x = (fastq_state *)s->state;
+        fastq_state *x = (fastq_state *)fp->state;
         if (!x) {
-            if (!(s->state = fastq_state_init(fp->format.format
+            if (!(fp->state = fastq_state_init(fp->format.format
                                                == fastq_format ? '@' : '>')))
                 return -2;
         }
 
-        if (fastq_format1(s->state, b, &fp->line) < 0)
+        if (fastq_format1(fp->state, b, &fp->line) < 0)
             return -1;
         if (fp->is_bgzf) {
             if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
