@@ -732,6 +732,18 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	  test/test_hfile_libcurl ; \
 	fi
 
+# S3 tests.  Not part of `check` as they need an S3-compatible server,
+# set via HTS_S3_HOST and friends (see .github/workflows/s3-integration.yml).
+# Both skip themselves if HTS_S3_HOST is not set.
+check-s3 test-s3: all test/test_hfile_s3
+	if test "x$(BUILT_PLUGINS)" != "x"; then \
+	  HTS_PATH=. ./test/with-shlib.sh test/test_hfile_s3 && \
+	  cd test/s3 && REF_PATH=: HTS_PATH=../.. ../with-shlib.sh ./test-s3.sh s3.tst ; \
+	else \
+	  test/test_hfile_s3 && \
+	  cd test/s3 && REF_PATH=: ./test-s3.sh s3.tst ; \
+	fi
+
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
 
@@ -851,6 +863,9 @@ test/test-bcf_set_variant_type: test/test-bcf_set_variant_type.o libhts.a
 test/test_hfile_libcurl: test/test_hfile_libcurl.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_hfile_libcurl.o libhts.a $(LIBS) -lpthread
 
+test/test_hfile_s3: test/test_hfile_s3.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_hfile_s3.o libhts.a $(LIBS) -lpthread
+
 # Extra tests for bundled htscodecs
 test_htscodecs_rans4x8: htscodecs/tests/rans4x8
 	cd htscodecs/tests && srcdir=. && export srcdir && ./rans4x8.test
@@ -933,6 +948,7 @@ test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
 test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hfile_h)
 test/test-bcf_set_variant_type.o: test/test-bcf_set_variant_type.c config.h $(htslib_hts_h) vcf.c
 test/test_hfile_libcurl.o: test/test_hfile_libcurl.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(hts_internal_h)
+test/test_hfile_s3.o: test/test_hfile_s3.c config.h $(htslib_hfile_h)
 
 # Standalone target not added to $(BUILT_TEST_PROGRAMS) as some may not
 # have a compiler that compiles as C++ when given a .cpp source file.
@@ -1121,11 +1137,11 @@ distdir: htscodecs/htscodecs/version.h
 force:
 
 
-.PHONY: all check check-untracked clean distclean distdir force
+.PHONY: all check check-s3 check-untracked clean distclean distdir force
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
 .PHONY: maintainer-check maintainer-clean mostlyclean plugins
 .PHONY: print-config print-version show-version tags
-.PHONY: test test-shlib-exports test_thrash testclean
+.PHONY: test test-s3 test-shlib-exports test_thrash testclean
 .PHONY: clean-so install-so
 .PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dll install-dll
