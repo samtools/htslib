@@ -50,6 +50,8 @@ run_test('test_view',$opts,4);
 
 run_test('test_MD',$opts);
 
+run_test('test_cache',$opts);
+
 run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep');
 run_test('test_bcf2vcf',$opts);
 run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
@@ -1047,6 +1049,73 @@ sub test_MD
         } else {
             failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
         }
+    }
+}
+
+# Tests hts lib sam cache
+sub test_cache
+{
+    my ($opts) = @_;
+    $test_view_failures = 0;
+    print "\ntest_cache:\n";
+    #regular working
+    testv $opts, "./test_view -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+
+    testv $opts, "./test_view -i filter=flag!=0 -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+
+    #no impact with window size alone
+    testv $opts, "./test_view -i filter=filt_cache=5 -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./test_view -i \"filter=filt_cache=5;\" -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+
+    # high depth or all in
+    testv $opts, "./test_view -i filter=filt_cache=5 -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    #smaller window than the default
+    testv $opts, "./test_view -i filter=filt_cache=10,350 -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    #too small window - different result
+    testv $opts, "./test_view -i filter=filt_cache=1,5 -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.exp.w5.sam";
+    # filter as much as possible
+    testv $opts, "./test_view -i filter=filt_cache=1 -p $$opts{tmp}/cache.tmp.1.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.1.sam $$opts{path}/cache.exp.1.sam";
+    # different depth val
+    testv $opts, "./test_view -i filter=filt_cache=2 -p $$opts{tmp}/cache.tmp.2.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.2.sam $$opts{path}/cache.exp.2.sam";
+    # full filter
+    testv $opts, "./test_view -i \"filter=filt_cache=5;flag!=0\" -p $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.sam $$opts{path}/cache.sam";
+
+    #using iterators
+    testv $opts, "./test_view -b -x $$opts{tmp}/cache.tmp.bam.bai -p $$opts{tmp}/cache.tmp.bam $$opts{path}/cache.sam";
+
+    testv $opts, "./test_view -i filter=filt_cache=10 -p $$opts{tmp}/cache.tmp.10.T1.sam $$opts{tmp}/cache.tmp.bam T1";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.T1.sam $$opts{path}/cache.exp.T1.sam";
+    # filter as much as possible
+    testv $opts, "./test_view -i filter=filt_cache=1 -p $$opts{tmp}/cache.tmp.1.T1T3T2.sam $$opts{tmp}/cache.tmp.bam T1 T3 T2";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.1.T1T3T2.sam $$opts{path}/cache.exp.1.T1T3T2.sam";
+    # different depth val
+    testv $opts, "./test_view -i filter=filt_cache=2 -p $$opts{tmp}/cache.tmp.2.sam $$opts{tmp}/cache.tmp.bam T1 T2 T3";
+    testv $opts, "head -n 31 $$opts{path}/cache.exp.2.sam > $$opts{tmp}/cache.tmp.exp.sam";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.2.sam $$opts{tmp}/cache.tmp.exp.sam";
+    # full filter
+    testv $opts, "./test_view -i \"filter=filt_cache=10;flag!=0\" -p $$opts{tmp}/cache.tmp.10.T1.sam $$opts{tmp}/cache.tmp.bam T1";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.10.T1.sam $$opts{path}/cache.exp.T1.sam";
+    # multi region iterator
+    testv $opts, "./test_view -M -i filter=filt_cache=2 -p $$opts{tmp}/cache.tmp.2.T3T1T2.sam $$opts{tmp}/cache.tmp.bam T3 T1 T2";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.2.T3T1T2.sam $$opts{tmp}/cache.tmp.exp.sam";
+    testv $opts, "./test_view -M -i \"filter=filt_cache=2;flag!=0\" -p $$opts{tmp}/cache.tmp.2.T3T1T2.sam $$opts{tmp}/cache.tmp.bam T3 T1 T2";
+    testv $opts, "./compare_sam.pl $$opts{tmp}/cache.tmp.2.T3T1T2.sam $$opts{tmp}/cache.tmp.exp.sam";
+
+
+    if ($test_view_failures == 0) {
+        passed($opts, "cache tests");
+    } else {
+        failed($opts, "cache tests", "$test_view_failures subtests failed");
     }
 }
 
