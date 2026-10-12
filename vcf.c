@@ -2994,8 +2994,9 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             n_sample_ori++;
             if ( !bit_array_test(h->keep_samples,n_sample_ori) )
             {
-                while ( *r!='\t' && r<end ) r++;
-                if ( *r=='\t' ) { *r = 0; r++; }
+                while ( *r!='\t' && *r && r<end ) r++;
+                if ( *r=='\t' ) { *r = 0; r++; continue; }
+                if (r < end) goto bad_char; // NUL only valid at end
                 continue;
             }
         }
@@ -3030,11 +3031,16 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 if (f->is_gt) g++;
                 break;
 
+            case '\0': // Only valid at end
+                if (r < end)
+                    goto bad_char;
+                // Next line is redundant, but to reduce spaghetti, we...
+                // fall through
+
             case '\t':
                 *r = 0; // fall through
 
             default: // valid due to while loop above.
-            case '\0':
             case ':':
                 l = r - r_start; r_start = r;
                 if (f->max_m < m) f->max_m = m;
@@ -3062,6 +3068,12 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     }
 
     return 0;
+
+ bad_char:
+    hts_log_error("Unexpected character found in FORMAT fields at %s:%"PRIhts_pos"",
+                  h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
+    v->errcode |= BCF_ERR_CHAR;
+    return -1;
 }
 
 // allocate memory for arrays
