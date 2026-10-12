@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2018-2025 Genome Research Ltd.
+    Copyright (C) 2018-2026 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
