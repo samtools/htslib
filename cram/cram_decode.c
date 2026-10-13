@@ -2329,6 +2329,18 @@ static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
             for (i = bl->nbams; i < s->hdr->num_records; i++)
                 bam_set_mempolicy(&bl->bams[i], BAM_USER_OWNS_STRUCT);
             bl->nbams = s->hdr->num_records;
+        } else {
+            // Clear left over bams, to reduce memory in very variable sized
+            // containers.
+            int i;
+            for (i = s->hdr->num_records; i < bl->nbams; i++) {
+                bam1_t *b = &bl->bams[i];
+                if (!(bam_get_mempolicy(b) & BAM_USER_OWNS_DATA)) {
+                    free(b->data);
+                    b->data = NULL;
+                    b->m_data = 0;
+                }
+            }
         }
     } else {
         // Create a new bam list
@@ -3198,6 +3210,17 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         qual = (char *)BLOCK_DATA(s->qual_blk) + cr->qual;
     } else {
         qual = NULL;
+    }
+
+    size_t data_len = name_len+4 + cr->ncigar*4 + cr->len*1.5
+        + cr->aux_size + rg_len; // approx
+    if (data_len + 1024 < bam->m_data/2
+        && !(bam_get_mempolicy(bam) & BAM_USER_OWNS_DATA)) {
+        // Bam object is over-sized, so free it here and it'll be reallocated
+        // to a more appropriate size by bam_set1.
+        free(bam->data);
+        bam->data = NULL;
+        bam->m_data = 0;
     }
 
     ret = bam_set1(bam,
