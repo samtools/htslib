@@ -2141,6 +2141,8 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
         if (rebuild_hash(hrecs, type)) {
             return -1;
         }
+        if (strncmp(type, "SQ", 2) == 0)
+            ret |= rebuild_target_arrays(bh);
     }
 
     if (!ret && hrecs->dirty)
