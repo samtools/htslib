@@ -27,7 +27,7 @@ AR     = ar
 RANLIB = ranlib
 
 # Default libraries to link if configure is not used
-htslib_default_libs = -lz -lm -lbz2 -llzma -lcurl
+htslib_default_libs = -lz -lm -lbz2 -llzma -lcurl -lisal
 
 CPPFLAGS =
 # TODO: make the 64-bit support for VCF optional via configure, for now add -DVCF_ALLOW_INT64
