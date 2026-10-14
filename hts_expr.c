@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -42,6 +43,12 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_log.h"
 #include "textutils_internal.h"
 
+
+//declarations to setup readcache
+typedef struct rc_t rc_t;
+extern rc_t *setup_readcache(hts_filter_t *f, int wndsz, int depth);
+extern void destroy_readcache(hts_filter_t *f);
+
 // Could also cache hts_expr_val_t stack here for kstring reuse?
 #define MAX_REGEX 10
 struct hts_filter_t {
@@ -50,6 +57,8 @@ struct hts_filter_t {
     int curr_regex, max_regex;
     regex_t preg[MAX_REGEX];
     int depth;
+
+    rc_t *cache;    //read cache
 };
 
 /*
@@ -932,13 +941,45 @@ hts_filter_t *hts_filter_init(const char *str) {
     hts_filter_t *f = calloc(1, sizeof(*f));
     if (!f) return NULL;
 
+    size_t len = 0;
+    const char *filt = str;
+    //get cache config if any - filt_cache=x[,x];....
+    if (!(strncasecmp(str, "filt_cache=", sizeof("filt_cache=") - 1))) {
+        //cache configured
+        const char *cache = str + sizeof("filt_cache=") - 1;
+        filt = strchr(cache, ';');
+        if (filt)
+            ++filt; //skip ';'
+        int depth = atoi(cache), wndsz = 0;
+        const char *wsize = strchr(cache, ',');
+        if (wsize) {        //wnd set?
+            if (filt) {     //filter as well
+                if (wsize + 1 < filt)           //wnd or ',' part of filter?
+                    wndsz = atoi(wsize + 1);    //yes wnd set
+            } else {        //no filter!
+                wndsz = atoi(wsize + 1);
+            }
+        }
+        if (depth > 0) {    //cache is set
+            if (setup_readcache(f, wndsz, depth)) {
+                free(f);
+                return NULL;
+            }
+        }
+        if (filt)
+            len = strlen(filt);
+    } else {
+        len = strlen(str);
+    }
+    if (!filt || !len)
+        return f;       //no filter!
+
     // Oversize to permit faster comparisons with memcmp over strcmp
-    size_t len = strlen(str);
-    if (!(f->str = hts_malloc_ps(sizeof(*f->str), len, 100))) {
+    if (!(f->str = hts_malloc_ps(sizeof(*f->str), strlen(filt), 100))) {
         free(f);
         return NULL;
     }
-    memcpy(f->str, str, len + 1);
+    memcpy(f->str, filt, len + 1);
     return f;
 }
 
@@ -950,6 +991,7 @@ void hts_filter_free(hts_filter_t *filt) {
     for (i = 0; i < filt->max_regex; i++)
         regfree(&filt->preg[i]);
 
+    destroy_readcache(filt);
     free(filt->str);
     free(filt);
 }
@@ -996,6 +1038,11 @@ int hts_filter_eval(hts_filter_t *filt,
     }
 
     memset(res, 0, sizeof(*res));
+    if (!filt->str) {   //when no filter, it is just readcache in use
+        res->is_true = 1;
+        res->is_str = 0;
+        return 0;
+    }
 
     return hts_filter_eval_(filt, data, fn, res);
 }
@@ -1005,6 +1052,28 @@ int hts_filter_eval2(hts_filter_t *filt,
                      hts_expr_val_t *res) {
     ks_free(&res->s);
     memset(res, 0, sizeof(*res));
+    if (!filt->str) {   //when no filter, it is just reacache in use
+        res->is_true = 1;
+        res->is_str = 0;
+        return 0;
+    }
 
     return hts_filter_eval_(filt, data, fn, res);
+}
+
+/// @brief get read cache from filter
+/// @param f pointer to filter
+/// @return read cache if set or NULL
+rc_t *get_filter_cache(hts_filter_t *f) {
+    if (f)
+        return f->cache;
+    return NULL;
+}
+
+/// @brief set read cache in filter
+/// @param f pointer to filter
+/// @param c pointer to read cache
+void set_filter_cache(hts_filter_t * f, rc_t * c) {
+    if (f)
+        f->cache = c;
 }
