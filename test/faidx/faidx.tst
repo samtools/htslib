@@ -44,6 +44,11 @@ P . $test_faidx -i faidx.fa -f faidx.fa.tmp.fai -t faidx_iseq -e trailingblank3 
 P . $test_faidx -i faidx.fa -f faidx.fa.tmp.fai -t faidx_seq_len -e 33 trailingblank1
 P . $test_faidx -i faidx.fa -f faidx.fa.tmp.fai -t faidx_seq_len64 -e 72 trailingblank2
 
+# Comment lines (;) before the first FASTA record are skipped
+P . $test_faidx -i comments.fa -f comments.fa.tmp.fai -e comments.fa.expected.fai
+P comments.1.expected.fa $test_faidx -i comments.fa -f comments.fa.tmp.fai seq1:3-12 seq2:7-10
+N . $test_faidx -i comments.fq -f comments.fq.tmp.fai
+
 # Index fastq
 P . $test_faidx -i fastqs.fq -f fastqs.fq.tmp.fai -e fastqs.fq.expected.fai
 

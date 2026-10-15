@@ -1,0 +1,9 @@
+;Comment lines before the first record
+;~key: value
+;
+>seq1 first
+ACGTACGTAC
+GTAC
+>seq2
+TTTTGGGG
+CC

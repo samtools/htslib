@@ -161,7 +161,7 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len,
 
 static faidx_t *fai_build_core(BGZF *bgzf) {
     kstring_t name = { 0, 0, NULL };
-    int c, read_done, line_num;
+    int c, read_done, line_num, comments = 0;
     faidx_t *idx;
     uint64_t seq_offset, qual_offset;
     uint64_t seq_len, qual_len;
@@ -195,6 +195,11 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
                             goto fail;
                         }
 
+                        if (comments) {
+                            hts_log_error("Comment lines are not allowed in a FASTQ file, error at line %d", line_num);
+                            goto fail;
+                        }
+
                         idx->format = FAI_FASTQ;
                         state = IN_NAME;
                     break;
@@ -213,6 +218,17 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
                         // just move onto the next line
                         line_num++;
                     break;
+
+                    case ';':
+                        // Comment lines (the original Pearson FASTA
+                        // convention) are allowed before the first record.
+                        if (idx->format == FAI_NONE) {
+                            while ((c = bgzf_getc(bgzf)) >= 0 && c != '\n');
+                            line_num++;
+                            comments = 1;
+                            break;
+                        }
+                        // fall through
 
                     default: {
                         char s[4] = { '"', c, '"', '\0' };

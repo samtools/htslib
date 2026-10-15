@@ -108,6 +108,11 @@ at least within each reference sequence.
 The \fBsamtools\fP implementation uses the first word of the "\fB>\fP" header
 line text (i.e., up to the first whitespace character, having skipped any
 initial whitespace after the ">") as the \fBNAME\fP column.
+.P
+Lines starting with "\fB;\fP" before the first "\fB>\fP" header line are
+skipped as comments, following the original FASTA comment convention.
+Elsewhere in the file such lines are read like any other line.
+FASTQ files may not start with such comment lines.
 .SS FASTQ Files
 FASTQ files for indexing work in the same way as the FASTA files.
 .LP
