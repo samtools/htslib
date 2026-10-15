@@ -462,6 +462,11 @@ void cram_free_compression_header(cram_block_compression_hdr *hdr);
 /*! Frees a slice header */
 void cram_free_slice_header(cram_block_slice_hdr *hdr);
 
+/*! Frees the parts of a cram_slice which are no longer needed after a call to
+ * bulk_cram_to_bam().
+ */
+void cram_free_slice_bulk(cram_slice *s);
+
 /*! Frees a slice */
 void cram_free_slice(cram_slice *s);
 
