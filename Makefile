@@ -741,7 +741,7 @@ check-s3 test-s3: all test/test_hfile_s3
 	  cd test/s3 && REF_PATH=: HTS_PATH=../.. ../with-shlib.sh ./test-s3.sh s3.tst ; \
 	else \
 	  test/test_hfile_s3 && \
-	  cd test/s3 && REF_PATH=: ./test-s3.sh s3.tst ; \
+	  cd test/s3 && REF_PATH=: bash ./test-s3.sh s3.tst ; \
 	fi
 
 test/hts_endian: test/hts_endian.o
