@@ -4145,17 +4145,13 @@ void cram_free_slice_header(cram_block_slice_hdr *hdr) {
     return;
 }
 
-void cram_free_slice(cram_slice *s) {
-    if (!s)
-        return;
-
-    if (s->bl) {
-        free_bam_list(s->bl->bams, s->bl->nbams);
-        free(s->bl);
-    }
-
-    if (s->hdr_block)
+// Frees the parts of a cram_slice which are no longer needed after a call to
+// bulk_cram_to_bam().
+void cram_free_slice_bulk(cram_slice *s) {
+    if (s->hdr_block) {
         cram_free_block(s->hdr_block);
+        s->hdr_block = NULL;
+    }
 
     if (s->block) {
         int i;
@@ -4168,6 +4164,7 @@ void cram_free_slice(cram_slice *s) {
             }
         }
         free(s->block);
+        s->block = NULL;
     }
 
     {
@@ -4178,52 +4175,82 @@ void cram_free_slice(cram_slice *s) {
             cram_free_block(s->aux_block[i]);
     }
 
+    if (s->seqs_blk)
+        cram_free_block(s->seqs_blk);
+    s->seqs_blk = NULL;
+
+    if (s->qual_blk)
+        cram_free_block(s->qual_blk);
+    s->qual_blk = NULL;
+
+    if (s->name_blk)
+        cram_free_block(s->name_blk);
+    s->name_blk = NULL;
+
+    if (s->aux_blk)
+        cram_free_block(s->aux_blk);
+    s->aux_blk = NULL;
+
+    if (s->base_blk)
+        cram_free_block(s->base_blk);
+    s->base_blk = NULL;
+
+    if (s->soft_blk)
+        cram_free_block(s->soft_blk);
+    s->soft_blk = NULL;
+
+    if (s->cigar)
+        free(s->cigar);
+    s->cigar = NULL;
+
+    if (s->features)
+        free(s->features);
+    s->features = NULL;
+
+    if (s->TN)
+        free(s->TN);
+    s->TN = NULL;
+
+    if (s->pair_keys)
+        string_pool_destroy(s->pair_keys);
+    s->pair_keys = NULL;
+
+    if (s->pair[0])
+        kh_destroy(m_s2i, s->pair[0]);
+    if (s->pair[1])
+        kh_destroy(m_s2i, s->pair[1]);
+    s->pair[0] = s->pair[1] = NULL;
+
+    if (s->aux_block)
+        free(s->aux_block);
+    s->aux_block = NULL;
+
+    // We need s->crecs only because cram_get_seq ends with
+    // return &s->crecs[s->curr_rec++];
+    //
+    // It's not actually dereferenced when s->bl is set, but it's checked vs NULL and
+    // it's a small amount of memory overall.
+}
+
+void cram_free_slice(cram_slice *s) {
+    if (!s)
+        return;
+
+    if (s->bl) {
+        free_bam_list(s->bl->bams, s->bl->nbams);
+        free(s->bl);
+    }
+
+    cram_free_slice_bulk(s);
+
     if (s->block_by_id)
         free(s->block_by_id);
 
     if (s->hdr)
         cram_free_slice_header(s->hdr);
 
-    if (s->seqs_blk)
-        cram_free_block(s->seqs_blk);
-
-    if (s->qual_blk)
-        cram_free_block(s->qual_blk);
-
-    if (s->name_blk)
-        cram_free_block(s->name_blk);
-
-    if (s->aux_blk)
-        cram_free_block(s->aux_blk);
-
-    if (s->base_blk)
-        cram_free_block(s->base_blk);
-
-    if (s->soft_blk)
-        cram_free_block(s->soft_blk);
-
-    if (s->cigar)
-        free(s->cigar);
-
     if (s->crecs)
         free(s->crecs);
-
-    if (s->features)
-        free(s->features);
-
-    if (s->TN)
-        free(s->TN);
-
-    if (s->pair_keys)
-        string_pool_destroy(s->pair_keys);
-
-    if (s->pair[0])
-        kh_destroy(m_s2i, s->pair[0]);
-    if (s->pair[1])
-        kh_destroy(m_s2i, s->pair[1]);
-
-    if (s->aux_block)
-        free(s->aux_block);
 
     free(s);
 }
