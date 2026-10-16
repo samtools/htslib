@@ -10,7 +10,7 @@ Updates
 
 * Various code quality improvements.  Added memory and error
   checks.  Some changes to better data types.
-  (PR #2054, PR #2059, PR #2064, PR #2066, PR #2073, PR #2070, PR #2075,
+  (PR #2054, PR #2059, PR #2064, PR #2066, PR #2070, PR #2073, PR #2075,
    PR #2077)
 
 * Add a new format option to strip UR tags from CRAM.
@@ -55,6 +55,9 @@ Build Changes
 
 * Use bash and pipefail for tests using simple_test_driver.sh
   (PR #2083)
+
+* Add S3 integration tests.
+  (PR #2067.  Thanks to Peter Dowdy)
 
 Bug fixes
 ---------
@@ -103,7 +106,16 @@ Bug fixes
 * Tighten version number limits in bcf_get_version()
   (PR #2092, fixes #2088. Reported by an)
 
+* Fix CRAM query of unaligned ('*') reads.
+  (PR #2100, fixes samtools/samtools#2396.  Reported by Matt Sexton)
 
+* Fix hfile_s3 reads failing at EOF on a part boundary.
+  (PR #2098, fixes #2097.  Thanks to Peter Dowdy)
+
+* Reduce CRAM decode memory usage when multi-threading.  Previous improvements
+  to threaded throughput added greater memory usage, especially with long reads.
+  This change mitigates that.
+  (PR #2102, fixes samtools/samtools#2393.  Reported by Matthieu Muffato)
 
 Noteworthy changes in release 1.24 (9th July 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
