@@ -3643,7 +3643,9 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 
                 beg = curr_intv->beg;
                 end = curr_intv->end;
-                if (beg >= idx_maxpos)
+                if (beg < 0)
+                    beg = 0;
+                if (beg >= idx_maxpos || end < beg)
                     continue;
                 rel_off = beg>>idx->min_shift;
 
