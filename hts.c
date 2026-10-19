@@ -3123,6 +3123,9 @@ int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* 
         return -1;
     }
 
+    if (tid < 0 || tid >= idx->n)
+        return -1;
+
     bidx_t *h = idx->bidx[tid];
     if (!h) return -1;
     khint_t k = kh_get(bin, h, META_BIN(idx));
