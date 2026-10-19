@@ -898,7 +898,7 @@ char *hfile_mem_get_buffer(hFILE *file, size_t *length) {
     }
 
     if (length)
-        *length = file->buffer - file->limit;
+        *length = file->end - file->buffer;
 
     return file->buffer;
 }
