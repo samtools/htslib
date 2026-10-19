@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #    Copyright (C) 2026 Peter Dowdy.
 #
@@ -23,6 +23,8 @@
 # Runs s3.tst against the S3-compatible server given by HTS_S3_HOST.
 # Needs credentials in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, and an
 # existing bucket named by HTSLIB_TEST_S3_BUCKET (default htslib-test).
+
+set -o pipefail
 
 # Load in the test driver
 . ../simple_test_driver.sh
