@@ -78,6 +78,9 @@ Bug fixes
 * Remove an infinite loop in bam_mods_at_qpos().
   (PR #2068)
 
+* Avoid calling libcurl functions if curl_global_init() failed.
+  (Part of PR #2069.  Thanks to John Marshall)
+
 * Make sam_format_aux1 'A' type be nul terminated.
   (PR #2079)
 
@@ -116,6 +119,19 @@ Bug fixes
   to threaded throughput added greater memory usage, especially with long reads.
   This change mitigates that.
   (PR #2102, fixes samtools/samtools#2393.  Reported by Matthieu Muffato)
+
+* Prevent negative range start in multi-region iterators, which could in
+  some cases cause the index look-up to become stuck in an endless loop.
+  (PR #2110.  Reported by haehet)
+
+* Fix SQ line removal using sam_hdr_remove_lines().  It failed to update
+  some internal sam_hdr_t structures, leading to deleted SQ lines reappearing,
+  notably when writing BAM files.
+  (PR #2105)
+
+* Fix the wildly incorrect length value returned by hfile_mem_get_buffer()
+  and hfile_mem_steal_buffer().
+  (PR #2109)
 
 Noteworthy changes in release 1.24 (9th July 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
