@@ -1,0 +1,1 @@
+[W::vcf_parse_format_empty1] FORMAT is "." but the sample columns are not "." at 1:200; their contents are ignored. Only one such record will be reported.

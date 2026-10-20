@@ -1181,6 +1181,12 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
     test_cmd($opts, %args, out => "formatmissing-out.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
+    # FORMAT "." with sample columns that are not "." warns (once); with
+    # sample columns that are all "." it does not
+    test_cmd($opts, %args, out => "formatmissing-data.err",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing-data.vcf 2>&1 >/dev/null");
+    test_cmd($opts, %args, out => "emptyfile",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf 2>&1 >/dev/null");
     test_cmd($opts, %args, out => "vcf_meta_meta.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf_meta_meta.vcf");
 
