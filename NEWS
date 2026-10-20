@@ -1,3 +1,119 @@
+Noteworthy changes in release a.b
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Updates
+-------
+
+* Various code quality improvements.  Added memory and error
+  checks.  Some changes to better data types.
+  (PR #2073, PR #2070, PR #2075, PR #2077)
+
+* Apply CURL_CA_BUNDLE environment variable in the S3 backend.
+  (PR #2069.  Thanks to John Marshall)
+
+* API fix. Protect against out of bounds ref id in cram_put_bam_seq.
+  (PR #2087)
+
+Bug fixes
+---------
+
+* Fix a use-after-free bug when renewing http authentication tokens.
+  This could happen if the file used to supply a replacement token was
+  not present at renewal time.
+  (PR #2119
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-x79c-vxf6-6j9c)
+
+* Fix use-after-free and double free when handling file close errors
+  in the preload:// file reader.
+  (PR #2119
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-5cvj-m89h-h3cw)
+
+* Fix inconsistent region list clean-up on hts_itr_regions() failure.
+  This function takes ownership of the region list passed to it, even if it
+  fails due to out-of-memory conditions.  Not accounting for this correctly
+  led to a possible double free in the functions used to build multi-region
+  iterators.
+  (PR #2119.
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-2r8w-wxh5-c7r8)
+
+* Fix a double free on out-of-memory conditions in the CRAM BYTE_ARRAY_LEN
+  encoder.
+  (PR #2119.
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-2r8w-wxh5-c7r8)
+
+* Fix possible free of an uninitialised pointer if read errors occurred
+  when loading .bai, .csi, or .tbx indexes.
+  (PR #2119.
+   Reported by maxmlz.
+    https://github.com/samtools/htslib/security/advisories/GHSA-38qp-vpxq-r6xc)
+
+* Properly validate index metadata before attempting to access it.
+  (PR #2119.
+    https://github.com/samtools/htslib/security/advisories/GHSA-vhg8-qwm7-cv9m)
+
+* Reject VCF records containing ASCII NUL bytes in FORMAT data.
+  (PR #2119.
+   Reported by haehet.
+    https://github.com/samtools/htslib/security/advisories/GHSA-6qq4-hj39-g6ph)
+
+* Validate tid value passed to hts_idx_get_stat() to prevent out-of-bounds
+  reads.
+  (PR #2119.
+   Reported by haehet.
+    https://github.com/samtools/htslib/security/advisories/GHSA-vhg8-qwm7-cv9m)
+
+* Fix possible leak of bgzidx_t::offs and changes to bgzidx_t::noffs and
+  bgzidx_t::moffs data types.
+  (PR #2057)
+
+* Remove an assert in cram_index_build and have it fail more gracefully.
+  (PR #2061, fixes #2060.  Reported and co-authored by Shujie Xiang)
+
+* Remove an infinite loop in bam_mods_at_qpos().
+  (PR #2068)
+
+* Make sam_format_aux1 'A' type be nul terminated.
+  (PR #2079)
+
+* Prevent integer overflow in resolve_cigar2().
+  (PR #2072)
+
+* Improved code testing with the addition of a fuzzer for the expression
+  filters (hts_expr).  This resulted in the detection and correction of several
+  serious expression parsing bugs.
+  (PR #2076)
+
+* Improve checking of SEQ/CIGAR consistency when processing records with CG
+  tags.
+  (PR # 2089. Fixes oss-fuzz issue  560967311)
+
+* Stop the CRAM zlib decoder from getting stuck in an endless loop.
+  (PR #2085, fixes #2081.  Reported by Sewon Ahn)
+
+* Fix hts_set_filter_expression(fp, NULL) so that it properly disables filtering
+  without leaving a dangling pointer.
+  (PR #2094.  Reported and code fix suggestion by Sewon Ahn)
+
+* Fix bug on big-endian platforms where get_rlen() accessed INFO and FORMAT
+  data incorrectly.
+  (Part of PR #1942)
+
+* Prevent negative range start in multi-region iterators, which could in
+  some cases cause the index look-up to become stuck in an endless loop.
+  (PR #2110.  Reported by haehet)
+
+* Fix a number of bugs that could be triggered by removing all samples
+  with bcf_hdr_set_samples().
+  (PR #2114)
+
+* Fix fai_load3() crash if a .fai index was present but it attempted
+  a rebuild because it also needed a .gzi one, and the rebuild failed.
+  (PR #2116)
+
 Noteworthy changes in release 1.22.3 (9th July 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
