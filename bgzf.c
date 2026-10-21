@@ -41,8 +41,6 @@
 #include <libdeflate.h>
 #endif
 
-/* Should be fixed in the build system later */
-#define HAVE_ISAL 1
 #ifdef HAVE_ISAL
 #include <isa-l.h>
 #include <isa-l/crc.h>
