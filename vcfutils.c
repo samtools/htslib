@@ -110,7 +110,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                     int32_t val = convert(&p[ial * sizeof(type_t)]); \
                     if ( val==vector_end ) break; /* smaller ploidy */ \
                     if ( bcf_gt_is_missing(val) ) continue; /* missing allele */ \
-                    if ( val>>1 > line->n_allele ) \
+                    if ( (unsigned)val>>1 > line->n_allele ) \
                     { \
                         hts_log_error("Incorrect allele (\"%d\") in %s at %s:%"PRIhts_pos, (val>>1)-1, header->samples[i], header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
                         exit(1); \
