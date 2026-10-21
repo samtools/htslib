@@ -721,6 +721,11 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
         u16_to_le(~slen, &dst[BLOCK_HEADER_LENGTH+3]); // ones-complement length
         memcpy(dst + BLOCK_HEADER_LENGTH+5, src, slen);
         *dlen = slen+5 + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
+    #if HAVE_ISAL
+    else if (level == 1 || level == 2) {
+        return _bgzf_compress_isal(dst, dlen, src, slen, level);
+    }
+    #endif
     } else {
         // compress the body
         zs.zalloc = NULL; zs.zfree = NULL;
