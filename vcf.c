@@ -1925,7 +1925,7 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
     if ( !hdr->keep_samples ) return 0;
     if ( !bcf_hdr_nsamples(hdr) )
     {
-        rec->indiv.l = rec->n_sample = 0;
+        rec->indiv.l = rec->n_sample = rec->n_fmt = 0;
         return 0;
     }
 
@@ -2202,7 +2202,8 @@ bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
         dst->indiv.m = src->indiv.l;
     }
     dst->indiv.l = src->indiv.l;
-    memcpy(dst->indiv.s,src->indiv.s,dst->indiv.l);
+    if (dst->indiv.l)
+        memcpy(dst->indiv.s,src->indiv.s,dst->indiv.l);
 
     return dst;
 }
@@ -2926,6 +2927,10 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         if ( h->keep_samples )
         {
             n_sample_ori++;
+            if (n_sample_ori > h->nsamples_ori) {
+                v->errcode |= BCF_ERR_LIMITS;
+                return -1;
+            }
             if ( !bit_array_test(h->keep_samples,n_sample_ori) )
             {
                 while ( *r!='\t' && *r && r<end ) r++;
@@ -3105,6 +3110,10 @@ static int vcf_parse_format_fill5(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         if ( h->keep_samples )
         {
             n_sample_ori++;
+            if (n_sample_ori > h->nsamples_ori) {
+                v->errcode |= BCF_ERR_LIMITS;
+                return -1;
+            }
             if ( !bit_array_test(h->keep_samples,n_sample_ori) )
             {
                 while ( *t && t<end ) t++;
