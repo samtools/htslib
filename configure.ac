@@ -576,7 +576,7 @@ HTSlib.])])])])
 AS_IF([test "x$with_isal" != "xno"],
   [isal=ok
    AC_CHECK_HEADER([isa-l.h],[],[isal='missing header'],[;])
-   AC_CHECK_LIB([isal], [isal_deflate],[:],[isal='missing library'])
+   AC_CHECK_LIB([isal], [isal_deflate_stateless],[:],[isal='missing library'])
    AS_IF([test "$isal" = "ok"],
     [AC_DEFINE([HAVE_ISAL], 1, [Define if ISAL is available.])
      LIBS="-lisal $LIBS"
