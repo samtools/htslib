@@ -5483,14 +5483,18 @@ int bcf_is_snp(bcf1_t *v)
 
 static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t *var)
 {
-    if ( *alt == '*' && !alt[1] ) { var->n = 0; var->type = VCF_OVERLAP; return; }  // overlapping variant
-
-    // The most frequent case
-    if ( !ref[1] && !alt[1] )
+    if ( !alt[1] )
     {
-        if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
-        if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
-        var->n = 1; var->type = VCF_SNP; return;
+        if ( *alt == '*' ) { var->n = 0; var->type = VCF_OVERLAP; return; }  // overlapping variant
+        if ( *alt == '.' ) { var->n = 0; var->type = VCF_REF; return; }      // no ALT
+
+        // The most frequent case
+        if ( !ref[1] )
+        {
+            if ( *ref == *alt ) { var->n = 0; var->type = VCF_REF; return; }
+            if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
+            var->n = 1; var->type = VCF_SNP; return;
+        }
     }
     if ( alt[0]=='<' )
     {
@@ -5502,7 +5506,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     }
 
     // Catch "joined before" breakend case
-    if ( alt[0]==']' || alt[0] == '[' )
+    if ( alt[0]==']' || alt[0] == '[' || alt[0] == '.' )
     {
         var->type = VCF_BND; return;
     }
@@ -5514,7 +5518,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     if ( *a && !*r )
     {
         while ( *a ) a++;
-        if ( *(a-1)==']' || *(a-1)=='[' ) { var->type = VCF_BND; return; } // "joined after" breakend
+        if ( *(a-1)==']' || *(a-1)=='[' || *(a-1)=='.' ) { var->type = VCF_BND; return; } // "joined after" breakend
         var->n = (a-alt)-(r-ref); var->type = VCF_INDEL | VCF_INS; return;
     }
     else if ( *r && !*a )
@@ -5530,7 +5534,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t
     const char *re = r, *ae = a;
     while ( re[1] ) re++;
     while ( ae[1] ) ae++;
-    if ( ae[0]==']' || ae[0]=='[' ) { var->type = VCF_BND; return; }    // "joined after" breakend
+    if ( ae[0]==']' || ae[0]=='[' || ae[0]=='.' ) { var->type = VCF_BND; return; }    // "joined after" breakend
     while ( re>r && ae>a && toupper_c(*re)==toupper_c(*ae) ) { re--; ae--; }
     if ( ae==a )
     {
