@@ -634,6 +634,7 @@ static faidx_t *fai_load3_core(const char *fn, const char *fnfai, const char *fn
 
                 gzi_index_needed = 1;
                 res = hclose(fp); // closed as going to be re-indexed
+                fp = NULL;
 
                 if (res < 0) {
                     hts_log_error("Failed on closing %s index %s : %s", file_type, fnfai, strerror(errno));
