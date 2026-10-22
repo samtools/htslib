@@ -2365,6 +2365,8 @@ static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
                           &s->bl->bams[i]) < 0);
     }
 
+    cram_free_slice_bulk(s);
+
     return r?-1:0;
 }
 
