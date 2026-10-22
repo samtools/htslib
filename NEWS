@@ -41,6 +41,10 @@ Updates
 * Return an error instead of calling abort in hts_getline().
   (PR #2093, fixes #2091.  Reported by an)
 
+* bcf_set_variant_type() now recognises single break-ends as described
+  in section 5.4.9 of the VCF 4.5 specification.
+  (PR #2115, fixes #2108)
+
 Build Changes
 -------------
 
@@ -135,6 +139,14 @@ Bug fixes
 * Fix the wildly incorrect length value returned by hfile_mem_get_buffer()
   and hfile_mem_steal_buffer().
   (PR #2109)
+
+* Fix a number of bugs that could be triggered by removing all samples
+  with bcf_hdr_set_samples().
+  (PR #2114)
+
+* Fix fai_load3() crash if a .fai index was present but it attempted
+  a rebuild because it also needed a .gzi one, and the rebuild failed.
+  (PR #2116)
 
 Noteworthy changes in release 1.24 (9th July 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
