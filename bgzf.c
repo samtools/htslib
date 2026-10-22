@@ -610,7 +610,7 @@ static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size
     if (level_buf == NULL) {
         free(z);
     }
-    isal_deflate_init(z);
+    isal_deflate_stateless_init(z);
     z->level = level;
     z->level_buf = level_buf;
     z->level_buf_size = level_buf_size;
@@ -622,7 +622,9 @@ static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size
     z->flush = FULL_FLUSH;
     z->end_of_stream = 1;
 
-    int ret = isal_deflate(z);
+    /* isal_deflate_stateless will throw an overflow error when there is not
+     * enough room in the output buffer */
+    int ret = isal_deflate_stateless(z);
     if (ret != COMP_OK) {
         hts_log_error("Call to _bgzf_compress_isal failed");
         free(level_buf);
@@ -831,7 +833,9 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
     z->avail_out = *dlen;
     z->crc_flag = ISAL_GZIP_NO_HDR;
 
-    int ret = isal_inflate(z);
+    /* isal_deflate_stateless will throw an overflow error when there is not
+     * enough room in the output buffer */
+    int ret = isal_inflate_stateless(z);
     if (ret != ISAL_DECOMP_OK) {
         hts_log_error("Inflate operation failed: %d", ret);
         free(z);
