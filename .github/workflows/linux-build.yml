@@ -21,6 +21,7 @@ jobs:
             use-configure: use-configure
             compiler: clang
             use-libdeflate: use-libdeflate
+            use-isal: no-isal
             sanitize: no-sanitize
             run-extra-checks: no-extra-checks
 
@@ -29,6 +30,7 @@ jobs:
             use-configure: use-configure
             compiler: gcc
             use-libdeflate: use-libdeflate
+            use-isal: no-isal
             sanitize: sanitize
             run-extra-checks: no-extra-checks
 
@@ -37,6 +39,7 @@ jobs:
             use-configure: no-configure
             compiler: gcc
             use-libdeflate: use-libdeflate
+            use-isal: no-isal
             sanitize: no-sanitize
             run-extra-checks: run-extra-checks
 
@@ -45,6 +48,7 @@ jobs:
             use-configure: use-configure
             compiler: gcc
             use-libdeflate: use-libdeflate
+            use-isal: no-isal
             sanitize: no-sanitize
             run-extra-checks: no-extra-checks
 
@@ -53,9 +57,27 @@ jobs:
             use-configure: use-configure
             compiler: gcc
             use-libdeflate: no-libdeflate
+            use-isal: no-isal
             sanitize: sanitize
             run-extra-checks: no-extra-checks
 
+          # x86-64, gcc, configure, isal, sanitize
+          - os: ubuntu-latest
+            use-configure: use-configure
+            compiler: gcc
+            use-libdeflate: no-libdeflate
+            use-isal: use-isal
+            sanitize: sanitize
+            run-extra-checks: no-extra-checks
+          
+          # x86-64, gcc, configure, isal, libdeflate, sanitize
+          - os: ubuntu-latest
+            use-configure: use-configure
+            compiler: gcc
+            use-libdeflate: use-libdeflate
+            use-isal: use-isal
+            sanitize: sanitize
+            run-extra-checks: no-extra-checks
     env:
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
@@ -77,6 +99,9 @@ jobs:
         fi
         if [ '${{ matrix.use-libdeflate }}' = 'use-libdeflate' ] ; then
           deflate_pkgs="libdeflate-dev"
+        fi
+        if [ '${{ matrix.use-libdeflate }}' = 'use-isal' ] ; then
+          deflate_pkgs="libisal-dev"
         fi
         sudo apt-get update
         sudo apt-get install -y --no-install-suggests --no-install-recommends $autoconf_pkgs make ${{ matrix.compiler }} perl zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev $deflate_pkgs
