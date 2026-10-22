@@ -5831,7 +5831,10 @@ int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, c
     int nsmpl = bcf_hdr_nsamples(hdr);
     if ( !*dst )
     {
-        *dst = (char**) malloc(sizeof(char*)*nsmpl);
+        if (nsmpl >= 0 && nsmpl < SIZE_MAX / sizeof(char *))
+            *dst = (char**) malloc(sizeof(char*)*(size_t)(nsmpl ? nsmpl : 1));
+        else
+            errno = ENOMEM;
         if ( !*dst ) return -4;     // could not alloc
         (*dst)[0] = NULL;
     }
@@ -5881,7 +5884,8 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
             if ( !*dst ) return -4;     // could not alloc
             *ndst = n;
         }
-        memcpy(*dst,fmt->p,n);
+        if (n > 0)
+            memcpy(*dst,fmt->p,n);
         return n;
     }
 
