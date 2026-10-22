@@ -11,7 +11,7 @@ Updates
 * Various code quality improvements.  Added memory and error
   checks.  Some changes to better data types.
   (PR #2054, PR #2059, PR #2064, PR #2066, PR #2070, PR #2073, PR #2075,
-   PR #2077)
+   PR #2077, PR #2078)
 
 * Add a new format option to strip UR tags from CRAM.
   (PR #2056, partial fix for samtools/samtools#2327.  Requested by
@@ -94,6 +94,9 @@ Bug fixes
   filters (hts_expr).  This resulted in the detection and correction of several
   serious expression parsing bugs.
   (PR #2076)
+
+* Fix leak of region list in hts_itr_multi_bam().
+  (PR #2084)
 
 * Improve checking of SEQ/CIGAR consistency when processing records with CG
   tags.
