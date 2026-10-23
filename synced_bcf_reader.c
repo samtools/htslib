@@ -531,7 +531,6 @@ static int bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
 {
     if (!reader)
         return 0;
-    free(reader->fname);
     if ( reader->tbx_idx ) tbx_destroy(reader->tbx_idx);
     if ( reader->bcf_idx ) hts_idx_destroy(reader->bcf_idx);
     bcf_hdr_destroy(reader->header);
@@ -539,6 +538,7 @@ static int bcf_sr_destroy1(bcf_sr_t *reader, int closefile)
         if (hts_close(reader->file) < 0)
             hts_log_error("Error on closing %s", reader->fname);
     }
+    free(reader->fname);
     int had_itr = reader->itr != NULL;
     if ( had_itr ) tbx_itr_destroy(reader->itr);
     int j;
