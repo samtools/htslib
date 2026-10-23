@@ -3223,6 +3223,23 @@ static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     v->n_fmt = 0;
     if ( p[0]=='.' && p[1]==0 ) // FORMAT field is empty "."
     {
+        // The sample columns are not parsed, so warn if any of them is
+        // something other than "." as its contents will be lost
+        static int warned = 0;
+        const char *c = q + 1;
+        while ( !warned && c < end )
+        {
+            const char *e = memchr(c, '\t', end - c);
+            if ( !e ) e = end;
+            if ( e - c != 1 || *c != '.' )
+            {
+                hts_log_warning("FORMAT is \".\" but the sample columns are not \".\" at %s:%"PRIhts_pos"; "
+                                "their contents are ignored. Only one such record will be reported.",
+                                bcf_seqname_safe(h,v), v->pos+1);
+                warned = 1;
+            }
+            c = e + 1;
+        }
         v->n_sample = bcf_hdr_nsamples(h);
         return 1;
     }
