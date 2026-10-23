@@ -1045,6 +1045,59 @@ void test_bcf_remove_allele_set(void)
     kbs_destroy(rm_set);
 }
 
+// Negative GT values, which can be read from a BCF file, must be rejected
+// by bcf_trim_alleles() and bcf_remove_allele_set() instead of being
+// used as array indexes.
+void test_bcf_negative_gt_allele(void)
+{
+    char header[] = "##fileformat=VCFv4.3\n"
+        "##contig=<ID=1>\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAAA\n";
+    const char *input = "1\t100\t.\tA\tC,G\t.\t.\t.\tGT\t0/1";
+    int32_t gt[2] = { -4, -4 };
+    kstring_t kstr = KS_INITIALIZE;
+    enum htsLogLevel logging = hts_get_log_level();
+
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    bcf1_t *rec = bcf_init();
+    struct kbitset_t *rm_set = kbs_init(3);
+
+    if (!hdr)
+        error("bcf_hdr_init() failed\n");
+
+    if (!rec)
+        error("bcf_init() failed\n");
+
+    if (!rm_set)
+        error("kbs_init() failed\n");
+
+    // Silence expected error messages
+    hts_set_log_level(HTS_LOG_OFF);
+
+    check0(bcf_hdr_parse(hdr, header));
+
+    check0(read_vcf_line(input, hdr, rec, &kstr));
+    if (bcf_update_genotypes(hdr, rec, gt, 2) < 0)
+        error("bcf_update_genotypes() failed\n");
+    if (bcf_trim_alleles(hdr, rec) >= 0)
+        error("bcf_trim_alleles() accepted negative GT value\n");
+
+    check0(read_vcf_line(input, hdr, rec, &kstr));
+    if (bcf_update_genotypes(hdr, rec, gt, 2) < 0)
+        error("bcf_update_genotypes() failed\n");
+    kbs_insert(rm_set, 2);
+    if (bcf_remove_allele_set(hdr, rec, rm_set) == 0)
+        error("bcf_remove_allele_set() accepted negative GT value\n");
+
+    hts_set_log_level(logging);
+
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+    ks_free(&kstr);
+    kbs_destroy(rm_set);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -1064,5 +1117,6 @@ int main(int argc, char **argv)
     test_open_format();
     test_rlen_values();
     test_bcf_remove_allele_set();
+    test_bcf_negative_gt_allele();
     return 0;
 }
