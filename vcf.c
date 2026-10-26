@@ -3305,8 +3305,9 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             }
             if ( !bit_array_test(h->keep_samples,n_sample_ori) )
             {
-                while ( *r!='\t' && r<end ) r++;
-                if ( *r=='\t' ) { *r = 0; r++; }
+                while ( *r!='\t' && *r && r<end ) r++;
+                if ( *r=='\t' ) { *r = 0; r++; continue; }
+                if (r < end) goto bad_char; // NUL only valid at end
                 continue;
             }
         }
@@ -3341,11 +3342,16 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                 if (f->is_gt) g++;
                 break;
 
+            case '\0': // Only valid at end
+                if (r < end)
+                    goto bad_char;
+                // Next line is redundant, but to reduce spaghetti, we...
+                // fall through
+
             case '\t':
                 *r = 0; // fall through
 
             default: // valid due to while loop above.
-            case '\0':
             case ':':
                 l = r - r_start; r_start = r;
                 if (f->max_m < m) f->max_m = m;
@@ -3373,6 +3379,12 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     }
 
     return 0;
+
+ bad_char:
+    hts_log_error("Unexpected character found in FORMAT fields at %s:%"PRIhts_pos"",
+                  h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
+    v->errcode |= BCF_ERR_CHAR;
+    return -1;
 }
 
 // allocate memory for arrays
@@ -4942,9 +4954,6 @@ hts_itr_t *bcf_itr_regarray(const hts_idx_t *idx, bcf_hdr_t *hdr,
     itr = hts_itr_regions(idx, r_list, r_count, bcf_hdr_name2id_wrapper, hdr,
                           hts_itr_multi_bam, bcf_readrec,
                           bgzf_pseek, bgzf_ptell);
-    if (!itr)
-        hts_reglist_free(r_list, r_count);
-
     return itr;
 }
 

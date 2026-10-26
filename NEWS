@@ -66,6 +66,61 @@ Build Changes
 Bug fixes
 ---------
 
+* Fix a use-after-free bug when renewing http authentication tokens.
+  This could happen if the file used to supply a replacement token was
+  not present at renewal time.
+  (PR #2119
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-x79c-vxf6-6j9c)
+
+* Fix use-after-free and double free when handling file close errors
+  in the preload:// file reader.
+  (PR #2119
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-5cvj-m89h-h3cw)
+
+* Fix inconsistent region list clean-up on hts_itr_regions() failure.
+  This function takes ownership of the region list passed to it, even if it
+  fails due to out-of-memory conditions.  Not accounting for this correctly
+  led to a possible double free in the functions used to build multi-region
+  iterators.
+  (PR #2119.
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-2r8w-wxh5-c7r8)
+
+* Fix a double free on out-of-memory conditions in the CRAM BYTE_ARRAY_LEN
+  encoder.
+  (PR #2119.
+   Reported by Xuqing Yang.
+    https://github.com/samtools/htslib/security/advisories/GHSA-2r8w-wxh5-c7r8)
+
+* Fix possible free of an uninitialised pointer if read errors occurred
+  when loading .bai, .csi, or .tbx indexes.
+  (PR #2119.
+   Reported by maxmlz.
+    https://github.com/samtools/htslib/security/advisories/GHSA-38qp-vpxq-r6xc)
+
+* Properly validate index metadata before attempting to access it.
+  (PR #2119.
+    https://github.com/samtools/htslib/security/advisories/GHSA-vhg8-qwm7-cv9m)
+
+* Fix use-after-free in bcf_sr_destroy1() if it tries to report an error
+  on file close.
+  (PR #2119.
+   Reported by Junki Lee.
+    https://github.com/samtools/htslib/security/advisories/GHSA-644m-mq4p-c7c6)
+
+* Reject VCF records containing ASCII NUL bytes in FORMAT data.
+  (PR #2119.
+   Reported by haehet.
+    https://github.com/samtools/htslib/security/advisories/GHSA-6qq4-hj39-g6ph)
+
+* Validate tid value passed to hts_idx_get_stat() to prevent out-of-bounds
+  reads.
+  (PR #2119.
+   Reported by haehet.
+    https://github.com/samtools/htslib/security/advisories/GHSA-vhg8-qwm7-cv9m)
+
 * Fix an undefined behaviour in os/rand.c
   (PR #2050)
 

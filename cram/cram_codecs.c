@@ -1929,11 +1929,13 @@ int cram_byte_array_len_encode_store(cram_codec *c, cram_block *b,
     BLOCK_APPEND(b, BLOCK_DATA(b_len), BLOCK_SIZE(b_len));
     BLOCK_APPEND(b, BLOCK_DATA(b_val), BLOCK_SIZE(b_val));
 
+    if (r <= 0)
+        goto block_err;
+
     cram_free_block(b_len);
     cram_free_block(b_val);
 
-    if (r > 0)
-        return len + len2 + len3;
+    return len + len2 + len3;
 
  block_err:
     if (b_len) cram_free_block(b_len);
