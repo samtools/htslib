@@ -4824,8 +4824,8 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
         size = aux_type2size(*s); ++s;
         n = le_to_u32(s);
         s += 4;
-        if (size == 0 || end - s < size * n) return NULL;
-        return s + size * n;
+        if (size == 0 || (end - s) / size < n) return NULL;
+        return s + (size_t) size * n;
     case 0:
         return NULL;
     default:
