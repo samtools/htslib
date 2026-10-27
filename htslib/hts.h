@@ -501,7 +501,7 @@ const char *hts_version(void);
 // Immediately after release, bump ZZ to 90 to distinguish in-development
 // Git repository builds from the release; you may wish to increment this
 // further when significant features are merged.
-#define HTS_VERSION 102490
+#define HTS_VERSION 102590
 
 /*! @abstract Introspection on the features enabled in htslib
  *
@@ -1350,6 +1350,10 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter);
 
     The iterator struct returned by a successful call should be freed
     via hts_itr_destroy() when it is no longer needed.
+
+    When this function is called, ownership of the data pointed to by @p reglist
+    passes to the iterator.  This happens even if this function fails (in which
+    case @p reglist will be freed).
  */
 HTSLIB_EXPORT
 hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
