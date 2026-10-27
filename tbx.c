@@ -99,9 +99,19 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
 {
     size_t i, b = 0;
     int id = 1, getlen = 0, alcnt = 0, use_svlen = 0, lenpos = -1;
+    // The last column that can affect the result.  Scanning stops once it
+    // has been seen, so trailing columns (e.g. the samples of a large VCF)
+    // are not examined at all.
+    int last_col = conf->sc > conf->bc ? conf->sc : conf->bc;
     char *s, *t;
     uint8_t svlenals[8192];
     int64_t reflen = 0, svlen = 0, fmtlen = 0, tmp = 0;
+
+    if (conf->ec > last_col) last_col = conf->ec;
+    if ((conf->preset&0xffff) == TBX_VCF && last_col < 8)
+        last_col = 8;  // INFO
+    else if ((conf->preset&0xffff) == TBX_SAM && last_col < 6)
+        last_col = 6;  // CIGAR
 
     intv->ss = intv->se = 0; intv->beg = intv->end = -1;
     for (i = 0; i <= len; ++i) {
@@ -230,15 +240,20 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                                 intv->end = end;
                             }
                         }
-                        s = strstr(line + b, "SVLEN=");
-                        if (s == line + b) s += 6;  //at start of info
-                        else if (s) {               //not at the start
-                            s = strstr(line + b, ";SVLEN=");
-                            if (s) s += 7;
+                        // SVLEN only matters when a <DEL>-like symbolic
+                        // allele refers to it, as in vcf.c:get_rlen
+                        s = NULL;
+                        if (use_svlen) {
+                            s = strstr(line + b, "SVLEN=");
+                            if (s == line + b) s += 6;  //at start of info
+                            else if (s) {               //not at the start
+                                s = strstr(line + b, ";SVLEN=");
+                                if (s) s += 7;
+                            }
                         }
                         while (s && d < alcnt) {
                             t = strchr(s, ',');
-                            if ((use_svlen) && (svlenals[d >> 3] & (1 << (d & 7)))) {
+                            if (svlenals[d >> 3] & (1 << (d & 7))) {
                                 // <DEL> symbolic allele
                                 tmp = atoll(s);
                                 tmp = tmp < 0 ? llabs(tmp) : tmp;
@@ -299,6 +314,10 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
             }
             b = i + 1;  //beginning if current field
             ++id;
+            // Nothing past last_col can change the result, unless a gVCF
+            // <*>/<NON_REF> allele means the FORMAT LEN field must be checked
+            if (id > last_col
+                && !((conf->preset&0xffff) == TBX_VCF && getlen)) break;
         }
     }
     if ((conf->preset&0xffff) == TBX_VCF) {
