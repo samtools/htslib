@@ -1,7 +1,7 @@
 /// @file htslib/tbx.h
 /// Tabix API functions.
 /*
-    Copyright (C) 2009, 2012-2015, 2019 Genome Research Ltd.
+    Copyright (C) 2009, 2012-2015, 2019, 2026 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -67,6 +67,10 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
 
     HTSLIB_EXPORT
     hts_itr_t *tbx_itr_regarray(tbx_t *tbx, char **regarray, unsigned int regcount);
+
+    HTSLIB_EXPORT
+    hts_itr_t *tbx_itr_regions(const tbx_t *tbx, hts_reglist_t *reglist,
+                               unsigned int regcount);
 
     HTSLIB_EXPORT
     int tbx_itr_next1(htsFile *htsfp, tbx_t *tbx, hts_itr_t *iter, void *r);

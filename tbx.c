@@ -289,7 +289,7 @@ int tbx_parse1(const tbx_conf_t *conf, size_t len, char *line, tbx_intv_t *intv)
                             if ((t = strchr(s, ':'))) {
                                 s = t + 1;
                             } else {
-                                break;    //not in sycn with fmt def!
+                                break;    //not in sync with fmt def!
                             }
                         }
                         fmtlen = fmtlen < tmp ? tmp : fmtlen;
@@ -707,9 +707,14 @@ hts_itr_t *tbx_itr_regarray(tbx_t *tbx, char **regarray, unsigned int regcount)
     itr = hts_itr_regions(tbx->idx, r_list, r_count, tbx_name2id_wrapper, tbx,
                           hts_itr_multi_bam, tbx_multi_readrec,
                           bgzf_pseek, bgzf_ptell);
-    if (!itr)
-        hts_reglist_free(r_list, r_count);
-
     return itr;
 
+}
+
+hts_itr_t *tbx_itr_regions(const tbx_t *tbx, hts_reglist_t *reglist,
+                           unsigned int regcount)
+{
+    return hts_itr_regions(tbx->idx, reglist, regcount, tbx_name2id_wrapper,
+                           (void *) tbx, hts_itr_multi_bam, tbx_multi_readrec,
+                           bgzf_pseek, bgzf_ptell);
 }

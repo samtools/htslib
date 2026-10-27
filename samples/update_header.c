@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
     //unique identifier for each of the header types
     if (header[0] == 'H' && header[1] == 'D') {
         id = NULL;
-        printf("This sample doesnt not support modifying HD fields\n");
+        printf("This sample does not support modifying HD fields\n");
     }
     else if (header[0] == 'S' && header[1] == 'Q') {
         id = "SN";
@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
     else if (header[0] == 'C' && header[1] == 'O') {
         tag = NULL;
         id = "";
-        printf("This sample doesnt not support modifying CO fields\n");
+        printf("This sample does not support modifying CO fields\n");
     }
     else {
         printf("Invalid header type\n");

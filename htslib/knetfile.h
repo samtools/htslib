@@ -57,7 +57,7 @@
 #define KNF_TYPE_FTP   2
 #define KNF_TYPE_HTTP  3
 
-// Kept for API/ABI compatability only.  Do not use directly!
+// Kept for API/ABI compatibility only.  Do not use directly!
 typedef struct knetFile_s {
         int type, fd;
         int64_t offset;

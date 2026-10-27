@@ -124,7 +124,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
         // Ideally the calling function would check for e.g.
         // @RG PL = "PACBIO" and DS contains "READTYPE=CCS".
         //
-        // In the absense of this, we simply auto-detect via a crude
+        // In the absence of this, we simply auto-detect via a crude
         // short vs long strategy.
         conf.d = 1e-7;
         conf.e = 1e-1;

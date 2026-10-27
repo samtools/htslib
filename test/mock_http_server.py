@@ -33,6 +33,7 @@ Modes:
     drop_mid_transfer - Send first half of file then close connection, N times
     404              - Always return 404
     stall            - Send headers + a few bytes then sleep forever
+    s3               - Serve ranges as S3 does, with 416 for ranges at EOF
 """
 
 import argparse
@@ -152,6 +153,10 @@ class MockHandler(BaseHTTPRequestHandler):
                 pass
             return
 
+        if mode == "s3":
+            self.serve_s3_range(data, range_header)
+            return
+
         # Normal serving (with Range support)
         remaining = data[range_start:]
         if range_start > 0:
@@ -168,12 +173,34 @@ class MockHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(remaining)
 
+    def serve_s3_range(self, data, range_header):
+        # Unlike normal mode, honour the end of the range, always send
+        # Content-Range and refuse ranges starting at or after EOF
+        start, end = 0, len(data) - 1
+        if range_header and range_header.startswith("bytes="):
+            first, last = range_header[6:].split("-")
+            start = int(first)
+            if last:
+                end = min(int(last), len(data) - 1)
+        if start >= len(data):
+            self.send_response(416)
+            self.send_header("Content-Range", "bytes */%d" % len(data))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(206)
+        self.send_header("Content-Range",
+                         "bytes %d-%d/%d" % (start, end, len(data)))
+        self.send_header("Content-Length", str(end - start + 1))
+        self.end_headers()
+        self.wfile.write(data[start:end + 1])
+
 
 def main():
     parser = argparse.ArgumentParser(description="Mock HTTP server for testing")
     parser.add_argument("--mode", required=True,
                         choices=["normal", "503_then_ok", "429_then_ok",
-                                 "drop_mid_transfer", "404", "stall"])
+                                 "drop_mid_transfer", "404", "stall", "s3"])
     parser.add_argument("--file", required=True, help="File to serve")
     parser.add_argument("--fail-count", type=int, default=2,
                         help="Number of requests to fail before succeeding")

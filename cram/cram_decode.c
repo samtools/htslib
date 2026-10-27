@@ -994,7 +994,9 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->num_blocks      = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     hdr->num_content_ids = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
     if (hdr->num_content_ids < 1 ||
-        hdr->num_content_ids >= 10000) {
+        hdr->num_content_ids >= 10000 ||
+        hdr->num_blocks < 1 ||
+        hdr->num_blocks >= 10000) {
         // Slice must have at least one data block, and there is no need
         // for more than 2 per possible aux-tag plus ancillary.
         free(hdr);
@@ -1231,7 +1233,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     const char *refp = s->ref + ref_pos - s->ref_start + 1;
                     const int frag_len = pos - seq_pos;
                     if (decode_md || decode_nm) {
-                        char *N = memchr(refp, 'N', frag_len);
+                        const char *N = memchr(refp, 'N', frag_len);
                         if (N) {
                             int i;
                             for (i = 0; i < frag_len; i++) {
@@ -2248,7 +2250,7 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
         }
 
         if (cr->tlen == INT64_MIN)
-            cr->tlen = 0; // Just incase
+            cr->tlen = 0; // Just in case
     }
 
     for (rec = 0; rec < s->hdr->num_records; rec++) {
@@ -2327,6 +2329,18 @@ static int bulk_cram_to_bam(sam_hrecs_t *bfd, cram_fd *fd, cram_slice *s) {
             for (i = bl->nbams; i < s->hdr->num_records; i++)
                 bam_set_mempolicy(&bl->bams[i], BAM_USER_OWNS_STRUCT);
             bl->nbams = s->hdr->num_records;
+        } else {
+            // Clear left over bams, to reduce memory in very variable sized
+            // containers.
+            int i;
+            for (i = s->hdr->num_records; i < bl->nbams; i++) {
+                bam1_t *b = &bl->bams[i];
+                if (!(bam_get_mempolicy(b) & BAM_USER_OWNS_DATA)) {
+                    free(b->data);
+                    b->data = NULL;
+                    b->m_data = 0;
+                }
+            }
         }
     } else {
         // Create a new bam list
@@ -2387,7 +2401,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     // factor (*=1.5) is never applied.
     {
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-        int qsize=0, nsize=0, q_id=0;
+        int qsize=0, nsize=0;
 #else
         int qsize, nsize, q_id;
         cram_decode_estimate_sizes(c->comp_hdr, s, &qsize, &nsize, &q_id);
@@ -3196,6 +3210,17 @@ int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         qual = (char *)BLOCK_DATA(s->qual_blk) + cr->qual;
     } else {
         qual = NULL;
+    }
+
+    size_t data_len = name_len+4 + cr->ncigar*4 + cr->len*1.5
+        + cr->aux_size + rg_len; // approx
+    if (data_len + 1024 < bam->m_data/2
+        && !(bam_get_mempolicy(bam) & BAM_USER_OWNS_DATA)) {
+        // Bam object is over-sized, so free it here and it'll be reallocated
+        // to a more appropriate size by bam_set1.
+        free(bam->data);
+        bam->data = NULL;
+        bam->m_data = 0;
     }
 
     ret = bam_set1(bam,

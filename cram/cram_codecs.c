@@ -1245,16 +1245,11 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         hts_log_error("Invalid number of symbols in huffman stream");
         return NULL;
     }
-    if (ncodes >= SIZE_MAX / sizeof(*codes)) {
-        errno = ENOMEM;
+    if (ncodes >= 1000000) {
+        errno = ERANGE;
         return NULL;
     }
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-    if (ncodes > FUZZ_ALLOC_LIMIT / sizeof(*codes)) {
-        errno = ENOMEM;
-        return NULL;
-    }
-#endif
+
     h = calloc(1, sizeof(*h));
     if (!h)
         return NULL;
@@ -1934,11 +1929,13 @@ int cram_byte_array_len_encode_store(cram_codec *c, cram_block *b,
     BLOCK_APPEND(b, BLOCK_DATA(b_len), BLOCK_SIZE(b_len));
     BLOCK_APPEND(b, BLOCK_DATA(b_val), BLOCK_SIZE(b_val));
 
+    if (r <= 0)
+        goto block_err;
+
     cram_free_block(b_len);
     cram_free_block(b_val);
 
-    if (r > 0)
-        return len + len2 + len3;
+    return len + len2 + len3;
 
  block_err:
     if (b_len) cram_free_block(b_len);

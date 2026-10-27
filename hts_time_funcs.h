@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 /*
   This mainly exists because timegm() is not a standard function, and so
   Cannot be used in portable code.  Unfortunately the standard one (mktime)
-  always takes the local timezone into accout so doing a UTC conversion
+  always takes the local timezone into account so doing a UTC conversion
   with it involves changing the TZ environment variable, which is rather
   messy and not likely to go well with threaded code.
 

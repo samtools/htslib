@@ -196,7 +196,7 @@ struct cram_file_def {
 struct cram_slice;
 
 // Internal version of htslib/cram.h enum.
-// Note these have to match the laout of methmap and methcost in
+// Note these have to match the layout of methmap and methcost in
 // cram_io.c:cram_compress_block2
 enum cram_block_method_int {
     // Public methods as defined in the CRAM spec.
@@ -828,6 +828,7 @@ struct cram_fd {
     unsigned int required_fields;
     int store_md;
     int store_nm;
+    int remove_ur;
     cram_range range;
 
     // lookup tables, stored here so we can be trivially multi-threaded

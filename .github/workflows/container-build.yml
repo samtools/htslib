@@ -1,0 +1,47 @@
+name: Containers
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  Containers:
+    # comment out if we're using the cache
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:      ['alpine', 'archlinux', 'centos', 'rockylinux', 'opensuse']
+        include:
+          - os:      alpine
+            image:   ghcr.io/samtools/alpine-for-htslib-ci:latest
+          - os:      archlinux
+            image:   ghcr.io/samtools/archlinux-for-htslib-ci:latest
+          - os:      centos
+            image:   ghcr.io/samtools/centos-for-htslib-ci:latest
+          - os:      rockylinux
+            image:   ghcr.io/samtools/rockylinux-for-htslib-ci:latest
+          - os:      opensuse
+            image:   ghcr.io/samtools/opensuse-for-htslib-ci:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Configure
+        run: |
+          autoreconf -i
+          ./configure --enable-werror --enable-plugins CFLAGS="-g -O3"
+
+      - name: Build
+        run: |
+          make -j5 -k
+
+      - name: Test
+        run: |
+          make check

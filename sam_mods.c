@@ -635,7 +635,7 @@ int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
                     hts_base_mod *mods, int n_mods) {
     // FIXME: for now this is inefficient in implementation.
     int r = 0;
-    while (state->seq_pos <= qpos)
+    while (state->seq_pos <= qpos && state->seq_pos < b->core.l_qseq)
         if ((r = bam_mods_at_next_pos(b, state, mods, n_mods)) < 0)
             break;
 

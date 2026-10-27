@@ -180,7 +180,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
-    hFILE *fp;
+    BGZF *fp = NULL;
     cram_index *idx;
     cram_index **idx_stack = NULL, *ep, e;
     int idx_stack_alloc = 0, idx_stack_ptr = 0;
@@ -221,38 +221,24 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
         fn_idx = tfn_idx;
     }
 
-    if (!(fp = hopen(fn_idx, "r"))) {
+    if (!(fp = bgzf_open(fn_idx, "r"))) {
         hts_log_error("Could not open index file '%s'", fn_idx);
         goto fail;
     }
 
     // Load the file into memory
-    while ((len = hread(fp, buf, sizeof(buf))) > 0) {
+    while ((len = bgzf_read(fp, buf, sizeof(buf))) > 0) {
         if (kputsn(buf, len, &kstr) < 0)
             goto fail;
     }
 
-    if (len < 0 || kstr.l < 2)
+    if (len < 0 || kstr.l < 1)
         goto fail;
 
-    if (hclose(fp) < 0)
+    int ret = bgzf_close(fp);
+    fp = NULL; // Prevent double close on failure
+    if (ret < 0)
         goto fail;
-
-    // Uncompress if required
-    if (kstr.s[0] == 31 && (uc)kstr.s[1] == 139) {
-        size_t l = 0;
-        char *s = zlib_mem_inflate(kstr.s, kstr.l, &l);
-        if (!s)
-            goto fail;
-
-        free(kstr.s);
-        kstr.s = s;
-        kstr.l = l;
-        kstr.m = l; // conservative estimate of the size allocated
-        if (kputsn("", 0, &kstr) < 0) // ensure kstr.s is NUL-terminated
-            goto fail;
-    }
-
 
     // refid indexes fd->index, so bound it to the header's reference count.
     int nref = sam_hdr_nref(fd->header);
@@ -364,6 +350,8 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     free(kstr.s);
     free(idx_stack);
     free(tfn_idx);
+    if (fp)
+        bgzf_close(fp);
     cram_index_free(fd); // Also sets fd->index = NULL
     return -1;
 }
@@ -437,7 +425,7 @@ cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
     case -1:
     case HTS_IDX_NOCOOR:
         refid = -1;
-        pos = 0;
+        pos = -1; // start 0, span 0 implies end -1
         break;
 
     case HTS_IDX_START: {
@@ -820,7 +808,11 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
             goto err;
-        assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
+        if (c->comp_hdr_block->content_type != COMPRESSION_HEADER) {
+            hts_log_error("Expected a compression header block at pos %lld",
+                          (long long)hpos);
+            goto err;
+        }
 
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
         if (!c->comp_hdr)

@@ -281,7 +281,7 @@ void cram_codec_get_content_ids(cram_codec *c, int ids[2]);
  * Produces a human readable description of the codec parameters.
  * This is appended to an existing kstring 'ks'.
  *
- * Returns 0 on succes,
+ * Returns 0 on success,
  *        <0 on failure
  */
 HTSLIB_EXPORT

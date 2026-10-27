@@ -562,6 +562,7 @@ static int renew_auth_token(auth_token *tok, int *changed) {
 
         tok->expiry = 0; // Prevent retry
         free(tok->token); // Just in case it was set
+        tok->token = NULL;
         return 0;
     }
 
@@ -1373,7 +1374,7 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
 
     // Avoid many repeated CWD calls with FTP, instead requesting the filename
     // by full path (but not strictly compliant with RFC1738).
-    // Note as this is just an optimation, we don't care if it succeeds.
+    // Note as this is just an optimisation, we don't care if it succeeds.
     // Some libcurls are built without ftp support and this would fail in such
     // cases (even if our URL is http://).  If we attempt to do an ftp on such
     // a machine we'll then get a more informative error, such as protocol
@@ -1704,7 +1705,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     CURLSHcode errsh;
 
     err = curl_global_init(CURL_GLOBAL_ALL);
-    if (err != CURLE_OK) { errno = easy_errno(NULL, err); return -1; }
+    if (err != CURLE_OK) { errno = ENETDOWN; return -1; }
 
     curl.share = curl_share_init();
     if (curl.share == NULL) { curl_global_cleanup(); errno = EIO; return -1; }

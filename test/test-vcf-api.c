@@ -827,7 +827,7 @@ static void test_vl_types(void)
         "##FORMAT=<ID=VL_LA_FMT,Number=LA,Type=Integer,Description=\"One value for each local ALT allele\">\n"
         "##FORMAT=<ID=VL_LG_FMT,Number=LG,Type=Integer,Description=\"One value for each local genotype\">\n"
         "##FORMAT=<ID=VL_LR_FMT,Number=LR,Type=Integer,Description=\"One value for each local allele including REF\">\n"
-        "##FORMAT=<ID=VL_M_FMT,Number=M,Type=Integer,Description=\"One value for each posible base modification of the given type\">\n"
+        "##FORMAT=<ID=VL_M_FMT,Number=M,Type=Integer,Description=\"One value for each possible base modification of the given type\">\n"
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAAA\n";
 
     typedef struct {

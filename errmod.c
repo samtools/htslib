@@ -150,6 +150,9 @@ int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q)
     // The total count of each base observed per strand
     int w[32];
 
+    if (n < 0 || m < 0)
+        return -1;
+
     memset(q, 0, m * m * sizeof(float)); // initialise q to 0
     if (n == 0) return 0;
     // This section randomly downsamples to 255 depth so as not to go beyond our precalculated matrix
@@ -157,7 +160,8 @@ int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q)
         ks_shuffle(uint16_t, n, bases);
         n = 255;
     }
-    ks_introsort(uint16_t, n, bases);
+    if (ks_introsort(uint16_t, n, bases) < 0)
+        return -1;
     /* zero out w and aux */
     memset(w, 0, 32 * sizeof(int));
     memset(&aux, 0, sizeof(call_aux_t));

@@ -308,7 +308,7 @@ hts_pos_t faidx_seq_len64(const faidx_t *fai, const char *seq);
     @param  seq  Name of the sequence
     @return Sequence length, or -1 if not present
 
-    @deprecated This funtion cannot handle very long sequences.
+    @deprecated This function cannot handle very long sequences.
                 Use faidx_seq_len64() instead.
 */
 HTSLIB_EXPORT

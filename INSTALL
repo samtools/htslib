@@ -266,6 +266,13 @@ Note: On some versions perl FindBin will need to be installed to make the tests 
 
 sudo yum install perl-FindBin
 
+RockyLinux
+----------
+
+sudo yum install autoconf automake make gcc perl-Data-Dumper zlib-devel bzip2 bzip2-devel xz-devel curl-devel openssl-devel git perl-FindBin diffutils
+
+The perl-FindBin and diffutils packages are only required for the test harness.
+
 Alpine Linux
 ------------
 
@@ -277,10 +284,18 @@ This can be found in the Alpine community repository.
 
 Note: some older Alpine versions use libressl-dev rather than openssl-dev.
 
+ArchLinux
+---------
+
+This mostly comes with the necessary packages preinstalled.
+
+pacman -Syyu
+pacman -Sy base-devel libdeflate
+
 OpenSUSE
 --------
 
-sudo zypper install autoconf automake make gcc perl zlib-devel libbz2-devel xz-devel libcurl-devel libopenssl-devel
+sudo zypper install autoconf automake make gcc perl zlib-devel libbz2-devel xz-devel libcurl-devel libopenssl-devel diffutils bzip2
 
 Also install libdeflate-devel, available on OpenSUSE Leap 15.4 onwards
 or directly via git releases above.
@@ -326,6 +341,15 @@ the packages installed above are found.  It is also necessary to use "gmake":
 
 ./configure CPPFLAGS='-I/usr/local/include' LDFLAGS='-L/usr/local/lib -Wl,-R/usr/local/lib'
 gmake && gmake check
+
+When building from a git clone, you will also need to set environment
+variables before running autoreconf -i.  The exact versions will depend on
+the package releases installed, but under CI testing this works:
+
+export AUTOCONF_VERSION=2.71
+export AUTOMAKE_VERSION=1.18
+autoreconf -i
+
 
 Windows MSYS2/MINGW64
 ---------------------

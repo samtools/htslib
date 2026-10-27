@@ -1081,9 +1081,11 @@ sub test_index
 
     # CRAM
     local $ENV{REF_PATH} = "$$opts{m5_dir}/\%2s/\%2s/\%s";
-    test_compare($opts,"$$opts{path}/test_view $nthreads -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view $nthreads -o seqs_per_slice=40 -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
     unlink("$$opts{tmp}/index.cram.crai");
     test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+    # Check unmapped data query (samtools/samtools#2396)
+    test_compare($opts,"$$opts{path}/test_view -p $$opts{tmp}/index.unmapped.sam $$opts{tmp}/index.cram '*'", "$$opts{path}/index.unmapped.sam", "$$opts{tmp}/index.unmapped.sam");
 
     # CRAM container skipping test
     # Prepare a file with records split into multiple containers, the first two
@@ -1344,7 +1346,17 @@ sub test_bcf_sr_range {
                  ['t', '{1:1-1}:1-2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
                  ['t', '{1:1-1}:1,{1:1-1}:2', 'weird-chr-names.vcf', 'weird-chr-names.5.out'],
                  ['t', '{1:1-1}:1-1', 'weird-chr-names.vcf', 'weird-chr-names.6.out'],
-                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef] # Expected failure
+                 ['t', '{1:1-1}-2', 'weird-chr-names.vcf', undef], # Expected failure
+                 # Check for correct ordering of output with regions-overlap
+                 # and targets-overlap = "variant".
+
+                 # These should only print 20:136.  20:135 is skipped as its
+                 # variant is really at 143
+                 ['-regions-overlap=variant -r', '20:135-136', 'overlap.vcf', 'overlap.1.out'],
+                 ['-targets-overlap=variant -t', '20:135-136', 'overlap.vcf', 'overlap.1.out'],
+                 # These should print 20:135, 20:136 and 20:140 in that order
+                 ['-regions-overlap=variant -r', '20:135-136,20:140-145', 'overlap.vcf', 'overlap.2.out'],
+                 ['-targets-overlap=variant -t', '20:135-136,20:140-145', 'overlap.vcf', 'overlap.2.out'],
         );
 
     my $count = 0;
@@ -1633,7 +1645,7 @@ sub test_ref_cache {
 
         my $pid1 = fork();
         if (!defined($pid1)) {
-            die "Coudn't fork: $!";
+            die "Couldn't fork: $!";
         }
         if ($pid1 == 0) {
             setpgrp(0, 0);

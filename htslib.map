@@ -672,3 +672,9 @@ HTSLIB_1.24 {
     tbx_itr_querys1;
     tbx_itr_regarray;
 } HTSLIB_1.23;
+
+HTSLIB_1.25 {
+    bcf_itr_regions;
+    sam_hdr_remove_tag_all;
+    tbx_itr_regions;
+} HTSLIB_1.24;
