@@ -2641,9 +2641,7 @@ static int cram_add_softclip(cram_container *c, cram_slice *s, cram_record *r,
         if (base) {
             BLOCK_APPEND(s->soft_blk, base, len);
         } else {
-            int i;
-            for (i = 0; i < len; i++)
-                BLOCK_APPEND_CHAR(s->soft_blk, 'N');
+            BLOCK_APPEND_REPEAT_CHAR(s->soft_blk, 'N', len);
         }
         BLOCK_APPEND_CHAR(s->soft_blk, '\0');
         break;
@@ -2704,9 +2702,7 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
         if (base) {
             BLOCK_APPEND(s->base_blk, base, len);
         } else {
-            int i;
-            for (i = 0; i < len; i++)
-                BLOCK_APPEND_CHAR(s->base_blk, 'N');
+            BLOCK_APPEND_REPEAT_CHAR(s->base_blk, 'N', len);
         }
         BLOCK_APPEND_CHAR(s->base_blk, '\0');
     }
