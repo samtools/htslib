@@ -258,6 +258,16 @@ static inline int block_append_char(cram_block *b, char c) {
     return 0;
 }
 
+/* Append many copies of a character */
+static inline int block_append_repeat_char(cram_block *b, char c, size_t len) {
+    if (block_grow(b, len) < 0)
+        return -1;
+
+    memset(&b->data[b->byte], c, len);
+    b->byte += len;
+    return 0;
+}
+
 /* Append a single unsigned integer */
 static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i);
 static inline int block_append_uint(cram_block *b, unsigned int i) {
@@ -275,6 +285,7 @@ static inline int block_append_uint(cram_block *b, unsigned int i) {
 #define BLOCK_GROW(b,l)         if (block_grow((b),(l))        <0) goto block_err
 #define BLOCK_APPEND(b,s,l)     if (block_append((b),(s),(l))  <0) goto block_err
 #define BLOCK_APPEND_CHAR(b,c)  if (block_append_char((b),(c)) <0) goto block_err
+#define BLOCK_APPEND_REPEAT_CHAR(b,c,l) if (block_append_repeat_char((b),(c),(l)) < 0) goto block_err
 #define BLOCK_APPEND_UINT(b,i)  if (block_append_uint((b),(i)) <0) goto block_err
 
 static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i) {
