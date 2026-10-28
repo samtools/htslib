@@ -64,6 +64,7 @@ struct bgzf_mtaux_t;
 typedef struct bgzidx_t bgzidx_t;
 typedef struct bgzf_cache_t bgzf_cache_t;
 struct z_stream_s;
+struct inflate_state;
 
 struct BGZF {
     // Reserved bits should be written as 0; read as "don't care"
@@ -80,6 +81,7 @@ struct BGZF {
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
     struct z_stream_s *gz_stream; // for gzip-compressed files
+    struct inflate_state *isal_inflate_state; // For faster gzip decompression with ISA-L
     int64_t seeked;     // virtual offset of last seek
 };
 #ifndef HTS_BGZF_TYPEDEF

@@ -402,6 +402,34 @@ static const char *bgzf_zerr(int errnum, z_stream *zs)
     }
 }
 
+#if HAVE_ISAL
+static const char *isal_inflate_err(int errnum)
+{
+    static char buffer[32];
+
+    switch (errnum) {
+    case ISAL_INVALID_BLOCK:
+        return "invalid deflate block found";
+    case ISAL_INVALID_SYMBOL:
+        return "invalid deflate symbol found";
+    case ISAL_INVALID_LOOKBACK:
+        return "invalid lookback distance found";
+    case ISAL_INVALID_WRAPPER:
+        return "invalid gzip/zlib wrapper found";
+    case ISAL_UNSUPPORTED_METHOD:
+        return "gzip/zlib wrapper specifies unsupported compress method";
+    case ISAL_INCORRECT_CHECKSUM:
+        return "incorrect checksum found";
+    case ISAL_NEED_DICT:
+        return "data was compressed using a dictionary";
+    case ISAL_DECOMP_OK: // 0: maybe gzgets error Z_NULL
+    default:
+        snprintf(buffer, sizeof(buffer), "[%d] unknown", errnum);
+        return buffer;  // FIXME: Not thread-safe.
+    }
+}
+#endif
+
 static BGZF *bgzf_read_init(hFILE *hfpr, const char *filename)
 {
     BGZF *fp;
@@ -492,6 +520,7 @@ static BGZF *bgzf_write_init(const char *mode)
         fp->gz_stream->zalloc = NULL;
         fp->gz_stream->zfree  = NULL;
         fp->gz_stream->msg    = NULL;
+        fp->isal_inflate_state= NULL;
 
         int ret = deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY);
         if (ret!=Z_OK) {
@@ -954,6 +983,61 @@ static int inflate_block(BGZF* fp, int block_length)
     return dlen;
 }
 
+#if HAVE_ISAL
+static int inflate_gzip_block(BGZF *fp)
+{
+    // we will set this to true when we detect EOF, so we don't bang against the EOF more than once per call
+    int input_eof = 0;
+
+    // write to the part of the output buffer after block_offset
+    fp->isal_inflate_state->next_out = (Bytef*)fp->uncompressed_block + fp->block_offset;
+    fp->isal_inflate_state->avail_out = BGZF_MAX_BLOCK_SIZE - fp->block_offset;
+
+    while ( fp->isal_inflate_state->avail_out != 0 ) {
+        // until we fill the output buffer (or hit EOF)
+
+        if ( !input_eof && fp->isal_inflate_state->avail_in == 0 ) {
+            // we are out of input data in the buffer. Get more.
+            fp->isal_inflate_state->next_in = fp->compressed_block;
+            int ret = hread(fp->fp, fp->compressed_block, BGZF_BLOCK_SIZE);
+            if ( ret < 0 ) {
+                // hread had an error. Pass it on.
+                return ret;
+            }
+            fp->isal_inflate_state->avail_in = ret;
+            if ( fp->isal_inflate_state->avail_in < BGZF_BLOCK_SIZE ) {
+                // we have reached EOF but the decompressor hasn't necessarily
+                input_eof = 1;
+            }
+        }
+
+        // decompress as much data as we can
+        int ret = isal_inflate(fp->isal_inflate_state);
+
+        if ( ret != ISAL_DECOMP_OK ) {
+            // an error occurred, other than running out of space
+            hts_log_error("Inflate operation failed: %s", isal_inflate_err(ret));
+            fp->errcode |= BGZF_ERR_ZLIB;
+            return -1;
+        } else if ( fp->isal_inflate_state->block_state == ISAL_BLOCK_FINISH ) {
+            // we finished a GZIP member
+            // scratch for peeking to see if the file is over
+            char c;
+            if (fp->isal_inflate_state->avail_in > 0 || hpeek(fp->fp, &c, 1) == 1) {
+                // there is more data; try and read another GZIP member in the remaining data
+                isal_inflate_reset(fp->isal_inflate_state);
+            } else {
+                // we consumed all the input data and hit Z_STREAM_END
+                // so stop looping, even if we never fill the output buffer
+                break;
+            }
+        }
+    }
+
+    // when we get here, the buffer is full or there is an EOF after a complete gzip member
+    return BGZF_MAX_BLOCK_SIZE - fp->isal_inflate_state->avail_out;
+}
+#else
 // Decompress the next part of a non-blocked GZIP file.
 // Return the number of uncompressed bytes read, 0 on EOF, or a negative number on error.
 // Will fill the output buffer unless the end of the GZIP file is reached.
@@ -1022,7 +1106,7 @@ static int inflate_gzip_block(BGZF *fp)
     // when we get here, the buffer is full or there is an EOF after a complete gzip member
     return BGZF_MAX_BLOCK_SIZE - fp->gz_stream->avail_out;
 }
-
+#endif
 // Returns: 0 on success (BGZF header); -1 on non-BGZF GZIP header; -2 on error
 static int check_header(const uint8_t *header)
 {
@@ -1260,7 +1344,7 @@ static int bgzf_read_block_core(BGZF *fp)
     }
 
     // Reading compressed file
-    if ( fp->is_gzip && fp->gz_stream ) // is this is an initialized gzip stream?
+    if ( fp->is_gzip && (fp->gz_stream || fp->isal_inflate_state )) // is this is an initialized gzip stream?
     {
         count = inflate_gzip_block(fp);
         if ( count<0 )
@@ -1305,6 +1389,19 @@ static int bgzf_read_block_core(BGZF *fp)
             count = hread(fp->fp, cblock+sizeof(header), BGZF_BLOCK_SIZE - sizeof(header)) + sizeof(header);
 
             fp->is_gzip = 1;
+#if HAVE_ISAL
+            fp->isal_inflate_state = (struct inflate_state *)calloc(1, sizeof(struct inflate_state));
+            if (fp->isal_inflate_state == NULL) {
+                hts_log_error("Out of memory");
+                fp->errcode = BGZF_ERR_ZLIB;
+                return -1;
+            }
+            isal_inflate_init(fp->isal_inflate_state);
+            fp->isal_inflate_state->crc_flag = ISAL_GZIP;
+            fp->isal_inflate_state->hist_bits = 15;
+            fp->isal_inflate_state->avail_in = count;
+            fp->isal_inflate_state->next_in = cblock;
+#else
             fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
             // Set up zlib, using a window size of 15, and its built-in GZIP header processing (+16).
             int ret = inflateInit2(fp->gz_stream, 15 + 16);
@@ -1316,6 +1413,7 @@ static int bgzf_read_block_core(BGZF *fp)
             }
             fp->gz_stream->avail_in = count;
             fp->gz_stream->next_in  = cblock;
+#endif
             count = inflate_gzip_block(fp);
             if ( count<0 )
             {
