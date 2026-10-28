@@ -701,10 +701,12 @@ static int sam_hrecs_add(sam_hrecs_t *hrecs, const char *type, ...) {
 static void sam_hrecs_free_tags(sam_hrecs_t *hrecs, sam_hrec_tag_t *tag) {
     if (!hrecs || !tag)
         return;
-    if (tag->next)
-        sam_hrecs_free_tags(hrecs, tag->next);
 
-    pool_free(hrecs->tag_pool, tag);
+    while (tag) {
+        sam_hrec_tag_t *next = tag->next;
+        pool_free(hrecs->tag_pool, tag);
+        tag = next;
+    }
 }
 
 static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_hrec_type_t *type_found, int remove_hash) {
