@@ -27,6 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "htslib/sam.h"
+#include "sam_cache.h"
 
 #ifdef __cplusplus
 extern "C" {
