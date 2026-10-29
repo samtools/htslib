@@ -4431,6 +4431,8 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 }
 
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end);
+static uint8_t *bam_aux_getZ(const bam1_t *b, const char tag[2]);
+
 int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 {
     unsigned flag = b->core.flag;
@@ -4462,8 +4464,8 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
         uint8_t *bc = NULL;
         int n;
         for (n = 0; !bc && n < UMI_TAGS; n++)
-            bc = bam_aux_get(b, x->UMI[n]);
-        if (bc && *bc == 'Z') {
+            bc = bam_aux_getZ(b, x->UMI[n]);
+        if (bc) {
             int err = kputc(':', str) < 0;
             // Replace any non-alpha with '+'
             while (*++bc)
@@ -4493,12 +4495,12 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
     if (x && x->casava) {
         int rnum = (flag & BAM_FREAD1)? 1 : (flag & BAM_FREAD2)? 2 : 0;
         char filtered = (flag & BAM_FQCFAIL)? 'Y' : 'N';
-        uint8_t *bc = bam_aux_get(b, x->BC);
+        uint8_t *bc = bam_aux_getZ(b, x->BC);
         if (ksprintf(str, " %d:%c:0:%s", rnum, filtered,
                      bc ? (char *)bc+1 : "0") < 0)
             return -1;
 
-        if (bc && (*bc != 'Z' || (!isupper_c(bc[1]) && !islower_c(bc[1])))) {
+        if (bc && !isupper_c(bc[1]) && !islower_c(bc[1])) {
             hts_log_warning("BC tag starts with non-sequence base; using '0'");
             str->l -= strlen((char *)bc)-2; // limit to 1 char
             str->s[str->l-1] = '0';
@@ -4881,6 +4883,13 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
                   bam_get_qname(b), b->core.flag);
     errno = EINVAL;
     return NULL;
+}
+
+// As per bam_aux_get, but treats any tag not of type Z as absent.
+// TODO: consider extending the public API with this functionality too.
+static uint8_t *bam_aux_getZ(const bam1_t *b, const char tag[2]) {
+    uint8_t *s = bam_aux_get(b, tag);
+    return s && *s == 'Z' ? s : NULL;
 }
 
 int bam_aux_del(bam1_t *b, uint8_t *s)
