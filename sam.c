@@ -1198,11 +1198,12 @@ static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, hts_po
 
 // Internal (for now) func used by bam_sym_lookup.  This is copied from
 // samtools/bam.c.
+static uint8_t *bam_aux_getZ(const bam1_t *b, const char tag[2]);
 static const char *bam_get_library(const bam_hdr_t *h, const bam1_t *b)
 {
     const char *rg;
     kstring_t lib = { 0, 0, NULL };
-    rg = (char *)bam_aux_get(b, "RG");
+    rg = (char *)bam_aux_getZ(b, "RG");
 
     if (!rg)
         return NULL;
@@ -4431,8 +4432,6 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 }
 
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end);
-static uint8_t *bam_aux_getZ(const bam1_t *b, const char tag[2]);
-
 int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 {
     unsigned flag = b->core.flag;
