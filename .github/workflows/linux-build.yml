@@ -100,7 +100,7 @@ jobs:
         if [ '${{ matrix.use-libdeflate }}' = 'use-libdeflate' ] ; then
           deflate_pkgs="libdeflate-dev"
         fi
-        if [ '${{ matrix.use-libdeflate }}' = 'use-isal' ] ; then
+        if [ '${{ matrix.use-isal}}' = 'use-isal' ] ; then
           deflate_pkgs="libisal-dev"
         fi
         sudo apt-get update
