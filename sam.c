@@ -4810,7 +4810,7 @@ int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8
 
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
 {
-    int size;
+    uint64_t size;
     uint32_t n;
     if (s >= end) return end;
     size = aux_type2size(*s); ++s; // skip type

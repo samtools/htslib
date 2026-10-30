@@ -2304,6 +2304,33 @@ cleanup:
     ks_free(&ks);
 }
 
+static void test_aux_B_array_overflow(void)
+{
+    // B:i array claiming 0x40000001 entries with only one present.
+    // 4 * 0x40000001 wraps to 4 in 32-bit arithmetic.
+    static const uint8_t aux[] = {
+        'X', 'B', 'B', 'i', 0x01, 0x00, 0x00, 0x40, 1, 0, 0, 0
+    };
+    int32_t val = 1;
+    int r;
+    bam1_t *bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    r = bam_set1(bam, 1, "q", BAM_FUNMAP, -1, -1, 0, 0, NULL, -1, -1, 0,
+                 0, NULL, NULL, sizeof(aux));
+    VERIFY(r >= 0, "call to bam_set1() failed.");
+    memcpy(bam->data + bam->l_data, aux, sizeof(aux));
+    bam->l_data += sizeof(aux);
+
+    VERIFY(bam_aux_get(bam, "XB") == NULL && errno == EINVAL,
+           "bam_aux_get() accepted B array with overflowing length");
+    VERIFY(bam_aux_update_array(bam, "XB", 'i', 1, &val) < 0,
+           "bam_aux_update_array() accepted B array with overflowing length");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
 static void test_cigar_api(void)
 {
     uint32_t *buf = NULL;
@@ -2364,6 +2391,7 @@ int main(int argc, char **argv)
     test_bam_set1_validate_cigar();
     test_bam_set1_validate_size_limits();
     test_bam_set1_write_and_read_back();
+    test_aux_B_array_overflow();
     test_cigar_api();
 
     return status;
