@@ -590,7 +590,7 @@ uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
 #endif
 
 #if HAVE_ISAL
-static int _bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size_t slen, int level)
+static int bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size_t slen, int level)
 {
     if (level < 0 || level > 3) {
         return -1;
