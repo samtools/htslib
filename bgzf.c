@@ -609,6 +609,7 @@ static int bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size_
     uint8_t *level_buf = malloc(level_buf_size);
     if (level_buf == NULL) {
         free(z);
+        return -1;
     }
     isal_deflate_stateless_init(z);
     z->level = level;
