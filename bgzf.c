@@ -668,7 +668,7 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
 
         #if HAVE_ISAL
         if (level == 1 || level == 2) {
-            return _bgzf_compress_isal(dst, dlen, src, slen, level);
+            return bgzf_compress_isal(dst, dlen, src, slen, level);
         }
         #endif
 
