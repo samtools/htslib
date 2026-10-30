@@ -627,7 +627,7 @@ static int bgzf_compress_isal(uint8_t *dst, size_t *dlen, const void *src, size_
      * enough room in the output buffer */
     int ret = isal_deflate_stateless(z);
     if (ret != COMP_OK) {
-        hts_log_error("Call to _bgzf_compress_isal failed");
+        hts_log_error("Call to bgzf_compress_isal failed");
         free(level_buf);
         free(z);
         return -1;
@@ -725,9 +725,8 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
         memcpy(dst + BLOCK_HEADER_LENGTH+5, src, slen);
         *dlen = slen+5 + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
     #if HAVE_ISAL
-    else if (level == 1 || level == 2) {
-        return _bgzf_compress_isal(dst, dlen, src, slen, level);
-    }
+    } else if (level == 1 || level == 2) {
+        return bgzf_compress_isal(dst, dlen, src, slen, level);
     #endif
     } else {
         // compress the body
