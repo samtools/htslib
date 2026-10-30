@@ -68,6 +68,7 @@ shlib-exports-*.txt
 /test/test_expr
 /test/test_faidx
 /test/test_index
+/test/test_index_load
 /test/test_introspection
 /test/test_kfunc
 /test/test_khash
