@@ -39,9 +39,13 @@ a development ('-dev' or '-devel') package separate from the main library.
     libcurl    (optional, but strongly recommended)
     libcrypto  (optional for Amazon S3 support; not needed on MacOS)
     libdeflate (optional, but strongly recommended for faster gzip)
+    isa-l      (optional, but strongly recommended for faster "fast" level of gzip)
 
 Disabling libbzip2 and liblzma will make some CRAM files unreadable, so
 is not recommended.
+
+ISA-L is available as libisal on Debian-based linux distributions and as isa-l
+on conda-forge.
 
 Using libcurl provides HTSlib with network protocol support, for
 example it enables the use of ftp://, http://, and https:// URLs.
@@ -181,6 +185,13 @@ various features and specify further optional external requirements:
     and decompression.  It also includes a fast crc32 implementation.
     By default, ./configure will probe for libdeflate and use it if
     available.  To prevent this, use --without-libdeflate.
+
+--with-isal
+    ISA-L is another heavily optimized library for DEFLATE-based compression
+    and decompression. It provides a few very fast compression levels at 
+    similar size of level 1. It also includes a fast gzip stream decoder.
+    By default, ./configure will probe for isa-l and use it if
+    available.  To prevent this, use --without-isal.
 
 Each --enable-FEATURE/--disable-FEATURE/--with-PACKAGE/--without-PACKAGE
 option listed also has an opposite, e.g., --without-external-htscodecs
