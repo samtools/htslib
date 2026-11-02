@@ -667,7 +667,7 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
         level = level > 0 ? level : 6; // libdeflate doesn't honour -1 as default
 
         #if HAVE_ISAL
-        if (level == 1 || level == 2) {
+        if (level == 1) {
             return bgzf_compress_isal(dst, dlen, src, slen, level);
         }
         #endif
@@ -725,7 +725,7 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
         memcpy(dst + BLOCK_HEADER_LENGTH+5, src, slen);
         *dlen = slen+5 + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
     #if HAVE_ISAL
-    } else if (level == 1 || level == 2) {
+    } else if (level == 1) {
         return bgzf_compress_isal(dst, dlen, src, slen, level);
     #endif
     } else {
