@@ -1045,6 +1045,45 @@ void test_bcf_remove_allele_set(void)
     kbs_destroy(rm_set);
 }
 
+// A FORMAT field with Number=LG whose stored data is shorter than the sample's
+// LAA list implies must not read past the retrieved value buffer.
+void test_bcf_remove_allele_set_short_lg(void)
+{
+    char header[] = "##fileformat=VCFv4.5\n"
+        "##contig=<ID=1,length=1000>\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+        "##FORMAT=<ID=LAA,Number=.,Type=Integer,Description=\"Local alleles\">\n"
+        "##FORMAT=<ID=LPL,Number=LG,Type=Integer,Description=\"Local PL\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n";
+    // LAA lists 3 local alts (diploid Number=LG would be 10 values) but LPL
+    // only carries a single value.
+    const char *input =
+        "1\t100\t.\tA\tC,G,T\t.\t.\t.\tGT:LAA:LPL\t0/1:1,2,3:5";
+
+    kstring_t kstr = KS_INITIALIZE;
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    bcf1_t *rec = bcf_init();
+    struct kbitset_t *rm_set = kbs_init(4);
+
+    if (!hdr || !rec || !rm_set)
+        error("allocation failed\n");
+
+    check0(ks_resize(&kstr, 1000));
+    check0(bcf_hdr_parse(hdr, header));
+    check0(read_vcf_line(input, hdr, rec, &kstr));
+
+    // Remove the unused G and T alleles, as bcf_trim_alleles would.
+    kbs_insert(rm_set, 2);
+    kbs_insert(rm_set, 3);
+    check0(bcf_remove_allele_set(hdr, rec, rm_set));
+    check0(vcf_format(hdr, rec, ks_clear(&kstr)));
+
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+    ks_free(&kstr);
+    kbs_destroy(rm_set);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -1064,5 +1103,6 @@ int main(int argc, char **argv)
     test_open_format();
     test_rlen_values();
     test_bcf_remove_allele_set();
+    test_bcf_remove_allele_set_short_lg();
     return 0;
 }
