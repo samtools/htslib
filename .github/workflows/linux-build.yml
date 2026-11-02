@@ -134,3 +134,33 @@ jobs:
       if: ${{ matrix.run-extra-checks == 'run-extra-checks' }}
       run: |
         make test-shlib-exports check-untracked maintainer-check
+
+    - name: Signed-off-by check
+      if: ${{ matrix.run-extra-checks == 'run-extra-checks' }}
+      run: |
+        # Check for Signed-off-by: annotations on commits
+        # Deepen current branch (usual checkout is --depth=1)
+        git fetch --unshallow --no-tags --no-recurse-submodules origin HEAD
+        # Grab upstream develop to see where the current branch joins it, taking
+        # care to give it a unique local name (pushed branch may itself be
+        # called develop)
+        develop=develop
+        n=0
+        while git branch | grep -q -w "$develop" ; do n=$((n + 1)) ; develop="develop-$n" ; done
+        git fetch --no-tags --no-recurse-submodules https://github.com/samtools/htslib.git "develop:$develop"
+        # Check there are commits between here and develop (may not be true
+        # if the branch is a direct parent of develop itself).  If there are,
+        # check to see if any have a "Signed-off-by" annotation.
+        ncommits=`git rev-list --count "$develop"..HEAD || true`
+        if [ "$ncommits" -gt 0 ] ; then
+          nsigned=`git log "$develop"..HEAD | grep -c -E '^ +Signed-off-by:' || true`
+          echo "::notice::Number of signed off commits = $nsigned of $ncommits"
+          if [ "$nsigned" -eq 0 ] ; then
+            echo '::error::None of the commits in this branch has a Signed-off-by: annotation, which is required for all contributions.  See https://github.com/samtools/htslib/blob/develop/CONTRIBUTING.md#signing-your-work for details.'
+            false
+          else
+            true
+          fi
+        else
+          true
+        fi
