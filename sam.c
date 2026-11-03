@@ -1968,6 +1968,11 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         fp->bam_header = h;
         sam_hdr_incr_ref(fp->bam_header);
     }
+
+    // Sanity check incase we have nul bytes in the header we just read
+    if (h)
+        h->l_text = h->text ? strlen(h->text) : 0;
+
     return h;
 }
 
