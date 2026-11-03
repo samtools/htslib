@@ -2076,6 +2076,12 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
 
+    if (strncmp(type, "SQ", 2) == 0) {
+        hrecs->refs_changed = 0; // force
+        if (rebuild_target_arrays(bh) != 0)
+            return -1;
+    }
+
     return 0;
 }
 
@@ -2143,12 +2149,16 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
         if (rebuild_hash(hrecs, type)) {
             return -1;
         }
-        if (strncmp(type, "SQ", 2) == 0)
-            ret |= rebuild_target_arrays(bh);
     }
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
+
+    if (strncmp(type, "SQ", 2) == 0) {
+        hrecs->refs_changed = 0; // force
+        if (rebuild_target_arrays(bh) != 0)
+            return -1;
+    }
 
     return ret;
 }
