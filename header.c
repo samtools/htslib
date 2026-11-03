@@ -1110,8 +1110,16 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
     for (i = refs_changed; i < hrecs->nref; i++) {
         if (i >= bh->n_targets
             || strcmp(bh->target_name[i], hrecs->ref[i].name) != 0) {
-            if (i < bh->n_targets)
+            if (i < bh->n_targets) {
+                // Remove from the hash table too as target_name[i]
+                // is used as a hash table key.
+                if (long_refs) {
+                    k = kh_get(s2i, long_refs, bh->target_name[i]);
+                    if (k < kh_end(long_refs))
+                        kh_del(s2i, long_refs, k);
+                }
                 free(bh->target_name[i]);
+            }
             bh->target_name[i] = strdup(hrecs->ref[i].name);
             if (!bh->target_name[i])
                 return -1;
