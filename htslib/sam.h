@@ -729,6 +729,11 @@ int sam_hdr_find_tag_pos(sam_hdr_t *h, const char *type, int pos, const char *ke
 
 /// Remove the key from the line identified by type, ID_key and ID_value.
 /*!
+ * The key should be a tag key you wish to remove the header line matching
+ * ID_key:ID_value (or first of that type if those are NULL).   Note however
+ * key cannot be the primary key ("SN" / "ID") as this is used as the key to
+ * internal hash tables.
+ *
  * @param type      Type of the line to which the tag belongs. Eg. "SQ"
  * @param ID_key    Tag key defining the line. Eg. "SN"
  * @param ID_value  Tag value associated with the key above. Eg. "ref1"
@@ -834,6 +839,10 @@ void sam_hdr_incr_ref(sam_hdr_t *h);
 
 /// Remove the tag from all lines identified by type.
 /*!
+ * The tag_id should be a tag key you wish to remove from all records of
+ * the specified type.  Note however this cannot be "ID" as this is used as
+ * the key to internal hash tables.
+ *
  * @param type      Type of the line to which the tag belongs. Eg. "SQ"
  * @param tag_id    The name of the targeted tag. Eg. "UR"
  * @return          the number of tags removed (can be 0); -1 on error

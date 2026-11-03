@@ -2383,6 +2383,10 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
     if (!bh || !type || !key)
         return -1;
 
+    // Disallow @SQ SN:, @RG ID: and @PG ID:
+    if (strcmp(key, strcmp(type, "SQ")==0 ? "SN" : "ID") == 0)
+        return -1;
+
     if (!(hrecs = bh->hrecs)) {
         if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
@@ -3212,8 +3216,11 @@ enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs) {
 /*
  *
  * Removes all the instances of a tag.
- * Returns number removed (can be 0) or -1 on a fail.
+ * The tag_id should be a tag key you wish to remove from all records of
+ * the specified type.  Note however this cannot be the primary key ("SN" /
+ * "ID") as this is used as the key to internal hash tables.
  *
+ * Returns number removed (can be 0) or -1 on a fail.
  */
 int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id) {
     sam_hrecs_t *hrecs;
@@ -3223,6 +3230,10 @@ int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id) 
     int deleted = 0;
 
     if (!bh || !type || !tag_id)
+        return -1;
+
+    // Disallow @SQ SN:, @RG ID: and @PG ID:
+    if (strcmp(tag_id, strcmp(type, "SQ")==0 ? "SN" : "ID") == 0)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
