@@ -610,7 +610,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
             break;
         if (strncmp(type, "CO", 2) && !(val = (char *)va_arg(args, char *)))
             break;
-        if (*val == '\0')
+        if (!val || *val == '\0')
             continue;
 
         if (!(h_tag = pool_alloc(hrecs->tag_pool)))
