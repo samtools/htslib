@@ -1799,7 +1799,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
     if ( !reg->file )
     {
         hts_log_error("Could not open file: %s", regions);
-        free(reg);
+        bcf_sr_regions_destroy(reg);
         return NULL;
     }
 
@@ -1852,7 +1852,10 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
             return NULL;
         }
         hts_close(reg->file); reg->file = NULL;
-        if ( !reg->nseqs ) { free(reg); return NULL; }
+        if ( !reg->nseqs ) {
+            bcf_sr_regions_destroy(reg);
+            return NULL;
+        }
         _regions_sort_and_merge(reg);
         return reg;
     }
