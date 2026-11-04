@@ -207,6 +207,9 @@ int regidx_nregs(regidx_t *idx);
  *
  *  regitr_reset() - initialize an iterator for a repeated regitr_loop cycle.
  *                  Not required with regitr_overlap.
+ *
+ * Note that modifying region data (for example with regidx_push) invalidates
+ * any iterators.  If this is the case, destroy them first and recreate as needed.
  */
 HTSLIB_EXPORT
 regitr_t *regitr_init(regidx_t *idx);
