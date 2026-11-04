@@ -1151,6 +1151,9 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *
  BAM record in which case this function replaces the existing CIGAR field
  and shuffles data accordingly.  A CIGAR of "*" will remove the CIGAR,
  returning zero.
+
+ Note: if this function returns an error, the bam record may be left in an
+ inconsistent state.  (If this is a problem, use bam_dup1 first.)
  */
 HTSLIB_EXPORT
 ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
