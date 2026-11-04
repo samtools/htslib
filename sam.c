@@ -4840,7 +4840,21 @@ uint8_t *bam_aux_first(const bam1_t *b)
     uint8_t *s = bam_get_aux(b);
     uint8_t *end = b->data + b->l_data;
     if (end - s <= 2) { errno = ENOENT; return NULL; }
+
+    // Check the tag value is valid and complete
+    uint8_t *e = skip_aux(s+2, end);
+    if (e == NULL)
+        goto bad_aux;
+    if ((s[2] == 'Z' || s[2] == 'H') && *(e - 1) != '\0')
+        goto bad_aux;
+
     return s+2;
+
+ bad_aux:
+    hts_log_error("Corrupted aux data for read %s flag %d",
+                  bam_get_qname(b), b->core.flag);
+    errno = EINVAL;
+    return NULL;
 }
 
 uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s)
@@ -4849,6 +4863,14 @@ uint8_t *bam_aux_next(const bam1_t *b, const uint8_t *s)
     uint8_t *next = s? skip_aux((uint8_t *) s, end) : end;
     if (next == NULL) goto bad_aux;
     if (end - next <= 2) { errno = ENOENT; return NULL; }
+
+    // Check the tag value is valid and complete
+    uint8_t *e = skip_aux(next+2, end);
+    if (e == NULL)
+        goto bad_aux;
+    if ((next[2] == 'Z' || next[2] == 'H') && *(e - 1) != '\0')
+        goto bad_aux;
+
     return next+2;
 
  bad_aux:
