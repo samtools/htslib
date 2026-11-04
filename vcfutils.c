@@ -204,7 +204,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
                 int32_t val = convert(&p[ial * sizeof(type_t)]); \
                 if ( val==vector_end ) break; /* smaller ploidy */ \
                 if ( bcf_gt_is_missing(val) ) continue; /* missing allele */ \
-                if ( (val>>1)-1 >= line->n_allele ) { \
+                if ( (unsigned)val>>1 > line->n_allele ) { \
                     hts_log_error("Allele index is out of bounds at %s:%"PRIhts_pos, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
                     ret = -1; \
                     goto clean; \
@@ -968,11 +968,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     if ( bcf_gt_is_missing(ptr[j]) ) continue;
                     if ( ptr[j]==bcf_int32_vector_end ) break;
                     int al = bcf_gt_allele(ptr[j]);
-                    if ( !( al<nR_ori && map[al]>=-1 ) )
+                    if ( !( al>=0 && al<nR_ori && map[al]>=-1 ) )
                     {
                         hts_log_error("Problem updating genotypes at %s:%"PRIhts_pos" [ al<nR_ori && map[al]>=-1 :: al=%d,nR_ori=%d,map[al]=%d ]",
                             bcf_seqname_safe(header,line), line->pos+1, al,
-                                      nR_ori, al < nR_ori ? map[al] : -1);
+                                      nR_ori, al >= 0 && al < nR_ori ? map[al] : -1);
                         goto err;
                     }
                     // if an allele is mapped to -1, it has been removed,
