@@ -1062,16 +1062,44 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
 
     /**
-     * bcf_get_*_id() - returns pointer to FORMAT/INFO field data given the header index instead of the string ID
-     * @line: VCF line obtained from vcf_parse1
-     * @id:  The header index for the tag, obtained from bcf_hdr_id2int()
+     * bcf_get_fmt_id() - returns pointer to FORMAT field data given the header index instead of the string ID
+     * @param line  VCF line obtained from vcf_parse1
+     * @param id    The header index for the tag, obtained from bcf_hdr_id2int()
      *
-     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid
-     * as their goal is to avoid the header lookup.
+     * @return Pointer to the bcf_fmt_t struct on success,
+     *         NULL on failure (id not present, or out of memory)
+     *
+     * This function does not check if the index is valid as its goal
+     * is to avoid the header lookup.
+     *
+     * @bug
+     * It is not easy to tell if this function returned NULL because no
+     * data for @p id was present, or because it ran out of memory in
+     * bcf_unpack().  To work around this problem, it's recommended to
+     * call bcf_unpack(line, BCF_UN_FMT); separately before using this
+     * function.
      */
     HTSLIB_EXPORT
     bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id);
 
+    /**
+     * bcf_get_info_id() - returns pointer to INFO field data given the header index instead of the string ID
+     * @param line  VCF line obtained from vcf_parse1
+     * @param id    The header index for the tag, obtained from bcf_hdr_id2int()
+     *
+     * @return Pointer to the bcf_info_t struct on success,
+     *         NULL on failure (id not present, or out of memory)
+     *
+     * This function does not check if the index is valid as its goal
+     * is to avoid the header lookup.
+     *
+     * @bug
+     * It is not easy to tell if this function returned NULL because no
+     * data for @p id was present, or because it ran out of memory in
+     * bcf_unpack().  To work around this problem, it's recommended to
+     * call bcf_unpack(line, BCF_UN_FMT); separately before using this
+     * function.
+     */
     HTSLIB_EXPORT
     bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id);
 

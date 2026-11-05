@@ -293,7 +293,7 @@ HTSLIB_EXPORT
 char hts_json_fnext(struct hFILE *fp, hts_json_token *token, kstring_t *kstr)
 {
     char peek;
-    int c;
+    int c, nomem = 0;
 
     for (;;) switch (c = hgetc(fp)) {
     case ' ':
@@ -315,20 +315,22 @@ char hts_json_fnext(struct hFILE *fp, hts_json_token *token, kstring_t *kstr)
 
     case '"':
         kstr->l = 0;
-        fscan_string(fp, kstr);
-        if (kstr->l == 0) kputsn("", 0, kstr);
+        nomem = fscan_string(fp, kstr) < 0;
+        if (kstr->l == 0) kputsn_chk(&nomem, "", 0, kstr);
         token->str = kstr->s;
-        return token->type = 's';
+        token->type = !nomem ? 's' : '!';
+        return token->type;
 
     default:
         kstr->l = 0;
-        kputc(c, kstr);
+        nomem = kputc(c, kstr) < 0;
         while (hpeek(fp, &peek, 1) == 1 && !strchr(" \t\r\n,]}", peek)) {
             if ((c = hgetc(fp)) == EOF) break;
-            kputc(c, kstr);
+            kputc_chk(&nomem, c, kstr);
         }
         token->str = kstr->s;
-        return token->type = token_type(token);
+        token->type = !nomem ? token_type(token) : '!';
+        return token->type;
     }
 }
 

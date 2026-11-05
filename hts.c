@@ -776,49 +776,50 @@ int hts_detect_format2(hFILE *hfile, const char *fname, htsFormat *fmt)
 char *hts_format_description(const htsFormat *format)
 {
     kstring_t str = { 0, 0, NULL };
+    int nomem = 0;
 
     switch (format->format) {
-    case sam:   kputs("SAM", &str); break;
-    case bam:   kputs("BAM", &str); break;
-    case cram:  kputs("CRAM", &str); break;
-    case fasta_format:  kputs("FASTA", &str); break;
-    case fastq_format:  kputs("FASTQ", &str); break;
-    case vcf:   kputs("VCF", &str); break;
+    case sam:   kputs_chk(&nomem, "SAM", &str); break;
+    case bam:   kputs_chk(&nomem, "BAM", &str); break;
+    case cram:  kputs_chk(&nomem, "CRAM", &str); break;
+    case fasta_format:  kputs_chk(&nomem, "FASTA", &str); break;
+    case fastq_format:  kputs_chk(&nomem, "FASTQ", &str); break;
+    case vcf:   kputs_chk(&nomem, "VCF", &str); break;
     case bcf:
-        if (format->version.major == 1) kputs("Legacy BCF", &str);
-        else kputs("BCF", &str);
+        if (format->version.major == 1) kputs_chk(&nomem, "Legacy BCF", &str);
+        else kputs_chk(&nomem, "BCF", &str);
         break;
-    case bai:   kputs("BAI", &str); break;
-    case crai:  kputs("CRAI", &str); break;
-    case csi:   kputs("CSI", &str); break;
-    case fai_format:    kputs("FASTA-IDX", &str); break;
-    case fqi_format:    kputs("FASTQ-IDX", &str); break;
-    case gzi:   kputs("GZI", &str); break;
-    case tbi:   kputs("Tabix", &str); break;
-    case bed:   kputs("BED", &str); break;
-    case d4_format:     kputs("D4", &str); break;
-    case htsget: kputs("htsget", &str); break;
-    case hts_crypt4gh_format: kputs("crypt4gh", &str); break;
-    case empty_format:  kputs("empty", &str); break;
-    default:    kputs("unknown", &str); break;
+    case bai:   kputs_chk(&nomem, "BAI", &str); break;
+    case crai:  kputs_chk(&nomem, "CRAI", &str); break;
+    case csi:   kputs_chk(&nomem, "CSI", &str); break;
+    case fai_format:    kputs_chk(&nomem, "FASTA-IDX", &str); break;
+    case fqi_format:    kputs_chk(&nomem, "FASTQ-IDX", &str); break;
+    case gzi:   kputs_chk(&nomem, "GZI", &str); break;
+    case tbi:   kputs_chk(&nomem, "Tabix", &str); break;
+    case bed:   kputs_chk(&nomem, "BED", &str); break;
+    case d4_format:     kputs_chk(&nomem, "D4", &str); break;
+    case htsget: kputs_chk(&nomem, "htsget", &str); break;
+    case hts_crypt4gh_format: kputs_chk(&nomem, "crypt4gh", &str); break;
+    case empty_format:  kputs_chk(&nomem, "empty", &str); break;
+    default:    kputs_chk(&nomem, "unknown", &str); break;
     }
 
     if (format->version.major >= 0) {
-        kputs(" version ", &str);
-        kputw(format->version.major, &str);
+        kputs_chk(&nomem, " version ", &str);
+        kputw_chk(&nomem, format->version.major, &str);
         if (format->version.minor >= 0) {
-            kputc('.', &str);
-            kputw(format->version.minor, &str);
+            kputc_chk(&nomem, '.', &str);
+            kputw_chk(&nomem, format->version.minor, &str);
         }
     }
 
     switch (format->compression) {
-    case bzip2_compression:  kputs(" bzip2-compressed", &str); break;
-    case razf_compression:   kputs(" legacy-RAZF-compressed", &str); break;
-    case xz_compression:     kputs(" XZ-compressed", &str); break;
-    case zstd_compression:   kputs(" Zstandard-compressed", &str); break;
-    case custom: kputs(" compressed", &str); break;
-    case gzip:   kputs(" gzip-compressed", &str); break;
+    case bzip2_compression:  kputs_chk(&nomem, " bzip2-compressed", &str); break;
+    case razf_compression:   kputs_chk(&nomem, " legacy-RAZF-compressed", &str); break;
+    case xz_compression:     kputs_chk(&nomem, " XZ-compressed", &str); break;
+    case zstd_compression:   kputs_chk(&nomem, " Zstandard-compressed", &str); break;
+    case custom: kputs_chk(&nomem, " compressed", &str); break;
+    case gzip:   kputs_chk(&nomem, " gzip-compressed", &str); break;
 
     case bgzf:
         switch (format->format) {
@@ -827,10 +828,10 @@ char *hts_format_description(const htsFormat *format)
         case csi:
         case tbi:
             // These are by definition BGZF, so just use the generic term
-            kputs(" compressed", &str);
+            kputs_chk(&nomem, " compressed", &str);
             break;
         default:
-            kputs(" BGZF-compressed", &str);
+            kputs_chk(&nomem, " BGZF-compressed", &str);
             break;
         }
         break;
@@ -843,7 +844,7 @@ char *hts_format_description(const htsFormat *format)
         case csi:
         case tbi:
             // These are normally compressed, so emphasise that this one isn't
-            kputs(" uncompressed", &str);
+            kputs_chk(&nomem, " uncompressed", &str);
             break;
         default:
             break;
@@ -854,10 +855,10 @@ char *hts_format_description(const htsFormat *format)
     }
 
     switch (format->category) {
-    case sequence_data: kputs(" sequence", &str); break;
-    case variant_data:  kputs(" variant calling", &str); break;
-    case index_file:    kputs(" index", &str); break;
-    case region_list:   kputs(" genomic region", &str); break;
+    case sequence_data: kputs_chk(&nomem, " sequence", &str); break;
+    case variant_data:  kputs_chk(&nomem, " variant calling", &str); break;
+    case index_file:    kputs_chk(&nomem, " index", &str); break;
+    case region_list:   kputs_chk(&nomem, " genomic region", &str); break;
     default: break;
     }
 
@@ -873,18 +874,23 @@ char *hts_format_description(const htsFormat *format)
         case fasta_format:
         case fastq_format:
         case htsget:
-            kputs(" text", &str);
+            kputs_chk(&nomem, " text", &str);
             break;
 
         case empty_format:
             break;
 
         default:
-            kputs(" data", &str);
+            kputs_chk(&nomem, " data", &str);
             break;
         }
     else
-        kputs(" data", &str);
+        kputs_chk(&nomem, " data", &str);
+
+    if (nomem) {
+        ks_free(&str);
+        return NULL;
+    }
 
     return ks_release(&str);
 }
@@ -2573,7 +2579,10 @@ static int compress_binning(hts_idx_t *idx, int i)
             bins_t *p, *q;
             if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins || kh_key(bidx, k) < start) continue;
             p = &kh_value(bidx, k);
-            if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
+            if (l < idx->n_lvls && p->n > 1) {
+                if (ks_introsort(_off, p->n, p->list) < 0)
+                    return -1;
+            }
             if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
                 khint_t kp;
                 kp = kh_get(bin, bidx, hts_bin_parent(kh_key(bidx, k)));
@@ -2597,7 +2606,10 @@ static int compress_binning(hts_idx_t *idx, int i)
         }
     }
     k = kh_get(bin, bidx, 0);
-    if (k != kh_end(bidx)) ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list);
+    if (k != kh_end(bidx)) {
+        if (ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list) < 0)
+            return -1;
+    }
     // merge adjacent chunks that start from the same BGZF block
     for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
         bins_t *p;
@@ -3446,7 +3458,8 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
         return res;
 
     if (iter->n_off - start_n_off > 1) {
-        ks_introsort(_off_max, iter->n_off - start_n_off, iter->off + start_n_off);
+        if (ks_introsort(_off_max, iter->n_off - start_n_off, iter->off + start_n_off) < 0)
+            return -2;
         for (i = start_n_off, j = start_n_off + 1; j < iter->n_off; j++) {
             if (iter->off[i].v >= iter->off[j].u) {
                 if (iter->off[i].v < iter->off[j].v)
@@ -3549,10 +3562,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (iter) {
         if (tid < 0) {
-            uint64_t off = hts_itr_off(idx, tid);
-            if (off != (uint64_t) -1) {
+            uint64_t curr_off = hts_itr_off(idx, tid);
+            if (curr_off != (uint64_t) -1) {
                 iter->read_rest = 1;
-                iter->curr_off = off;
+                iter->curr_off = curr_off;
                 iter->readrec = readrec;
                 if (tid == HTS_IDX_NONE)
                     iter->finished = 1;
@@ -3644,10 +3657,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             }
 
             // retrieve bins
-            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, bidx) < 0) {
-                hts_itr_destroy(iter);
-                return NULL;
-            }
+            if (reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, bidx) < 0)
+                goto fail;
 
             for (i = n_off = 0; i < iter->bins.n; ++i)
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
@@ -3658,6 +3669,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 return iter;
             }
             off = calloc(n_off, sizeof(*off));
+            if (!off)
+                goto fail;
             for (i = n_off = 0; i < iter->bins.n; ++i) {
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
                     int j;
@@ -3683,7 +3696,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 iter->finished = 1;
                 return iter;
             }
-            ks_introsort(_off_max, n_off, off);
+            if (ks_introsort(_off_max, n_off, off) < 0) {
+                free(off);
+                goto fail;
+            }
+
             // resolve completely contained adjacent blocks
             for (i = 1, l = 0; i < n_off; ++i)
                 if (off[l].v < off[i].v) off[++l] = off[i];
@@ -3702,6 +3719,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     }
 
     return iter;
+
+ fail:
+    hts_itr_destroy(iter);
+    return NULL;
 }
 
 int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
@@ -3843,8 +3864,10 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
         }
     }
 
-    if (iter->n_off > 1)
-        ks_introsort(_off_max, iter->n_off, iter->off);
+    if (iter->n_off > 1) {
+        if (ks_introsort(_off_max, iter->n_off, iter->off) < 0)
+            return -1;
+    }
 
     if(!iter->n_off && !iter->nocoor)
         iter->finished = 1;
@@ -3959,7 +3982,8 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
     }
 
     if (n_off) {
-        ks_introsort(_off_max, n_off, off);
+        if (ks_introsort(_off_max, n_off, off) < 0)
+            goto err;
         iter->n_off = n_off; iter->off = off;
     }
 
@@ -4164,8 +4188,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
     // No colon is simplest case; just check and return.
     if (colon == NULL) {
         *beg = 0; *end = HTS_POS_MAX;
-        kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
-        if (!ks.s) {
+        if (kputsn(s, s_len-quoted, &ks) < 0) { // convert to nul terminated string
             *tid = -2;
             return NULL;
         }
@@ -4179,8 +4202,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
     // Has a colon, but check whole name first.
     if (!quoted) {
         *beg = 0; *end = HTS_POS_MAX;
-        kputsn(s, s_len, &ks); // convert to nul terminated string
-        if (!ks.s) {
+        if (kputsn(s, s_len, &ks) < 0) { // convert to nul terminated string
             *tid = -2;
             return NULL;
         }
@@ -4189,8 +4211,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
             // ambiguous.  eg we have ref chr1 and ref chr1:100-200
             // both present.
             ks.l = 0;
-            kputsn(s, colon-s, &ks); // convert to nul terminated string
-            if (!ks.s) {
+            if (kputsn(s, colon-s, &ks) < 0) { // convert to nul terminated string
                 *tid = -2;
                 return NULL;
             }
@@ -4213,8 +4234,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
     // Quoted, or unquoted and whole string isn't a name.
     // Check the pre-colon part is valid.
     ks.l = 0;
-    kputsn(s, colon-s-quoted, &ks); // convert to nul terminated string
-    if (!ks.s) {
+    if (kputsn(s, colon-s-quoted, &ks) < 0) { // convert to nul terminated string
         *tid = -2;
         return NULL;
     }
@@ -4754,7 +4774,9 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
         if (*p == '/') p++;
 
         // Attempt to open local file first
-        kputsn(p, e-p, &s);
+        if (kputsn(p, e-p, &s) < 0)
+            goto fail;
+
         if (access(s.s, R_OK) == 0)
         {
             free(s.s);

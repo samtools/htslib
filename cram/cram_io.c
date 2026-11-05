@@ -4031,10 +4031,18 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
     // Flush the job.  Note our encoder queue may be full, so we
     // either have to keep trying in non-blocking mode (what we do) or
     // use a dedicated separate thread for draining the queue.
+    int res = -1;
     for (;;) {
         errno = 0;
-        hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_flush_thread, j, 1);
-        int pending = (errno == EAGAIN);
+        int pending = 0;
+        res = hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_flush_thread, j, 1);
+        if (res < 0) {
+            if (errno == EAGAIN) {
+                pending = 1; // Try again later
+            } else {
+                free(j); // Not dispatched
+            }
+        }
         if (cram_flush_result(fd) != 0)
             return -1;
         if (!pending)
@@ -4043,7 +4051,7 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
         hts_usleep(1000);
     }
 
-    return 0;
+    return res;
 }
 
 /* ----------------------------------------------------------------------

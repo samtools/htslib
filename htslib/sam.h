@@ -1112,9 +1112,24 @@ hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 HTSLIB_EXPORT
 hts_pos_t bam_endpos(const bam1_t *b);
 
+/*! @function
+ @abstract     Convert SAM flags from string to integer form
+ @param  str   String containing comma-separated flag names
+ @return       Integer representing the flags on success
+               -1 on failure (most likey an unrecognised flag name)
+
+ @discussion   Valid names are PAIRED,PROPER_PAIR,UNMAP,MUNMAP,
+               REVERSE,MREVERSE,READ1,READ2,SECONDARY,QCFAIL,DUP,SUPPLEMENTARY.
+               Name matches are case-insensitive.
+ */
 HTSLIB_EXPORT
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 
+/*! @function
+ @abstract     Convert SAM flags from integer to string form
+ @param  flags The flags to set
+ @return       A pointer to a NULL-terminated string on success, NULL on failure
+ */
 HTSLIB_EXPORT
 char *bam_flag2str(int flag);   /** The string must be freed by the user */
 
@@ -1527,7 +1542,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
     } else if (type == 'f') {
         if (end - s >= 4) {
             // cast to avoid triggering -Wdouble-promotion
-            ksprintf(ks, "f:%g", (double)le_to_float(s));
+            r |= ksprintf(ks, "f:%g", (double)le_to_float(s)) < 0;
             s += 4;
         } else goto bad_aux;
 
@@ -1537,7 +1552,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         // We believe, HOPE, it is not in general usage and we do not
         // encourage it.
         if (end - s >= 8) {
-            ksprintf(ks, "d:%g", le_to_double(s));
+            r |= ksprintf(ks, "d:%g", le_to_double(s)) < 0;
             s += 8;
         } else goto bad_aux;
     } else if (type == 'Z' || type == 'H') {

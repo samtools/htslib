@@ -43,37 +43,39 @@ int main(int argc, char **argv)
     char *fname = argc>1 ? argv[1] : "/dev/null";
     htsFile *fp = hts_open(fname, "w");
     bcf_hdr_t *hdr1, *hdr2;
+    int failed = 0;
 
     hdr1 = bcf_hdr_init("w");
     hdr2 = bcf_hdr_init("w");
 
     // Add two shared and two private annotations
-    bcf_hdr_append(hdr1, "##contig=<ID=1>");
-    bcf_hdr_append(hdr1, "##contig=<ID=2>");
-    bcf_hdr_append(hdr2, "##contig=<ID=2>");
-    bcf_hdr_append(hdr2, "##contig=<ID=1>");
-    bcf_hdr_append(hdr1, "##FILTER=<ID=FLT1,Description=\"Filter 1\">");
-    bcf_hdr_append(hdr1, "##FILTER=<ID=FLT2,Description=\"Filter 2\">");
-    bcf_hdr_append(hdr1, "##FILTER=<ID=FLT3,Description=\"Filter 3\">");
-    bcf_hdr_append(hdr2, "##FILTER=<ID=FLT4,Description=\"Filter 4\">");
-    bcf_hdr_append(hdr2, "##FILTER=<ID=FLT3,Description=\"Filter 3\">");
-    bcf_hdr_append(hdr2, "##FILTER=<ID=FLT2,Description=\"Filter 2\">");
-    bcf_hdr_append(hdr1, "##INFO=<ID=INF1,Number=.,Type=Integer,Description=\"Info 1\">");
-    bcf_hdr_append(hdr1, "##INFO=<ID=INF2,Number=.,Type=Integer,Description=\"Info 2\">");
-    bcf_hdr_append(hdr1, "##INFO=<ID=INF3,Number=.,Type=Integer,Description=\"Info 3\">");
-    bcf_hdr_append(hdr2, "##INFO=<ID=INF4,Number=.,Type=Integer,Description=\"Info 4\">");
-    bcf_hdr_append(hdr2, "##INFO=<ID=INF3,Number=.,Type=Integer,Description=\"Info 3\">");
-    bcf_hdr_append(hdr2, "##INFO=<ID=INF2,Number=.,Type=Integer,Description=\"Info 2\">");
-    bcf_hdr_append(hdr1, "##FORMAT=<ID=FMT1,Number=.,Type=Integer,Description=\"FMT 1\">");
-    bcf_hdr_append(hdr1, "##FORMAT=<ID=FMT2,Number=.,Type=Integer,Description=\"FMT 2\">");
-    bcf_hdr_append(hdr1, "##FORMAT=<ID=FMT3,Number=.,Type=Integer,Description=\"FMT 3\">");
-    bcf_hdr_append(hdr2, "##FORMAT=<ID=FMT4,Number=.,Type=Integer,Description=\"FMT 4\">");
-    bcf_hdr_append(hdr2, "##FORMAT=<ID=FMT3,Number=.,Type=Integer,Description=\"FMT 3\">");
-    bcf_hdr_append(hdr2, "##FORMAT=<ID=FMT2,Number=.,Type=Integer,Description=\"FMT 2\">");
-    bcf_hdr_add_sample(hdr1,"SMPL1");
-    bcf_hdr_add_sample(hdr1,"SMPL2");
-    bcf_hdr_add_sample(hdr2,"SMPL1");
-    bcf_hdr_add_sample(hdr2,"SMPL2");
+    failed |= bcf_hdr_append(hdr1, "##contig=<ID=1>") < 0;
+    failed |= bcf_hdr_append(hdr1, "##contig=<ID=2>") < 0;
+    failed |= bcf_hdr_append(hdr2, "##contig=<ID=2>") < 0;
+    failed |= bcf_hdr_append(hdr2, "##contig=<ID=1>") < 0;
+    failed |= bcf_hdr_append(hdr1, "##FILTER=<ID=FLT1,Description=\"Filter 1\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##FILTER=<ID=FLT2,Description=\"Filter 2\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##FILTER=<ID=FLT3,Description=\"Filter 3\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##FILTER=<ID=FLT4,Description=\"Filter 4\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##FILTER=<ID=FLT3,Description=\"Filter 3\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##FILTER=<ID=FLT2,Description=\"Filter 2\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##INFO=<ID=INF1,Number=.,Type=Integer,Description=\"Info 1\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##INFO=<ID=INF2,Number=.,Type=Integer,Description=\"Info 2\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##INFO=<ID=INF3,Number=.,Type=Integer,Description=\"Info 3\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##INFO=<ID=INF4,Number=.,Type=Integer,Description=\"Info 4\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##INFO=<ID=INF3,Number=.,Type=Integer,Description=\"Info 3\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##INFO=<ID=INF2,Number=.,Type=Integer,Description=\"Info 2\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##FORMAT=<ID=FMT1,Number=.,Type=Integer,Description=\"FMT 1\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##FORMAT=<ID=FMT2,Number=.,Type=Integer,Description=\"FMT 2\">") < 0;
+    failed |= bcf_hdr_append(hdr1, "##FORMAT=<ID=FMT3,Number=.,Type=Integer,Description=\"FMT 3\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##FORMAT=<ID=FMT4,Number=.,Type=Integer,Description=\"FMT 4\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##FORMAT=<ID=FMT3,Number=.,Type=Integer,Description=\"FMT 3\">") < 0;
+    failed |= bcf_hdr_append(hdr2, "##FORMAT=<ID=FMT2,Number=.,Type=Integer,Description=\"FMT 2\">") < 0;
+    failed |= bcf_hdr_add_sample(hdr1,"SMPL1") < 0;
+    failed |= bcf_hdr_add_sample(hdr1,"SMPL2") < 0;
+    failed |= bcf_hdr_add_sample(hdr2,"SMPL1") < 0;
+    failed |= bcf_hdr_add_sample(hdr2,"SMPL2") < 0;
+    if (failed) error("Couldn't build header");
     if (bcf_hdr_sync(hdr1) < 0) error("bcf_hdr_sync(hdr1)");
     if (bcf_hdr_sync(hdr2) < 0) error("bcf_hdr_sync(hdr2)");
 
@@ -84,24 +86,43 @@ int main(int argc, char **argv)
     bcf1_t *rec = bcf_init1();
     rec->rid = bcf_hdr_name2id(hdr1, "1");
     rec->pos = 0;
-    bcf_update_alleles_str(hdr1, rec, "G,A");
+    failed |= bcf_update_alleles_str(hdr1, rec, "G,A") < 0;
+
     int32_t tmpi[3];
     tmpi[0] = bcf_hdr_id2int(hdr1, BCF_DT_ID, "FLT1");
     tmpi[1] = bcf_hdr_id2int(hdr1, BCF_DT_ID, "FLT2");
     tmpi[2] = bcf_hdr_id2int(hdr1, BCF_DT_ID, "FLT3");
-    bcf_update_filter(hdr1, rec, tmpi, 3);
-    tmpi[0] = 1; bcf_update_info_int32(hdr1, rec, "INF1", tmpi, 1);
-    tmpi[0] = 2; bcf_update_info_int32(hdr1, rec, "INF2", tmpi, 1);
-    tmpi[0] = 3; bcf_update_info_int32(hdr1, rec, "INF3", tmpi, 1);
-    tmpi[0] = tmpi[1] = 1; bcf_update_format_int32(hdr1, rec, "FMT1", tmpi, 2);
-    tmpi[0] = tmpi[1] = 2; bcf_update_format_int32(hdr1, rec, "FMT2", tmpi, 2);
-    tmpi[0] = tmpi[1] = 3; bcf_update_format_int32(hdr1, rec, "FMT3", tmpi, 2);
+    failed |= bcf_update_filter(hdr1, rec, tmpi, 3) < 0;
 
-    bcf_remove_filter(hdr1, rec, bcf_hdr_id2int(hdr1, BCF_DT_ID, "FLT2"), 0);
-    bcf_update_info_int32(hdr1, rec, "INF2", NULL, 0);
-    bcf_update_format_int32(hdr1, rec, "FMT2", NULL, 0);
+    tmpi[0] = 1;
+    failed |= bcf_update_info_int32(hdr1, rec, "INF1", tmpi, 1) < 0;
 
-    bcf_translate(hdr2, hdr1, rec);
+    tmpi[0] = 2;
+    failed |= bcf_update_info_int32(hdr1, rec, "INF2", tmpi, 1) < 0;
+
+    tmpi[0] = 3;
+    failed |= bcf_update_info_int32(hdr1, rec, "INF3", tmpi, 1) < 0;
+
+    tmpi[0] = tmpi[1] = 1;
+    failed |= bcf_update_format_int32(hdr1, rec, "FMT1", tmpi, 2) < 0;
+
+
+    tmpi[0] = tmpi[1] = 2;
+    failed |= bcf_update_format_int32(hdr1, rec, "FMT2", tmpi, 2) < 0;
+
+
+    tmpi[0] = tmpi[1] = 3;
+    failed |= bcf_update_format_int32(hdr1, rec, "FMT3", tmpi, 2) < 0;
+
+    failed |= bcf_remove_filter(hdr1, rec, bcf_hdr_id2int(hdr1, BCF_DT_ID, "FLT2"), 0) < 0;
+    failed |= bcf_update_info_int32(hdr1, rec, "INF2", NULL, 0) < 0;
+    failed |= bcf_update_format_int32(hdr1, rec, "FMT2", NULL, 0) < 0;
+
+    if (failed)
+        error("Couldn't build variant record");
+
+    if (bcf_translate(hdr2, hdr1, rec) < 0)
+        error("failure in bcf_translate()");
     if ( bcf_write(fp, hdr2, rec)!=0 ) error("Failed to write to %s\n", fname);
 
     // Clean

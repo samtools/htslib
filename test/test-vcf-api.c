@@ -389,16 +389,22 @@ void bcf_to_vcf(char *fname)
     }
 
     kstring_t line = {0,0,0};
-    while ( hts_getline(gz_in, KS_SEP_LINE, &line)>0 )
+    while ( (ret = hts_getline(gz_in, KS_SEP_LINE, &line))>0 )
     {
-        kputc('\n',&line);
-        fwrite(line.s,1,line.l,stdout);
+        if (kputc('\n',&line) < 0) { ret = -2; break; }
+        if (fwrite(line.s,1,line.l,stdout) != line.l) { ret = -2; break; }
     }
-
+    if (ret < -1)
+    {
+        fprintf(stderr,"Could not copy to stdout \"%s\": %s\n",
+                gz_fname, strerror(errno));
+        hts_close(gz_in);
+        exit(1);
+    }
     if ( (ret=hts_close(gz_in)) )
     {
         fprintf(stderr,"hts_close(%s): non-zero status %d\n",gz_fname,ret);
-        exit(ret);
+        exit(1);
     }
     free(line.s);
     free(gz_fname);
@@ -413,13 +419,20 @@ void iterator(const char *fname)
     hts_idx_t *idx;
     hts_itr_t *iter;
 
-    bcf_index_build(fname, 0);
+    if (bcf_index_build(fname, 14) < 0)
+        error("bcf_index_build(\"%s\", 0) failed", fname);
     idx = bcf_index_load(fname);
+    if (!idx)
+        error("bcf_index_load() failed");
 
     iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
+    if (!iter)
+        error("bcf_itr_queryi() failed for region 20:1110600-1110800");
     bcf_itr_destroy(iter);
 
     iter = bcf_itr_querys(idx, hdr, "20:1110600-1110800");
+    if (!iter)
+        error("bcf_itr_querys() failed for region 20:1110600-1110800");
     bcf_itr_destroy(iter);
 
     hts_idx_destroy(idx);

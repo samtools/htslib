@@ -982,7 +982,8 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
 
     //fprintf(stderr, "remaining %d bytes\n", i32);
     cram_block_set_size(n_blk, cram_block_get_size(n_blk)-2);
-    cram_block_append(n_blk, op, i32);
+    if (cram_block_append(n_blk, op, i32) < 0)
+        return -2;
     cram_block_update_size(n_blk);
 
     new_size = cram_block_size(n_blk);

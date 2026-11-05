@@ -46,11 +46,11 @@ static int readaln(void *data, bam1_t *b) {
 // No modification reporting.
 // This is just a simple base-line for comparison against mod_pileup1 for
 // performance testing.
-void process_pileup(sam_hdr_t *h, const bam_pileup1_t *p,
+int process_pileup(sam_hdr_t *h, const bam_pileup1_t *p,
                     int tid, int pos, int n) {
     kstring_t s = {0,0};
     printf("%s\t%d\t", sam_hdr_tid2name(h, tid), pos);
-    int i;
+    int i, nomem = 0;
     for (i = 0; i < n; i++, p++) {
         if (p->is_del) {
             putchar('*');
@@ -61,12 +61,17 @@ void process_pileup(sam_hdr_t *h, const bam_pileup1_t *p,
         uint8_t *qual = bam_get_qual(p->b);
         unsigned char c = seq_nt16_str[bam_seqi(seq, p->qpos)];
         putchar(c);
-        kputc(MIN('~','!'+qual[p->qpos]), &s);
+        kputc_chk(&nomem, MIN('~','!'+qual[p->qpos]), &s);
+    }
+    if (nomem) {
+        ks_free(&s);
+        return -1;
     }
     putchar('\t');
     puts(s.l ? s.s : "");
 
     free(s.s);
+    return 0;
 }
 
 // Initialise and destroy the base modifier state data. This is called
@@ -88,11 +93,11 @@ int pileup_cd_destroy(void *data, const bam1_t *b, bam_pileup_cd *cd) {
 
 // Report a line of pileup, including base modifications inline with
 // the sequence (including qualities), as [<strand><dir><qual>...]
-void process_mod_pileup1(sam_hdr_t *h, const bam_pileup1_t *p,
+int process_mod_pileup1(sam_hdr_t *h, const bam_pileup1_t *p,
                          int tid, int pos, int n) {
     kstring_t s = {0,0};
     printf("%s\t%d\t", sam_hdr_tid2name(h, tid), pos);
-    int i;
+    int i, nomem = 0;
     for (i = 0; i < n; i++, p++) {
         if (p->is_del) {
             putchar('*');
@@ -103,7 +108,7 @@ void process_mod_pileup1(sam_hdr_t *h, const bam_pileup1_t *p,
         uint8_t *qual = bam_get_qual(p->b);
         unsigned char c = seq_nt16_str[bam_seqi(seq, p->qpos)];
         putchar(c);
-        kputc(MIN('~','!'+qual[p->qpos]), &s);
+        kputc_chk(&nomem, MIN('~','!'+qual[p->qpos]), &s);
 
         // Simple mod detection; assumes at most 5 mods
         hts_base_mod_state *m = p->cd.p;
@@ -124,10 +129,15 @@ void process_mod_pileup1(sam_hdr_t *h, const bam_pileup1_t *p,
             putchar(']');
         }
     }
+    if (nomem) {
+        ks_free(&s);
+        return -1;
+    }
     putchar('\t');
     puts(s.l ? s.s : "");
 
     free(s.s);
+    return 0;
 }
 
 // Report a line of pileup, including base modifications.
@@ -137,11 +147,11 @@ void process_mod_pileup1(sam_hdr_t *h, const bam_pileup1_t *p,
 // phred scale as only one single mod is supported and hence extreme
 // unlikely probabilities shouldn't be reported (although we don't
 // scan to pick the highest).
-void process_mod_pileup2(sam_hdr_t *h, const bam_pileup1_t *p,
+int process_mod_pileup2(sam_hdr_t *h, const bam_pileup1_t *p,
                         int tid, int pos, int n) {
     kstring_t s = {0,0};
     printf("%s\t%d\t%d\t", sam_hdr_tid2name(h, tid), pos, n);
-    int i;
+    int i, nomem = 0;
     for (i = 0; i < n; i++, p++) {
         if (p->is_del) {
             putchar('*');
@@ -174,12 +184,17 @@ void process_mod_pileup2(sam_hdr_t *h, const bam_pileup1_t *p,
         } else {
             printf("\033[1m%c\033[0m", base);
         }
-        kputc(MIN('~','!'+q), &s);
+        kputc_chk(&nomem, MIN('~','!'+q), &s);
+    }
+    if (nomem) {
+        ks_free(&s);
+        return -1;
     }
     putchar('\t');
     puts(s.l ? s.s : "");
 
     free(s.s);
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -190,16 +205,22 @@ int main(int argc, char **argv) {
         argv++;
     }
 
+    bam_plp_t iter = NULL;
     samFile *in = sam_open(argc > 1 ? argv[1] : "-", "r");
     bam1_t *b = bam_init1();
     sam_hdr_t *h = sam_hdr_read(in);
+
+    if (!(in && b && h))
+        goto fail;
 
     // Pileup iterator with constructor/destructor to parse base mod tags
     plp_dat dat = {
         .fp = in,
         .h = h,
     };
-    bam_plp_t iter = bam_plp_init(readaln, &dat);
+    iter = bam_plp_init(readaln, &dat);
+    if (!iter)
+        goto fail;
     bam_plp_constructor(iter, pileup_cd_create);
     bam_plp_destructor(iter, pileup_cd_destroy);
 
@@ -208,13 +229,16 @@ int main(int argc, char **argv) {
     while ((p = bam_plp_auto(iter, &tid, &pos, &n)) != 0) {
         switch (compact) {
         case 0:
-            process_mod_pileup1(h, p, tid, pos, n);
+            if (process_mod_pileup1(h, p, tid, pos, n) < 0)
+                goto fail;
             break;
         case 1:
-            process_mod_pileup2(h, p, tid, pos, n);
+            if (process_mod_pileup2(h, p, tid, pos, n) < 0)
+                goto fail;
             break;
         default:
-            process_pileup(h, p, tid, pos, n);
+            if (process_pileup(h, p, tid, pos, n) < 0)
+                goto fail;
             break;
         }
     }
@@ -225,4 +249,13 @@ int main(int argc, char **argv) {
     sam_hdr_destroy(h);
 
     return n != 0;
+
+ fail:
+    bam_plp_destroy(iter);
+
+    sam_close(in);
+    bam_destroy1(b);
+    sam_hdr_destroy(h);
+
+    return -1;
 }
