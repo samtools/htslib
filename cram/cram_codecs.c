@@ -321,9 +321,9 @@ static int store_bits_MSB(cram_block *block, uint64_t val, int nbits) {
  */
 static char *cram_extract_block(cram_block *b, int size) {
     char *cp = (char *)b->data + b->idx;
-    b->idx += size;
-    if (b->idx > b->uncomp_size)
+    if (size < 0 || b->uncomp_size - b->idx < size)
         return NULL;
+    b->idx += size;
 
     return cp;
 }
