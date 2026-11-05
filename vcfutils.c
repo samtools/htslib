@@ -1411,10 +1411,10 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     int sample_nG_ori = is_local \
                         ? sample_nR_ori * (sample_nR_ori + 1) / 2 \
                         : nG_ori; \
-                    for (k_src=0; k_src<sample_nG_ori; k_src++) { if ( is_vector_end ) break; nset++; } \
+                    for (k_src=0; k_src<sample_nG_ori && k_src<nori; k_src++) { if ( is_vector_end ) break; nset++; } \
                     if ( nset==sample_nR_ori ) /* haploid */ \
                     { \
-                        for (k_src=0; k_src<sample_nR_ori; k_src++) \
+                        for (k_src=0; k_src<sample_nR_ori && k_src<nori; k_src++) \
                         { \
                             if ( sample_map[k_src] < 0 ) continue; \
                             memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
@@ -1431,6 +1431,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                             for (ib=0; ib<=ia; ib++) \
                             { \
                                 k_src++; \
+                                if ( k_src>=nori ) { ia = sample_nR_ori; break; } \
                                 if ( is_vector_end ) { memcpy(ptr_dst+k_dst, ptr_src+k_src, size); ia = nR_ori; break; }  \
                                 if ( sample_map[ia] < 0 || sample_map[ib] < 0 ) continue; \
                                 memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
