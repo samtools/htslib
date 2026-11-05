@@ -1,17 +1,21 @@
-Noteworthy changes in release a.b (up to 10-11-2026)
+Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(up to 17-11-2026)
 
 * NEW:
 
 Updates
 -------
 
+* annot-tsv: fix column index bounds checks to prevent heap overflow.
+  (PR #2138, Thanks to Luca Celebrano, reported by babayaga)
+
 * fix OOB read on short Number=LG FORMAT in bcf_remove_allele_set.
-  (PR #2130⁠. Thanks to Mohammed Adib)
+  (PR #2130, Thanks to Mohammed Adib)
 
 * Warn when FORMAT is "." but the sample columns are not.
   (PR #2112, fixes samtools/bcftools#2173. Thanks to Jaret Arnold
-  Reported by Eran Shaham.)
+  Reported by Eran Shaham)
 
 * tabix: stop parsing a record once the columns that matter have been seen.
   (PR #2121, improves #1949. Thanks to Dave Lawrence)
@@ -27,6 +31,9 @@ Build Changes
 
 Bug fixes
 ---------
+
+* Guard against fuzzer out-of-memory in cram slice decode.
+  (PR #2152 which fixed oss-fuzz issue 579025090)
 
 * Fix handling of reads off the end of the reference.
   (PR #2140 which fixed oss-fuzz issue 582906998)
