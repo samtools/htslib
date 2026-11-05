@@ -3104,6 +3104,17 @@ static hts_idx_t *idx_read(const char *fn)
         uint32_t x[3], n;
         if (bgzf_read(fp, x, 12) != 12) goto fail;
         if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
+        // x[0] = min_shift, x[1] = depth (n_lvls).  Unlike BAI/TBI these are
+        // read from the file, and both feed shift expressions: n_lvls the
+        // n_bins calculation in hts_idx_init() (1 << (3*n_lvls + 3)) and
+        // min_shift + 3*n_lvls the bin/offset maths here and in the query
+        // functions (hts_bin_maxpos(), reg2bins() etc.).  Reject values that
+        // would make those shifts undefined; a valid CSI never exceeds these.
+        if (x[1] > 9 || x[0] > 62 || x[0] + 3 * x[1] > 62) {
+            hts_log_error("Index file corrupted (min_shift=%u, depth=%u)",
+                          x[0], x[1]);
+            goto fail;
+        }
         if (x[2]) {
             if (SIZE_MAX - x[2] < 1) goto fail; // Prevent possible overflow
             if ((meta = hts_malloc_ps(sizeof(*meta), x[2], 1)) == NULL) goto fail;
