@@ -610,7 +610,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
             break;
         if (strncmp(type, "CO", 2) && !(val = (char *)va_arg(args, char *)))
             break;
-        if (*val == '\0')
+        if (!val || *val == '\0')
             continue;
 
         if (!(h_tag = pool_alloc(hrecs->tag_pool)))
@@ -1110,8 +1110,16 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
     for (i = refs_changed; i < hrecs->nref; i++) {
         if (i >= bh->n_targets
             || strcmp(bh->target_name[i], hrecs->ref[i].name) != 0) {
-            if (i < bh->n_targets)
+            if (i < bh->n_targets) {
+                // Remove from the hash table too as target_name[i]
+                // is used as a hash table key.
+                if (long_refs) {
+                    k = kh_get(s2i, long_refs, bh->target_name[i]);
+                    if (k < kh_end(long_refs))
+                        kh_del(s2i, long_refs, k);
+                }
                 free(bh->target_name[i]);
+            }
             bh->target_name[i] = strdup(hrecs->ref[i].name);
             if (!bh->target_name[i])
                 return -1;
@@ -2076,6 +2084,12 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
 
+    if (strncmp(type, "SQ", 2) == 0) {
+        hrecs->refs_changed = 0; // force
+        if (rebuild_target_arrays(bh) != 0)
+            return -1;
+    }
+
     return 0;
 }
 
@@ -2143,12 +2157,16 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
         if (rebuild_hash(hrecs, type)) {
             return -1;
         }
-        if (strncmp(type, "SQ", 2) == 0)
-            ret |= rebuild_target_arrays(bh);
     }
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
+
+    if (strncmp(type, "SQ", 2) == 0) {
+        hrecs->refs_changed = 0; // force
+        if (rebuild_target_arrays(bh) != 0)
+            return -1;
+    }
 
     return ret;
 }
@@ -2363,6 +2381,10 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
         const char *key) {
     sam_hrecs_t *hrecs;
     if (!bh || !type || !key)
+        return -1;
+
+    // Disallow @SQ SN:, @RG ID: and @PG ID:
+    if (strcmp(key, strcmp(type, "SQ")==0 ? "SN" : "ID") == 0)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
@@ -3194,8 +3216,11 @@ enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs) {
 /*
  *
  * Removes all the instances of a tag.
- * Returns number removed (can be 0) or -1 on a fail.
+ * The tag_id should be a tag key you wish to remove from all records of
+ * the specified type.  Note however this cannot be the primary key ("SN" /
+ * "ID") as this is used as the key to internal hash tables.
  *
+ * Returns number removed (can be 0) or -1 on a fail.
  */
 int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id) {
     sam_hrecs_t *hrecs;
@@ -3205,6 +3230,10 @@ int sam_hdr_remove_tag_all(sam_hdr_t *bh, const char *type, const char *tag_id) 
     int deleted = 0;
 
     if (!bh || !type || !tag_id)
+        return -1;
+
+    // Disallow @SQ SN:, @RG ID: and @PG ID:
+    if (strcmp(tag_id, strcmp(type, "SQ")==0 ? "SN" : "ID") == 0)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
