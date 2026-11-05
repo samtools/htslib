@@ -1,32 +1,57 @@
-Noteworthy changes in release a.b (up to 10-11-2026)
+Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(up to 17-11-2026)
 
 * NEW:
 
 Updates
 -------
 
-* fix OOB read on short Number=LG FORMAT in bcf_remove_allele_set.
-  (PR #2130⁠. Thanks to Mohammed Adib)
+* Validate min_shift and depth when loading a CSI index.
+  (PR #2127. Thanks to Mohammed Adib)
+
+* Size VCF header dictionaries by their contents.
+  (PR #2147. Thanks to Tim Fennell)
+
+* Keep header id pointers valid when adding lines grows a dictionary.
+  (PR #2146. Thanks to Tim Fennell)
 
 * Warn when FORMAT is "." but the sample columns are not.
   (PR #2112, fixes samtools/bcftools#2173. Thanks to Jaret Arnold
-  Reported by Eran Shaham.)
+  Reported by Eran Shaham)
 
 * tabix: stop parsing a record once the columns that matter have been seen.
   (PR #2121, improves #1949. Thanks to Dave Lawrence)
 
 * Various code improvements. New aux tag retrieval method, leak fix in bcf
   sync reader, API comment update, CIGAR, seq length check, aux validity check
-  update and other fixes. (PR #2126, #2129, #2131, #2132, #2133, #2134)
+  update, CRAM decode memory reduction and other fixes.
+  (PR #2111, #2126, #2129, #2131, #2132, #2133, #2134)
 
 Build Changes
 -------------
+
+* Replace MINGW default with UCRT version. (PR #2169)
 
 * Added check for Signed-off-by: annotations in commit messages. (PR #2128)
 
 Bug fixes
 ---------
+
+* Fix Claude discovered sam/bam/bgzf bugs
+  (PR #2153)
+
+* Do size check correctly in cram_extract_block
+  (PR #2139, reported by Tristan Madani)
+
+* annot-tsv: fix column index bounds checks to prevent heap overflow.
+  (PR #2138, Thanks to Luca Celebrano, reported by babayaga)
+
+* fix OOB read on short Number=LG FORMAT in bcf_remove_allele_set.
+  (PR #2130, Thanks to Mohammed Adib)
+
+* Guard against fuzzer out-of-memory in cram slice decode.
+  (PR #2152 which fixed oss-fuzz issue 579025090)
 
 * Fix handling of reads off the end of the reference.
   (PR #2140 which fixed oss-fuzz issue 582906998)
