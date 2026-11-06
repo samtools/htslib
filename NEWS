@@ -1,5 +1,40 @@
-Noteworthy changes in release a.b
+Noteworthy changes in release a.b (up to 5-11-2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* NEW:
+
+Updates
+-------
+
+* Warn when FORMAT is "." but the sample columns are not.
+  (PR #2112, fixes samtools/bcftools#2173. Thanks to Jaret Arnold
+  Reported by Eran Shaham.)
+
+* tabix: stop parsing a record once the columns that matter have been seen.
+  (PR #2121, improves #1949. Thanks to Dave Lawrence)
+
+* Various code improvements. New aux tag retrieval method, leak fix in bcf
+  sync reader, API comment update, CIGAR, seq length check and aux validity
+  check update. (PR #2126, #2129, #2132, #2133, #2134)
+
+Build Changes
+-------------
+
+*
+
+Bug fixes
+---------
+
+* Speed up adding cram N soft clips and insertions.
+  (PR #2124 which fixed oss-fuzz issue 578324126)
+
+* Make sam_hrecs_free_tags() iterative.
+  (PR #2123 which fixed oss-fuzz issue 578296346)
+
+Documentation updates
+---------------------
+
+*
 
 Noteworthy changes in release 1.25 (27th October 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
