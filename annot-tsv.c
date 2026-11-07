@@ -289,16 +289,16 @@ int parse_tab_with_payload(const char *line, char **chr_beg, char **chr_end, hts
     cols_t *cols = cols_split(line, NULL, dat->delim);
     *((cols_t**)payload) = cols;
 
-    if ( cols->n < dat->core_idx[0] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[0]+1,cols->n,line);
+    if ( cols->n <= dat->core_idx[0] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[0]+1,cols->n,line);
     *chr_beg = cols->off[ dat->core_idx[0] ];
     *chr_end = *chr_beg + strlen(*chr_beg) - 1;
 
-    if ( cols->n < dat->core_idx[1] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[1]+1,cols->n,line);
+    if ( cols->n <= dat->core_idx[1] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[1]+1,cols->n,line);
     char *tmp, *ptr = cols->off[ dat->core_idx[1] ];
     *beg = strtod(ptr, &tmp);
     if ( tmp==ptr ) error("Expected numeric value, found \"%s\": %s\n",ptr,line);
 
-    if ( cols->n < dat->core_idx[2] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[2]+1,cols->n,line);
+    if ( cols->n <= dat->core_idx[2] ) error("Expected at least %d columns, found %d: %s\n",dat->core_idx[2]+1,cols->n,line);
     ptr = cols->off[ dat->core_idx[2] ];
     *end = strtod(ptr, &tmp);
     if ( tmp==ptr ) error("Expected numeric value, found \"%s\": %s\n",ptr,line);
@@ -793,7 +793,8 @@ void process_line(args_t *args, char *line, size_t size)
         {
             for (i=0; i<args->dst.match->n; i++)
             {
-                if ( args->dst.match_idx[i] > dst_cols->n ) error("Expected at least %d columns, found %d: %s\n",args->dst.match_idx[i],dst_cols->n,line);
+                if ( args->dst.match_idx[i] >= dst_cols->n ) error("Expected at least %d columns, found %d: %s\n",args->dst.match_idx[i]+1,dst_cols->n,line);
+                if ( args->src.match_idx[i] >= src_cols->n ) error("Expected at least %d columns in %s, found %d\n",args->src.match_idx[i]+1,args->src.fname,src_cols->n);
                 char *dst = dst_cols->off[ args->dst.match_idx[i] ];
                 char *src = src_cols->off[ args->src.match_idx[i] ];
                 if ( strcmp(dst,src) ) break;
@@ -810,7 +811,10 @@ void process_line(args_t *args, char *line, size_t size)
         {
             char *str;
             if ( args->src.transfer_idx[i] >= 0 )
+            {
+                if ( args->src.transfer_idx[i] >= src_cols->n ) error("Expected at least %d columns in %s, found %d\n",args->src.transfer_idx[i]+1,args->src.fname,src_cols->n);
                 str = src_cols->off[ args->src.transfer_idx[i] ];                   // transfer a value from the src file
+            }
             else
                 str = args->src.hdr.cols->off[ -args->src.transfer_idx[i] - 1 ];    // non-existent field in src, use a default value
 
@@ -853,6 +857,7 @@ void process_line(args_t *args, char *line, size_t size)
     ks_resize(&args->tmp_kstr, annot_len*3 + args->src.transfer->n*2);
     for (i=0; i<args->src.transfer->n; i++)
     {
+        if ( args->dst.transfer_idx[i] >= dst_cols->n ) error("Expected at least %d columns, found %d: %s\n",args->dst.transfer_idx[i]+1,dst_cols->n,line);
         char *off = dst_cols->off[ args->dst.transfer_idx[i] ] = args->tmp_kstr.s + args->tmp_kstr.l;
         cols_t *ann = &args->tmp_cols[i];
         if ( !ann->n ) { off[0] = '.'; off[1] = 0; args->tmp_kstr.l += 2; continue; }
