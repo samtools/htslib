@@ -2096,6 +2096,23 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             }
             assert(s->naux_block <= 2*c->tags_used->n_occupied);
         }
+
+        /* Compute MD5s */
+        no_ref = c->no_ref;
+        if (CRAM_MAJOR_VERS(fd->version) != 1) {
+            if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !no_ref) {
+                hts_md5_context *md5 = hts_md5_init();
+                if (!md5)
+                    return -1;
+                hts_md5_update(md5,
+                               c->ref + s->hdr->ref_seq_start - c->ref_start,
+                               s->hdr->ref_seq_span);
+                hts_md5_final(s->hdr->md5, md5);
+                hts_md5_destroy(md5);
+            } else {
+                memset(s->hdr->md5, 0, 16);
+            }
+        }
     }
 
     if (c->multi_seq && !no_ref) {
@@ -2127,28 +2144,6 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         c->ref_seq_id = -2;
         c->ref_seq_start = 0;
         c->ref_seq_span = 0;
-    }
-
-
-    /* Compute MD5s */
-    no_ref = c->no_ref;
-    for (i = 0; i < c->curr_slice; i++) {
-        cram_slice *s = c->slices[i];
-
-        if (CRAM_MAJOR_VERS(fd->version) != 1) {
-            if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !no_ref) {
-                hts_md5_context *md5 = hts_md5_init();
-                if (!md5)
-                    return -1;
-                hts_md5_update(md5,
-                               c->ref + s->hdr->ref_seq_start - c->ref_start,
-                               s->hdr->ref_seq_span);
-                hts_md5_final(s->hdr->md5, md5);
-                hts_md5_destroy(md5);
-            } else {
-                memset(s->hdr->md5, 0, 16);
-            }
-        }
     }
 
     c->num_records = 0;
