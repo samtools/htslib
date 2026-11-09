@@ -3426,8 +3426,9 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 //      cig_len, &ref[apos], cig_len, &seq[spos]);
                 l = 0;
                 if (!no_ref && cr->len) {
-                    int end = cig_len+apos < c->ref_end
-                        ? cig_len : c->ref_end - apos;
+                    int64_t ref_avail = apos < c->ref_end ? c->ref_end - apos : 0;
+                    // Cast is safe as cig_len < 2^28
+                    int end = (int) MIN(cig_len, ref_avail);
                     char *sp = &seq[spos];
                     char *rp = &ref[apos];
                     char *qp = &qual[spos];
