@@ -2079,9 +2079,17 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     pthread_mutex_lock(&fd->ref_lock);
     int failed_embed = (fd->no_ref_counter >= 5); // maximum 5 tries
     if (!failed_embed && c->embed_ref == -2 && c->ref_id >= 0) {
-        hts_log_warning("Retrying embed_ref=2 mode for #%d/5", fd->no_ref_counter);
-        fd->no_ref = c->no_ref = 0;
-        fd->embed_ref = c->embed_ref = 2;
+        if (c->max_slice == 1) {
+            hts_log_warning("Retrying embed_ref=2 mode for #%d/5",
+                            fd->no_ref_counter);
+            fd->no_ref = c->no_ref = 0;
+            fd->embed_ref = c->embed_ref = 2;
+        } else {
+            hts_log_warning("Multi-slice containers cannot embed a generated "
+                            "reference; keeping non-ref mode");
+            fd->embed_ref = c->embed_ref = 0;
+            fd->no_ref = c->no_ref = 1;
+        }
     } else if (failed_embed && c->embed_ref == -2) {
         // We've tried several times, so this time give up for good
         hts_log_warning("Keeping non-ref mode from now on");
@@ -2132,6 +2140,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                                     " using an external reference");
                 pthread_mutex_lock(&fd->ref_lock);
                 embed_ref = c->embed_ref = fd->embed_ref = 2;
+                fd->slices_per_container = 1;
                 pthread_mutex_unlock(&fd->ref_lock);
                 goto auto_ref;
             } else if (ref) {
@@ -2215,7 +2224,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
         // Embed consensus / MD-generated ref
         if (embed_ref == 2) {
-            if (c->ref_id < 0 || cram_generate_reference(c, s, r1) < 0) {
+            if (c->ref_id < 0 || c->max_slice > 1 ||
+                cram_generate_reference(c, s, r1) < 0) {
                 // Should this be a permanent thing via fd->no_ref?
                 // Doing so means we cannot easily switch back again should
                 // things fix themselves later on.  This is likely not a
@@ -2225,8 +2235,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 // Only if sn == 0.  We're hosed if we're on the 2nd slice and
                 // the first worked, as no-ref is a container global param.
                 if (sn > 0) {
-                    hts_log_error("Failed to build reference, "
-                                  "switching to non-ref mode");
+                    hts_log_error("Failed to build reference due to >1 slice "
+                                  "per container");
                     return -1;
                 } else {
                     hts_log_warning("Failed to build reference, "
@@ -3262,8 +3272,11 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
             cram_free_container(c);
         }
 
-        c = fd->ctr = cram_new_container(fd->seqs_per_slice,
-                                         fd->slices_per_container);
+        pthread_mutex_lock(&fd->ref_lock);
+        int nseq = fd->seqs_per_slice;
+        int nslice = fd->slices_per_container;
+        pthread_mutex_unlock(&fd->ref_lock);
+        c = fd->ctr = cram_new_container(nseq, nslice);
         if (!c)
             return NULL;
 
