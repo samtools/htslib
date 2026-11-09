@@ -3432,7 +3432,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                     char *sp = &seq[spos];
                     char *rp = &ref[apos];
                     char *qp = &qual[spos];
-                    if (end > cr->len) {
+                    if (spos + end > cr->len) {
                         hts_log_error("CIGAR and query sequence are of different length");
                         return -1;
                     }
