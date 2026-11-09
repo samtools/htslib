@@ -3387,8 +3387,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     // Convert BAM nibble encoded sequence to string of base pairs
     seq = cp = (char *)BLOCK_END(s->seqs_blk);
-    *seq = 0;
     nibble2base(bam_seq(b), cp, cr->len);
+    seq[cr->len] = 0;
     BLOCK_SIZE(s->seqs_blk) += cr->len;
 
     qual = cp = (char *)bam_qual(b);
