@@ -30,20 +30,17 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "../htslib/hts.h"
 #include "../htslib/bgzf.h"
-
-static void u32(uint8_t *p, uint32_t v) {
-    p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24;
-}
+#include "../htslib/hts_endian.h"
 
 // Write a minimal CSI index with the given min_shift and depth (n_lvls) and
 // no references, used to exercise the header validity checks in idx_read().
 static int write_csi(const char *fn, uint32_t min_shift, uint32_t depth) {
     uint8_t buf[20];
     memcpy(buf, "CSI\1", 4);
-    u32(buf + 4,  min_shift);
-    u32(buf + 8,  depth);
-    u32(buf + 12, 0);           // l_aux
-    u32(buf + 16, 0);           // n_ref
+    u32_to_le(min_shift, buf + 4);
+    u32_to_le(depth,     buf + 8);
+    u32_to_le(0,         buf + 12);   // l_aux
+    u32_to_le(0,         buf + 16);   // n_ref
     BGZF *fp = bgzf_open(fn, "w");
     if (!fp) return -1;
     if (bgzf_write(fp, buf, sizeof(buf)) != (ssize_t) sizeof(buf)) {
@@ -91,7 +88,7 @@ int main(int argc, char **argv) {
     int fail = 0;
     enum htsLogLevel logging = hts_get_log_level();
 
-    snprintf(fn, sizeof(fn), "%s/test_index_load.csi", dir);
+    snprintf(fn, sizeof(fn), "%s/test_index_load.tmp.csi", dir);
 
     // Silence the expected "Index file corrupted" errors.
     hts_set_log_level(HTS_LOG_OFF);
