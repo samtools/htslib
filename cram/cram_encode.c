@@ -1736,6 +1736,8 @@ static int cram_generate_reference(cram_container *c, cram_slice *s, int r1) {
 
     // Put the reference in place so it appears to be an external
     // ref file.
+    if (c->ref && c->ref_free)
+        free(c->ref);
     c->ref       = ref;
     c->ref_start = ref_start+1;
     c->ref_end   = ref_end+1;
@@ -1894,6 +1896,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             // This starts as 'N' and is amended on-the-fly as we go
             // based on MD:Z tags.
             if ((c->ref_id = bam_ref(b)) >= 0) {
+                if (c->ref && c->ref_free)
+                    free(c->ref);
                 c->ref = NULL;
                 // c->ref_free is boolean; whether to free c->ref.  In this
                 // case c->ref will be our auto-embedded sequence instead of
@@ -1907,6 +1911,10 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 // data could be broken.
                 embed_ref = 0;
                 no_ref = c->no_ref = 1;
+                if (c->ref && c->ref_free)
+                    free(c->ref);
+                c->ref_free = 0;
+                c->ref = NULL;
             }
         }
         c->ref_seq_id = c->ref_id;
@@ -1973,6 +1981,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 pthread_mutex_lock(&fd->ref_lock);
                 c->embed_ref = fd->embed_ref = -2; // was previously embed_ref
                 c->no_ref = fd->no_ref = 1;
+                c->ref_free = 0;
                 fd->no_ref_counter++; // more likely to keep permanent action
                 pthread_mutex_unlock(&fd->ref_lock);
                 failed_embed = 1;
@@ -2012,9 +2021,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                     c->ref_seq_id = bam_ref(b); // overwritten later by -2
                     if (!fd->refs->ref_id[c->ref_seq_id]->seq)
                         return -1;
+                    if (c->ref && c->ref_free)
+                        free(c->ref);
                     c->ref       = fd->refs->ref_id[c->ref_seq_id]->seq;
                     c->ref_start = 1;
                     c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
+                    c->ref_free  = 0;
                 }
             }
 
@@ -2479,9 +2491,10 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     c->comp_hdr_block = c_hdr;
 
     if (c->ref_seq_id >= 0) {
-        if (c->ref_free) {
+        if (c->ref && c->ref_free) {
             free(c->ref);
             c->ref = NULL;
+            c->ref_free = 0;
         } else {
             cram_ref_decr(fd->refs, c->ref_seq_id);
         }
