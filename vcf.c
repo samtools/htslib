@@ -2479,24 +2479,42 @@ static inline int bcf1_sync_info(bcf1_t *line, kstring_t *str)
 {
     // pairs of typed vectors
     int i, irm = -1, e = 0;
+
+    // Accumulate new packed data
     for (i=0; i<line->n_info; i++)
     {
         bcf_info_t *info = &line->d.info[i];
-        if ( !info->vptr )
+        if ( info->vptr )
         {
-            // marked for removal
-            if ( irm < 0 ) irm = i;
-            continue;
+            kputsn_chk_(&e, info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str);
         }
-        e |= kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str) < 0;
-        if ( irm >=0 )
+        else
         {
-            bcf_info_t tmp = line->d.info[irm]; line->d.info[irm] = line->d.info[i]; line->d.info[i] = tmp;
-            while ( irm<=i && line->d.info[irm].vptr ) irm++;
+            if ( irm < 0 ) irm = i; // Record first removed item
         }
     }
-    if ( irm>=0 ) line->n_info = irm;
-    return e == 0 ? 0 : -1;
+
+    if (e)
+        return -1;
+
+    if ( irm < 0 )
+        return 0;  // Finished if nothing to remove
+
+    // else fill holes and update n_info
+    for (i = irm + 1; i < line->n_info; i++)
+    {
+        bcf_info_t *info = &line->d.info[i];
+        if ( !info->vptr ) continue;
+
+        bcf_info_t tmp = line->d.info[irm];
+        line->d.info[irm] = line->d.info[i];
+        line->d.info[i] = tmp;
+
+        while ( irm<=i && line->d.info[irm].vptr ) irm++;
+    }
+    line->n_info = irm;
+
+    return 0;
 }
 
 static int bcf1_sync(bcf1_t *line)
@@ -2504,12 +2522,11 @@ static int bcf1_sync(bcf1_t *line)
     char *shared_ori = line->shared.s;
     size_t prev_len;
 
-    int nomem = 0;
-    kstring_t tmp = {0,0,0};
     if ( !line->shared.l )
     {
         // New line created via API, BCF data blocks do not exist. Get it ready for BCF output
-        tmp = line->shared;
+        kstring_t tmp = line->shared;
+        int nomem = 0;
         nomem |= bcf1_sync_id(line, &tmp) < 0;
         line->unpack_size[0] = tmp.l; prev_len = tmp.l;
 
@@ -2521,35 +2538,67 @@ static int bcf1_sync(bcf1_t *line)
 
         nomem |= bcf1_sync_info(line, &tmp) < 0;
         line->shared = tmp;
+        if (nomem)
+        {
+            hts_log_error("Out of memory");
+            line->shared.l = 0;
+            memset(line->unpack_size, 0, sizeof(line->unpack_size));
+            return -1;
+        }
     }
     else if ( line->d.shared_dirty )
     {
         // The line was edited, update the BCF data block.
+        kstring_t tmp = KS_INITIALIZE;
+        int nomem = 0;
 
         if ( !(line->unpacked & BCF_UN_STR) )
-            nomem |= bcf_unpack(line,BCF_UN_STR) < 0;
+        {
+            if (bcf_unpack(line,BCF_UN_STR) < 0)
+                return -1;
+        }
+
+        // bcf_unpack() above guarantees that line->unpack_size[] up to 1
+        // has been set.  line->unpack_size[2] may not have been.
+        int unpack_size[3] = {
+            line->unpack_size[0],
+            line->unpack_size[1],
+            line->unpacked & BCF_UN_FLT ? line->unpack_size[2] : 0
+        };
 
         // ptr_ori points to the original unchanged BCF data.
         uint8_t *ptr_ori = (uint8_t *) line->shared.s;
+
+        // Paranoia check
+        if (unpack_size[0] < 0
+            || unpack_size[1] < 0
+            || unpack_size[2] < 0
+            || ((int64_t) unpack_size[0]
+                + (int64_t) unpack_size[1]
+                + (int64_t) unpack_size[2]) > line->shared.l)
+        {
+            hts_log_error("BCF unpacked sizes are inconsistent");
+            return -1;
+        }
 
         // ID: single typed string
         if ( line->d.shared_dirty & BCF1_DIRTY_ID )
             nomem |= bcf1_sync_id(line, &tmp) < 0;
         else
-            nomem |= kputsn_(ptr_ori, line->unpack_size[0], &tmp) < 0;
+            kputsn_chk_(&nomem, ptr_ori, line->unpack_size[0], &tmp);
         ptr_ori += line->unpack_size[0];
-        line->unpack_size[0] = tmp.l; prev_len = tmp.l;
+        unpack_size[0] = tmp.l; prev_len = tmp.l;
 
         // REF+ALT: list of typed strings
         if ( line->d.shared_dirty & BCF1_DIRTY_ALS )
             nomem |= bcf1_sync_alleles(line, &tmp) < 0;
         else
         {
-            nomem |= kputsn_(ptr_ori, line->unpack_size[1], &tmp) < 0;
+            kputsn_chk_(&nomem, ptr_ori, line->unpack_size[1], &tmp);
             if ( !line->rlen && line->n_allele ) line->rlen = strlen(line->d.allele[0]);
         }
         ptr_ori += line->unpack_size[1];
-        line->unpack_size[1] = tmp.l - prev_len; prev_len = tmp.l;
+        unpack_size[1] = tmp.l - prev_len; prev_len = tmp.l;
 
         if ( line->unpacked & BCF_UN_FLT )
         {
@@ -2557,11 +2606,11 @@ static int bcf1_sync(bcf1_t *line)
             if ( line->d.shared_dirty & BCF1_DIRTY_FLT )
                 nomem |= bcf1_sync_filter(line, &tmp) < 0;
             else if ( line->d.n_flt )
-                nomem |= kputsn_(ptr_ori, line->unpack_size[2], &tmp) < 0;
+                kputsn_chk_(&nomem, ptr_ori, line->unpack_size[2], &tmp);
             else
                 nomem |= bcf_enc_vint(&tmp, 0, 0, -1) < 0;
             ptr_ori += line->unpack_size[2];
-            line->unpack_size[2] = tmp.l - prev_len;
+            unpack_size[2] = tmp.l - prev_len;
 
             if ( line->unpacked & BCF_UN_INFO )
             {
@@ -2574,15 +2623,20 @@ static int bcf1_sync(bcf1_t *line)
             }
         }
 
-        int size = line->shared.l - (size_t)ptr_ori + (size_t)line->shared.s;
-        if ( size ) nomem |= kputsn_(ptr_ori, size, &tmp) < 0;
+        size_t remain = line->shared.l - (ptr_ori - (uint8_t*) line->shared.s);
+        if ( remain ) kputsn_chk_(&nomem, ptr_ori, remain, &tmp);
+
+        if (nomem)
+        {
+            hts_log_error("Out of memory");
+            ks_free(&tmp);
+            return -1;
+        }
 
         free(line->shared.s);
         line->shared = tmp;
+        memcpy(line->unpack_size, unpack_size, sizeof(line->unpack_size));
     }
-
-    if (nomem)
-        return -1;
 
     if ( line->shared.s != shared_ori && line->unpacked & BCF_UN_INFO )
     {
@@ -2605,26 +2659,47 @@ static int bcf1_sync(bcf1_t *line)
     if ( line->n_sample && line->n_fmt && (!line->indiv.l || line->d.indiv_dirty) )
     {
         // The genotype fields changed or are not present
-        tmp.l = tmp.m = 0; tmp.s = NULL;
-        int i, irm = -1;
+        kstring_t tmp = KS_INITIALIZE;
+        int i, irm = -1, nomem = 0;
+
+        // Accumulate new packed data
         for (i=0; i<line->n_fmt; i++)
         {
             bcf_fmt_t *fmt = &line->d.fmt[i];
-            if ( !fmt->p )
+            if ( fmt->p )
             {
-                // marked for removal
-                if ( irm < 0 ) irm = i;
-                continue;
+                kputsn_chk_(&nomem, fmt->p - fmt->p_off, fmt->p_len + fmt->p_off, &tmp);
             }
-            nomem |= kputsn_(fmt->p - fmt->p_off, fmt->p_len + fmt->p_off, &tmp) < 0;
-            if ( irm >=0 )
+            else
             {
-                bcf_fmt_t tfmt = line->d.fmt[irm]; line->d.fmt[irm] = line->d.fmt[i]; line->d.fmt[i] = tfmt;
+                if ( irm < 0 ) irm = i;  // Record first removed item
+            }
+        }
+
+        if (nomem)
+        {
+            hts_log_error("Out of memory");
+            ks_free(&tmp);
+            return -1;
+        }
+
+        if (irm >= 0)
+        {
+            // Deal with items marked for removal
+            for (i = irm + 1; i < line->n_fmt; i++)
+            {
+                bcf_fmt_t *fmt = &line->d.fmt[i];
+                if ( !fmt->p ) continue;
+
+                bcf_fmt_t tfmt = line->d.fmt[irm];
+                line->d.fmt[irm] = line->d.fmt[i];
+                line->d.fmt[i] = tfmt;
+
                 while ( irm<=i && line->d.fmt[irm].p ) irm++;
             }
-
+            line->n_fmt = irm;
         }
-        if ( irm>=0 ) line->n_fmt = irm;
+
         free(line->indiv.s);
         line->indiv = tmp;
 
@@ -2644,7 +2719,7 @@ static int bcf1_sync(bcf1_t *line)
     }
     if ( !line->n_sample ) line->n_fmt = 0;
     line->d.shared_dirty = line->d.indiv_dirty = 0;
-    return nomem ? -1 : 0;
+    return 0;
 }
 
 bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
