@@ -4680,6 +4680,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
                         // Best guess.  It may be unmapped data with broken
                         // headers, in which case this will get ignored.
                         fd->embed_ref = 2;
+                        fd->slices_per_container = 1;
                         pthread_mutex_unlock(&fd->ref_lock);
                         break;
                     }
@@ -5444,11 +5445,23 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         break;
 
     case CRAM_OPT_SLICES_PER_CONTAINER:
-        CHECK_RANGE(fd->slices_per_container = va_arg(args, int), 1, 512);
+        if (fd->embed_ref != 2) {
+            CHECK_RANGE(fd->slices_per_container = va_arg(args, int), 1, 512);
+        } else {
+            hts_log_warning("Cannot set slices_per_container when "
+                            "embed_ref=2");
+            (void)va_arg(args, int); // discard
+        }
         break;
 
     case CRAM_OPT_EMBED_REF:
         CHECK_RANGE(fd->embed_ref = va_arg(args, int), -1, 2);
+        if (fd->embed_ref == 2) {
+            if (fd->slices_per_container > 1)
+                hts_log_warning("Switching to 1 slice per container due to "
+                                "it being incompatible with embed_ref=2");
+            fd->slices_per_container = 1;
+        }
         break;
 
     case CRAM_OPT_NO_REF:
