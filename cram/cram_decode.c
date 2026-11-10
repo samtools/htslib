@@ -2896,7 +2896,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         /* Fake up dynamic string growth and appending */
         if (ds & CRAM_RL) {
             cr->seq = BLOCK_SIZE(s->seqs_blk);
-            BLOCK_RESIZE(s->seqs_blk, cr->seq + cr->len);
+            BLOCK_RESIZE(s->seqs_blk, (size_t)cr->seq + cr->len);
             seq = (char *)BLOCK_END(s->seqs_blk);
             BLOCK_SIZE(s->seqs_blk) += cr->len;
 
@@ -2904,7 +2904,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                 goto block_err;
 
             cr->qual = BLOCK_SIZE(s->qual_blk);
-            BLOCK_RESIZE(s->qual_blk, cr->qual + cr->len);
+            BLOCK_RESIZE(s->qual_blk, (size_t)cr->qual + cr->len);
             qual = (char *)BLOCK_END(s->qual_blk);
             BLOCK_SIZE(s->qual_blk) += cr->len;
 

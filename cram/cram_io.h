@@ -206,6 +206,9 @@ static inline cram_block *cram_get_block_by_id(cram_slice *slice, int id) {
 
 /* Make block exactly 'l' bytes long */
 static inline int block_resize_exact(cram_block *b, size_t len) {
+    if (len > INT32_MAX)
+        return -1;
+
     unsigned char *tmp = realloc(b->data, len);
     if (!tmp)
         return -1;
@@ -219,6 +222,9 @@ static inline int block_resize(cram_block *b, size_t len) {
     if (b->alloc > len)
         return 0;
 
+    if (len > INT32_MAX)
+        return -1;
+
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
     // Removal of extra padding causes many more reallocs, but detects
     // more buffer overruns.
@@ -227,6 +233,9 @@ static inline int block_resize(cram_block *b, size_t len) {
 
     size_t alloc = b->alloc+800;
     alloc = MAX(alloc + (alloc>>2), len);
+    if (alloc > INT32_MAX)
+        alloc = INT32_MAX;
+
     return block_resize_exact(b, alloc);
 }
 
