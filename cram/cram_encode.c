@@ -1603,8 +1603,8 @@ static int cram_add_to_ref(bam1_t *b, char **ref, hist_t (**hist)[6],
     int ret = 0;
     if (MD && *MD == 'Z') {
         // We can use MD to directly compute the reference
-        int ret = cram_add_to_ref_MD(b, ref, hist, ref_start, ref_end,
-                                     ref_end_alloc, MD+1);
+        ret = cram_add_to_ref_MD(b, ref, hist, ref_start, ref_end,
+                                 ref_end_alloc, MD+1);
 
         if (ret > 0)
             return ret;
