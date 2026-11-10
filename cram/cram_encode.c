@@ -2868,6 +2868,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
         if (r == 1) {
             khint_t k_global;
+            cram_metrics *gm = NULL;
 
             // Global tags_used for cram_metrics support
             pthread_mutex_lock(&fd->metrics_lock);
@@ -2885,6 +2886,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
                 }
             }
 
+            gm = kh_val(fd->tags_used, k_global);
             pthread_mutex_unlock(&fd->metrics_lock);
 
             int i2[2] = {'\t',key};
@@ -3000,7 +3002,7 @@ static sam_hrec_rg_t *cram_encode_aux(cram_fd *fd, bam_seq_t *b,
 
             // Link to fd-global tag metrics
             pthread_mutex_lock(&fd->metrics_lock);
-            m->m = k_global ? (cram_metrics *)kh_val(fd->tags_used, k_global) : NULL;
+            m->m = gm;
             pthread_mutex_unlock(&fd->metrics_lock);
         }
 
