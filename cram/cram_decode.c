@@ -1369,6 +1369,10 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 r |= codecs[DS_BS]->decode(s, codecs[DS_BS], blk,
                                            (char *)&base, &out_sz);
                 if (r) return -1;
+                if (base > 3) {
+                    hts_log_error("Invalid substitution code %d", base);
+                    return -1;
+                }
                 if (cr->ref_id < 0 || ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
                     if (pos-1 < cr->len)
                         seq[pos-1] = c->comp_hdr->
