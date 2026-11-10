@@ -50,18 +50,21 @@ int lookup(void *data, char *str, char **end, hts_expr_val_t *res) {
         // non-empty string
         *end = str+5;
         res->is_str = 1;
-        kputs("plugh", ks_clear(&res->s));
+        if (kputs("plugh", ks_clear(&res->s)) < 0)
+            return -1;
     } else if (strncmp(str, "empty-but-true", 14) == 0) {
         // empty string
         *end = str+14;
         res->is_true = 1;
         res->is_str = 1;
-        kputs("", ks_clear(&res->s));
+        if (kputs("", ks_clear(&res->s)) < 0)
+            return -1;
     } else if (strncmp(str, "empty", 5) == 0) {
         // empty string
         *end = str+5;
         res->is_str = 1;
-        kputs("", ks_clear(&res->s));
+        if (kputs("", ks_clear(&res->s)) < 0)
+            return -1;
     } else if (strncmp(str, "zero-but-true", 13) == 0) {
         *end = str+13;
         res->d = 0;

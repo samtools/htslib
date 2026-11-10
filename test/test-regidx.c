@@ -116,7 +116,8 @@ void test_sequential_access(void)
     {
         int beg = 10*(i+1);
         str.l = 0;
-        ksprintf(&str,"1\t%d\t%d\t%d",beg,beg,beg);
+        if (ksprintf(&str,"1\t%d\t%d\t%d",beg,beg,beg) < 0)
+            error("ksprintf failed\n");
         if ( regidx_insert(idx,str.s)!=0 ) error("insert failed: %s\n",str.s);
     }
 
@@ -127,7 +128,8 @@ void test_sequential_access(void)
     {
         if ( itr->beg!=itr->end || itr->beg+1!=10*(i+1) ) error("listing failed, expected %d, found %"PRIhts_pos"\n",10*(i+1),itr->beg+1);
         str.l = 0;
-        ksprintf(&str,"%"PRIhts_pos, itr->beg+1);
+        if (ksprintf(&str,"%"PRIhts_pos, itr->beg+1) < 0)
+            error("ksprintf failed\n");
         if ( strcmp(regitr_payload(itr,char*),str.s) ) error("listing failed, expected payload \"%s\", found \"%s\"\n",str.s,regitr_payload(itr,char*));
         i++;
     }
@@ -215,7 +217,8 @@ void test_random(int nregs, uint32_t min, uint32_t max)
         uint32_t b,e;
         get_random_region(min,max,&b,&e);
         str.l = 0;
-        ksprintf(&str,"1\t%"PRIu32"\t%"PRIu32"\t1:%"PRIu32"-%"PRIu32"",b+1,e+1,b+1,e+1);
+        if (ksprintf(&str,"1\t%"PRIu32"\t%"PRIu32"\t1:%"PRIu32"-%"PRIu32"",b+1,e+1,b+1,e+1) < 0)
+            error("ksprintf failed\n");
         if ( regidx_insert(idx,str.s)!=0 ) error("insert failed: %s\n", str.s);
         if ( e>=beg && b<=end ) nexp++;
     }
@@ -228,7 +231,8 @@ void test_random(int nregs, uint32_t min, uint32_t max)
     while ( ret && regitr_overlap(itr) )
     {
         str.l = 0;
-        ksprintf(&str,"1:%"PRIhts_pos"-%"PRIhts_pos"",itr->beg+1,itr->end+1);
+        if (ksprintf(&str,"1:%"PRIhts_pos"-%"PRIhts_pos"",itr->beg+1,itr->end+1) < 0)
+            error("ksprintf failed\n");
         if ( strcmp(str.s,regitr_payload(itr,char*)) )
             error("query failed, incorrect payload: %s vs %s (%d-%d)\n",str.s,regitr_payload(itr,char*),beg+1,end+1);
         if ( itr->beg > end || itr->end < beg )
@@ -254,7 +258,8 @@ void test_explicit(char *tgt, char *qry, char *exp)
         end = tgt;
         while ( *end && *end!=';' ) end++;
         str.l = 0;
-        kputsn(beg, end-beg, &str);
+        if (kputsn(beg, end-beg, &str) < 0)
+            error("kputsn failed\n");
         debug("insert: %s\n", str.s);
         if ( regidx_insert(idx,str.s)!=0 ) error("insert failed: %s\n", str.s);
         beg = *end ? end + 1 : end;
@@ -266,7 +271,8 @@ void test_explicit(char *tgt, char *qry, char *exp)
         end = qry;
         while ( *end && *end!=';' ) end++;
         str.l = 0;
-        kputsn(beg, end-beg, &str);
+        if (kputsn(beg, end-beg, &str) < 0)
+            error("kputsn failed\n");
         beg = *end ? end + 1 : end;
 
         char *chr_beg, *chr_end;

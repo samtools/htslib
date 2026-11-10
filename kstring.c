@@ -41,16 +41,15 @@ int kputd(double d, kstring_t *s) {
 	char buf[21], *cp = buf+20, *ep;
 	if (d == 0) {
 		if (signbit(d)) {
-			kputsn("-0",2,s);
-			return 2;
+			return kputsn("-0",2,s);
 		} else {
-			kputsn("0",1,s);
-			return 1;
+			return kputsn("0",1,s);
 		}
 	}
 
 	if (d < 0) {
-		kputc('-',s);
+		if (kputc('-',s) < 0)
+            return EOF;
 		len = 1;
 		d=-d;
 	}
@@ -136,7 +135,8 @@ int kputd(double d, kstring_t *s) {
 
 	int sl = ep-cp;
 	len += sl;
-	kputsn(cp, sl, s);
+	if (kputsn(cp, sl, s) < 0)
+        return EOF;
 	return len;
 }
 

@@ -1703,6 +1703,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     const char *auth;
     CURLcode err;
     CURLSHcode errsh;
+    int save_errno;
 
     err = curl_global_init(CURL_GLOBAL_ALL);
     if (err != CURLE_OK) { errno = ENETDOWN; return -1; }
@@ -1722,15 +1723,8 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     if ((auth = getenv("HTS_AUTH_LOCATION")) != NULL) {
         curl.auth_path = strdup(auth);
         curl.auth_map = kh_init(auth_map);
-        if (!curl.auth_path || !curl.auth_map) {
-            int save_errno = errno;
-            free(curl.auth_path);
-            kh_destroy(auth_map, curl.auth_map);
-            curl_share_cleanup(curl.share);
-            curl_global_cleanup();
-            errno = save_errno;
-            return -1;
-        }
+        if (!curl.auth_path || !curl.auth_map)
+            goto memfail;
     }
     if ((auth = getenv("HTS_ALLOW_UNENCRYPTED_AUTHORIZATION_HEADER")) != NULL
         && strcmp(auth, "I understand the risks") == 0) {
@@ -1752,7 +1746,8 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     }
 
     info = curl_version_info(CURLVERSION_NOW);
-    ksprintf(&curl.useragent, "htslib/%s libcurl/%s", version, info->version);
+    if (ksprintf(&curl.useragent, "htslib/%s libcurl/%s", version, info->version) < 0)
+        goto memfail;
 
     self->name = "libcurl";
     self->destroy = libcurl_exit;
@@ -1760,4 +1755,14 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     for (protocol = info->protocols; *protocol; protocol++)
         hfile_add_scheme_handler(*protocol, &handler);
     return 0;
+
+ memfail:
+    save_errno = errno;
+    free(curl.auth_path);
+    kh_destroy(auth_map, curl.auth_map);
+    ks_free(&curl.useragent);
+    curl_share_cleanup(curl.share);
+    curl_global_cleanup();
+    errno = save_errno;
+    return -1;
 }

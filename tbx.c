@@ -462,7 +462,8 @@ static int tbx_set_meta(tbx_t *tbx)
         l += x;
     }
     free(name);
-    hts_idx_set_meta(tbx->idx, l, meta, 0);
+    if (hts_idx_set_meta(tbx->idx, l, meta, 0) < 0)
+        return -1;
     return 0;
 }
 

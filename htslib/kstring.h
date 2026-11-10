@@ -93,14 +93,76 @@ typedef struct ks_tokaux_t {
 extern "C" {
 #endif
 
-    HTSLIB_EXPORT
+	/// kstring equivalent of vsprintf()
+	/**
+	   @param s    pointer to destination kstring
+	   @param fmt  format string
+	   @param ap   argument list
+	   @return Length of string added on success; -1 on error
+	 */
+	HTSLIB_EXPORT
 	int kvsprintf(kstring_t *s, const char *fmt, va_list ap) KS_ATTR_PRINTF(2,0);
 
-    HTSLIB_EXPORT
+	/// kstring equivalent of vsprintf(), with error flag parameter
+	/**
+	   @param err  pointer to flag set on error
+	   @param s    pointer to destination kstring
+	   @param fmt  format string
+	   @param ap   argument list
+	   If this function fails, @p *err is set to 1.
+	 */
+	KS_ATTR_PRINTF(3,0)
+	static inline void kvsprintf_chk(int *err, kstring_t *s,
+									 const char *fmt, va_list ap)
+	{
+		*err |= kvsprintf(s, fmt, ap) < 0;
+	}
+
+	/// kstring equivalent of sprintf()
+	/**
+	   @param s    pointer to destination kstring
+	   @param fmt  format string
+	   @return Length of string added on success; -1 on error
+	 */
+	HTSLIB_EXPORT
 	int ksprintf(kstring_t *s, const char *fmt, ...) KS_ATTR_PRINTF(2,3);
 
+	/// kstring equivalent of vsprintf(), with error flag parameter
+	/**
+	   @param err  pointer to flag set on error
+	   @param s    pointer to destination kstring
+	   @param fmt  format string
+	   If this function fails, @p *err is set to 1.
+	 */
+	KS_ATTR_PRINTF(3,4)
+	static inline void ksprintf_chk(int *err, kstring_t *s,
+									const char *fmt, ...)
+	{
+		va_list ap;
+		va_start(ap, fmt);
+		kvsprintf_chk(err, s, fmt, ap);
+		va_end(ap);
+	}
+
+	/// Append a double to a kstring
+	/**
+	   @param d    value to append
+	   @param s    pointer to destination string
+	 */
     HTSLIB_EXPORT
     int kputd(double d, kstring_t *s); // custom %g only handler
+
+	/// Append a double to a kstring, with error flag parameter
+	/**
+	   @param err  pointer to flag set on error
+	   @param d    value to append
+	   @param s    pointer to destination string
+	   If this function fails, @p *err is set to 1.
+	 */
+	static inline void kputd_chk(int *err, double d, kstring_t *s)
+	{
+		*err |= kputd(d, s) < 0;
+	}
 
     HTSLIB_EXPORT
 	int ksplit_core(char *s, int delimiter, int *_max, int **_offsets);
@@ -161,6 +223,11 @@ static inline void ks_initialize(kstring_t *s)
 }
 
 /// Resize a kstring to a given capacity
+/**
+   @param s    pointer to destination string
+   @param size new size
+   @return 0 on success, -1 on failure
+ */
 static inline int ks_resize(kstring_t *s, size_t size)
 {
 	if (s->m < size) {
@@ -176,6 +243,11 @@ static inline int ks_resize(kstring_t *s, size_t size)
 }
 
 /// Increase kstring capacity by a given number of bytes
+/**
+   @param s          pointer to destination string
+   @param expansion  number of bytes to add to capacity
+   @return 0 on success, -1 on failure
+ */
 static inline int ks_expand(kstring_t *s, size_t expansion)
 {
     size_t new_size = s->l + expansion;
@@ -201,6 +273,7 @@ static inline const char *ks_c_str(kstring_t *s)
     return s->l && s->s ? s->s : "";
 }
 
+/// Return the length of a kstring
 static inline size_t ks_len(kstring_t *s)
 {
 	return s->l;
@@ -239,6 +312,13 @@ static inline void ks_free(kstring_t *s)
     }
 }
 
+/// Append a given number of characters to a kstring
+/**
+   @param p    characters to append
+   @param l    number of characters
+   @param s    pointer to destination kstring
+   @return  Number of characters added on success; EOF (i.e. -1) on failure
+ */
 static inline int kputsn(const char *p, size_t l, kstring_t *s)
 {
 	size_t new_sz = s->l + l + 2;
@@ -250,12 +330,62 @@ static inline int kputsn(const char *p, size_t l, kstring_t *s)
 	return l;
 }
 
+/// Append a given number of characters to a kstring, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param p    characters to append
+   @param l    number of characters
+   @param s    pointer to destination kstring
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputsn_chk(int *err, const char *p, size_t l, kstring_t *s)
+{
+	if (l + 1 == 0 || ks_expand(s, l + 1) < 0) {
+		if (l + 1 == 0) errno = EOVERFLOW;
+		*err = 1;
+		return;
+	}
+	if (!p) {
+		errno = EFAULT;
+		*err = 1;
+		return;
+	}
+	memcpy(s->s + s->l, p, l);
+	s->l += l;
+	s->s[s->l] = 0;
+}
+
+/// Append a NUL-terminated string to a kstring
+/**
+   @param p    string to append
+   @param s    pointer to destination kstring
+   @return  Number of characters added on success; EOF (i.e. -1) on failure
+ */
 static inline int kputs(const char *p, kstring_t *s)
 {
 	if (!p) { errno = EFAULT; return -1; }
 	return kputsn(p, strlen(p), s);
 }
 
+/// Append a NUL-terminated string to a kstring, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param p    string to append
+   @param s    pointer to destination kstring
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputs_chk(int *err, const char *p, kstring_t *s)
+{
+	if (!p) { errno = EFAULT; *err = 1; return; }
+	kputsn_chk(err, p, strlen(p), s);
+}
+
+/// Append a single char to a kstring
+/**
+   @param p    char to append
+   @param s    pointer to destination kstring
+   @return  Character added on success; EOF (i.e. -1) on failure
+ */
 static inline int kputc(int c, kstring_t *s)
 {
 	if (ks_resize(s, s->l + 2) < 0)
@@ -265,6 +395,29 @@ static inline int kputc(int c, kstring_t *s)
 	return (unsigned char)c;
 }
 
+/// Append a single char to a kstring, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param p    char to append
+   @param s    pointer to destination kstring
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputc_chk(int *err, int c, kstring_t *s)
+{
+	*err |= kputc(c, s) < 0;
+}
+
+/// Append a single char to a kstring, no NUL termination
+/**
+   @param p    char to append
+   @param s    pointer to destination kstring
+   @return  1 on success; EOF (i.e. -1) on failure
+
+   This function does not attempt to append a NUL value after the character
+   added, which is useful if more characters are to be appended immediately
+   afterwards.  It is not safe to assume kstring_t::s is a valid NUL-terminated
+   string after using this function.
+ */
 static inline int kputc_(int c, kstring_t *s)
 {
 	if (ks_resize(s, s->l + 1) < 0)
@@ -273,6 +426,35 @@ static inline int kputc_(int c, kstring_t *s)
 	return 1;
 }
 
+/// Append a single char to a kstring, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param p    char to append
+   @param s    pointer to destination kstring
+
+   If this function fails, @p *err is set to 1.
+
+   This function does not attempt to append a NUL value after the character
+   added, which is useful if more characters are to be appended immediately
+   afterwards.  It is not safe to assume kstring_t::s is a valid NUL-terminated
+   string after using this function.
+ */
+static inline void kputc_chk_(int *err, int c, kstring_t *s)
+{
+	*err |= kputc_(c, s) < 0;
+}
+
+/// Append a given number of bytes to a kstring
+/**
+   @param p    bytes to append
+   @param l    number of bytes
+   @param s    pointer to destination kstring
+   @return  Number of bytes added on success; EOF (i.e. -1) on failure
+
+   This function does not attempt to append a NUL value after the data
+   added. It is not safe to assume kstring_t::s is a valid NUL-terminated
+   string after using this function.
+ */
 static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 {
 	size_t new_sz = s->l + l;
@@ -283,6 +465,40 @@ static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 	return l;
 }
 
+/// Append a given number of bytes to a kstring, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param p    bytes to append
+   @param l    number of bytes
+   @param s    pointer to destination kstring
+
+   If this function fails, @p *err is set to 1.
+
+   This function does not attempt to append a NUL value after the data
+   added. It is not safe to assume kstring_t::s is a valid NUL-terminated
+   string after using this function.
+ */
+static inline void kputsn_chk_(int *err, const void *p, size_t l, kstring_t *s)
+{
+	if (!p) {
+		errno = EFAULT;
+		*err = 1;
+		return;
+	}
+	if (ks_expand(s, l) < 0) {
+		*err = 1;
+		return;
+	}
+	memcpy(s->s + s->l, p, l);
+	s->l += l;
+}
+
+/// Append an unsigned integer to a kstring in decimal notation
+/**
+   @param x    value to append
+   @param s    pointer to destination kstring
+   @return  0 on success; EOF (i.e. -1) on failure
+ */
 static inline int kputuw(unsigned x, kstring_t *s)
 {
 #if HAVE___BUILTIN_CLZ && UINT_MAX == 4294967295U
@@ -368,6 +584,25 @@ static inline int kputuw(unsigned x, kstring_t *s)
     return 0;
 }
 
+/// Append an unsigned integer to a kstring in decimal notation, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param x    value to append
+   @param s    pointer to destination kstring
+
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputuw_chk(int *err, unsigned x, kstring_t *s)
+{
+	*err |= kputuw(x, s) < 0;
+}
+
+/// Append a signed integer to a kstring in decimal notation
+/**
+   @param c    value to append
+   @param s    pointer to destination kstring
+   @return  0 on success; EOF (i.e. -1) on failure
+ */
 static inline int kputw(int c, kstring_t *s)
 {
     unsigned int x = c;
@@ -381,6 +616,25 @@ static inline int kputw(int c, kstring_t *s)
     return kputuw(x, s);
 }
 
+/// Append a signed integer to a kstring in decimal notation, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param c    value to append
+   @param s    pointer to destination kstring
+
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputw_chk(int *err, int c, kstring_t *s)
+{
+	*err |= kputw(c, s) < 0;
+}
+
+/// Append a long long integer to a kstring in decimal notation
+/**
+   @param c    value to append
+   @param s    pointer to destination kstring
+   @return  0 on success; EOF (i.e. -1) on failure
+ */
 static inline int kputll(long long c, kstring_t *s)
 {
     // Worst case expansion.  One check reduces function size
@@ -442,8 +696,40 @@ static inline int kputll(long long c, kstring_t *s)
     return 0;
 }
 
+/// Append a long long integer to a kstring in decimal notation, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param c    value to append
+   @param s    pointer to destination kstring
+
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputll_chk(int *err, long long c, kstring_t *s)
+{
+	*err |= kputll(c, s) < 0;
+}
+
+/// Append a long integer to a kstring in decimal notation
+/**
+   @param c    value to append
+   @param s    pointer to destination kstring
+   @return  0 on success; EOF (i.e. -1) on failure
+ */
 static inline int kputl(long c, kstring_t *s) {
     return kputll(c, s);
+}
+
+/// Append a long integer to a kstring in decimal notation, with error flag parameter
+/**
+   @param err  pointer to flag set on error
+   @param c    value to append
+   @param s    pointer to destination kstring
+
+   If this function fails, @p *err is set to 1.
+ */
+static inline void kputl_chk(int *err, long c, kstring_t *s)
+{
+	*err |= kputll(c, s) < 0;
 }
 
 /*
@@ -481,6 +767,23 @@ static inline int kinsert_char(char c, size_t pos, kstring_t *s)
 }
 
 /**
+ *  kinsert_char_chk - inserts a char to kstring
+ *  @param err - pointer to flag set on error
+ *  @param c   - char to insert
+ *  @param pos - position at which to insert, starting from 0
+ *  @param s   - pointer to output string
+ *
+ *  0 for pos inserts at start and length of current string as pos appends at
+ *  the end.
+ *  If this function fails, @p *err is set to 1.
+ */
+static inline void kinsert_char_chk(int *err, char c, size_t pos, kstring_t *s)
+{
+	*err |= kinsert_char(c, pos, s) < 0;
+}
+
+
+/**
  *  kinsert_str - inserts a null terminated string to kstring
  *  @param str - string to insert
  *  @param pos - position at which to insert, starting from 0
@@ -506,6 +809,23 @@ static inline int kinsert_str(const char *str, size_t pos, kstring_t *s)
     s->l += len;
     s->s[s->l] = '\0';
     return 0;
+}
+
+/**
+ *  kinsert_str_chk - inserts a null terminated string to kstring
+ *  @param err - pointer to flag set on error
+ *  @param str - string to insert
+ *  @param pos - position at which to insert, starting from 0
+ *  @param s   - pointer to output string
+ *
+ *  0 for pos inserts at start and length of current string as pos appends at
+ *  the end. empty string makes no update.
+ *  If this function fails, @p *err is set to 1.
+ */
+static inline void kinsert_str_chk(int *err, const char *str, size_t pos,
+								   kstring_t *s)
+{
+	*err |= kinsert_str(str, pos, s) < 0;
 }
 
 #ifdef HTSLIB_SSIZE_T
