@@ -4154,6 +4154,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
                     pthread_mutex_unlock(&fd->bam_list_lock);
                     return -1;
                 }
+                memset(&bams[spare->nbams], 0,
+                       (c->max_c_rec - spare->nbams) * sizeof(*spare->bams));
                 spare->bams = bams;
                 int i;
                 for (i = spare->nbams; i < c->max_c_rec; i++)
