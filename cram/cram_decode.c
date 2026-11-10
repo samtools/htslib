@@ -2602,22 +2602,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         }
 
         if (ds & CRAM_CF) {
-            if (CRAM_MAJOR_VERS(fd->version) == 1) {
-                /* CF is byte in 1.0, int32 in 2.0 */
-                if (!c->comp_hdr->codecs[DS_CF]) goto block_err;
-                r |= c->comp_hdr->codecs[DS_CF]
-                                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
-                                         (char *)&cf, &out_sz);
-                if (r) goto block_err;
-                cr->cram_flags = cf;
-            } else {
-                if (!c->comp_hdr->codecs[DS_CF]) goto block_err;
-                r |= c->comp_hdr->codecs[DS_CF]
-                                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
-                                         (char *)&cr->cram_flags, &out_sz);
-                if (r) goto block_err;
-                cf = cr->cram_flags;
-            }
+            /* NB: CF is byte in 1.0, int32 in 2.0 */
+            if (!c->comp_hdr->codecs[DS_CF]) goto block_err;
+            r |= c->comp_hdr->codecs[DS_CF]
+                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
+                         (char *)&cr->cram_flags, &out_sz);
+            if (r) goto block_err;
+            cf = cr->cram_flags;
         } else {
             cf = cr->cram_flags = 0;
         }
@@ -2768,24 +2759,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         cr->explicit_tlen = INT64_MIN;
         if ((ds & CRAM_CF) && (cf & CRAM_FLAG_DETACHED)) {
             if (ds & CRAM_MF) {
-                if (CRAM_MAJOR_VERS(fd->version) == 1) {
-                    /* MF is byte in 1.0, int32 in 2.0 */
-                    unsigned char mf;
-                    if (!c->comp_hdr->codecs[DS_MF]) goto block_err;
-                    r |= c->comp_hdr->codecs[DS_MF]
-                                    ->decode(s, c->comp_hdr->codecs[DS_MF],
-                                             blk, (char *)&mf, &out_sz);
-                    if (r) goto block_err;
-                    cr->mate_flags = mf;
-                } else {
-                    if (!c->comp_hdr->codecs[DS_MF]) goto block_err;
-                    r |= c->comp_hdr->codecs[DS_MF]
-                                    ->decode(s, c->comp_hdr->codecs[DS_MF],
-                                             blk,
-                                             (char *)&cr->mate_flags,
-                                             &out_sz);
-                    if (r) goto block_err;
-                }
+                /* NB: MF is byte in 1.0, int32 in 2.0 */
+                if (!c->comp_hdr->codecs[DS_MF]) goto block_err;
+                r |= c->comp_hdr->codecs[DS_MF]
+                    ->decode(s, c->comp_hdr->codecs[DS_MF],
+                             blk, (char *)&cr->mate_flags,
+                             &out_sz);
+                if (r) goto block_err;
             } else {
                 cr->mate_flags = 0;
             }
