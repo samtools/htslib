@@ -104,13 +104,13 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
     // Duplicated from container itself, and removed in 1.1
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        r |= itf8_put_blk(cb, h->ref_seq_id);
-        r |= itf8_put_blk(cb, h->ref_seq_start);
-        r |= itf8_put_blk(cb, h->ref_seq_span);
-        r |= itf8_put_blk(cb, h->num_records);
-        r |= itf8_put_blk(cb, h->num_landmarks);
+        r |= itf8_put_blk(cb, h->ref_seq_id) < 0;
+        r |= itf8_put_blk(cb, h->ref_seq_start) < 0;
+        r |= itf8_put_blk(cb, h->ref_seq_span) < 0;
+        r |= itf8_put_blk(cb, h->num_records) < 0;
+        r |= itf8_put_blk(cb, h->num_landmarks) < 0;
         for (i = 0; i < h->num_landmarks; i++) {
-            r |= itf8_put_blk(cb, h->landmark[i]);
+            r |= itf8_put_blk(cb, h->landmark[i]) < 0;
         }
     }
 
@@ -489,10 +489,13 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
     cram_free_block(map);
 
-    if (r >= 0)
+    if (r == 0)
         return cb;
 
  block_err:
+    if (cb)
+        cram_free_block(cb);
+
     return NULL;
 }
 
