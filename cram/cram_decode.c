@@ -556,15 +556,19 @@ int cram_dependent_data_series(cram_fd *fd,
         DS_BF, DS_AP, DS_FP, DS_RL, DS_DL, DS_NF, DS_BA, DS_QS,
         DS_FC, DS_FN, DS_BS, DS_IN, DS_RG, DS_MQ, DS_TL, DS_RN,
         DS_NS, DS_NP, DS_TS, DS_MF, DS_CF, DS_RI, DS_RS, DS_PD,
-        DS_HC, DS_SC, DS_BB, DS_QQ,
+        DS_HC, DS_SC, DS_BB, DS_BB_len, DS_QQ, DS_QQ_len,
     };
     uint32_t orig_ds;
 
     /*
      * Set the data_series bit field based on fd->required_fields
      * contents.
+     *
+     * NB: Version 1.0 also used TC and TN in tags.  We don't track those,
+     * but 1.0 is so rare we fall back to the slow mode of decode all.
      */
-    if (fd->required_fields && fd->required_fields != INT_MAX) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1 &&
+        fd->required_fields && fd->required_fields != INT_MAX) {
         s->data_series = 0;
 
         if (fd->required_fields & SAM_QNAME)
@@ -680,10 +684,11 @@ int cram_dependent_data_series(cram_fd *fd,
             int bnum1, bnum2, j;
             cram_codec *c = hdr->codecs[i_to_id[i]];
 
-            if (!(s->data_series & (1<<i)))
+            if (!(s->data_series & (1u<<i)))
                 continue;
 
             if (!c)
+                // eg DS_BB_len, DS_QQ_len, or an empty data series
                 continue;
 
             bnum1 = cram_codec_to_id(c, &bnum2);
@@ -786,8 +791,8 @@ int cram_dependent_data_series(cram_fd *fd,
 
                 case -1:
                     if (core_used) {
-                        //printf(" + data series %08x:\n", 1<<i);
-                        s->data_series |= 1<<i;
+                        //printf(" + data series %08x:\n", 1u<<i);
+                        s->data_series |= 1u<<i;
                     }
                     break;
 
@@ -796,8 +801,8 @@ int cram_dependent_data_series(cram_fd *fd,
                         if (s->block[j]->content_type == EXTERNAL &&
                             s->block[j]->content_id == bnum1) {
                             if (block_used[j]) {
-                                //printf(" + data series %08x:\n", 1<<i);
-                                s->data_series |= 1<<i;
+                                //printf(" + data series %08x:\n", 1u<<i);
+                                s->data_series |= 1u<<i;
                             }
                         }
                     }
