@@ -3389,6 +3389,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     cr->apos        = bam_pos(b)+1;
     if (cr->apos < 0 || cr->apos > INT64_MAX/2)
         goto err;
+    if (cr->apos == 0) {
+        if ((cr->flags & BAM_FUNMAP) && cr->ref_id != -1)
+            hts_log_warning("POS 0 is not permitted for \"placed\" unmapped "
+                            "data. Changing to POS 1");
+        if (cr->ref_id != -1)
+            cr->apos = 1;
+    }
+
     if (c->pos_sorted) {
         if (cr->apos < s->last_apos && !fd->ap_delta) {
             c->pos_sorted = 0;
