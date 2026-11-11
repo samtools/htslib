@@ -1110,8 +1110,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     int32_t md_dist = 0;
     int orig_aux = 0;
     int do_md = s->decode_md != 0;
-    int decode_md = s->ref && cr->ref_id >= 0 && ((do_md && !has_MD) || has_MD < 0);
-    int decode_nm = s->ref && cr->ref_id >= 0 && ((do_md && !has_NM) || has_NM < 0);
+    int decode_md = s->ref && cr->ref_id >= 0 && do_md && !has_MD;
+    int decode_nm = s->ref && cr->ref_id >= 0 && do_md && !has_NM;
     uint32_t ds = s->data_series;
     sam_hrecs_t *bfd = sh->hrecs;
 
@@ -1852,31 +1852,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     if (decode_md) {
         BLOCK_APPEND_CHAR(s->aux_blk, '\0'); // null terminate MD:Z:
         size_t sz = BLOCK_SIZE(s->aux_blk) - orig_aux;
-        if (has_MD < 0) {
-            // has_MD < 0; already have MDZ allocated in aux at -has_MD,
-            // but wrote MD to end of aux (at orig_aux).
-            // We need some memmoves to shuffle it around.
-            char tmp_MD_[1024], *tmp_MD = tmp_MD_;
-            unsigned char *orig_aux_p = BLOCK_DATA(s->aux_blk) + orig_aux;
-            if (sz > 1024) {
-                tmp_MD = malloc(sz);
-                if (!tmp_MD)
-                    return -1;
-            }
-            memcpy(tmp_MD, orig_aux_p, sz);
-            memmove(&BLOCK_DATA(s->aux_blk)[-has_MD] + sz,
-                    &BLOCK_DATA(s->aux_blk)[-has_MD],
-                    orig_aux_p - &BLOCK_DATA(s->aux_blk)[-has_MD]);
-            memcpy(&BLOCK_DATA(s->aux_blk)[-has_MD], tmp_MD, sz);
-            if (tmp_MD != tmp_MD_)
-                free(tmp_MD);
-
-            if (-has_NM > -has_MD)
-                // we inserted before NM, so move it up a bit
-                has_NM -= sz;
-        }
-        // else has_MD == 0 and we've already appended MD to the end.
-
         cr->aux_size += sz;
     }
 
@@ -1904,13 +1879,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             }
             BLOCK_APPEND(s->aux_blk, buf, buf_size);
             cr->aux_size += buf_size;
-        } else {
-            // Preallocated space for NM at -has_NM into aux block
-            unsigned char *buf = BLOCK_DATA(s->aux_blk) + -has_NM;
-            buf[0] = (nm>> 0) & 0xff;
-            buf[1] = (nm>> 8) & 0xff;
-            buf[2] = (nm>>16) & 0xff;
-            buf[3] = (nm>>24) & 0xff;
         }
     }
 
@@ -2050,10 +2018,15 @@ static int cram_decode_aux(cram_fd *fd,
         unsigned char tag_data[7];
         cram_map *m;
 
+        if (TN[2] == '*') {
+            hts_log_error("Tag type '*' is no longer supported (was in 4.0 standard)");
+            return -1;
+        }
+
         if (TN[0] == 'M' && TN[1] == 'D' && has_MD)
-            *has_MD = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);
+            *has_MD = (BLOCK_SIZE(s->aux_blk)+3);
         if (TN[0] == 'N' && TN[1] == 'M' && has_NM)
-            *has_NM = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);;
+            *has_NM = (BLOCK_SIZE(s->aux_blk)+3);
         if (TN[0] == 'C' && TN[1] == 'G')
             cr->has_CG = 1;
 
