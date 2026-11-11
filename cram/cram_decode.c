@@ -364,12 +364,14 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 
         offset = cp - (char *)b->data;
 
-        if (encoding == E_NULL)
-            continue;
-
         if (size < 0 || endp - cp < size) {
             cram_free_compression_header(hdr);
             return NULL;
+        }
+
+        if (encoding == E_NULL) {
+            cp += size;
+            continue;
         }
 
         //printf("%s codes for %.2s\n", cram_encoding2str(encoding), key);
@@ -990,6 +992,10 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
         }
     }
     hdr->num_records = fd->vv.varint_get32((char **)&cp, (char *) cp_end, &err);
+    if (hdr->num_records < 0) {
+        free(hdr);
+        return NULL;
+    }
     hdr->record_counter = 0;
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
         hdr->record_counter = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
@@ -2280,6 +2286,8 @@ static int cram_decode_tlen(cram_fd *fd, cram_container *c, cram_slice *s,
             ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
                      (char *)&i32, &out_sz);
         *tlen = i32;
+    } else {
+        *tlen = 0;
     }
     return r;
 }
@@ -2695,7 +2703,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (c->comp_hdr->AP_delta) {
                 if (cr->apos < 0 && c->unsorted == 0) {
                     // cache locally in c->unsorted so we don't have an
-                    // excessive number of locks
+                    // excessive number of locks.
+                    // Technically this can be a race with multi-slice
+                    // containers, but A) they're essentially unused and B) it
+                    // only ever transitions from 0 to 1 and not back again, so the
+                    // result of a race is we may unnecessarily set it twice.
                     pthread_mutex_lock(&fd->ref_lock);
                     c->unsorted = fd->unsorted = 1;
                     pthread_mutex_unlock(&fd->ref_lock);
@@ -2843,7 +2855,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if ((ds & CRAM_CF) && (cf & CRAM_FLAG_EXPLICIT_TLEN)) {
                 if (ds & CRAM_TS) {
                     r = cram_decode_tlen(fd, c, s, blk, &cr->explicit_tlen);
-                    if (r) return r;
+                    if (r) goto block_err;
                 } else {
                     cr->mate_flags = 0;
                     cr->tlen = INT64_MIN;
@@ -2852,7 +2864,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         } else if ((ds & CRAM_CF) && (cf & CRAM_FLAG_EXPLICIT_TLEN)) {
             if (ds & CRAM_TS) {
                 r = cram_decode_tlen(fd, c, s, blk, &cr->explicit_tlen);
-                if (r) return r;
+                if (r) goto block_err;
             } else {
                 cr->mate_flags = 0;
                 cr->tlen = INT64_MIN;
@@ -3074,8 +3086,10 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
     if (-1 == hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_decode_slice_thread,
                                   j, nonblock)) {
         /* Would block */
-        if (errno != EAGAIN)
+        if (errno != EAGAIN) {
+            free(j);
             return -1;
+        }
         fd->job_pending = j;
     } else {
         fd->job_pending = NULL;
