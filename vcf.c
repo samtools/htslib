@@ -3307,6 +3307,7 @@ static inline int align_mem(kstring_t *s)
 }
 
 #define MAX_N_FMT 255   /* Limited by size of bcf1_t n_fmt field */
+#define MAX_N_INFO 65535 /* Limited by size of bcf1_t n_info field */
 
 // detect FORMAT "."
 static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
@@ -5917,6 +5918,13 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         }
     }
 
+    // If a new entry is needed, check it won't overflow bcf1_t::n_info
+    if (!inf && line->n_info == MAX_N_INFO)
+    {
+        hts_log_error("Attempted to add too many INFO entries (max supported is %d)", MAX_N_INFO);
+        return -1;
+    }
+
     // Encode the values and determine the size required to accommodate the values
     kstring_t str = {0,0,0};
     nomem |= bcf_enc_int1(&str, inf_id) < 0;
@@ -6073,6 +6081,13 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
             line->rlen = get_rlen(hdr, line);
         }
         return 0;
+    }
+
+    // If a new entry is needed, check it won't overflow bcf1_t::n_fmt
+    if (!fmt && line->n_fmt == MAX_N_FMT)
+    {
+        hts_log_error("Attempted to add too many FORMAT keys (max supported is %d)", MAX_N_FMT);
+        return -1;
     }
 
     line->n_sample = bcf_hdr_nsamples(hdr);
