@@ -5211,12 +5211,17 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
     if ( !src_hdr->ntransl )  // called for the first time, see what needs translating
     {
         int dict;
+        src_hdr->transl[0] = hts_malloc_p(sizeof(int), src_hdr->n[0]);
+        src_hdr->transl[1] = hts_malloc_p(sizeof(int), src_hdr->n[1]);
+        if (!src_hdr->transl[0] || !src_hdr->transl[1])
+        {
+            hts_log_error("Out of memory");
+            free(src_hdr->transl[0]); src_hdr->transl[0] = NULL;
+            free(src_hdr->transl[1]); src_hdr->transl[1] = NULL;
+            return -1;
+        }
         for (dict=0; dict<2; dict++)    // BCF_DT_ID and BCF_DT_CTG
         {
-            src_hdr->transl[dict] = hts_malloc_p(sizeof(int), src_hdr->n[dict]);
-            if (!src_hdr->transl[dict])
-                return -1;
-
             for (i=0; i<src_hdr->n[dict]; i++)
             {
                 if ( !src_hdr->id[dict][i].key ) // gap left after removed BCF header lines
