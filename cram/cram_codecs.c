@@ -320,10 +320,11 @@ static int store_bits_MSB(cram_block *block, uint64_t val, int nbits) {
  * allocated object, so do not free the result.
  */
 static char *cram_extract_block(cram_block *b, int size) {
+    if (size < 0 || b->idx > b->uncomp_size - size)
+        return NULL;
+
     char *cp = (char *)b->data + b->idx;
     b->idx += size;
-    if (b->idx > b->uncomp_size)
-        return NULL;
 
     return cp;
 }
