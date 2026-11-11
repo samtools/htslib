@@ -2831,11 +2831,22 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         r->seq = mfsteal(mf, &sz);
         if (r->seq) {
             r->mf = NULL;
-        } else {
-            // keep mf around as we couldn't detach
+        } else if (mf->data) {
+            // keep mf around as we couldn't detach, eg mmaped
             r->seq = mf->data;
             r->mf = mf;
+        } else {
+            // Empty file, but mf->data = NULL.  We treat that as an error.
+            mfdestroy(mf);
+            return -1;
         }
+
+        if (sz == 0) {
+            // An empty file but mf->data != NULL is still an error.
+            ref_entry_free_seq(r);
+            return -1;
+        }
+
         r->length = sz;
         r->is_md5 = 1;
         r->validated_md5 = 1;

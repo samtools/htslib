@@ -429,11 +429,10 @@ void *mfsteal(mFILE *mf, size_t *size_out) {
     void *data;
 
     if (!mf) return NULL;
+    if (size_out) *size_out = mf->size;
+    if (!mf->data) return NULL;
 
     data = mf->data;
-
-    if (NULL != size_out) *size_out = mf->size;
-
     if (mfdetach(mf) != 0)
         return NULL;
 
