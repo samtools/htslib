@@ -552,13 +552,14 @@ int cram_external_encode_store(cram_codec *c, cram_block *b, char *prefix,
         len += l;
     }
 
-    tp += c->vv->varint_put32(tp, tpend, c->u.e_external.content_id);
-    len += (n = c->vv->varint_put32_blk(b, c->codec)); r |= n;
-    len += (n = c->vv->varint_put32_blk(b, tp-tmp));   r |= n;
+    tp += (n = c->vv->varint_put32(tp, tpend, c->u.e_external.content_id));
+    r |= n<=0;
+    len += (n = c->vv->varint_put32_blk(b, c->codec)); r |= n<=0;
+    len += (n = c->vv->varint_put32_blk(b, tp-tmp));   r |= n<=0;
     BLOCK_APPEND(b, tmp, tp-tmp);
     len += tp-tmp;
 
-    if (r > 0)
+    if (r == 0)
         return len;
 
  block_err:
@@ -721,15 +722,15 @@ int cram_beta_encode_store(cram_codec *c, cram_block *b,
         len += l;
     }
 
-    len += (n = c->vv->varint_put32_blk(b, c->codec)); r |= n;
+    len += (n = c->vv->varint_put32_blk(b, c->codec)); r |= n<=0;
     // codec length
     len += (n = c->vv->varint_put32_blk(b, c->vv->varint_size(c->u.e_beta.offset)
                                          + c->vv->varint_size(c->u.e_beta.nbits)));
-    r |= n;
-    len += (n = c->vv->varint_put32_blk(b, c->u.e_beta.offset)); r |= n;
-    len += (n = c->vv->varint_put32_blk(b, c->u.e_beta.nbits));  r |= n;
+    r |= n<=0;
+    len += (n = c->vv->varint_put32_blk(b, c->u.e_beta.offset)); r |= n<=0;
+    len += (n = c->vv->varint_put32_blk(b, c->u.e_beta.nbits));  r |= n<=0;
 
-    if (r > 0) return len;
+    if (r == 0) return len;
 
  block_err:
     return -1;
@@ -1526,10 +1527,12 @@ int cram_huffman_encode_store(cram_codec *c, cram_block *b, char *prefix,
      *
      * Symbols themselves could be 5 bytes (eg -1 is 5 bytes in itf8).
      *
-     * Therefore 6*ncodes + 5 + 5 + 1 + 5 is max memory
+     * Therefore 6*ncodes + 5 + 5 + 1 + 5 is max memory (ITF8)
+     *          10*ncodes + 5 + 5 + 1 + 5 for LTF8.
      */
-    char *tmp = hts_malloc_pse(6, c->u.e_huffman.nvals, 0, 16);
-    char *tp = tmp, *tpend = tmp+6*c->u.e_huffman.nvals+16;
+    size_t per_sym = c->u.e_huffman.option == E_LONG ? 10 : 6;
+    char *tmp = hts_malloc_pse(per_sym, c->u.e_huffman.nvals, 0, 16);
+    char *tp = tmp, *tpend = tmp + per_sym*c->u.e_huffman.nvals + 16;
 
     if (!tmp)
         return -1;
@@ -1540,34 +1543,43 @@ int cram_huffman_encode_store(cram_codec *c, cram_block *b, char *prefix,
         len += l;
     }
 
-    tp += c->vv->varint_put32(tp, tpend, c->u.e_huffman.nvals);
+    tp += (n = c->vv->varint_put32(tp, tpend, c->u.e_huffman.nvals));
+    r |= n<=0;
     if (c->u.e_huffman.option == E_LONG) {
         for (i = 0; i < c->u.e_huffman.nvals; i++) {
-            tp += c->vv->varint_put64(tp, tpend, codes[i].symbol);
+            tp += (n = c->vv->varint_put64(tp, tpend, codes[i].symbol));
+            r |= n<=0;
         }
     } else if (c->u.e_huffman.option == E_INT || c->u.e_huffman.option == E_BYTE) {
         for (i = 0; i < c->u.e_huffman.nvals; i++) {
-            tp += c->vv->varint_put32(tp, tpend, codes[i].symbol);
+            tp += (n = c->vv->varint_put32(tp, tpend, codes[i].symbol));
+            r |= n<=0;
         }
     } else {
+        free(tmp);
         return -1;
     }
 
-    tp += c->vv->varint_put32(tp, tpend, c->u.e_huffman.nvals);
-    for (i = 0; i < c->u.e_huffman.nvals; i++)
-        tp += c->vv->varint_put32(tp, tpend, codes[i].len);
+    tp += (n = c->vv->varint_put32(tp, tpend, c->u.e_huffman.nvals));
+    r |= n <= 0;
+    for (i = 0; i < c->u.e_huffman.nvals; i++) {
+        tp += (n = c->vv->varint_put32(tp, tpend, codes[i].len));
+        r |= n<=0;
+    }
 
-    len += (n = c->vv->varint_put32_blk(b, c->codec)); r |= n;
-    len += (n = c->vv->varint_put32_blk(b, tp-tmp));   r |= n;
+    len += (n = c->vv->varint_put32_blk(b, c->codec)); r |= n<=0;
+    len += (n = c->vv->varint_put32_blk(b, tp-tmp));   r |= n<=0;
     BLOCK_APPEND(b, tmp, tp-tmp);
     len += tp-tmp;
 
     free(tmp);
+    tmp = NULL;
 
-    if (r > 0)
+    if (r == 0)
         return len;
 
  block_err:
+    free(tmp);
     return -1;
 }
 
@@ -1925,12 +1937,12 @@ int cram_byte_array_len_encode_store(cram_codec *c, cram_block *b,
     len3 = tc->store(tc, b_val, NULL, version);
     if (len3 < 0) goto block_err;
 
-    len += (n = c->vv->varint_put32_blk(b, c->codec));  r |= n;
-    len += (n = c->vv->varint_put32_blk(b, len2+len3)); r |= n;
+    len += (n = c->vv->varint_put32_blk(b, c->codec));  r |= n<=0;
+    len += (n = c->vv->varint_put32_blk(b, len2+len3)); r |= n<=0;
     BLOCK_APPEND(b, BLOCK_DATA(b_len), BLOCK_SIZE(b_len));
     BLOCK_APPEND(b, BLOCK_DATA(b_val), BLOCK_SIZE(b_val));
 
-    if (r <= 0)
+    if (r)
         goto block_err;
 
     cram_free_block(b_len);
@@ -2148,7 +2160,7 @@ void cram_byte_array_stop_encode_free(cram_codec *c) {
 
 int cram_byte_array_stop_encode_store(cram_codec *c, cram_block *b,
                                       char *prefix, int version) {
-    int len = 0;
+    int len = 0, r = 0, n;
     char buf[20], *cp = buf;
 
     if (prefix) {
@@ -2157,24 +2169,33 @@ int cram_byte_array_stop_encode_store(cram_codec *c, cram_block *b,
         len += l;
     }
 
-    cp += c->vv->varint_put32(cp, buf+20, c->codec);
+    cp += (n = c->vv->varint_put32(cp, buf+20, c->codec));
+    r |= n<=0;
 
     if (CRAM_MAJOR_VERS(version) == 1) {
-        cp += c->vv->varint_put32(cp, buf+20, 5);
+        cp += (n = c->vv->varint_put32(cp, buf+20, 5));
+        r |= n <= 0;
         *cp++ = c->u.e_byte_array_stop.stop;
         *cp++ = (c->u.e_byte_array_stop.content_id >>  0) & 0xff;
         *cp++ = (c->u.e_byte_array_stop.content_id >>  8) & 0xff;
         *cp++ = (c->u.e_byte_array_stop.content_id >> 16) & 0xff;
         *cp++ = (c->u.e_byte_array_stop.content_id >> 24) & 0xff;
     } else {
-        cp += c->vv->varint_put32(cp, buf+20, 1 +
-                                  c->vv->varint_size(c->u.e_byte_array_stop.content_id));
+        cp += (n = c->vv->varint_put32
+               (cp, buf+20,
+                1 + c->vv->varint_size(c->u.e_byte_array_stop.content_id)));
+        r |= n<=0;
         *cp++ = c->u.e_byte_array_stop.stop;
-        cp += c->vv->varint_put32(cp, buf+20, c->u.e_byte_array_stop.content_id);
+        cp += (n = c->vv->varint_put32(cp, buf+20,
+                                       c->u.e_byte_array_stop.content_id));
+        r |= n<=0;
     }
 
     BLOCK_APPEND(b, buf, cp-buf);
     len += cp-buf;
+
+    if (r)
+        return -1;
 
     return len;
 

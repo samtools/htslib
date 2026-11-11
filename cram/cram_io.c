@@ -743,17 +743,46 @@ static int64_t safe_ltf8_get(char **cp, const char *endp, int *err) {
     }
 }
 
-// Wrapper for now
+
+static inline int itf8_size(int64_t v) {
+    return ( (!((v)&~0x7f))?1
+            :(!((v)&~0x3fff))?2
+            :(!((v)&~0x1fffff))?3
+            :(!((v)&~0xfffffff))?4
+            :5);
+}
+
+static inline int ltf8_size(int64_t v) {
+    return ( (!((v)&~0x7f))?1
+            :(!((v)&~0x3fff))?2
+            :(!((v)&~0x1fffff))?3
+            :(!((v)&~0xfffffff))?4
+            :(!((v)&~0x7ffffffff))?5
+            :(!((v)&~0x3ffffffffff))?6
+            :(!((v)&~0x1ffffffffffff))?7
+            :(!((v)&~0xffffffffffffff))?8
+            :9);
+}
+
+// Returns 0 so we can do cp += safe_itf8_put(...) without decrementing
+// pointer.  (We should check, but this is the safer option for code that
+// doesn't.)
 static int safe_itf8_put(char *cp, char *cp_end, int32_t val) {
-    return itf8_put(cp, val);
+    if (!cp_end || cp_end - cp >= 5)
+        return itf8_put(cp, val);
+    if (cp_end - cp >= itf8_size(val))
+        return itf8_put(cp, val);
+    else
+        return 0;
 }
 
 static int safe_ltf8_put(char *cp, char *cp_end, int64_t val) {
-    return ltf8_put(cp, val);
-}
-
-static int itf8_size(int64_t v) {
-    return ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5);
+    if (!cp_end || cp_end - cp >= 9)
+        return ltf8_put(cp, val);
+    if (cp_end - cp >= ltf8_size(val))
+        return ltf8_put(cp, val);
+    else
+        return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -1248,14 +1277,18 @@ uint32_t cram_block_size(cram_block *b) {
 int cram_write_block(cram_fd *fd, cram_block *b) {
     char vardata[100];
     int vardata_o = 0;
+    int r = 0, n;
 
     assert(b->method != RAW || (b->comp_size == b->uncomp_size));
 
     if (hputc(b->method,       fd->fp)  == EOF) return -1;
     if (hputc(b->content_type, fd->fp)  == EOF) return -1;
-    vardata_o += fd->vv.varint_put32(vardata          , vardata+100, b->content_id);
-    vardata_o += fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->comp_size);
-    vardata_o += fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->uncomp_size);
+    vardata_o += (n = fd->vv.varint_put32(vardata          , vardata+100, b->content_id));
+    r |= n <= 0;
+    vardata_o += (n = fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->comp_size));
+    r |= n <= 0;
+    vardata_o += (n = fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->uncomp_size));
+    r |= n <= 0;
     if (vardata_o != hwrite(fd->fp, vardata, vardata_o))
         return -1;
 
@@ -1278,9 +1311,10 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
 
         *cp++ = b->method;
         *cp++ = b->content_type;
-        cp += fd->vv.varint_put32(cp, dat+100, b->content_id);
-        cp += fd->vv.varint_put32(cp, dat+100, b->comp_size);
-        cp += fd->vv.varint_put32(cp, dat+100, b->uncomp_size);
+        cp += (n = fd->vv.varint_put32(cp, dat+100, b->content_id));  r |= n <= 0;
+        cp += (n = fd->vv.varint_put32(cp, dat+100, b->comp_size));   r |= n <= 0;
+        cp += (n = fd->vv.varint_put32(cp, dat+100, b->uncomp_size)); r |= n <= 0;
+
         crc = crc32(0L, (uc *)dat, cp-dat);
 
         if (b->method == RAW) {
@@ -1293,7 +1327,7 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
             return -1;
     }
 
-    return 0;
+    return r ? -1 : 0;
 }
 
 /*
