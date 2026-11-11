@@ -1844,6 +1844,9 @@ cram_codec *cram_byte_array_len_decode_init(cram_block_compression_hdr *hdr,
     char *cp   = data;
     char *endp = data + size;
 
+    if (option != E_BYTE_ARRAY && option != E_BYTE_ARRAY_BLOCK)
+        return NULL;
+
     if (!(c = malloc(sizeof(*c))))
         return NULL;
 
