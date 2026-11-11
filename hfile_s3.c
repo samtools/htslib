@@ -398,7 +398,8 @@ static void refresh_auth_data(s3_auth_data *ad) {
                   "aws_access_key_id", &ad->id,
                   "aws_secret_access_key", &ad->secret,
                   "aws_session_token", &ad->token,
-                  "expiry_time", &expiry_time) < 0)
+                  "expiry_time", &expiry_time,
+                  NULL) < 0)
         goto out;
 
     if (expiry_time.l) {
