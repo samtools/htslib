@@ -2474,6 +2474,8 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         t->u.e_byte_array_len.val_codec = c->u.byte_array_len.val_codec;
         if (cram_codec_decoder2encoder(fd, t->u.e_byte_array_len.len_codec) == -1 ||
             cram_codec_decoder2encoder(fd, t->u.e_byte_array_len.val_codec) == -1) {
+            t->u.e_byte_array_len.len_codec = NULL; // avoid double free
+            t->u.e_byte_array_len.val_codec = NULL;
             t->free(t);
             return -1;
         }
