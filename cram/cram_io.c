@@ -2330,9 +2330,12 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         if (!(r = refs_create()))
             goto err;
 
-    if (r->fp)
-        if (bgzf_close(r->fp) != 0)
+    if (r->fp) {
+        if (bgzf_close(r->fp) != 0) {
+            r->fp = NULL;
             goto err;
+        }
+    }
     r->fp = NULL;
 
     /* Look for a FASTA##idx##FAI format */
@@ -2370,18 +2373,19 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         goto err;
     }
     while (hgets(line, 8192, fp) != NULL) {
-        ref_entry *e = malloc(sizeof(*e));
+        ref_entry *e = calloc(1, sizeof(*e));
         char *cp;
         int n;
         khint_t k;
 
         if (!e)
-            return NULL;
+            goto err;
 
         // id
         for (cp = line; *cp && !isspace_c(*cp); cp++)
             ;
-        *cp++ = 0;
+        if (*cp)
+            *cp++ = 0;
         e->name = string_dup(r->pool, line);
 
         // length
@@ -2407,6 +2411,13 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         // filename
         e->fn = r->fn;
 
+        if (e->length < 0 || e->offset < 0 || e->bases_per_line < 0 ||
+            e->line_length <= 0 || e->line_length < e->bases_per_line ||
+            !e->name) {
+            free(e);
+            goto err;
+        }
+
         e->count = 0;
         e->seq = NULL;
         e->mf = NULL;
@@ -2416,7 +2427,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         k = kh_put(refs, r->h_meta, e->name, &n);
         if (-1 == n)  {
             free(e);
-            return NULL;
+            goto err;
         }
 
         if (n) {
@@ -3031,6 +3042,9 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e,
      * space (the diff between line_length and bases_per_line) only occurs
      * at the end of a line of text.
      */
+    if (e->line_length && e->bases_per_line <= 0)
+        return NULL;
+
     offset = e->line_length
         ? e->offset + (start-1)/e->bases_per_line * e->line_length +
           (start-1) % e->bases_per_line
