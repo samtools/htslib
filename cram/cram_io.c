@@ -3755,7 +3755,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 
 /* MAXIMUM storage size needed for the container. */
 int cram_container_size(cram_container *c) {
-    return 55 + 5*c->num_landmarks;
+    return 56 + 5*c->num_landmarks;
 }
 
 
@@ -3794,9 +3794,9 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
     }
     cp += fd->vv.varint_put32(cp, NULL, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
-        cp += fd->vv.varint_put64(cp, NULL, c->record_counter);
-    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
         cp += fd->vv.varint_put32(cp, NULL, c->record_counter);
+    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+        cp += fd->vv.varint_put64(cp, NULL, c->record_counter);
     }
     cp += fd->vv.varint_put64(cp, NULL, c->num_bases);
     cp += fd->vv.varint_put32(cp, NULL, c->num_blocks);
