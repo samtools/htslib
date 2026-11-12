@@ -1,5 +1,46 @@
-Noteworthy changes in release a.b
+Noteworthy changes in release a.b (up to 10-11-2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* NEW:
+
+Updates
+-------
+
+* fix OOB read on short Number=LG FORMAT in bcf_remove_allele_set.
+  (PR #2130⁠. Thanks to Mohammed Adib)
+
+* Warn when FORMAT is "." but the sample columns are not.
+  (PR #2112, fixes samtools/bcftools#2173. Thanks to Jaret Arnold
+  Reported by Eran Shaham.)
+
+* tabix: stop parsing a record once the columns that matter have been seen.
+  (PR #2121, improves #1949. Thanks to Dave Lawrence)
+
+* Various code improvements. New aux tag retrieval method, leak fix in bcf
+  sync reader, API comment update, CIGAR, seq length check, aux validity check
+  update and other fixes. (PR #2126, #2129, #2131, #2132, #2133, #2134)
+
+Build Changes
+-------------
+
+* Added check for Signed-off-by: annotations in commit messages. (PR #2128)
+
+Bug fixes
+---------
+
+* Fix handling of reads off the end of the reference.
+  (PR #2140 which fixed oss-fuzz issue 582906998)
+
+* Speed up adding cram N soft clips and insertions.
+  (PR #2124 which fixed oss-fuzz issue 578324126)
+
+* Make sam_hrecs_free_tags() iterative.
+  (PR #2123 which fixed oss-fuzz issue 578296346)
+
+Documentation updates
+---------------------
+
+*
 
 Noteworthy changes in release 1.25 (27th October 2026)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
