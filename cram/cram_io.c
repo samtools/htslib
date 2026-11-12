@@ -3038,6 +3038,10 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e,
     off_t offset, len;
     char *seq;
 
+    if (start < 1)
+        start = 1;
+    if (end < 1)
+        end = 1;
     if (end < start)
         end = start;
 
@@ -3220,7 +3224,7 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
 char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     ref_entry *r;
     char *seq;
-    int ostart = start;
+    hts_pos_t ostart = start;
 
     if (id == -1 || start < 1)
         return NULL;
@@ -3273,15 +3277,20 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             hts_log_warning("Failed to populate reference \"%s\"",
                             r->name);
             hts_log_warning("See https://www.htslib.org/doc/reference_seqs.html for further suggestions");
-            pthread_mutex_unlock(&fd->refs->lock);
-            pthread_mutex_unlock(&fd->ref_lock);
-            return NULL;
+            goto err_lock;
         }
         r = fd->refs->ref_id[id];
+        if (ostart > r->length)
+            goto err_lock;
+
         if (fd->unsorted)
             cram_ref_incr_locked(fd->refs, id);
     }
 
+    // Duplicate of above to cover the r->length != 0 case, while avoiding
+    // ref-count leakages
+    if (ostart > r->length)
+        goto err_lock;
 
     /*
      * We now know that we the filename containing the reference, so check
@@ -3290,8 +3299,8 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
      */
     if (end < 1)
         end = r->length;
-    if (end >= r->length)
-        end  = r->length;
+    if (end > r->length)
+        end = r->length;
 
     if (end - start >= 0.5*r->length || fd->shared_ref) {
         start = 1;
@@ -3314,11 +3323,8 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
                 cram_ref_incr_locked(fd->refs, id);
             } else {
                 ref_entry *e;
-                if (!(e = cram_ref_load(fd->refs, id, r->is_md5))) {
-                    pthread_mutex_unlock(&fd->refs->lock);
-                    pthread_mutex_unlock(&fd->ref_lock);
-                    return NULL;
-                }
+                if (!(e = cram_ref_load(fd->refs, id, r->is_md5)))
+                    goto err_lock;
 
                 /* unsorted data implies cache ref indefinitely, to avoid
                  * continually loading and unloading.
@@ -3361,9 +3367,7 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
         }
         fd->ref = NULL;
         fd->ref_id = id;
-        pthread_mutex_unlock(&fd->refs->lock);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
+        goto err_lock;
     }
 
     /* Open file if it's not already the current open reference */
@@ -3372,18 +3376,12 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             if (bgzf_close(fd->refs->fp) != 0)
                 return NULL;
         fd->refs->fn = r->fn;
-        if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5))) {
-            pthread_mutex_unlock(&fd->refs->lock);
-            pthread_mutex_unlock(&fd->ref_lock);
-            return NULL;
-        }
+        if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5)))
+            goto err_lock;
     }
 
-    if (!(fd->ref = load_ref_portion(fd->refs->fp, r, start, end))) {
-        pthread_mutex_unlock(&fd->refs->lock);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
+    if (!(fd->ref = load_ref_portion(fd->refs->fp, r, start, end)))
+        goto err_lock;
 
     if (fd->ref_free)
         free(fd->ref_free);
@@ -3398,6 +3396,11 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     pthread_mutex_unlock(&fd->ref_lock);
 
     return seq ? seq + ostart - start : NULL;
+
+ err_lock: // an error needing both locks unlocking.
+    pthread_mutex_unlock(&fd->refs->lock);
+    pthread_mutex_unlock(&fd->ref_lock);
+    return NULL;
 }
 
 /*
