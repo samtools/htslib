@@ -1013,6 +1013,7 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
     err = deflateInit2(&s, level, Z_DEFLATED, 15|16, 9, strat);
     if (err != Z_OK) {
         hts_log_error("Call to zlib deflateInit2 failed: %s", s.msg);
+        free(cdata);
         return NULL;
     }
 
@@ -1022,6 +1023,8 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
         s.avail_out = cdata_alloc - cdata_pos;
         if (cdata_alloc - cdata_pos <= 0) {
             hts_log_error("Deflate produced larger output than expected");
+            deflateEnd(&s);
+            free(cdata);
             return NULL;
         }
         err = deflate(&s, Z_NO_FLUSH);
@@ -1070,8 +1073,10 @@ static char *lzma_mem_deflate(char *data, size_t size, size_t *cdata_size,
     if (LZMA_OK != lzma_easy_buffer_encode(level, LZMA_CHECK_CRC32, NULL,
                                            (uint8_t *)data, size,
                                            (uint8_t *)out, cdata_size,
-                                           out_size))
+                                           out_size)) {
+        free(out);
         return NULL;
+    }
 
     return out;
 }
@@ -3988,8 +3993,10 @@ static int cram_flush_result(cram_fd *fd) {
         c = j->c;
 
         if (fd->mode == 'w')
-            if (0 != cram_flush_container2(fd, c))
+            if (0 != cram_flush_container2(fd, c)) {
+                hts_tpool_delete_result(r, 1);
                 return -1;
+            }
 
         // Free the slices; filled out by encoder only
         if (c->slices) {
@@ -5121,7 +5128,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
         /* Writer */
         cram_file_def *def = calloc(1, sizeof(*def));
         if (!def)
-            return NULL;
+            goto err;
 
         fd->file_def = def;
 

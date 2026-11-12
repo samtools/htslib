@@ -801,7 +801,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     while ((c = cram_read_container(fd))) {
         if (fd->err) {
             perror("Cram container read");
-            return -1;
+            goto err;
         }
 
         hpos = htell(fd->fp);

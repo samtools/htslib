@@ -1380,7 +1380,7 @@ cram_codec *cram_huffman_decode_init(cram_block_compression_hdr *hdr,
         else
             h->decode = cram_huffman_decode_int;
     } else {
-        return NULL;
+        goto malformed;
     }
     h->describe = cram_huffman_describe;
 
