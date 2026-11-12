@@ -2676,6 +2676,9 @@ static int expand_cache_path(char *path, char *dir, const char *fn) {
     size_t len;
     size_t sz = PATH_MAX;
 
+    if (strchr(fn, '/'))
+        return -1;
+
     while ((cp = strchr(dir, '%'))) {
         if (cp-dir >= sz) return -1;
         strncpy(path, dir, cp-dir);
@@ -2786,6 +2789,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         goto no_M5;
 
     hts_log_info("Querying ref %s", tag->str+3);
+    if (strchr(tag->str+3, '/')) {
+        hts_log_error("Invalid M5 tag");
+        goto no_M5;
+    }
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
