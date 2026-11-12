@@ -3038,6 +3038,10 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e,
     off_t offset, len;
     char *seq;
 
+    if (start < 1)
+        start = 1;
+    if (end < 1)
+        end = 1;
     if (end < start)
         end = start;
 
@@ -3220,7 +3224,7 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
 char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     ref_entry *r;
     char *seq;
-    int ostart = start;
+    hts_pos_t ostart = start;
 
     if (id == -1 || start < 1)
         return NULL;
@@ -3278,10 +3282,17 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             return NULL;
         }
         r = fd->refs->ref_id[id];
+        if (ostart > r->length)
+            goto err_lock;
+
         if (fd->unsorted)
             cram_ref_incr_locked(fd->refs, id);
     }
 
+    // Duplicate of above to cover the r->length != 0 case, while avoiding
+    // ref-count leakages
+    if (ostart > r->length)
+        goto err_lock;
 
     /*
      * We now know that we the filename containing the reference, so check
@@ -3290,8 +3301,8 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
      */
     if (end < 1)
         end = r->length;
-    if (end >= r->length)
-        end  = r->length;
+    if (end > r->length)
+        end = r->length;
 
     if (end - start >= 0.5*r->length || fd->shared_ref) {
         start = 1;
