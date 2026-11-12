@@ -743,17 +743,46 @@ static int64_t safe_ltf8_get(char **cp, const char *endp, int *err) {
     }
 }
 
-// Wrapper for now
+
+static inline int itf8_size(int64_t v) {
+    return ( (!((v)&~0x7f))?1
+            :(!((v)&~0x3fff))?2
+            :(!((v)&~0x1fffff))?3
+            :(!((v)&~0xfffffff))?4
+            :5);
+}
+
+static inline int ltf8_size(int64_t v) {
+    return ( (!((v)&~0x7f))?1
+            :(!((v)&~0x3fff))?2
+            :(!((v)&~0x1fffff))?3
+            :(!((v)&~0xfffffff))?4
+            :(!((v)&~0x7ffffffff))?5
+            :(!((v)&~0x3ffffffffff))?6
+            :(!((v)&~0x1ffffffffffff))?7
+            :(!((v)&~0xffffffffffffff))?8
+            :9);
+}
+
+// Returns 0 so we can do cp += safe_itf8_put(...) without decrementing
+// pointer.  (We should check, but this is the safer option for code that
+// doesn't.)
 static int safe_itf8_put(char *cp, char *cp_end, int32_t val) {
-    return itf8_put(cp, val);
+    if (!cp_end || cp_end - cp >= 5)
+        return itf8_put(cp, val);
+    if (cp_end - cp >= itf8_size(val))
+        return itf8_put(cp, val);
+    else
+        return 0;
 }
 
 static int safe_ltf8_put(char *cp, char *cp_end, int64_t val) {
-    return ltf8_put(cp, val);
-}
-
-static int itf8_size(int64_t v) {
-    return ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5);
+    if (!cp_end || cp_end - cp >= 9)
+        return ltf8_put(cp, val);
+    if (cp_end - cp >= ltf8_size(val))
+        return ltf8_put(cp, val);
+    else
+        return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -984,6 +1013,7 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
     err = deflateInit2(&s, level, Z_DEFLATED, 15|16, 9, strat);
     if (err != Z_OK) {
         hts_log_error("Call to zlib deflateInit2 failed: %s", s.msg);
+        free(cdata);
         return NULL;
     }
 
@@ -993,6 +1023,8 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
         s.avail_out = cdata_alloc - cdata_pos;
         if (cdata_alloc - cdata_pos <= 0) {
             hts_log_error("Deflate produced larger output than expected");
+            deflateEnd(&s);
+            free(cdata);
             return NULL;
         }
         err = deflate(&s, Z_NO_FLUSH);
@@ -1041,8 +1073,10 @@ static char *lzma_mem_deflate(char *data, size_t size, size_t *cdata_size,
     if (LZMA_OK != lzma_easy_buffer_encode(level, LZMA_CHECK_CRC32, NULL,
                                            (uint8_t *)data, size,
                                            (uint8_t *)out, cdata_size,
-                                           out_size))
+                                           out_size)) {
+        free(out);
         return NULL;
+    }
 
     return out;
 }
@@ -1248,14 +1282,18 @@ uint32_t cram_block_size(cram_block *b) {
 int cram_write_block(cram_fd *fd, cram_block *b) {
     char vardata[100];
     int vardata_o = 0;
+    int r = 0, n;
 
     assert(b->method != RAW || (b->comp_size == b->uncomp_size));
 
     if (hputc(b->method,       fd->fp)  == EOF) return -1;
     if (hputc(b->content_type, fd->fp)  == EOF) return -1;
-    vardata_o += fd->vv.varint_put32(vardata          , vardata+100, b->content_id);
-    vardata_o += fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->comp_size);
-    vardata_o += fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->uncomp_size);
+    vardata_o += (n = fd->vv.varint_put32(vardata          , vardata+100, b->content_id));
+    r |= n <= 0;
+    vardata_o += (n = fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->comp_size));
+    r |= n <= 0;
+    vardata_o += (n = fd->vv.varint_put32(vardata+vardata_o, vardata+100, b->uncomp_size));
+    r |= n <= 0;
     if (vardata_o != hwrite(fd->fp, vardata, vardata_o))
         return -1;
 
@@ -1278,9 +1316,10 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
 
         *cp++ = b->method;
         *cp++ = b->content_type;
-        cp += fd->vv.varint_put32(cp, dat+100, b->content_id);
-        cp += fd->vv.varint_put32(cp, dat+100, b->comp_size);
-        cp += fd->vv.varint_put32(cp, dat+100, b->uncomp_size);
+        cp += (n = fd->vv.varint_put32(cp, dat+100, b->content_id));  r |= n <= 0;
+        cp += (n = fd->vv.varint_put32(cp, dat+100, b->comp_size));   r |= n <= 0;
+        cp += (n = fd->vv.varint_put32(cp, dat+100, b->uncomp_size)); r |= n <= 0;
+
         crc = crc32(0L, (uc *)dat, cp-dat);
 
         if (b->method == RAW) {
@@ -1293,7 +1332,7 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
             return -1;
     }
 
-    return 0;
+    return r ? -1 : 0;
 }
 
 /*
@@ -2296,9 +2335,12 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         if (!(r = refs_create()))
             goto err;
 
-    if (r->fp)
-        if (bgzf_close(r->fp) != 0)
+    if (r->fp) {
+        if (bgzf_close(r->fp) != 0) {
+            r->fp = NULL;
             goto err;
+        }
+    }
     r->fp = NULL;
 
     /* Look for a FASTA##idx##FAI format */
@@ -2336,18 +2378,19 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         goto err;
     }
     while (hgets(line, 8192, fp) != NULL) {
-        ref_entry *e = malloc(sizeof(*e));
+        ref_entry *e = calloc(1, sizeof(*e));
         char *cp;
         int n;
         khint_t k;
 
         if (!e)
-            return NULL;
+            goto err;
 
         // id
         for (cp = line; *cp && !isspace_c(*cp); cp++)
             ;
-        *cp++ = 0;
+        if (*cp)
+            *cp++ = 0;
         e->name = string_dup(r->pool, line);
 
         // length
@@ -2373,6 +2416,13 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         // filename
         e->fn = r->fn;
 
+        if (e->length < 0 || e->offset < 0 || e->bases_per_line < 0 ||
+            e->line_length <= 0 || e->line_length < e->bases_per_line ||
+            !e->name) {
+            free(e);
+            goto err;
+        }
+
         e->count = 0;
         e->seq = NULL;
         e->mf = NULL;
@@ -2382,7 +2432,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         k = kh_put(refs, r->h_meta, e->name, &n);
         if (-1 == n)  {
             free(e);
-            return NULL;
+            goto err;
         }
 
         if (n) {
@@ -2668,6 +2718,7 @@ static int expand_cache_path(char *path, char *dir, const char *fn) {
             if (sz < 3) return -1;
             *path++ = '%';
             *path++ = *cp++;
+            sz -= 2;
         }
         dir = cp;
     }
@@ -2741,9 +2792,17 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         goto no_M5;
 
     hts_log_info("Querying ref %s", tag->str+3);
+    if (strchr(tag->str+3, '/')) {
+        hts_log_error("Invalid M5 tag");
+        goto no_M5;
+    }
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
+        if (strchr(tag->str+3, '/')) {
+            hts_log_error("Invalid LOCAL_CACHE environment variable");
+            return -1;
+        }
         struct stat sb;
         if (expand_cache_path(path, local_cache, tag->str+3) == 0 &&
             stat(path, &sb) == 0)
@@ -2797,11 +2856,22 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         r->seq = mfsteal(mf, &sz);
         if (r->seq) {
             r->mf = NULL;
-        } else {
-            // keep mf around as we couldn't detach
+        } else if (mf->data) {
+            // keep mf around as we couldn't detach, eg mmaped
             r->seq = mf->data;
             r->mf = mf;
+        } else {
+            // Empty file, but mf->data = NULL.  We treat that as an error.
+            mfdestroy(mf);
+            return -1;
         }
+
+        if (sz == 0) {
+            // An empty file but mf->data != NULL is still an error.
+            ref_entry_free_seq(r);
+            return -1;
+        }
+
         r->length = sz;
         r->is_md5 = 1;
         r->validated_md5 = 1;
@@ -2975,6 +3045,10 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e,
     off_t offset, len;
     char *seq;
 
+    if (start < 1)
+        start = 1;
+    if (end < 1)
+        end = 1;
     if (end < start)
         end = start;
 
@@ -2986,6 +3060,9 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e,
      * space (the diff between line_length and bases_per_line) only occurs
      * at the end of a line of text.
      */
+    if (e->line_length && e->bases_per_line <= 0)
+        return NULL;
+
     offset = e->line_length
         ? e->offset + (start-1)/e->bases_per_line * e->line_length +
           (start-1) % e->bases_per_line
@@ -3154,7 +3231,7 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
 char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     ref_entry *r;
     char *seq;
-    int ostart = start;
+    hts_pos_t ostart = start;
 
     if (id == -1 || start < 1)
         return NULL;
@@ -3207,15 +3284,20 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             hts_log_warning("Failed to populate reference \"%s\"",
                             r->name);
             hts_log_warning("See https://www.htslib.org/doc/reference_seqs.html for further suggestions");
-            pthread_mutex_unlock(&fd->refs->lock);
-            pthread_mutex_unlock(&fd->ref_lock);
-            return NULL;
+            goto err_lock;
         }
         r = fd->refs->ref_id[id];
+        if (ostart > r->length)
+            goto err_lock;
+
         if (fd->unsorted)
             cram_ref_incr_locked(fd->refs, id);
     }
 
+    // Duplicate of above to cover the r->length != 0 case, while avoiding
+    // ref-count leakages
+    if (ostart > r->length)
+        goto err_lock;
 
     /*
      * We now know that we the filename containing the reference, so check
@@ -3224,8 +3306,8 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
      */
     if (end < 1)
         end = r->length;
-    if (end >= r->length)
-        end  = r->length;
+    if (end > r->length)
+        end = r->length;
 
     if (end - start >= 0.5*r->length || fd->shared_ref) {
         start = 1;
@@ -3248,11 +3330,8 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
                 cram_ref_incr_locked(fd->refs, id);
             } else {
                 ref_entry *e;
-                if (!(e = cram_ref_load(fd->refs, id, r->is_md5))) {
-                    pthread_mutex_unlock(&fd->refs->lock);
-                    pthread_mutex_unlock(&fd->ref_lock);
-                    return NULL;
-                }
+                if (!(e = cram_ref_load(fd->refs, id, r->is_md5)))
+                    goto err_lock;
 
                 /* unsorted data implies cache ref indefinitely, to avoid
                  * continually loading and unloading.
@@ -3295,29 +3374,25 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
         }
         fd->ref = NULL;
         fd->ref_id = id;
-        pthread_mutex_unlock(&fd->refs->lock);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
+        goto err_lock;
     }
 
     /* Open file if it's not already the current open reference */
     if (strcmp(fd->refs->fn, r->fn) || fd->refs->fp == NULL) {
-        if (fd->refs->fp)
-            if (bgzf_close(fd->refs->fp) != 0)
-                return NULL;
-        fd->refs->fn = r->fn;
-        if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5))) {
-            pthread_mutex_unlock(&fd->refs->lock);
-            pthread_mutex_unlock(&fd->ref_lock);
-            return NULL;
+        if (fd->refs->fp) {
+            if (bgzf_close(fd->refs->fp) != 0) {
+                fd->refs->fp = NULL;
+                goto err_lock;
+            }
         }
+
+        fd->refs->fn = r->fn;
+        if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5)))
+            goto err_lock;
     }
 
-    if (!(fd->ref = load_ref_portion(fd->refs->fp, r, start, end))) {
-        pthread_mutex_unlock(&fd->refs->lock);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
+    if (!(fd->ref = load_ref_portion(fd->refs->fp, r, start, end)))
+        goto err_lock;
 
     if (fd->ref_free)
         free(fd->ref_free);
@@ -3332,6 +3407,11 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     pthread_mutex_unlock(&fd->ref_lock);
 
     return seq ? seq + ostart - start : NULL;
+
+ err_lock: // an error needing both locks unlocking.
+    pthread_mutex_unlock(&fd->refs->lock);
+    pthread_mutex_unlock(&fd->ref_lock);
+    return NULL;
 }
 
 /*
@@ -3682,7 +3762,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 
 /* MAXIMUM storage size needed for the container. */
 int cram_container_size(cram_container *c) {
-    return 55 + 5*c->num_landmarks;
+    return 56 + 5*c->num_landmarks;
 }
 
 
@@ -3721,9 +3801,9 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
     }
     cp += fd->vv.varint_put32(cp, NULL, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
-        cp += fd->vv.varint_put64(cp, NULL, c->record_counter);
-    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
         cp += fd->vv.varint_put32(cp, NULL, c->record_counter);
+    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+        cp += fd->vv.varint_put64(cp, NULL, c->record_counter);
     }
     cp += fd->vv.varint_put64(cp, NULL, c->num_bases);
     cp += fd->vv.varint_put32(cp, NULL, c->num_blocks);
@@ -3913,8 +3993,10 @@ static int cram_flush_result(cram_fd *fd) {
         c = j->c;
 
         if (fd->mode == 'w')
-            if (0 != cram_flush_container2(fd, c))
+            if (0 != cram_flush_container2(fd, c)) {
+                hts_tpool_delete_result(r, 1);
                 return -1;
+            }
 
         // Free the slices; filled out by encoder only
         if (c->slices) {
@@ -4406,8 +4488,8 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
         return NULL;
     }
 
-    if (def->major_version > 4) {
-        hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x, 3.x or 4.x, got %d.%d",
+    if (def->major_version < 1 || def->major_version > 3) {
+        hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x, or 3.x, got %d.%d",
                       def->major_version, def->minor_version);
         free(def);
         return NULL;
@@ -5046,7 +5128,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
         /* Writer */
         cram_file_def *def = calloc(1, sizeof(*def));
         if (!def)
-            return NULL;
+            goto err;
 
         fd->file_def = def;
 
