@@ -4481,8 +4481,8 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
         return NULL;
     }
 
-    if (def->major_version > 4) {
-        hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x, 3.x or 4.x, got %d.%d",
+    if (def->major_version < 1 || def->major_version > 3) {
+        hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x, or 3.x, got %d.%d",
                       def->major_version, def->minor_version);
         free(def);
         return NULL;
