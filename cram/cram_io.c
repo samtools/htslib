@@ -3372,9 +3372,13 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
 
     /* Open file if it's not already the current open reference */
     if (strcmp(fd->refs->fn, r->fn) || fd->refs->fp == NULL) {
-        if (fd->refs->fp)
-            if (bgzf_close(fd->refs->fp) != 0)
-                return NULL;
+        if (fd->refs->fp) {
+            if (bgzf_close(fd->refs->fp) != 0) {
+                fd->refs->fp = NULL;
+                goto err_lock;
+            }
+        }
+
         fd->refs->fn = r->fn;
         if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5)))
             goto err_lock;
