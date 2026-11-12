@@ -644,7 +644,7 @@ static int cram_index_build_multiref(cram_fd *fd,
     ref_end = INT_MIN;
 
     int32_t last_ref = -9;
-    int32_t last_pos = -9;
+    int64_t last_pos = -9;
     for (i = 0; i < s->hdr->num_records; i++) {
         if (s->crecs[i].ref_id == last_ref && s->crecs[i].apos < last_pos) {
             hts_log_error("CRAM file is not sorted by chromosome / position");
