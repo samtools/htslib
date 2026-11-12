@@ -364,12 +364,14 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 
         offset = cp - (char *)b->data;
 
-        if (encoding == E_NULL)
-            continue;
-
         if (size < 0 || endp - cp < size) {
             cram_free_compression_header(hdr);
             return NULL;
+        }
+
+        if (encoding == E_NULL) {
+            cp += size;
+            continue;
         }
 
         //printf("%s codes for %.2s\n", cram_encoding2str(encoding), key);
@@ -556,15 +558,19 @@ int cram_dependent_data_series(cram_fd *fd,
         DS_BF, DS_AP, DS_FP, DS_RL, DS_DL, DS_NF, DS_BA, DS_QS,
         DS_FC, DS_FN, DS_BS, DS_IN, DS_RG, DS_MQ, DS_TL, DS_RN,
         DS_NS, DS_NP, DS_TS, DS_MF, DS_CF, DS_RI, DS_RS, DS_PD,
-        DS_HC, DS_SC, DS_BB, DS_QQ,
+        DS_HC, DS_SC, DS_BB, DS_BB_len, DS_QQ, DS_QQ_len,
     };
     uint32_t orig_ds;
 
     /*
      * Set the data_series bit field based on fd->required_fields
      * contents.
+     *
+     * NB: Version 1.0 also used TC and TN in tags.  We don't track those,
+     * but 1.0 is so rare we fall back to the slow mode of decode all.
      */
-    if (fd->required_fields && fd->required_fields != INT_MAX) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1 &&
+        fd->required_fields && fd->required_fields != INT_MAX) {
         s->data_series = 0;
 
         if (fd->required_fields & SAM_QNAME)
@@ -654,7 +660,7 @@ int cram_dependent_data_series(cram_fd *fd,
         if (s->data_series & (CRAM_SEQ|CRAM_CIGAR)) s->data_series |= CRAM_RL;
 
         if (s->data_series & CRAM_FP)    s->data_series |= CRAM_FC;
-        if (s->data_series & CRAM_FC)    s->data_series |= CRAM_FN;
+        if (s->data_series & CRAM_FC)    s->data_series |= CRAM_FN | CRAM_AP;
         if (s->data_series & CRAM_aux)   s->data_series |= CRAM_TL;
         if (s->data_series & CRAM_MF)    s->data_series |= CRAM_CF;
         if (s->data_series & CRAM_MQ)    s->data_series |= CRAM_BF;
@@ -680,10 +686,11 @@ int cram_dependent_data_series(cram_fd *fd,
             int bnum1, bnum2, j;
             cram_codec *c = hdr->codecs[i_to_id[i]];
 
-            if (!(s->data_series & (1<<i)))
+            if (!(s->data_series & (1u<<i)))
                 continue;
 
             if (!c)
+                // eg DS_BB_len, DS_QQ_len, or an empty data series
                 continue;
 
             bnum1 = cram_codec_to_id(c, &bnum2);
@@ -786,8 +793,8 @@ int cram_dependent_data_series(cram_fd *fd,
 
                 case -1:
                     if (core_used) {
-                        //printf(" + data series %08x:\n", 1<<i);
-                        s->data_series |= 1<<i;
+                        //printf(" + data series %08x:\n", 1u<<i);
+                        s->data_series |= 1u<<i;
                     }
                     break;
 
@@ -796,8 +803,8 @@ int cram_dependent_data_series(cram_fd *fd,
                         if (s->block[j]->content_type == EXTERNAL &&
                             s->block[j]->content_id == bnum1) {
                             if (block_used[j]) {
-                                //printf(" + data series %08x:\n", 1<<i);
-                                s->data_series |= 1<<i;
+                                //printf(" + data series %08x:\n", 1u<<i);
+                                s->data_series |= 1u<<i;
                             }
                         }
                     }
@@ -985,6 +992,10 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
         }
     }
     hdr->num_records = fd->vv.varint_get32((char **)&cp, (char *) cp_end, &err);
+    if (hdr->num_records < 0) {
+        free(hdr);
+        return NULL;
+    }
     hdr->record_counter = 0;
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
         hdr->record_counter = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
@@ -1105,8 +1116,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     int32_t md_dist = 0;
     int orig_aux = 0;
     int do_md = s->decode_md != 0;
-    int decode_md = s->ref && cr->ref_id >= 0 && ((do_md && !has_MD) || has_MD < 0);
-    int decode_nm = s->ref && cr->ref_id >= 0 && ((do_md && !has_NM) || has_NM < 0);
+    int decode_md = s->ref && cr->ref_id >= 0 && do_md && !has_MD;
+    int decode_nm = s->ref && cr->ref_id >= 0 && do_md && !has_NM;
     uint32_t ds = s->data_series;
     sam_hrecs_t *bfd = sh->hrecs;
 
@@ -1209,7 +1220,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     // May miss MD/NM cases where both seq/ref are N, but this is a
                     // malformed cram file anyway.
                     if (rlen > 0) {
-                        if (ref_pos + rlen > s->ref_end)
+                        if (ref_pos + rlen > s->ref_end ||
+                            ref_pos < s->ref_start - 1)
                             goto beyond_slice;
 
                         if (cr->len) {
@@ -1227,7 +1239,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                         md_dist += pos - seq_pos;
                 } else {
                     // 'N' in both ref and seq is also mismatch for NM/MD
-                    if (ref_pos + pos-seq_pos > s->ref_end)
+                    if (ref_pos + pos-seq_pos > s->ref_end ||
+                        ref_pos < s->ref_start - 1)
                         goto beyond_slice;
 
                     const char *refp = s->ref + ref_pos - s->ref_start + 1;
@@ -1362,6 +1375,10 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 r |= codecs[DS_BS]->decode(s, codecs[DS_BS], blk,
                                            (char *)&base, &out_sz);
                 if (r) return -1;
+                if (base > 3) {
+                    hts_log_error("Invalid substitution code %d", base);
+                    return -1;
+                }
                 if (cr->ref_id < 0 || ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
                     if (pos-1 < cr->len)
                         seq[pos-1] = c->comp_hdr->
@@ -1373,7 +1390,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                         nm--;
                     }
                 } else {
-                    unsigned char ref_call = ref_pos < s->ref_end
+                    unsigned char ref_call =
+                        (ref_pos < s->ref_end && ref_pos >= s->ref_start - 1)
                         ? (uc)s->ref[ref_pos - s->ref_start +1]
                         : 'N';
                     ref_base = fd->L1[ref_call];
@@ -1406,7 +1424,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 if (i32 < 0)
                     goto beyond_slice;
                 if (decode_md || decode_nm) {
-                    if (ref_pos + i32 > s->ref_end)
+                    if (ref_pos + i32 > s->ref_end ||
+                        ref_pos < s->ref_start - 1)
                         goto beyond_slice;
                     if (md_dist >= 0 && decode_md)
                         BLOCK_APPEND_UINT(s->aux_blk, md_dist);
@@ -1516,7 +1535,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                             break;
                         } else {
                             if (decode_md) {
-                                if (ref_pos + x >= s->ref_end)
+                                if (ref_pos + x >= s->ref_end ||
+                                    ref_pos < s->ref_start - 1)
                                     goto beyond_slice;
                                 char r = s->ref[ref_pos+x-s->ref_start +1];
                                 BLOCK_APPEND_CHAR(s->aux_blk, r);
@@ -1589,7 +1609,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                         md_dist = -1;
                     } else {
                         if (decode_md) {
-                            if (ref_pos >= s->ref_end)
+                            if (ref_pos >= s->ref_end ||
+                                ref_pos < s->ref_start - 1)
                                 goto beyond_slice;
                             BLOCK_APPEND_CHAR(s->aux_blk,
                                               s->ref[ref_pos-s->ref_start +1]);
@@ -1711,7 +1732,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                 // May miss MD/NM cases where both seq/ref are N, but this is a
                 // malformed cram file anyway.
                 if (rlen > 0) {
-                    if (ref_pos + rlen > s->ref_end)
+                    if (ref_pos + rlen > s->ref_end ||
+                        ref_pos < s->ref_start - 1)
                         goto beyond_slice;
 
                     if (seq_pos-1 + rlen < cr->len)
@@ -1728,7 +1750,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     md_dist += cr->len - seq_pos + 1;
             } else {
                 if (cr->len - seq_pos + 1 > 0) {
-                    if (ref_pos + cr->len-seq_pos +1 > s->ref_end)
+                    if (ref_pos + cr->len-seq_pos +1 > s->ref_end ||
+                        ref_pos < s->ref_start - 1)
                         goto beyond_slice;
                     int remainder = cr->len - (seq_pos-1);
                     int j = ref_pos - s->ref_start + 1;
@@ -1835,31 +1858,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     if (decode_md) {
         BLOCK_APPEND_CHAR(s->aux_blk, '\0'); // null terminate MD:Z:
         size_t sz = BLOCK_SIZE(s->aux_blk) - orig_aux;
-        if (has_MD < 0) {
-            // has_MD < 0; already have MDZ allocated in aux at -has_MD,
-            // but wrote MD to end of aux (at orig_aux).
-            // We need some memmoves to shuffle it around.
-            char tmp_MD_[1024], *tmp_MD = tmp_MD_;
-            unsigned char *orig_aux_p = BLOCK_DATA(s->aux_blk) + orig_aux;
-            if (sz > 1024) {
-                tmp_MD = malloc(sz);
-                if (!tmp_MD)
-                    return -1;
-            }
-            memcpy(tmp_MD, orig_aux_p, sz);
-            memmove(&BLOCK_DATA(s->aux_blk)[-has_MD] + sz,
-                    &BLOCK_DATA(s->aux_blk)[-has_MD],
-                    orig_aux_p - &BLOCK_DATA(s->aux_blk)[-has_MD]);
-            memcpy(&BLOCK_DATA(s->aux_blk)[-has_MD], tmp_MD, sz);
-            if (tmp_MD != tmp_MD_)
-                free(tmp_MD);
-
-            if (-has_NM > -has_MD)
-                // we inserted before NM, so move it up a bit
-                has_NM -= sz;
-        }
-        // else has_MD == 0 and we've already appended MD to the end.
-
         cr->aux_size += sz;
     }
 
@@ -1887,13 +1885,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             }
             BLOCK_APPEND(s->aux_blk, buf, buf_size);
             cr->aux_size += buf_size;
-        } else {
-            // Preallocated space for NM at -has_NM into aux block
-            unsigned char *buf = BLOCK_DATA(s->aux_blk) + -has_NM;
-            buf[0] = (nm>> 0) & 0xff;
-            buf[1] = (nm>> 8) & 0xff;
-            buf[2] = (nm>>16) & 0xff;
-            buf[3] = (nm>>24) & 0xff;
         }
     }
 
@@ -2033,10 +2024,15 @@ static int cram_decode_aux(cram_fd *fd,
         unsigned char tag_data[7];
         cram_map *m;
 
+        if (TN[2] == '*') {
+            hts_log_error("Tag type '*' is no longer supported (was in 4.0 standard)");
+            return -1;
+        }
+
         if (TN[0] == 'M' && TN[1] == 'D' && has_MD)
-            *has_MD = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);
+            *has_MD = (BLOCK_SIZE(s->aux_blk)+3);
         if (TN[0] == 'N' && TN[1] == 'M' && has_NM)
-            *has_NM = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);;
+            *has_NM = (BLOCK_SIZE(s->aux_blk)+3);
         if (TN[0] == 'C' && TN[1] == 'G')
             cr->has_CG = 1;
 
@@ -2290,6 +2286,8 @@ static int cram_decode_tlen(cram_fd *fd, cram_container *c, cram_slice *s,
             ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
                      (char *)&i32, &out_sz);
         *tlen = i32;
+    } else {
+        *tlen = 0;
     }
     return r;
 }
@@ -2602,22 +2600,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         }
 
         if (ds & CRAM_CF) {
-            if (CRAM_MAJOR_VERS(fd->version) == 1) {
-                /* CF is byte in 1.0, int32 in 2.0 */
-                if (!c->comp_hdr->codecs[DS_CF]) goto block_err;
-                r |= c->comp_hdr->codecs[DS_CF]
-                                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
-                                         (char *)&cf, &out_sz);
-                if (r) goto block_err;
-                cr->cram_flags = cf;
-            } else {
-                if (!c->comp_hdr->codecs[DS_CF]) goto block_err;
-                r |= c->comp_hdr->codecs[DS_CF]
-                                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
-                                         (char *)&cr->cram_flags, &out_sz);
-                if (r) goto block_err;
-                cf = cr->cram_flags;
-            }
+            /* NB: CF is byte in 1.0, int32 in 2.0 */
+            if (!c->comp_hdr->codecs[DS_CF]) goto block_err;
+            r |= c->comp_hdr->codecs[DS_CF]
+                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
+                         (char *)&cr->cram_flags, &out_sz);
+            if (r) goto block_err;
+            cf = cr->cram_flags;
         } else {
             cf = cr->cram_flags = 0;
         }
@@ -2714,7 +2703,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (c->comp_hdr->AP_delta) {
                 if (cr->apos < 0 && c->unsorted == 0) {
                     // cache locally in c->unsorted so we don't have an
-                    // excessive number of locks
+                    // excessive number of locks.
+                    // Technically this can be a race with multi-slice
+                    // containers, but A) they're essentially unused and B) it
+                    // only ever transitions from 0 to 1 and not back again, so the
+                    // result of a race is we may unnecessarily set it twice.
                     pthread_mutex_lock(&fd->ref_lock);
                     c->unsorted = fd->unsorted = 1;
                     pthread_mutex_unlock(&fd->ref_lock);
@@ -2768,24 +2761,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         cr->explicit_tlen = INT64_MIN;
         if ((ds & CRAM_CF) && (cf & CRAM_FLAG_DETACHED)) {
             if (ds & CRAM_MF) {
-                if (CRAM_MAJOR_VERS(fd->version) == 1) {
-                    /* MF is byte in 1.0, int32 in 2.0 */
-                    unsigned char mf;
-                    if (!c->comp_hdr->codecs[DS_MF]) goto block_err;
-                    r |= c->comp_hdr->codecs[DS_MF]
-                                    ->decode(s, c->comp_hdr->codecs[DS_MF],
-                                             blk, (char *)&mf, &out_sz);
-                    if (r) goto block_err;
-                    cr->mate_flags = mf;
-                } else {
-                    if (!c->comp_hdr->codecs[DS_MF]) goto block_err;
-                    r |= c->comp_hdr->codecs[DS_MF]
-                                    ->decode(s, c->comp_hdr->codecs[DS_MF],
-                                             blk,
-                                             (char *)&cr->mate_flags,
-                                             &out_sz);
-                    if (r) goto block_err;
-                }
+                /* NB: MF is byte in 1.0, int32 in 2.0 */
+                if (!c->comp_hdr->codecs[DS_MF]) goto block_err;
+                r |= c->comp_hdr->codecs[DS_MF]
+                    ->decode(s, c->comp_hdr->codecs[DS_MF],
+                             blk, (char *)&cr->mate_flags,
+                             &out_sz);
+                if (r) goto block_err;
             } else {
                 cr->mate_flags = 0;
             }
@@ -2873,7 +2855,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if ((ds & CRAM_CF) && (cf & CRAM_FLAG_EXPLICIT_TLEN)) {
                 if (ds & CRAM_TS) {
                     r = cram_decode_tlen(fd, c, s, blk, &cr->explicit_tlen);
-                    if (r) return r;
+                    if (r) goto block_err;
                 } else {
                     cr->mate_flags = 0;
                     cr->tlen = INT64_MIN;
@@ -2882,7 +2864,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         } else if ((ds & CRAM_CF) && (cf & CRAM_FLAG_EXPLICIT_TLEN)) {
             if (ds & CRAM_TS) {
                 r = cram_decode_tlen(fd, c, s, blk, &cr->explicit_tlen);
-                if (r) return r;
+                if (r) goto block_err;
             } else {
                 cr->mate_flags = 0;
                 cr->tlen = INT64_MIN;
@@ -2916,7 +2898,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         /* Fake up dynamic string growth and appending */
         if (ds & CRAM_RL) {
             cr->seq = BLOCK_SIZE(s->seqs_blk);
-            BLOCK_RESIZE(s->seqs_blk, cr->seq + cr->len);
+            BLOCK_RESIZE(s->seqs_blk, (size_t)cr->seq + cr->len);
             seq = (char *)BLOCK_END(s->seqs_blk);
             BLOCK_SIZE(s->seqs_blk) += cr->len;
 
@@ -2924,7 +2906,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                 goto block_err;
 
             cr->qual = BLOCK_SIZE(s->qual_blk);
-            BLOCK_RESIZE(s->qual_blk, cr->qual + cr->len);
+            BLOCK_RESIZE(s->qual_blk, (size_t)cr->qual + cr->len);
             qual = (char *)BLOCK_END(s->qual_blk);
             BLOCK_SIZE(s->qual_blk) += cr->len;
 
@@ -3104,8 +3086,10 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
     if (-1 == hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_decode_slice_thread,
                                   j, nonblock)) {
         /* Would block */
-        if (errno != EAGAIN)
+        if (errno != EAGAIN) {
+            free(j);
             return -1;
+        }
         fd->job_pending = j;
     } else {
         fd->job_pending = NULL;
