@@ -3277,9 +3277,7 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
             hts_log_warning("Failed to populate reference \"%s\"",
                             r->name);
             hts_log_warning("See https://www.htslib.org/doc/reference_seqs.html for further suggestions");
-            pthread_mutex_unlock(&fd->refs->lock);
-            pthread_mutex_unlock(&fd->ref_lock);
-            return NULL;
+            goto err_lock;
         }
         r = fd->refs->ref_id[id];
         if (ostart > r->length)
@@ -3325,11 +3323,8 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
                 cram_ref_incr_locked(fd->refs, id);
             } else {
                 ref_entry *e;
-                if (!(e = cram_ref_load(fd->refs, id, r->is_md5))) {
-                    pthread_mutex_unlock(&fd->refs->lock);
-                    pthread_mutex_unlock(&fd->ref_lock);
-                    return NULL;
-                }
+                if (!(e = cram_ref_load(fd->refs, id, r->is_md5)))
+                    goto err_lock;
 
                 /* unsorted data implies cache ref indefinitely, to avoid
                  * continually loading and unloading.
@@ -3372,29 +3367,25 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
         }
         fd->ref = NULL;
         fd->ref_id = id;
-        pthread_mutex_unlock(&fd->refs->lock);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
+        goto err_lock;
     }
 
     /* Open file if it's not already the current open reference */
     if (strcmp(fd->refs->fn, r->fn) || fd->refs->fp == NULL) {
-        if (fd->refs->fp)
-            if (bgzf_close(fd->refs->fp) != 0)
-                return NULL;
-        fd->refs->fn = r->fn;
-        if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5))) {
-            pthread_mutex_unlock(&fd->refs->lock);
-            pthread_mutex_unlock(&fd->ref_lock);
-            return NULL;
+        if (fd->refs->fp) {
+            if (bgzf_close(fd->refs->fp) != 0) {
+                fd->refs->fp = NULL;
+                goto err_lock;
+            }
         }
+
+        fd->refs->fn = r->fn;
+        if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5)))
+            goto err_lock;
     }
 
-    if (!(fd->ref = load_ref_portion(fd->refs->fp, r, start, end))) {
-        pthread_mutex_unlock(&fd->refs->lock);
-        pthread_mutex_unlock(&fd->ref_lock);
-        return NULL;
-    }
+    if (!(fd->ref = load_ref_portion(fd->refs->fp, r, start, end)))
+        goto err_lock;
 
     if (fd->ref_free)
         free(fd->ref_free);
@@ -3409,6 +3400,11 @@ char *cram_get_ref(cram_fd *fd, int id, hts_pos_t start, hts_pos_t end) {
     pthread_mutex_unlock(&fd->ref_lock);
 
     return seq ? seq + ostart - start : NULL;
+
+ err_lock: // an error needing both locks unlocking.
+    pthread_mutex_unlock(&fd->refs->lock);
+    pthread_mutex_unlock(&fd->ref_lock);
+    return NULL;
 }
 
 /*
