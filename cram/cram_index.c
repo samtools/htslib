@@ -928,8 +928,8 @@ int64_t cram_num_containers(cram_fd *fd) {
  *
  * The index must have previously been loaded, otherwise <0 is returned.
  */
-static cram_index *cram_container_num2offset_(cram_index *e, int num,
-                                              int64_t *last_pos, int *nc) {
+static cram_index *cram_container_num2offset_(cram_index *e, int64_t num,
+                                              int64_t *last_pos, int64_t *nc) {
     if (e->offset) {
         if (e->offset != *last_pos) {
             if (*nc == num)
@@ -953,8 +953,8 @@ static cram_index *cram_container_num2offset_(cram_index *e, int num,
 }
 
 off_t cram_container_num2offset(cram_fd *fd, int64_t num) {
-    int nc = 0, i;
-    int64_t last_pos = -9;
+    int i;
+    int64_t nc = 0, last_pos = -9;
     cram_index *e = NULL;
 
     for (i = 0; i < fd->index_sz; i++) {
