@@ -1477,7 +1477,7 @@ int cram_huffman_encode_long(cram_slice *slice, cram_codec *c,
     int64_t *syms = (int64_t *)in;
 
     while (in_size--) {
-        int sym = *syms++;
+        int64_t sym = *syms++;
 
         if (sym >= -1 && sym < MAX_HUFF) {
             i = c->u.e_huffman.val2code[sym+1];
@@ -2425,7 +2425,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         t->u.e_huffman.nvals = c->u.huffman.ncodes;
         t->u.e_huffman.option = c->u.huffman.option;
         for (j = 0; j < t->u.e_huffman.nvals; j++) {
-            int32_t sym = t->u.e_huffman.codes[j].symbol;
+            int64_t sym = t->u.e_huffman.codes[j].symbol;
             if (sym >= -1 && sym < MAX_HUFF)
                 t->u.e_huffman.val2code[sym+1] = j;
         }
