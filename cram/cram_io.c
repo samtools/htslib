@@ -2676,9 +2676,6 @@ static int expand_cache_path(char *path, char *dir, const char *fn) {
     size_t len;
     size_t sz = PATH_MAX;
 
-    if (strchr(fn, '/'))
-        return -1;
-
     while ((cp = strchr(dir, '%'))) {
         if (cp-dir >= sz) return -1;
         strncpy(path, dir, cp-dir);
@@ -2711,11 +2708,13 @@ static int expand_cache_path(char *path, char *dir, const char *fn) {
                 if (sz < 3) return -1;
                 *path++ = '%';
                 *path++ = *cp++;
+                sz -= 2;
             }
         } else {
             if (sz < 3) return -1;
             *path++ = '%';
             *path++ = *cp++;
+            sz -= 2;
         }
         dir = cp;
     }
@@ -2796,6 +2795,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
+        if (strchr(tag->str+3, '/')) {
+            hts_log_error("Invalid LOCAL_CACHE environment variable");
+            return -1;
+        }
         struct stat sb;
         if (expand_cache_path(path, local_cache, tag->str+3) == 0 &&
             stat(path, &sb) == 0)
