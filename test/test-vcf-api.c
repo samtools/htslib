@@ -983,6 +983,84 @@ static void test_hdr_append_keeps_existing_ids_valid(void)
     bcf_hdr_destroy(hdr);
 }
 
+// vcf_parse() adds undeclared INFO, FORMAT and contig names to the header,
+// growing its dictionaries part way through a record.  Check every name
+// added that way can still be looked up, and that records round-trip.
+static void test_undeclared_names_grow_header(void)
+{
+    const int n_info = 200, n_fmt = 50, n_ctg = 100;
+    char header[] = "##fileformat=VCFv4.2\n"
+        "##contig=<ID=1>\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n";
+    kstring_t line = KS_INITIALIZE, out = KS_INITIALIZE, name = KS_INITIALIZE;
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    bcf1_t *rec = bcf_init();
+    enum htsLogLevel logging = hts_get_log_level();
+    int c, i, id;
+
+    if (!hdr || !rec) error("Out of memory");
+    if (bcf_hdr_parse(hdr, header) < 0) error("Couldn't parse header");
+
+    // Silence the warnings about undefined tags and contigs
+    hts_set_log_level(HTS_LOG_ERROR);
+
+    for (c = 0; c < n_ctg; c++) {
+        int r = ksprintf(ks_clear(&line), "ctg%d\t%d\t.\tA\tC\t.\t.\t", c, c + 1) < 0;
+        for (i = 0; i < n_info; i++)
+            r |= ksprintf(&line, "%sI%d=%d", i ? ";" : "", i, c + i) < 0;
+        r |= kputs("\tGT", &line) < 0;
+        for (i = 0; i < n_fmt; i++)
+            r |= ksprintf(&line, ":F%d", i) < 0;
+        r |= kputs("\t0/1", &line) < 0;
+        for (i = 0; i < n_fmt; i++)
+            r |= ksprintf(&line, ":%d", c * i) < 0;
+        if (r) error("Out of memory");
+
+        // vcf_parse() may modify its input, so keep a copy for comparison
+        if (kputsn(line.s, line.l, ks_clear(&name)) < 0) error("Out of memory");
+        if (vcf_parse(&name, hdr, rec) != 0)
+            error("vcf_parse failed for contig ctg%d", c);
+        if (vcf_format(hdr, rec, ks_clear(&out)) < 0)
+            error("vcf_format failed for contig ctg%d", c);
+        chomp(&out);
+        if (strcmp(out.s, line.s) != 0)
+            error("Record for ctg%d did not round-trip:\n  in:  %s\n  out: %s",
+                  c, line.s, out.s);
+        if (ksprintf(ks_clear(&name), "ctg%d", c) < 0) error("Out of memory");
+        if (strcmp(bcf_seqname_safe(hdr, rec), name.s) != 0)
+            error("Expected contig %s, got %s", name.s, bcf_seqname_safe(hdr, rec));
+    }
+    hts_set_log_level(logging);
+
+    for (c = 0; c < n_ctg; c++) {
+        ksprintf(ks_clear(&name), "ctg%d", c);
+        id = bcf_hdr_name2id(hdr, name.s);
+        if (id < 0 || strcmp(bcf_hdr_id2name(hdr, id), name.s) != 0)
+            error("Contig %s not found after header growth", name.s);
+    }
+    for (i = 0; i < n_info; i++) {
+        ksprintf(ks_clear(&name), "I%d", i);
+        id = bcf_hdr_id2int(hdr, BCF_DT_ID, name.s);
+        if (id < 0 || !bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, id)
+            || strcmp(bcf_hdr_int2id(hdr, BCF_DT_ID, id), name.s) != 0)
+            error("INFO/%s not found after header growth", name.s);
+    }
+    for (i = 0; i < n_fmt; i++) {
+        ksprintf(ks_clear(&name), "F%d", i);
+        id = bcf_hdr_id2int(hdr, BCF_DT_ID, name.s);
+        if (id < 0 || !bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, id)
+            || strcmp(bcf_hdr_int2id(hdr, BCF_DT_ID, id), name.s) != 0)
+            error("FORMAT/%s not found after header growth", name.s);
+    }
+
+    ks_free(&line);
+    ks_free(&out);
+    ks_free(&name);
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+}
+
 // Test bcf_remove_allele_set()
 void test_bcf_remove_allele_set(void)
 {
@@ -1158,5 +1236,6 @@ int main(int argc, char **argv)
     test_bcf_remove_allele_set();
     test_bcf_remove_allele_set_short_lg();
     test_hdr_append_keeps_existing_ids_valid();
+    test_undeclared_names_grow_header();
     return 0;
 }
