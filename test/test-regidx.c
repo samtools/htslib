@@ -243,6 +243,24 @@ void test_random(int nregs, uint32_t min, uint32_t max)
     regidx_destroy(idx);
     free(str.s);
 }
+void test_bed_missing_end(void)
+{
+    // A BED line with no END column must be rejected without reading past
+    // the end of the line.  Use an exactly-sized buffer so out-of-bounds
+    // reads are visible to sanitizers.
+    char *chr_beg, *chr_end;
+    hts_pos_t beg, end;
+    char *line = strdup("chr1\t5");
+    if ( !line ) error("strdup failed\n");
+    if ( regidx_parse_bed(line,&chr_beg,&chr_end,&beg,&end,NULL,NULL)!=-2 )
+        error("BED line without END was not rejected\n");
+    free(line);
+
+    // Stale bytes from a longer previous line must not be used as END
+    regidx_t *idx = regidx_init_string("chr1\t1\t99999999\nchr2\t5\n",
+                                       regidx_parse_bed,NULL,0,NULL);
+    if ( idx ) error("BED line without END was not rejected by regidx_init_string\n");
+}
 void test_explicit(char *tgt, char *qry, char *exp)
 {
     regidx_t *idx = regidx_init(NULL,regidx_parse_reg,NULL,0,NULL);
@@ -455,6 +473,9 @@ int main(int argc, char **argv)
 
     info("Testing BED\n");
     test(create_line_bed,regidx_parse_bed);
+
+    info("Testing BED line with missing END\n");
+    test_bed_missing_end();
 
     info("Testing custom payload\n");
     test_custom_payload();
