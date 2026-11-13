@@ -65,6 +65,7 @@ run_test('test_rebgzip',$opts);
 run_test('test_logging',$opts);
 run_test('test_plugin_loading',$opts);
 run_test('test_realn',$opts);
+run_test('test_index_load',$opts);
 run_test('test_bcf_set_variant_type',$opts);
 run_test('test_annot_tsv',$opts);
 if ($$opts{ref_cache}) {
@@ -1469,6 +1470,11 @@ sub test_plugin_loading {
     if ($ret == 0) { failed($opts, $test, "successful exit status"); }
     elsif ($out =~ /couldn't register/i || $out =~ /not supported/i) { failed($opts, $test, $out); }
     else { passed($opts, $test); }
+}
+
+sub test_index_load {
+    my ($opts) = @_;
+    testv $opts, "$$opts{path}/test_index_load $$opts{tmp}";
 }
 
 sub test_realn {
