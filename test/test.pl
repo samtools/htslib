@@ -1613,6 +1613,39 @@ sub ref_cache_running {
     return 1;
 }
 
+# Check that state from one request (Range, Content-Length) is not
+# carried over to the next request on a keep-alive connection.
+sub ref_cache_keep_alive {
+    my ($port, $m5_dir) = @_;
+    my ($ref) = glob("$m5_dir/*/*/*");
+    die "No reference files in $m5_dir\n" if (!$ref);
+    my $md5 = join('', (split(/\//, $ref))[-3 .. -1]);
+    my $sock = IO::Socket::INET->new(Proto => 'tcp', PeerHost => 'localhost',
+                                     PeerPort => $port)
+        || die "Couldn't connect to ref-cache on port $port: $!\n";
+    my $resp = '';
+    eval {
+        local $SIG{ALRM} = sub { die "Timed out\n" };
+        alarm(10);
+        $sock->send("GET /$md5 HTTP/1.1\r\nRange: bytes=0-3\r\n\r\n"
+                    . "GET /$md5 HTTP/1.1\r\nContent-Length: 4\r\n\r\nxxxx"
+                    . "GET /hello HTTP/1.1\r\n\r\n"
+                    . "GET /hello HTTP/1.1\r\nConnection: close\r\n\r\n");
+        my $buffer;
+        while (defined($sock->recv($buffer, 65536)) && length($buffer)) {
+            $resp .= $buffer;
+        }
+        alarm(0);
+    };
+    alarm(0);
+    $sock->close();
+    die $@ if ($@ && $@ ne "Timed out\n");
+    my $got = join(' ', $resp =~ m{HTTP/1\.[01] (\d{3}) }g);
+    my $expected = '206 200 200 200';
+    die "ref-cache keep-alive: expected status '$expected', got '$got'\n"
+        if ($got ne $expected);
+}
+
 sub test_ref_cache {
     my ($opts) = @_;
 
@@ -1649,7 +1682,7 @@ sub test_ref_cache {
             die "Couldn't get two free ports\n";
         }
 
-        my $pid1 = fork();
+        $pid1 = fork();
         if (!defined($pid1)) {
             die "Couldn't fork: $!";
         }
@@ -1658,7 +1691,7 @@ sub test_ref_cache {
             exec($$opts{ref_cache}, '-d', $m5_dir, '-U', '-p', $ports->[0])
                 || die "Couldn't exec $$opts{ref_cache} $!\n";
         }
-        my $pid2 = fork();
+        $pid2 = fork();
         if (!defined($pid2)) {
             die "Couldn't fork: $!";
         }
@@ -1677,6 +1710,8 @@ sub test_ref_cache {
         do {
             select(undef, undef, undef, 0.1);
         } while (!ref_cache_running($pid2, $ports->[1]) && ++$wcount < 100);
+
+        ref_cache_keep_alive($ports->[0], $m5_dir);
 
         my $sam = "ref_cache/ce_m5.sam";
         # Convert SAM to CRAM, getting refs from file
