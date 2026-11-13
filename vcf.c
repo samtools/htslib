@@ -312,13 +312,46 @@ int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *hdr, const char *str)
     return ret;
 }
 
+// Point h->id[type][] at the entries of dictionary type.  Every entry's id
+// must already be below h->n[type].
+static void bcf_hdr_sync_ids(bcf_hdr_t *h, int type)
+{
+    vdict_t *d = (vdict_t*)h->dict[type];
+    khint_t k;
+    for (k=kh_begin(d); k<kh_end(d); k++)
+    {
+        if (!kh_exist(d,k)) continue;
+        h->id[type][kh_val(d,k).id].key = kh_key(d,k);
+        h->id[type][kh_val(d,k).id].val = &kh_val(d,k);
+    }
+}
+
+// The ID dictionary is searched for every FILTER, INFO and FORMAT key of
+// every VCF record, and collisions there measurably slow parsing.  It holds
+// few keys, so keeping it at most 1/32 full costs little memory; the cap is
+// for headers with thousands of tags.  Contigs and samples are looked up far
+// less often and can be numerous, so khash sizes those dictionaries itself.
+#define BCF_ID_DICT_SPARSITY 32
+#define BCF_ID_DICT_MAX_BUCKETS 16384
+
+static int bcf_hdr_sparsify_id_dict(bcf_hdr_t *h)
+{
+    vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
+    khint_t want = kh_size(d) < BCF_ID_DICT_MAX_BUCKETS / BCF_ID_DICT_SPARSITY
+        ? kh_size(d) * BCF_ID_DICT_SPARSITY : BCF_ID_DICT_MAX_BUCKETS;
+    if (kh_n_buckets(d) < want && kh_resize(vdict, d, want) < 0)
+        return -1;
+    return 0;
+}
+
 int bcf_hdr_sync(bcf_hdr_t *h)
 {
     int i;
+    if (bcf_hdr_sparsify_id_dict(h) < 0)
+        return -1;
     for (i = 0; i < 3; i++)
     {
         vdict_t *d = (vdict_t*)h->dict[i];
-        khint_t k;
         if ( h->n[i] < kh_size(d) )
         {
             bcf_idpair_t *new_idpair;
@@ -328,12 +361,7 @@ int bcf_hdr_sync(bcf_hdr_t *h)
             h->n[i] = kh_size(d);
             h->id[i] = new_idpair;
         }
-        for (k=kh_begin(d); k<kh_end(d); k++)
-        {
-            if (!kh_exist(d,k)) continue;
-            h->id[i][kh_val(d,k).id].key = kh_key(d,k);
-            h->id[i][kh_val(d,k).id].val = &kh_val(d,k);
-        }
+        bcf_hdr_sync_ids(h, i);
     }
 
     // Invalidate key length cache
@@ -1192,7 +1220,22 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
     bcf_hrec_check(hrec);   // todo: check return status and propagate errors up
 
+    // A kh_put() rehash moves every entry, leaving hdr->id[] stale until a
+    // bcf_hdr_sync() that callers often skip.  A rehash either grows the
+    // table or, clearing deleted slots, lowers n_occupied; check for both.
+    khint_t buckets[BCF_DT_CTG + 1], occupied[BCF_DT_CTG + 1];
+    int type;
+    for (type = BCF_DT_ID; type <= BCF_DT_CTG; type++) {
+        vdict_t *d = (vdict_t*)hdr->dict[type];
+        buckets[type] = kh_n_buckets(d);
+        occupied[type] = d->n_occupied;
+    }
     res = bcf_hdr_register_hrec(hdr,hrec);
+    for (type = BCF_DT_ID; type <= BCF_DT_CTG; type++) {
+        vdict_t *d = (vdict_t*)hdr->dict[type];
+        if (kh_n_buckets(d) != buckets[type] || d->n_occupied < occupied[type])
+            bcf_hdr_sync_ids(hdr, type);
+    }
     if (res < 0) return -1;
     if ( !res )
     {
@@ -1701,12 +1744,8 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     bcf_hdr_t *h;
     h = (bcf_hdr_t*)calloc(1, sizeof(bcf_hdr_t));
     if (!h) return NULL;
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 3; ++i)
         if ((h->dict[i] = kh_init(vdict)) == NULL) goto fail;
-        // Supersize the hash to make collisions very unlikely
-        static int dsize[3] = {16384,16384,2048}; // info, contig, format
-        if (kh_resize(vdict, h->dict[i], dsize[i]) < 0) goto fail;
-    }
 
     bcf_hdr_aux_t *aux = (bcf_hdr_aux_t*)calloc(1,sizeof(bcf_hdr_aux_t));
     if ( !aux ) goto fail;
