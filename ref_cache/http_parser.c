@@ -252,6 +252,16 @@ static void read_request_line(const Options *opts, Http_Parser *parser) {
     } while (line != NULL && len == 0);
     if (line == NULL) return;
 
+    /* Clear anything left over from a previous request on this connection */
+    free(parser->uri);
+    parser->uri = NULL;
+    parser->flags = 0;
+    parser->trans_enc = TE_IDENT;
+    parser->content_length = 0;
+    parser->bytes = 0;
+    parser->range_from = 0;
+    parser->range_to = 0;
+
     if (opts->verbosity > 2) fprintf(stderr, "RECV'D: %s\n", line);
 
     reqlen = lws_cspn(line);
