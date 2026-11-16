@@ -1901,6 +1901,14 @@ static int mt_queue(BGZF *fp)
     j->errcode = 0;
     j->uncomp_len  = fp->block_offset;
     if (fp->compress_level == 0) {
+        if (BLOCK_HEADER_LENGTH + 5 + j->uncomp_len + BLOCK_FOOTER_LENGTH
+            > BGZF_MAX_BLOCK_SIZE) {
+            hts_log_error("Cannot store a block of length %zu",
+                          BLOCK_HEADER_LENGTH + 5 + j->uncomp_len +
+                          BLOCK_FOOTER_LENGTH);
+            fp->errcode |= BGZF_ERR_MISUSE;
+            goto fail;
+        }
         memcpy(j->comp_data + BLOCK_HEADER_LENGTH + 5, fp->uncompressed_block,
                j->uncomp_len);
         if (hts_tpool_dispatch3(mt->pool, mt->out_queue,
@@ -2049,6 +2057,11 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
     assert(fp->is_write);
     while (remaining > 0) {
         uint8_t* buffer = (uint8_t*)fp->uncompressed_block;
+        if (fp->block_offset > BGZF_BLOCK_SIZE) {
+            hts_log_error("BGZF block_offset is too large");
+            fp->errcode |= BGZF_ERR_MISUSE;
+            return -1;
+        }
         int copy_length = BGZF_BLOCK_SIZE - fp->block_offset;
         if (copy_length > remaining) copy_length = remaining;
         memcpy(buffer + fp->block_offset, input, copy_length);
@@ -2078,8 +2091,26 @@ ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
     uint64_t ublock_size; // amount of uncompressed data to be fed into next block
     while (remaining > 0) {
         current_block = fp->idx->moffs - fp->idx->noffs;
-        ublock_size = current_block + 1 < fp->idx->moffs ? fp->idx->offs[current_block+1].uaddr-fp->idx->offs[current_block].uaddr : BGZF_MAX_BLOCK_SIZE;
+        if (current_block + 1 < fp->idx->moffs) {
+            uint64_t delta = fp->idx->offs[current_block+1].uaddr
+                           - fp->idx->offs[current_block  ].uaddr;
+            if (delta > BGZF_MAX_BLOCK_SIZE) {
+                // Also handles offs[cb+1].addr < offs[cb].addr
+                hts_log_error("GZI offset delta is invalid: %"PRIu64, delta);
+                fp->errcode |= BGZF_ERR_MISUSE;
+                return -1;
+            } else {
+                ublock_size = delta;
+            }
+        } else {
+            ublock_size = BGZF_BLOCK_SIZE;
+        }
         uint8_t* buffer = (uint8_t*)fp->uncompressed_block;
+        if (fp->block_offset > ublock_size) {
+            hts_log_error("BGZF block_offset is too large");
+            fp->errcode |= BGZF_ERR_MISUSE;
+            return -1;
+        }
         int copy_length = ublock_size - fp->block_offset;
         if (copy_length > remaining) copy_length = remaining;
         memcpy(buffer + fp->block_offset, input, copy_length);
@@ -2543,6 +2574,14 @@ int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     {
         if (hread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
         if (hread_uint64(&fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+        if (fp->idx->offs[i].caddr < fp->idx->offs[i-1].caddr ||
+            fp->idx->offs[i].uaddr < fp->idx->offs[i-1].uaddr ||
+            fp->idx->offs[i].uaddr - fp->idx->offs[i-1].uaddr > BGZF_MAX_BLOCK_SIZE) {
+            hts_log_error("Invalid BGZF index %s: entry %zu out of order or too large",
+                          name ? name : "", i);
+            errno = EINVAL;
+            goto fail;
+        }
     }
 
     return 0;
