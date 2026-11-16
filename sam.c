@@ -3302,7 +3302,7 @@ static void *sam_parse_worker(void *arg) {
         //
         // However this is an API change so for now we copy.
 
-        char *nl = strchr(cp, '\n');
+        char *nl = memchr(cp, '\n', cp_end - cp);
         char *line_end;
         if (nl) {
             line_end = nl;
