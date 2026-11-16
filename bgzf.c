@@ -1018,7 +1018,7 @@ static off_t bgzf_htell(BGZF *fp) {
     }
 }
 
-int bgzf_read_block(BGZF *fp)
+static int bgzf_read_block_core(BGZF *fp)
 {
     hts_tpool_result *r;
 
@@ -1260,6 +1260,19 @@ int bgzf_read_block(BGZF *fp)
     }
     cache_block(fp, size);
     return 0;
+}
+
+int bgzf_read_block(BGZF *fp) {
+    int ret = bgzf_read_block_core(fp);
+
+    if (ret == 0 && fp->block_length > 0 && fp->block_offset > fp->block_length) {
+        hts_log_error("BGZF block offset %d set beyond block size %d",
+                      fp->block_offset, fp->block_length);
+        fp->errcode |= BGZF_ERR_MISUSE;
+        return -1;
+    }
+
+    return ret;
 }
 
 ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
