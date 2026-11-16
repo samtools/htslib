@@ -3554,6 +3554,11 @@ static void *sam_dispatcher_write(void *vp) {
                         goto err;
                 }
 
+                if (count >= gb->nbams) {
+                    hts_log_error("Attempted to write too many bam objects - "
+                                  "malformed data?");
+                    goto err;
+                }
                 bam1_t *b = &gb->bams[count++];
                 if (fp->format.compression == bgzf) {
                     if (bgzf_idx_push(fp->fp.bgzf, fp->idx,
