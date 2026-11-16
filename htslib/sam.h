@@ -1552,10 +1552,10 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
     } else if (type == 'Z' || type == 'H') {
         r |= kputc_(type, ks) < 0;
         r |= kputc_(':', ks) < 0;
-        while (s < end && *s) r |= kputc_(*s++, ks) < 0;
+        while (s < end && *s >= ' ') r |= kputc_(*s++, ks) < 0;
         r |= kputsn("", 0, ks) < 0;     //ensures NUL termination
-        if (s >= end)
-            goto bad_aux;
+        if (s >= end || *s)
+            goto bad_aux;  // regexp is space to tilde only.
         ++s;
     } else if (type == 'B') {
         uint8_t sub_type = *(s++);
