@@ -1329,19 +1329,21 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 
 // -1 for EOF, -2 for error, 0-255 for byte.
 int bgzf_peek(BGZF *fp) {
-    int available = fp->block_length - fp->block_offset;
-    if (available <= 0) {
+    while (fp->block_offset >= fp->block_length) {
         if (bgzf_read_block(fp) < 0) {
             hts_log_error("Read block operation failed with error %d", fp->errcode);
-            fp->errcode = BGZF_ERR_ZLIB;
             return -2;
         }
+        if (fp->block_length == 0)
+            return -1; // EOF
+        if (fp->block_offset == fp->block_length) {
+            // Seeked to the end of this block; continue from the next one
+            fp->block_address = bgzf_htell(fp);
+            fp->block_offset = fp->block_length = 0;
+        }
     }
-    available = fp->block_length - fp->block_offset;
-    if (available)
-        return ((unsigned char *)fp->uncompressed_block)[fp->block_offset];
 
-    return -1;
+    return ((unsigned char *)fp->uncompressed_block)[fp->block_offset];
 }
 
 ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length)
@@ -2334,9 +2336,14 @@ int bgzf_getc(BGZF *fp)
     }
 
     int c;
-    if (fp->block_offset >= fp->block_length) {
+    while (fp->block_offset >= fp->block_length) {
         if (bgzf_read_block(fp) != 0) return -2; /* error */
         if (fp->block_length == 0) return -1; /* end-of-file */
+        if (fp->block_offset == fp->block_length) {
+            // Seeked to the end of this block; continue from the next one
+            fp->block_address = bgzf_htell(fp);
+            fp->block_offset = fp->block_length = 0;
+        }
     }
     c = ((unsigned char*)fp->uncompressed_block)[fp->block_offset++];
     if (fp->block_offset == fp->block_length) {
