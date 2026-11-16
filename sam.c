@@ -776,6 +776,20 @@ static inline int aux_type2size(uint8_t type)
     }
 }
 
+static inline int aux_type2Bsize(uint8_t type)
+{
+    switch (type) {
+    case 'A': case 'c': case 'C':
+        return 1;
+    case 's': case 'S':
+        return 2;
+    case 'i': case 'I': case 'f':
+        return 4;
+    default:
+        return 0;
+    }
+}
+
 static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_host)
 {
     uint32_t *cigar = (uint32_t*)(data + c->l_qname);
@@ -2394,8 +2408,8 @@ static int sam_parse_B_vals_r(char type, uint32_t nalloc, char *in,
     size_t bytes;
     int overflow = 0;
 
-    size = aux_type2size(type);
-    if (size <= 0 || size > 4) {
+    size = aux_type2Bsize(type);
+    if (size <= 0) {
         hts_log_error("Unrecognized type B:%c", type);
         return -1;
     }
@@ -4816,7 +4830,7 @@ int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8
 
 static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
 {
-    int size;
+    int64_t size;
     uint32_t n;
     if (s >= end) return end;
     size = aux_type2size(*s); ++s; // skip type
@@ -4827,10 +4841,10 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
         return s ? s+1 : end;
     case 'B':
         if (end - s < 5) return NULL;
-        size = aux_type2size(*s); ++s;
+        size = aux_type2Bsize(*s); ++s;
         n = le_to_u32(s);
         s += 4;
-        if (size == 0 || end - s < size * n) return NULL;
+        if (size < 1 || end - s < size * n) return NULL;
         return s + size * n;
     case 0:
         return NULL;
@@ -5103,8 +5117,8 @@ int bam_aux_update_array(bam1_t *b, const char tag[2],
 
     if (s) { // Tag present
         if (*s != 'B') { errno = EINVAL; return -1; }
-        old_sz = aux_type2size(s[1]);
-        if (old_sz < 1 || old_sz > 4) { errno = EINVAL; return -1; }
+        old_sz = aux_type2Bsize(s[1]);
+        if (old_sz < 1) { errno = EINVAL; return -1; }
         old_sz *= le_to_u32(s + 2);
     } else {
         if (errno == ENOENT) {  // Tag doesn't exist - add a new one
@@ -5115,8 +5129,8 @@ int bam_aux_update_array(bam1_t *b, const char tag[2],
         }
     }
 
-    new_sz = aux_type2size(type);
-    if (new_sz < 1 || new_sz > 4) { errno = EINVAL; return -1; }
+    new_sz = aux_type2Bsize(type);
+    if (new_sz < 1) { errno = EINVAL; return -1; }
     if (items > INT32_MAX / new_sz) { errno = ENOMEM; return -1; }
     new_sz *= items;
 
