@@ -1087,7 +1087,7 @@ static int bgzf_read_block_core(BGZF *fp)
 
         if ( j->uncomp_len && j->fp->idx_build_otf )
         {
-            if (bgzf_index_add_block(j->fp) < 1) {
+            if (bgzf_index_add_block(j->fp) < 0) {
                 fp->errcode |= BGZF_ERR_IO; // Strictly this should be out of memory
                 hts_tpool_delete_result(r, 0);
                 return -1;
