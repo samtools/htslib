@@ -4508,9 +4508,10 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 
         if (bc && !isupper_c(bc[1]) && !islower_c(bc[1])) {
             hts_log_warning("BC tag starts with non-sequence base; using '0'");
-            str->l -= strlen((char *)bc)-2; // limit to 1 char
-            str->s[str->l-1] = '0';
-            str->s[str->l] = 0;
+            // Stop the barcode we just added and add "0"
+            str->l -= strlen((char *)bc+1);
+            if (kputc('0', str) < 0)
+                return -1;
             bc = NULL;
         }
 
