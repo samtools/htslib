@@ -6020,7 +6020,7 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
         //         iref, a_iref+a->core.pos+1, b_iref+b->core.pos+1,
         //         a_iseq, b_iseq);
 
-        if (a_iseq > a->core.l_qseq || b_iseq > b->core.l_qseq)
+        if (a_iseq >= a->core.l_qseq || b_iseq >= b->core.l_qseq)
             // Fell off end of sequence, bad CIGAR?
             return -1;
 
