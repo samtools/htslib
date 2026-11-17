@@ -1857,6 +1857,9 @@ uint8_t *bam_aux_remove(bam1_t *b, uint8_t *s);
    was necessary to ensure the last character was a NUL, and include
    it in @p len.)
 
+   The data parameter must not point to any data in the bam record itself or
+   undefined behaviour may result.
+
    On failure, errno may be set to one of the following values:
 
    EINVAL: The bam record's aux data is corrupt or an existing tag with the
