@@ -48,6 +48,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <inttypes.h>
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#include "fuzz_settings.h"
+#endif
+
 #include "cram.h"
 #include "os.h"
 #include "../htslib/hts.h"
@@ -2430,6 +2434,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if (s->crecs)
         free(s->crecs);
+
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    size_t fuzz_buf_size = hts_prod_sat2(sizeof(*s->crecs), s->hdr->num_records);
+
+    if (fuzz_buf_size > FUZZ_ALLOC_LIMIT) return -1;
+#endif
+
     if (!(s->crecs = hts_malloc_p(sizeof(*s->crecs), s->hdr->num_records)))
         return -1;
 
