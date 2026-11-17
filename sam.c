@@ -1197,32 +1197,23 @@ static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, hts_po
     return ret;
 }
 
-// Internal (for now) func used by bam_sym_lookup.  This is copied from
-// samtools/bam.c.
 static uint8_t *bam_aux_getZ(const bam1_t *b, const char tag[2]);
-static const char *bam_get_library(const bam_hdr_t *h, const bam1_t *b)
+
+// Used by bam_sym_lookup.  Originated in samtools/sam.c
+// Returns 0 on success, -1 on not found, and <-1 on error
+static int bam_get_library(const bam_hdr_t *h, const bam1_t *b, kstring_t *s)
 {
-    const char *rg;
-    kstring_t lib = { 0, 0, NULL };
-    rg = (char *)bam_aux_getZ(b, "RG");
+    // initialise or clear, for early exits
+    if (kputsn("", 0, ks_clear(s)) < 0)
+        return -2;
 
+    const char *rg = (char *)bam_aux_getZ(b, "RG");
     if (!rg)
-        return NULL;
-    else
-        rg++;
+        return -1;
 
-    if (sam_hdr_find_tag_id((bam_hdr_t *)h, "RG", "ID", rg, "LB", &lib)  < 0)
-        return NULL;
-
-    static char LB_text[1024];
-    int len = lib.l < sizeof(LB_text) - 1 ? lib.l : sizeof(LB_text) - 1;
-
-    memcpy(LB_text, lib.s, len);
-    LB_text[len] = 0;
-
-    free(lib.s);
-
-    return LB_text;
+    // sam_hdr_find_tag_id has the same 0/-1/-2 return values.
+    // NB: it doesn't modify s on error.
+    return sam_hdr_find_tag_id((bam_hdr_t *)h, "RG", "ID", rg+1, "LB", s);
 }
 
 
@@ -1360,9 +1351,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
         if (memcmp(str, "library", 7) == 0) {
             *end = str+7;
             res->is_str = 1;
-            const char *lib = bam_get_library(hb->h, b);
-            kputs(lib ? lib : "", ks_clear(&res->s));
-            return 0;
+            return (bam_get_library(hb->h, b, &res->s) < -1) ? -1 : 0;
         }
         break;
 
