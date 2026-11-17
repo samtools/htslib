@@ -133,8 +133,10 @@ void cram_stats_dump(cram_stats *st) {
  * Returns the best codec to use.
  */
 enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
-    int nvals, i, max_val = 0, min_val = INT_MAX;
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0;
+    int nvals, i;
+    int64_t max_val = 0, min_val = INT64_MAX;
+    int64_t *vals = NULL;
+    int *freqs = NULL, vals_alloc = 0;
     int ntot HTS_UNUSED = 0;
 
 #if DEBUG_CRAM_STATS
@@ -147,7 +149,7 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+            int64_t *vals_tmp = hts_realloc_p(vals, sizeof(*vals), vals_alloc);
             int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
             if (!vals_tmp || !freqs_tmp) {
                 free(vals_tmp  ? vals_tmp  : vals);
@@ -166,7 +168,7 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
     }
     if (st->h) {
         khint_t k;
-        int i;
+        int64_t i;
 
         for (k = kh_begin(st->h); k != kh_end(st->h); k++) {
             if (!kh_exist(st->h, k))
@@ -174,7 +176,7 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 
             if (nvals >= vals_alloc) {
                 vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+                int64_t *vals_tmp = hts_realloc_p(vals, sizeof(*vals),  vals_alloc);
                 int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
                 if (!vals_tmp || !freqs_tmp) {
                     free(vals_tmp  ? vals_tmp  : vals);

@@ -644,7 +644,7 @@ static int cram_index_build_multiref(cram_fd *fd,
     ref_end = INT_MIN;
 
     int32_t last_ref = -9;
-    int32_t last_pos = -9;
+    int64_t last_pos = -9;
     for (i = 0; i < s->hdr->num_records; i++) {
         if (s->crecs[i].ref_id == last_ref && s->crecs[i].apos < last_pos) {
             hts_log_error("CRAM file is not sorted by chromosome / position");
@@ -801,7 +801,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     while ((c = cram_read_container(fd))) {
         if (fd->err) {
             perror("Cram container read");
-            return -1;
+            goto err;
         }
 
         hpos = htell(fd->fp);
@@ -928,8 +928,8 @@ int64_t cram_num_containers(cram_fd *fd) {
  *
  * The index must have previously been loaded, otherwise <0 is returned.
  */
-static cram_index *cram_container_num2offset_(cram_index *e, int num,
-                                              int64_t *last_pos, int *nc) {
+static cram_index *cram_container_num2offset_(cram_index *e, int64_t num,
+                                              int64_t *last_pos, int64_t *nc) {
     if (e->offset) {
         if (e->offset != *last_pos) {
             if (*nc == num)
@@ -953,8 +953,8 @@ static cram_index *cram_container_num2offset_(cram_index *e, int num,
 }
 
 off_t cram_container_num2offset(cram_fd *fd, int64_t num) {
-    int nc = 0, i;
-    int64_t last_pos = -9;
+    int i;
+    int64_t nc = 0, last_pos = -9;
     cram_index *e = NULL;
 
     for (i = 0; i < fd->index_sz; i++) {
