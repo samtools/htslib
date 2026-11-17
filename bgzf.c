@@ -1532,7 +1532,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
 
     j->block_address = block_address;  // in case we exit with j->errcode
 
-    if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
     count = hpeek(fp->fp, header, sizeof(header));
     if (count == 0) // no data read
         return -1;
@@ -1783,6 +1782,12 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
     if (!mt) return -1;
     fp->mt = mt;
+
+    // bgzf cache is incompatible with threading
+    if (fp->cache_size) {
+        hts_log_info("Removing BGZF cache; unsupported by threaded bgzf");
+        fp->cache_size = 0;
+    }
 
     mt->pool = pool;
     mt->n_threads = hts_tpool_size(pool);
