@@ -3949,7 +3949,7 @@ int fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
 
 static int fastq_parse1(htsFile *fp, bam1_t *b) {
     fastq_state *x = (fastq_state *)fp->state;
-    size_t i, l;
+    size_t i, l, aux_start = 0;
     int ret = 0;
 
     if (fp->format.format == fasta_format && fp->line.s) {
@@ -4132,8 +4132,9 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
                 if (isspace_c(kc->s[i]))
                     break;
 
-            kc->s[i] = 0;
-            barcode_len = i+1-(barcode - kc->s);
+            kc->s[i++] = 0;
+            barcode_len = i - (barcode - kc->s);
+            aux_start = i < kc->l ? i : kc->l;
         }
     }
 
@@ -4145,7 +4146,7 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
         return ret;
 
     // Identify any SAM style aux tags in comments too.
-    if (aux_parse(&kc->s[barcode_len], kc->s + kc->l, b, 1, x->tags) < 0)
+    if (aux_parse(kc->s + aux_start, kc->s + kc->l, b, 1, x->tags) < 0)
         ret = -2;
 
     return ret;
