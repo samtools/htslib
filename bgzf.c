@@ -2489,7 +2489,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     if (bgzf_flush(fp) != 0) return -1;
 
     // discard the entry marking the end of the file
-    if (fp->mt && fp->idx && fp->idx->noffs > 0)
+    if (fp->mt && fp->is_write && fp->idx && fp->idx->noffs > 0)
         fp->idx->noffs--;
 
     if (hwrite_uint64(fp->idx->noffs > 0 ? fp->idx->noffs - 1 : 0, idx) < 0)

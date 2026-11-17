@@ -573,6 +573,8 @@ int main(int argc, char **argv)
                 fp = bgzf_open("-", "r");
                 if ( !fp ) error("[bgzip] Could not read from stdin: %s\n", strerror(errno));
             }
+            if (threads > 1)
+                bgzf_mt(fp, threads, 256);
 
             buffer = malloc(BGZF_BLOCK_SIZE);
             if (!buffer)
