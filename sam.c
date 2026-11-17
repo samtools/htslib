@@ -935,6 +935,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
             hts_log_error("Record %s with %d CIGAR ops and ref length %"PRIhts_pos
                           " cannot be written in BAM.  Try writing SAM or CRAM instead.\n",
                           bam_get_qname(b), c->n_cigar, cigreflen);
+            if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
             return -1;
         }
         cigar_st = (uint8_t*)bam_get_cigar(b) - b->data;
