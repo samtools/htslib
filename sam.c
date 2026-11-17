@@ -1924,7 +1924,8 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     if (fp->bam_header)
         sam_hdr_destroy(fp->bam_header);
     fp->bam_header = sam_hdr_sanitise(h);
-    fp->bam_header->ref_count = 1;
+    if (fp->bam_header)
+        fp->bam_header->ref_count = 1;
 
     return fp->bam_header;
 }
