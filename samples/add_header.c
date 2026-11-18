@@ -77,9 +77,14 @@ int main(int argc, char *argv[])
     }
 
     //dump command line arguments for PG line
+    int nomem = 0;
     for (c = 0;  c < argc; ++c) {
-        kputs(argv[c], &data);
-        kputc(' ', &data);
+        kputs_chk(&nomem, argv[c], &data);
+        kputc_chk(&nomem, ' ', &data);
+    }
+    if (nomem) {
+        printf("Failed to build @PG CL: content\n");
+        goto end;
     }
 
     //add SQ line with SN as TR1 and TR2

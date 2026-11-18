@@ -26,9 +26,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
 #include "htslib/vcf_sweep.h"
 #include "htslib/bgzf.h"
+#include "htslib/hts_log.h"
 
 #define SW_FWD 0
 #define SW_BWD 1
@@ -78,11 +82,12 @@ static int sw_rec_save(bcf_sweep_t *sw, bcf1_t *rec)
     char *t = rec->d.allele[sw->lnals-1];
     int len = t - rec->d.allele[0] + 1;
     while ( *t ) { t++; len++; }
+    if (hts_resize(char, len, &sw->mlals, &sw->lals, 0) < 0)
+        return -1;
     sw->lals_len = len;
-    hts_expand(char, len, sw->mlals, sw->lals);
     memcpy(sw->lals, rec->d.allele[0], len);
 
-    return 0; // FIXME: check for errs in this function
+    return 0;
 }
 
 static int sw_fill_buffer(bcf_sweep_t *sw)
@@ -91,38 +96,64 @@ static int sw_fill_buffer(bcf_sweep_t *sw)
     sw->iidx--;
 
     int ret = hts_useek(sw->file, sw->idx[sw->iidx], 0);
-    assert( ret==0 );
+    if (ret)
+        return -1;
 
     sw->nrec = 0;
     bcf1_t *rec = &sw->rec[sw->nrec];
     while ( (ret=bcf_read1(sw->file, sw->hdr, rec))==0 )
     {
-        bcf_unpack(rec, BCF_UN_STR);
+        if (bcf_unpack(rec, BCF_UN_STR) < 0)
+            return -1;
 
         // if not in the last block, stop at the saved record
         if ( sw->iidx+1 < sw->nidx && sw_rec_equal(sw,rec) ) break;
 
         sw->nrec++;
-        hts_expand0(bcf1_t, sw->nrec+1, sw->mrec, sw->rec);
+        if (hts_resize(bcf1_t, sw->nrec+1, &sw->mrec, &sw->rec, HTS_RESIZE_CLEAR) < 0)
+            return -1;
         rec = &sw->rec[sw->nrec];
     }
-    sw_rec_save(sw, &sw->rec[0]);
-
-    return 0; // FIXME: check for errs in this function
+    if (ret < -1)
+        return -1;
+    return sw_rec_save(sw, &sw->rec[0]);
 }
 
 bcf_sweep_t *bcf_sweep_init(const char *fname)
 {
     bcf_sweep_t *sw = (bcf_sweep_t*) calloc(1,sizeof(bcf_sweep_t));
+    if (!sw)
+        return NULL;
     sw->file = hts_open(fname, "r");
+    if (!sw->file) {
+        hts_log_error("Couldn't open \"%s\": %s", fname, strerror(errno));
+        goto fail;
+    }
     sw->fp   = hts_get_bgzfp(sw->file);
-    if (sw->fp) bgzf_index_build_init(sw->fp);
+    if (sw->fp) {
+        if (bgzf_index_build_init(sw->fp) < 0)
+            goto fail;
+    }
     sw->hdr  = bcf_hdr_read(sw->file);
+    if (!sw->hdr) {
+        hts_log_error("Couldn't read header from \"%s\"", fname);
+        goto fail;
+    }
     sw->mrec = 1;
     sw->rec  = (bcf1_t*) calloc(sw->mrec,(sizeof(bcf1_t)));
+    if (!sw->rec)
+        goto fail;
     sw->block_size = 1024*1024*3;
     sw->direction = SW_FWD;
     return sw;
+
+ fail:
+    free(sw->rec);
+    bcf_hdr_destroy(sw->hdr);
+    if (sw->file)
+        hts_close(sw->file);
+    free(sw);
+    return NULL;
 }
 
 void bcf_sweep_destroy(bcf_sweep_t *sw)
@@ -170,8 +201,9 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
     {
         if ( !sw->nidx || pos - sw->idx[sw->nidx-1] > sw->block_size )
         {
+            if (hts_resize(uint64_t, sw->nidx+1, &sw->midx, &sw->idx, 0) < 0)
+                return NULL;
             sw->nidx++;
-            hts_expand(uint64_t, sw->nidx, sw->midx, sw->idx);
             sw->idx[sw->nidx-1] = pos;
         }
     }
@@ -181,7 +213,11 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
 bcf1_t *bcf_sweep_bwd(bcf_sweep_t *sw)
 {
     if ( sw->direction==SW_FWD ) sw_seek(sw, SW_BWD);
-    if ( !sw->nrec ) sw_fill_buffer(sw);
+    if ( !sw->nrec )
+    {
+        if (sw_fill_buffer(sw) < 0)
+            return NULL;
+    }
     if ( !sw->nrec ) return NULL;
     return &sw->rec[ --sw->nrec ];
 }

@@ -1047,7 +1047,8 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     }
     if (ret < -1) goto err; // corrupted BAM file
 
-    hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
+    if (hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf)) != 0)
+        goto err;
     sam_hdr_destroy(h);
     bam_destroy1(b);
     return idx;
@@ -1360,8 +1361,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             *end = str+7;
             res->is_str = 1;
             const char *lib = bam_get_library(hb->h, b);
-            kputs(lib ? lib : "", ks_clear(&res->s));
-            return 0;
+            return kputs(lib ? lib : "", ks_clear(&res->s)) >= 0 ? 0 : -1;
         }
         break;
 
@@ -1378,8 +1378,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             *end = str+6;
             res->is_str = 1;
             const char *rn = sam_hdr_tid2name(hb->h, b->core.mtid);
-            kputs(rn ? rn : "*", ks_clear(&res->s));
-            return 0;
+            return kputs(rn ? rn : "*", ks_clear(&res->s)) >= 0 ? 0 : -1;
         } else if (memcmp(str, "mrefid", 6) == 0) {
             *end = str+6;
             res->d = b->core.mtid;
@@ -1415,8 +1414,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
         } else if (memcmp(str, "qname", 5) == 0) {
             *end = str+5;
             res->is_str = 1;
-            kputs(bam_get_qname(b), ks_clear(&res->s));
-            return 0;
+            return kputs(bam_get_qname(b), ks_clear(&res->s)) >= 0 ? 0 : -1;
         } else if (memcmp(str, "qual", 4) == 0) {
             *end = str+4;
             ks_clear(&res->s);
@@ -1439,14 +1437,12 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             *end = str+5;
             res->is_str = 1;
             const char *rn = sam_hdr_tid2name(hb->h, b->core.tid);
-            kputs(rn ? rn : "*", ks_clear(&res->s));
-            return 0;
+            return kputs(rn ? rn : "*", ks_clear(&res->s)) >= 0 ? 0 : -1;
         } else if (memcmp(str, "rnext", 5) == 0) {
             *end = str+5;
             res->is_str = 1;
             const char *rn = sam_hdr_tid2name(hb->h, b->core.mtid);
-            kputs(rn ? rn : "*", ks_clear(&res->s));
-            return 0;
+            return kputs(rn ? rn : "*", ks_clear(&res->s)) >= 0 ? 0 : -1;
         } else if (memcmp(str, "refid", 5) == 0) {
             *end = str+5;
             res->d = b->core.tid;
@@ -1511,17 +1507,18 @@ static int bam_sym_lookup(void *data, char *str, char **end,
             uint8_t *aux = bam_aux_get(b, str+1);
             if (aux) {
                 // we define the truth of a tag to be its presence, even if 0.
+                int nomem = 0;
                 res->is_true = 1;
                 switch (*aux) {
                 case 'Z':
                 case 'H':
                     res->is_str = 1;
-                    kputs((char *)aux+1, ks_clear(&res->s));
+                    kputs_chk(&nomem, (char *)aux+1, ks_clear(&res->s));
                     break;
 
                 case 'A':
                     res->is_str = 1;
-                    kputsn((char *)aux+1, 1, ks_clear(&res->s));
+                    kputsn_chk(&nomem, (char *)aux+1, 1, ks_clear(&res->s));
                     break;
 
                 case 'i': case 'I':
@@ -1542,7 +1539,7 @@ static int bam_sym_lookup(void *data, char *str, char **end,
                                   *aux);
                     return -1;
                 }
-                return 0;
+                return nomem ? -1 : 0;
 
             } else {
                 // hence absent tags are always false (and strings)
@@ -3705,19 +3702,20 @@ static void *sam_format_worker(void *arg) {
 
     kstring_t ks = {0, gl->alloc, gl->data};
 
-    for (i = 0; i < gb->nbams; i++) {
-        if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
-            sam_state_err(fd, errno ? errno : EIO);
-            goto err;
-        }
-        kputc('\n', &ks);
+    int nomem = 0;
+    for (i = 0; !nomem && i < gb->nbams; i++) {
+        nomem |= sam_format1_append(fd->h, &gb->bams[i], &ks) < 0;
+        nomem |= kputc('\n', &ks) < 0;
     }
-
-    pthread_mutex_lock(&fd->lines_m);
     gl->data_size = ks.l;
     gl->alloc = ks.m;
     gl->data = ks.s;
+    if (nomem) {
+        sam_state_err(fd, errno ? errno : EIO);
+        goto err;
+    }
 
+    pthread_mutex_lock(&fd->lines_m);
     if (fp->idx) {
         // Keep hold of the bam array a little longer as
         // sam_dispatcher_write needs to use them for building the index.
@@ -4353,31 +4351,31 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
 
     if (c->l_qname == 0)
         return -1;
-    r |= kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str);
-    r |= kputc_('\t', str); // query name
-    r |= kputw(c->flag, str); r |= kputc_('\t', str); // flag
+    kputsn_chk_(&r, bam_get_qname(b), c->l_qname-1-c->l_extranul, str);
+    kputc_chk_(&r, '\t', str); // query name
+    kputw_chk(&r, c->flag, str); kputc_chk_(&r, '\t', str); // flag
     if (c->tid >= 0) { // chr
-        r |= kputs(h->target_name[c->tid] , str);
-        r |= kputc_('\t', str);
-    } else r |= kputsn_("*\t", 2, str);
-    r |= kputll(c->pos + 1, str); r |= kputc_('\t', str); // pos
-    r |= kputw(c->qual, str); r |= kputc_('\t', str); // qual
+        kputs_chk(&r, h->target_name[c->tid] , str);
+        kputc_chk_(&r, '\t', str);
+    } else kputsn_chk_(&r, "*\t", 2, str);
+    kputll_chk(&r, c->pos + 1, str); kputc_chk_(&r, '\t', str); // pos
+    kputw_chk(&r, c->qual, str); kputc_chk_(&r, '\t', str); // qual
     if (c->n_cigar) { // cigar
         uint32_t *cigar = bam_get_cigar(b);
         for (i = 0; i < c->n_cigar; ++i) {
-            r |= kputw(bam_cigar_oplen(cigar[i]), str);
-            r |= kputc_(bam_cigar_opchr(cigar[i]), str);
+            kputw_chk(&r, bam_cigar_oplen(cigar[i]), str);
+            kputc_chk_(&r, bam_cigar_opchr(cigar[i]), str);
         }
-    } else r |= kputc_('*', str);
-    r |= kputc_('\t', str);
-    if (c->mtid < 0) r |= kputsn_("*\t", 2, str); // mate chr
-    else if (c->mtid == c->tid) r |= kputsn_("=\t", 2, str);
+    } else kputc_chk_(&r, '*', str);
+    kputc_chk_(&r, '\t', str);
+    if (c->mtid < 0) kputsn_chk_(&r, "*\t", 2, str); // mate chr
+    else if (c->mtid == c->tid) kputsn_chk_(&r, "=\t", 2, str);
     else {
-        r |= kputs(h->target_name[c->mtid], str);
-        r |= kputc_('\t', str);
+        kputs_chk(&r, h->target_name[c->mtid], str);
+        kputc_chk_(&r, '\t', str);
     }
-    r |= kputll(c->mpos + 1, str); r |= kputc_('\t', str); // mate pos
-    r |= kputll(c->isize, str); r |= kputc_('\t', str); // template len
+    kputll_chk(&r, c->mpos + 1, str); kputc_chk_(&r, '\t', str); // mate pos
+    kputll_chk(&r, c->isize, str); kputc_chk_(&r, '\t', str); // template len
     if (c->l_qseq) { // seq and qual
         uint8_t *s = bam_get_seq(b);
         if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
@@ -4400,18 +4398,18 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         cp[i] = 0;
         cp += i;
         str->l = cp - str->s;
-    } else r |= kputsn_("*\t*", 3, str);
+    } else kputsn_chk_(&r, "*\t*", 3, str);
 
     s = bam_get_aux(b); // aux
     end = b->data + b->l_data;
 
     while (end - s >= 4) {
-        r |= kputc_('\t', str);
+        kputc_chk_(&r, '\t', str);
         if ((s = (uint8_t *)sam_format_aux1(s, s[2], s+3, end, str)) == NULL)
             goto bad_aux;
     }
-    r |= kputsn("", 0, str); // nul terminate
-    if (r < 0) goto mem_err;
+    kputsn_chk(&r, "", 0, str); // nul terminate
+    if (r) goto mem_err;
 
     return str->l;
 
@@ -4554,7 +4552,7 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
 
     // Qual line
     if (x->nprefix == '@') {
-        kputsn("\n+\n", 3, str);
+        e |= kputsn("\n+\n", 3, str) < 0;
         qual = bam_get_qual(b);
         if (qual[0] == 0xff)
             for (i = 0; i < len; i++)
@@ -4674,7 +4672,7 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
             return 1;
         } else {
             if (sam_format1(h, b, &fp->line) < 0) return -1;
-            kputc('\n', &fp->line);
+            if (kputc('\n', &fp->line) < 0) return -1;
             if (fp->is_bgzf) {
                 if (bgzf_flush_try(fp->fp.bgzf, fp->line.l) < 0)
                     return -1;
@@ -5371,19 +5369,50 @@ int bam_str2flag(const char *str)
 char *bam_flag2str(int flag)
 {
     kstring_t str = {0,0,0};
-    if ( flag&BAM_FPAIRED ) ksprintf(&str,"%s%s", str.l?",":"","PAIRED");
-    if ( flag&BAM_FPROPER_PAIR ) ksprintf(&str,"%s%s", str.l?",":"","PROPER_PAIR");
-    if ( flag&BAM_FUNMAP ) ksprintf(&str,"%s%s", str.l?",":"","UNMAP");
-    if ( flag&BAM_FMUNMAP ) ksprintf(&str,"%s%s", str.l?",":"","MUNMAP");
-    if ( flag&BAM_FREVERSE ) ksprintf(&str,"%s%s", str.l?",":"","REVERSE");
-    if ( flag&BAM_FMREVERSE ) ksprintf(&str,"%s%s", str.l?",":"","MREVERSE");
-    if ( flag&BAM_FREAD1 ) ksprintf(&str,"%s%s", str.l?",":"","READ1");
-    if ( flag&BAM_FREAD2 ) ksprintf(&str,"%s%s", str.l?",":"","READ2");
-    if ( flag&BAM_FSECONDARY ) ksprintf(&str,"%s%s", str.l?",":"","SECONDARY");
-    if ( flag&BAM_FQCFAIL ) ksprintf(&str,"%s%s", str.l?",":"","QCFAIL");
-    if ( flag&BAM_FDUP ) ksprintf(&str,"%s%s", str.l?",":"","DUP");
-    if ( flag&BAM_FSUPPLEMENTARY ) ksprintf(&str,"%s%s", str.l?",":"","SUPPLEMENTARY");
-    if ( str.l == 0 ) kputsn("", 0, &str);
+    int nomem = 0;
+    if ( flag&BAM_FPAIRED )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","PAIRED");
+
+    if ( flag&BAM_FPROPER_PAIR )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","PROPER_PAIR");
+
+    if ( flag&BAM_FUNMAP )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","UNMAP");
+
+    if ( flag&BAM_FMUNMAP )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","MUNMAP");
+
+    if ( flag&BAM_FREVERSE )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","REVERSE");
+
+    if ( flag&BAM_FMREVERSE )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","MREVERSE");
+
+    if ( flag&BAM_FREAD1 )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","READ1");
+
+    if ( flag&BAM_FREAD2 )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","READ2");
+
+    if ( flag&BAM_FSECONDARY )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","SECONDARY");
+
+    if ( flag&BAM_FQCFAIL )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","QCFAIL");
+
+    if ( flag&BAM_FDUP )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","DUP");
+
+    if ( flag&BAM_FSUPPLEMENTARY )
+        ksprintf_chk(&nomem, &str,"%s%s", str.l?",":"","SUPPLEMENTARY");
+
+    if ( str.l == 0 )
+        kputsn_chk(&nomem, "", 0, &str);
+
+    if (nomem) {
+        ks_free(&str);
+        return NULL;
+    }
     return str.s;
 }
 

@@ -49,18 +49,19 @@ gcs_rewrite(const char *gsurl, const char *mode, int mode_has_colon,
     kstring_t auth_hdr = { 0, 0, NULL };
     kstring_t requester_pays_hdr = { 0, 0, NULL };
     hFILE *fp = NULL;
+    int nomem = 0;
 
     // GCS URL format is gs[+SCHEME]://BUCKET/PATH
 
     if (gsurl[2] == '+') {
         bucket = strchr(gsurl, ':') + 1;
-        kputsn(&gsurl[3], bucket - &gsurl[3], &url);
+        kputsn_chk(&nomem, &gsurl[3], bucket - &gsurl[3], &url);
     }
     else {
-        kputs("https:", &url);
+        kputs_chk(&nomem, "https:", &url);
         bucket = &gsurl[3];
     }
-    while (*bucket == '/') kputc(*bucket++, &url);
+    while (*bucket == '/') kputc_chk(&nomem, *bucket++, &url);
 
     path = bucket + strcspn(bucket, "/?#");
 
@@ -70,19 +71,22 @@ gcs_rewrite(const char *gsurl, const char *mode, int mode_has_colon,
         // local mock server such as fake-gcs-server used for testing.  Such
         // servers can't offer the wildcard DNS needed for the normal
         // virtual-hosted-style BUCKET.HOST addressing below.
-        kputs(host_override, &url);
-        kputc('/', &url);
-        kputsn(bucket, path - bucket, &url);
+        kputs_chk(&nomem, host_override, &url);
+        kputc_chk(&nomem, '/', &url);
+        kputsn_chk(&nomem, bucket, path - bucket, &url);
     }
     else {
-        kputsn(bucket, path - bucket, &url);
-        if (strchr(mode, 'r')) kputs(".storage-download", &url);
-        else if (strchr(mode, 'w')) kputs(".storage-upload", &url);
-        else kputs(".storage", &url);
-        kputs(".googleapis.com", &url);
+        kputsn_chk(&nomem, bucket, path - bucket, &url);
+        if (strchr(mode, 'r')) kputs_chk(&nomem, ".storage-download", &url);
+        else if (strchr(mode, 'w')) kputs_chk(&nomem, ".storage-upload", &url);
+        else kputs_chk(&nomem, ".storage", &url);
+        kputs_chk(&nomem, ".googleapis.com", &url);
     }
 
-    kputs(path, &url);
+    kputs_chk(&nomem, path, &url);
+
+    if (nomem)
+        goto out;
 
     if (hts_verbose >= 8)
         fprintf(stderr, "[M::gcs_open] rewrote URL as %s\n", url.s);
@@ -91,23 +95,29 @@ gcs_rewrite(const char *gsurl, const char *mode, int mode_has_colon,
     access_token = getenv("GCS_OAUTH_TOKEN");
 
     if (access_token) {
-        kputs("Authorization: Bearer ", &auth_hdr);
-        kputs(access_token, &auth_hdr);
+        kputs_chk(&nomem, "Authorization: Bearer ", &auth_hdr);
+        kputs_chk(&nomem, access_token, &auth_hdr);
     }
 
     requester_pays_project = getenv("GCS_REQUESTER_PAYS_PROJECT");
 
     if (requester_pays_project) {
-        kputs("X-Goog-User-Project: ", &requester_pays_hdr);
-        kputs(requester_pays_project, &requester_pays_hdr);
+        kputs_chk(&nomem, "X-Goog-User-Project: ", &requester_pays_hdr);
+        kputs_chk(&nomem, requester_pays_project, &requester_pays_hdr);
     }
+
+    if (nomem)
+        goto out;
 
     if (argsp || mode_has_colon || auth_hdr.l > 0 || requester_pays_hdr.l > 0) {
         if (! mode_has_colon) {
-            kputs(mode, &mode_colon);
-            kputc(':', &mode_colon);
+            kputs_chk(&nomem, mode, &mode_colon);
+            kputc_chk(&nomem, ':', &mode_colon);
             mode = mode_colon.s;
         }
+
+        if (nomem)
+            goto out;
 
         if (auth_hdr.l > 0 && requester_pays_hdr.l > 0) {
             fp = hopen(
@@ -128,6 +138,7 @@ gcs_rewrite(const char *gsurl, const char *mode, int mode_has_colon,
     else
         fp = hopen(url.s, mode);
 
+ out:
     free(mode_colon.s);
     free(url.s);
     free(auth_hdr.s);

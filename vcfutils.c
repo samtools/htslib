@@ -38,7 +38,8 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
     // Use INFO/AC,AN field only when asked
     if ( which&BCF_UN_INFO )
     {
-        bcf_unpack(line, BCF_UN_INFO);
+        if (bcf_unpack(line, BCF_UN_INFO) < 0)
+            goto fail;
         int an_id = bcf_hdr_id2int(header, BCF_DT_ID, "AN");
         int ac_id = bcf_hdr_id2int(header, BCF_DT_ID, "AC");
         int i, an=-1, ac_len=0, ac_type=0;
@@ -96,7 +97,8 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
     {
         int i, gt_id = bcf_hdr_id2int(header,BCF_DT_ID,"GT");
         if ( gt_id<0 ) return 0;
-        bcf_unpack(line, BCF_UN_FMT);
+        if (bcf_unpack(line, BCF_UN_FMT) < 0)
+            goto fail;
         bcf_fmt_t *fmt_gt = NULL;
         for (i=0; i<(int)line->n_fmt; i++)
             if ( line->d.fmt[i].id==gt_id ) { fmt_gt = &line->d.fmt[i]; break; }
@@ -129,6 +131,10 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         #undef BRANCH_INT
         return 1;
     }
+    return 0;
+
+ fail:
+    hts_log_error("Out of memory");
     return 0;
 }
 
@@ -243,13 +249,15 @@ int bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 {
     int i;
     kbitset_t *rm_set = kbs_init(line->n_allele);
+    if (!rm_set)
+        return -1;
     for (i=1; i<line->n_allele; i++)
         if ( rm_mask & 1<<i ) kbs_insert(rm_set, i);
 
-    bcf_remove_allele_set(header, line, rm_set);
+    int res = bcf_remove_allele_set(header, line, rm_set);
     kbs_destroy(rm_set);
 
-    return 0; // FIXME: check for errs in this function
+    return res;
 }
 
 static inline int is_special_info_type(const char *name)
@@ -672,13 +680,17 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     int *laa = NULL, *laa_map = NULL, *lr_orig = NULL;
     uint8_t *dat = NULL;
     int num_laa, laa_size = 0, laa_map_stride = 0;
-    int have_cnv_tr = 0;
+    int have_cnv_tr = 0, e = 0;
+    kstring_t str = {0,0,0};
 
-    bcf_unpack(line, BCF_UN_ALL);
+    if (!map)
+        return -1;
+
+    if (bcf_unpack(line, BCF_UN_ALL) < 0)
+        goto err;
 
     // create map of indexes from old to new ALT numbering and modify ALT
-    kstring_t str = {0,0,0};
-    kputs(line->d.allele[0], &str);
+    kputs_chk(&e, line->d.allele[0], &str);
 
     int nrm = 0, i,j;  // i: ori alleles, j: new alleles
     map[0] = 0;
@@ -695,12 +707,15 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             nrm++;
             continue;
         }
-        kputc(',', &str);
-        kputs(line->d.allele[i], &str);
+        kputc_chk(&e, ',', &str);
+        kputs_chk(&e, line->d.allele[i], &str);
         map[i] = j;
         j++;
     }
     if ( !nrm ) goto clean;
+
+    if (e)
+        goto err;
 
     int nR_ori = line->n_allele;
     int nR_new = line->n_allele-nrm;
@@ -716,7 +731,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     int nG_ori = nR_ori*(nR_ori + 1)/2;
     int nG_new = nR_new*(nR_new + 1)/2;
 
-    bcf_update_alleles_str(header, line, str.s);
+    if (bcf_update_alleles_str(header, line, str.s) < 0)
+    {
+        hts_log_error("Out of memory");
+        goto err;
+    }
 
     if (have_cnv_tr)
     {
@@ -766,7 +785,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             char *ss = (char*) dat, *se = (char*) dat, s = ss[0];
             if ( vlen==BCF_VL_A || vlen==BCF_VL_R )
             {
-                int nexp, inc = 0;
+                int nexp, inc = 0, nomem = 0;
                 if ( vlen==BCF_VL_A )
                 {
                     nexp = nA_ori * multiple;
@@ -784,11 +803,13 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         ss = se;
                         continue;
                     }
-                    if ( str.l ) kputc(',',&str);
-                    kputsn(ss,se-ss,&str);
+                    if ( str.l ) kputc_chk(&nomem, ',',&str);
+                    kputsn_chk(&nomem, ss,se-ss,&str);
                     if ( *se ) se++;
                     ss = se;
                 }
+                if (nomem)
+                    goto err;
                 if ( j==1 && s == '.' ) continue; // missing
                 if ( j!=nexp )
                 {
@@ -799,7 +820,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             }
             else    // Number=G, assuming diploid genotype
             {
-                int k = 0, n = 0;
+                int k = 0, n = 0, nomem = 0;
                 for (j=0; j<nR_ori; j++)
                 {
                     for (k=0; k<=j; k++)
@@ -813,13 +834,15 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                             ss = se;
                             continue;
                         }
-                        if ( str.l ) kputc(',',&str);
-                        kputsn(ss,se-ss,&str);
+                        if ( str.l ) kputc_chk(&nomem, ',',&str);
+                        kputsn_chk(&nomem, ss,se-ss,&str);
                         if ( *se ) se++;
                         ss = se;
                     }
                     if ( !*se ) break;
                 }
+                if (nomem)
+                    goto err;
                 if ( n==1 && s == '.' ) continue; // missing
                 if ( n!=nG_ori )
                 {
@@ -1140,7 +1163,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 for (j=0; j<line->n_sample; j++)
                 {
                     char *ss = ((char*)dat) + j*size, *se = ss + size, *ptr = ss, s = ss[0];
-                    int k_src = 0, k_dst = 0, l = str.l;
+                    int k_src = 0, k_dst = 0, l = str.l, nomem = 0;
                     int *sample_map = is_local ? &laa_map[j * laa_map_stride] : map;
                     if (is_local)
                         nexp = lr_orig[j] - inc;
@@ -1153,8 +1176,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                             ss = ++ptr;
                             continue;
                         }
-                        if ( k_dst ) kputc(',',&str);
-                        kputsn(ss,ptr-ss,&str);
+                        if ( k_dst ) kputc_chk(&nomem, ',',&str);
+                        kputsn_chk(&nomem, ss,ptr-ss,&str);
                         ss = ++ptr;
                         k_dst++;
                     }
@@ -1168,11 +1191,15 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         goto err;
                     }
                     l = str.l - l;
-                    for (; l<size; l++) kputc(l == 0 ? '.' : '\0', &str);
+                    for (; l<size; l++)
+                        kputc_chk(&nomem, l == 0 ? '.' : '\0', &str);
+                    if (nomem)
+                        goto err;
                 }
             }
             else    // Number=G or LG, diploid or haploid
             {
+                int nomem = 0;
                 for (j=0; j<line->n_sample; j++)
                 {
                     char *ss = ((char*)dat) + j*size, *se = ss + size, *ptr = ss, s = ss[0];
@@ -1203,7 +1230,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     ptr = ss;
                     if ( nexp==1 && s == '.' ) // missing
                     {
-                        kputc('.', &str);
+                        kputc_chk(&nomem, '.', &str);
                     }
                     else if ( nexp==sample_nG_ori ) // diploid
                     {
@@ -1219,8 +1246,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                                     ss = ++ptr;
                                     continue;
                                 }
-                                if ( k_dst ) kputc(',',&str);
-                                kputsn(ss,ptr-ss,&str);
+                                if ( k_dst ) kputc_chk(&nomem, ',',&str);
+                                kputsn_chk(&nomem, ss,ptr-ss,&str);
                                 ss = ++ptr;
                                 k_dst++;
                             }
@@ -1238,8 +1265,8 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                                 ss = ++ptr;
                                 continue;
                             }
-                            if ( k_dst ) kputc(',',&str);
-                            kputsn(ss,ptr-ss,&str);
+                            if ( k_dst ) kputc_chk(&nomem, ',',&str);
+                            kputsn_chk(&nomem, ss,ptr-ss,&str);
                             ss = ++ptr;
                             k_dst++;
                         }
@@ -1255,8 +1282,11 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         }
                     }
                     l = str.l - l;
-                    for (; l<size; l++) kputc(0, &str);
+                    for (; l<size; l++)
+                        kputc_chk(&nomem, 0, &str);
                 }
+                if (nomem)
+                    goto err;
             }
             nret = bcf_update_format(header, line, bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), (void*)str.s, str.l, type);
             if ( nret<0 )

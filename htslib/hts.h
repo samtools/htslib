@@ -576,6 +576,7 @@ int hts_detect_format2(struct hFILE *fp, const char *fname, htsFormat *fmt);
   @abstract    Get a human-readable description of the file format
   @param fmt   Format structure holding type, version, compression, etc.
   @return      Description string, to be freed by the caller after use.
+               NULL on error (no memory)
 */
 HTSLIB_EXPORT
 char *hts_format_description(const htsFormat *format);
