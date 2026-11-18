@@ -1204,18 +1204,18 @@ int cram_huffman_decode_long(cram_slice *slice, cram_codec *c,
 
 int cram_huffman_describe(cram_codec *c, kstring_t *ks) {
     int r = 0, n;
-    r |= ksprintf(ks, "HUFFMAN(codes={") < 0;
+    ksprintf_chk(&r, ks, "HUFFMAN(codes={");
     for (n = 0; n < c->u.huffman.ncodes; n++) {
-        r |= ksprintf(ks, "%s%"PRId64, n?",":"",
-                      c->u.huffman.codes[n].symbol);
+        ksprintf_chk(&r, ks, "%s%"PRId64, n?",":"",
+                     c->u.huffman.codes[n].symbol);
     }
-    r |= ksprintf(ks, "},lengths={") < 0;
+    ksprintf_chk(&r, ks, "},lengths={");
     for (n = 0; n < c->u.huffman.ncodes; n++) {
-        r |= ksprintf(ks, "%s%d", n?",":"",
-                      c->u.huffman.codes[n].len);
+        ksprintf_chk(&r, ks, "%s%d", n?",":"",
+                     c->u.huffman.codes[n].len);
     }
-    r |= ksprintf(ks, "})") < 0;
-    return r;
+    ksprintf_chk(&r, ks, "})");
+    return r == 0 ? 0 : -1;
 }
 
 /*
@@ -1810,16 +1810,16 @@ int cram_byte_array_len_describe(cram_codec *c, kstring_t *ks) {
     int r = 0;
     r |= ksprintf(ks, "BYTE_ARRAY_LEN(len_codec={") < 0;
     cram_byte_array_len_decoder *l = &c->u.byte_array_len;
-    r |=  l->len_codec->describe
-        ? l->len_codec->describe(l->len_codec, ks)
-        : (ksprintf(ks, "?")<0);
+    r |=  (l->len_codec->describe
+           ? l->len_codec->describe(l->len_codec, ks)
+           : ksprintf(ks, "?")) < 0;
     r |= ksprintf(ks, "},val_codec={") < 0;
-    r |=  l->val_codec->describe
-        ? l->val_codec->describe(l->val_codec, ks)
-        : (ksprintf(ks, "?")<0);
+    r |=  (l->val_codec->describe
+           ? l->val_codec->describe(l->val_codec, ks)
+           : ksprintf(ks, "?")) < 0;
     r |= ksprintf(ks, "}") < 0;
 
-    return r;
+    return r == 0 ? 0 : -1;
 }
 
 cram_codec *cram_byte_array_len_decode_init(cram_block_compression_hdr *hdr,
@@ -2481,5 +2481,5 @@ int cram_codec_describe(cram_codec *c, kstring_t *ks) {
     if (c && c->describe)
         return c->describe(c, ks);
     else
-        return ksprintf(ks, "?");
+        return ksprintf(ks, "?") >= 0 ? 0 : -1;
 }
