@@ -4363,31 +4363,31 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
 
     if (c->l_qname == 0)
         return -1;
-    r |= kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str);
-    r |= kputc_('\t', str); // query name
-    r |= kputw(c->flag, str); r |= kputc_('\t', str); // flag
+    kputsn_chk_(&r, bam_get_qname(b), c->l_qname-1-c->l_extranul, str);
+    kputc_chk_(&r, '\t', str); // query name
+    kputw_chk(&r, c->flag, str); kputc_chk_(&r, '\t', str); // flag
     if (c->tid >= 0) { // chr
-        r |= kputs(h->target_name[c->tid] , str);
-        r |= kputc_('\t', str);
-    } else r |= kputsn_("*\t", 2, str);
-    r |= kputll(c->pos + 1, str); r |= kputc_('\t', str); // pos
-    r |= kputw(c->qual, str); r |= kputc_('\t', str); // qual
+        kputs_chk(&r, h->target_name[c->tid] , str);
+        kputc_chk_(&r, '\t', str);
+    } else kputsn_chk_(&r, "*\t", 2, str);
+    kputll_chk(&r, c->pos + 1, str); kputc_chk_(&r, '\t', str); // pos
+    kputw_chk(&r, c->qual, str); kputc_chk_(&r, '\t', str); // qual
     if (c->n_cigar) { // cigar
         uint32_t *cigar = bam_get_cigar(b);
         for (i = 0; i < c->n_cigar; ++i) {
-            r |= kputw(bam_cigar_oplen(cigar[i]), str);
-            r |= kputc_(bam_cigar_opchr(cigar[i]), str);
+            kputw_chk(&r, bam_cigar_oplen(cigar[i]), str);
+            kputc_chk_(&r, bam_cigar_opchr(cigar[i]), str);
         }
-    } else r |= kputc_('*', str);
-    r |= kputc_('\t', str);
-    if (c->mtid < 0) r |= kputsn_("*\t", 2, str); // mate chr
-    else if (c->mtid == c->tid) r |= kputsn_("=\t", 2, str);
+    } else kputc_chk_(&r, '*', str);
+    kputc_chk_(&r, '\t', str);
+    if (c->mtid < 0) kputsn_chk_(&r, "*\t", 2, str); // mate chr
+    else if (c->mtid == c->tid) kputsn_chk_(&r, "=\t", 2, str);
     else {
-        r |= kputs(h->target_name[c->mtid], str);
-        r |= kputc_('\t', str);
+        kputs_chk(&r, h->target_name[c->mtid], str);
+        kputc_chk_(&r, '\t', str);
     }
-    r |= kputll(c->mpos + 1, str); r |= kputc_('\t', str); // mate pos
-    r |= kputll(c->isize, str); r |= kputc_('\t', str); // template len
+    kputll_chk(&r, c->mpos + 1, str); kputc_chk_(&r, '\t', str); // mate pos
+    kputll_chk(&r, c->isize, str); kputc_chk_(&r, '\t', str); // template len
     if (c->l_qseq) { // seq and qual
         uint8_t *s = bam_get_seq(b);
         if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
@@ -4410,18 +4410,18 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         cp[i] = 0;
         cp += i;
         str->l = cp - str->s;
-    } else r |= kputsn_("*\t*", 3, str);
+    } else kputsn_chk_(&r, "*\t*", 3, str);
 
     s = bam_get_aux(b); // aux
     end = b->data + b->l_data;
 
     while (end - s >= 4) {
-        r |= kputc_('\t', str);
+        kputc_chk_(&r, '\t', str);
         if ((s = (uint8_t *)sam_format_aux1(s, s[2], s+3, end, str)) == NULL)
             goto bad_aux;
     }
-    r |= kputsn("", 0, str); // nul terminate
-    if (r < 0) goto mem_err;
+    kputsn_chk(&r, "", 0, str); // nul terminate
+    if (r) goto mem_err;
 
     return str->l;
 
