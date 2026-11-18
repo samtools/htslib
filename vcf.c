@@ -2063,6 +2063,9 @@ static int updatephasing(uint8_t *p, uint8_t *end, uint8_t **q, int samples, int
      */
 
     switch (ploidy) {
+    case 0:
+        // No GT values stored, so nothing to update
+        break;
     case 1:
         // Trivial case - haploid data is phased by default
         for (j = 0; j < samples; ++j) {

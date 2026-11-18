@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 
 #include "../htslib/hts.h"
+#include "../htslib/bgzf.h"
 #include "../htslib/hts_alloc.h"
 #include "../htslib/vcf.h"
 #include "../htslib/vcfutils.h"
@@ -1084,6 +1085,71 @@ void test_bcf_remove_allele_set_short_lg(void)
     kbs_destroy(rm_set);
 }
 
+// A BCF GT field with zero values per sample must not make the GT phasing
+// fix-up in bcf_record_check() touch the byte after it.
+static void test_bcf_gt_zero_ploidy(const char *fname)
+{
+    char header[] = "##fileformat=VCFv4.2\n"
+        "##contig=<ID=1,length=1000>\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+        "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n";
+    kstring_t fn = KS_INITIALIZE;
+    bcf_hdr_t *hdr = bcf_hdr_init("r"), *hdr2 = NULL;
+    bcf1_t *rec = bcf_init();
+    htsFile *fp;
+    int32_t *dp = NULL;
+    int ndp = 0, gt_id, dp_id;
+
+    if (!hdr || !rec)
+        error("allocation failed\n");
+    check0(bcf_hdr_parse(hdr, header));
+    check0(bcf_hdr_sync(hdr));
+    gt_id = bcf_hdr_id2int(hdr, BCF_DT_ID, "GT");
+    dp_id = bcf_hdr_id2int(hdr, BCF_DT_ID, "DP");
+
+    // Shared: ID ".", REF "A", no FILTER.  Indiv: GT stored as int8 with
+    // zero values, followed by DP=5 with its key encoded as int16.
+    uint8_t shared[] = { 0x07, 0x17, 'A', 0x00 };
+    uint8_t indiv[] = { 0x11, gt_id, 0x01,
+                        0x12, dp_id & 0xff, dp_id >> 8, 0x11, 5 };
+    uint8_t x[32];
+    u32_to_le(sizeof(shared) + 24, x);
+    u32_to_le(sizeof(indiv), x + 4);
+    i32_to_le(0, x + 8);                 // CHROM
+    i32_to_le(99, x + 12);               // POS
+    i32_to_le(1, x + 16);                // RLEN
+    u32_to_le(0x7F800001, x + 20);       // QUAL missing
+    u32_to_le(1 << 16, x + 24);          // n_allele = 1, n_info = 0
+    u32_to_le(2u << 24 | 1, x + 28);     // n_fmt = 2, n_sample = 1
+
+    if (ksprintf(&fn, "%s.gt0.bcf", fname) < 0)
+        error("ksprintf() failed\n");
+    if (!(fp = hts_open(fn.s, "wbu")))
+        error("Couldn't open %s for writing\n", fn.s);
+    check0(bcf_hdr_write(fp, hdr));
+    if (bgzf_write(fp->fp.bgzf, x, sizeof(x)) != (ssize_t) sizeof(x)
+        || bgzf_write(fp->fp.bgzf, shared, sizeof(shared)) != (ssize_t) sizeof(shared)
+        || bgzf_write(fp->fp.bgzf, indiv, sizeof(indiv)) != (ssize_t) sizeof(indiv))
+        error("Couldn't write to %s\n", fn.s);
+    check0(hts_close(fp));
+
+    if (!(fp = hts_open(fn.s, "r")))
+        error("Couldn't open %s for reading\n", fn.s);
+    if (!(hdr2 = bcf_hdr_read(fp)))
+        error("Couldn't read header from %s\n", fn.s);
+    check0(bcf_read(fp, hdr2, rec));
+    if (bcf_get_format_int32(hdr2, rec, "DP", &dp, &ndp) != 1 || dp[0] != 5)
+        error("FORMAT/DP was not read back correctly\n");
+    check0(hts_close(fp));
+
+    free(dp);
+    ks_free(&fn);
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr2);
+    bcf_hdr_destroy(hdr);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -1104,5 +1170,6 @@ int main(int argc, char **argv)
     test_rlen_values();
     test_bcf_remove_allele_set();
     test_bcf_remove_allele_set_short_lg();
+    test_bcf_gt_zero_ploidy(fname);
     return 0;
 }
