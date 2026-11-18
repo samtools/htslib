@@ -4022,8 +4022,10 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
     }
 
     if (!fd->ctr) {
-        fd->ctr = cram_new_container(fd->seqs_per_slice,
-                                     fd->slices_per_container);
+        pthread_mutex_lock(&fd->ref_lock);
+        int spc = fd->slices_per_container;
+        pthread_mutex_unlock(&fd->ref_lock);
+        fd->ctr = cram_new_container(fd->seqs_per_slice, spc);
         if (!fd->ctr)
             return -1;
         fd->ctr->record_counter = fd->record_counter;
