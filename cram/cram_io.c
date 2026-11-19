@@ -4020,6 +4020,13 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
     fd->last_mapped = c->n_mapped * (c->max_rec+1)/(c->curr_rec+1) ;
     pthread_mutex_unlock(&fd->metrics_lock);
 
+    if (fd->executor) {
+        pthread_mutex_lock(&fd->metrics_lock);
+        fd->executor_pending++;
+        pthread_mutex_unlock(&fd->metrics_lock);
+        return fd->executor(fd->executor_arg, fd, c);
+    }
+
     if (!fd->pool)
         return cram_flush_container(fd, c);
 
@@ -4044,6 +4051,40 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
     }
 
     return 0;
+}
+
+/* ----------------------------------------------------------------------
+ * Caller-supplied container executor.
+ */
+
+int cram_set_container_executor(cram_fd *fd, cram_container_executor *fn,
+                                void *arg) {
+    if (!fd || fd->mode != 'w') {
+        hts_log_error("A container executor needs a CRAM file open for writing");
+        return -1;
+    }
+    if (fd->pool && fn) {
+        hts_log_error("A container executor cannot be combined with a thread pool");
+        return -1;
+    }
+    fd->executor = fn;
+    fd->executor_arg = fn ? arg : NULL;
+    // As for a thread pool: containers encode concurrently, so they must not
+    // share (and so clobber) a partially loaded reference.
+    if (fn)
+        fd->shared_ref = 1;
+    return 0;
+}
+
+int cram_flush_encoded_container(cram_fd *fd, cram_container *c) {
+    int ret = cram_flush_container2(fd, c);
+    cram_free_container(c);
+    if (ret == 0) {
+        pthread_mutex_lock(&fd->metrics_lock);
+        fd->executor_pending--;
+        pthread_mutex_unlock(&fd->metrics_lock);
+    }
+    return ret;
 }
 
 /* ----------------------------------------------------------------------
@@ -5176,7 +5217,9 @@ int cram_flush(cram_fd *fd) {
         if (-1 == cram_flush_container_mt(fd, fd->ctr))
             ret = -1;
 
-        cram_free_container(fd->ctr);
+        // An executor now owns the container (see cram_set_container_executor)
+        if (!fd->executor)
+            cram_free_container(fd->ctr);
         if (fd->ctr_mt == fd->ctr)
             fd->ctr_mt = NULL;
         fd->ctr = NULL;
@@ -5274,11 +5317,19 @@ int cram_close(cram_fd *fd) {
         return -1;
 
     if (fd->mode == 'w' && fd->ctr) {
-        if(fd->ctr->slice)
-            cram_update_curr_slice(fd->ctr, fd->version);
-
-        if (-1 == cram_flush_container_mt(fd, fd->ctr))
+        if (fd->executor) {
+            // The executor could no longer write it before the EOF block.
+            hts_log_error("CRAM closed with an unflushed container; call "
+                          "cram_flush() and write every container handed to "
+                          "the executor before closing");
             ret = -1;
+        } else {
+            if(fd->ctr->slice)
+                cram_update_curr_slice(fd->ctr, fd->version);
+
+            if (-1 == cram_flush_container_mt(fd, fd->ctr))
+                ret = -1;
+        }
     }
 
     if (fd->mode != 'w')
@@ -5302,6 +5353,14 @@ int cram_close(cram_fd *fd) {
     pthread_mutex_destroy(&fd->ref_lock);
     pthread_mutex_destroy(&fd->range_lock);
     pthread_mutex_destroy(&fd->bam_list_lock);
+
+    if (fd->mode == 'w' && fd->executor_pending != 0) {
+        // Containers the executor never wrote: the file is incomplete, so do
+        // not mark it complete with an EOF block.
+        hts_log_error("CRAM closed with %"PRId64" container(s) handed to the "
+                      "executor but never written", fd->executor_pending);
+        ret = -1;
+    }
 
     if (ret == 0 && fd->mode == 'w') {
         /* Write EOF block */
@@ -5575,6 +5634,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_NTHREADS: {
         int nthreads =  va_arg(args, int);
+        if (fd->executor) {
+            hts_log_error("CRAM threads cannot be combined with a container executor");
+            return -1;
+        }
         CHECK_RANGE(nthreads, 0, INT_MAX/2);
         if (fd->pool)
             return -2;  //already exists!
@@ -5591,6 +5654,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_THREAD_POOL: {
         htsThreadPool *p = va_arg(args, htsThreadPool *);
+        if (fd->executor) {
+            hts_log_error("A CRAM thread pool cannot be combined with a container executor");
+            return -1;
+        }
         if (fd->pool)
             return -2;  //already exists!
         fd->pool = p ? p->pool : NULL;
