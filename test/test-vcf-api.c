@@ -930,6 +930,59 @@ static void chomp(kstring_t *kstr)
         kstr->s[--kstr->l] = '\0';
 }
 
+// Adding header lines can grow the header dictionaries.  Tags and contigs
+// defined before that must stay usable without a bcf_hdr_sync(), as callers
+// often add a line with bcf_hdr_printf() and carry on using the header.
+// Enough lines are added to grow the dictionaries whatever their initial size.
+// A contig line with a bad IDX is added and then dropped from the contig
+// dictionary each time, so that it also holds a deleted entry as it grows.
+static void test_hdr_append_keeps_existing_ids_valid(void)
+{
+    const int n_new = 20000;
+    char header[] = "##fileformat=VCFv4.2\n"
+        "##contig=<ID=1,length=1000>\n"
+        "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+    kstring_t line = KS_INITIALIZE;
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    bcf1_t *rec = bcf_init();
+    enum htsLogLevel logging = hts_get_log_level();
+    int32_t *dp = NULL;
+    int n_dp = 0, i, dp_id;
+    bcf_hrec_t *hrec;
+
+    if (!hdr || !rec) error("Out of memory");
+    if (bcf_hdr_parse(hdr, header) < 0) error("Couldn't parse header");
+    if (read_vcf_line("1\t100\t.\tA\tC\t.\t.\tDP=7", hdr, rec, &line) != 0)
+        error("Couldn't parse record");
+
+    // Silence the warnings about the bad IDX
+    hts_set_log_level(HTS_LOG_ERROR);
+    for (i = 0; i < n_new; i++) {
+        if (bcf_hdr_printf(hdr, "##INFO=<ID=X%d,Number=1,Type=Integer,"
+                           "Description=\"Extra\">", i) < 0
+            || bcf_hdr_printf(hdr, "##contig=<ID=bad,IDX=x>") < 0
+            || bcf_hdr_printf(hdr, "##contig=<ID=c%d,length=100>", i) < 0)
+            error("Couldn't add header line %d", i);
+    }
+    hts_set_log_level(logging);
+
+    dp_id = bcf_hdr_id2int(hdr, BCF_DT_ID, "DP");
+    if (dp_id < 0 || bcf_hdr_id2type(hdr, BCF_HL_INFO, dp_id) != BCF_HT_INT)
+        error("INFO/DP lost its definition after adding header lines");
+    if (bcf_get_info_int32(hdr, rec, "DP", &dp, &n_dp) != 1 || dp[0] != 7)
+        error("Couldn't read INFO/DP after adding header lines");
+    hrec = bcf_hdr_id2hrec(hdr, BCF_DT_CTG, 0, rec->rid);
+    i = hrec ? bcf_hrec_find_key(hrec, "length") : -1;
+    if (i < 0 || strcmp(hrec->vals[i], "1000") != 0)
+        error("Contig 1 lost its definition after adding header lines");
+
+    free(dp);
+    ks_free(&line);
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+}
+
 // Test bcf_remove_allele_set()
 void test_bcf_remove_allele_set(void)
 {
@@ -1104,5 +1157,6 @@ int main(int argc, char **argv)
     test_rlen_values();
     test_bcf_remove_allele_set();
     test_bcf_remove_allele_set_short_lg();
+    test_hdr_append_keeps_existing_ids_valid();
     return 0;
 }
