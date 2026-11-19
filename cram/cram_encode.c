@@ -3225,7 +3225,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
         /* Encode slices */
         if (-1 == cram_flush_container_mt(fd, c))
             return NULL;
-        if (!fd->pool) {
+        if (!fd->pool && !fd->executor) {
             // Move to sep func, as we need cram_flush_container for
             // the closing phase to flush the partial container.
             for (i = 0; i < c->max_slice; i++) {

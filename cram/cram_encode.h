@@ -97,7 +97,7 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s);
  * we should be able to do read_container / write_container or
  * decode_container / encode_container.
  */
-int cram_encode_container(cram_fd *fd, cram_container *c);
+/* cram_encode_container() is public; see htslib/cram.h. */
 
 /*! INTERNAL:
  *

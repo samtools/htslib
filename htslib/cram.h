@@ -636,6 +636,70 @@ int cram_seek(cram_fd *fd, off_t offset, int whence);
 HTSLIB_EXPORT
 int cram_flush(cram_fd *fd);
 
+/*! Receives each full container from a CRAM writer; see
+ *  cram_set_container_executor().
+ *
+ * Called from the thread that is writing records (inside sam_write1(),
+ * cram_put_bam_seq() or cram_flush()), once per container, in file order.
+ * The executor takes ownership of @p c.
+ *
+ * @return 0 on success, -1 to fail the write that triggered it.
+ */
+typedef int cram_container_executor(void *arg, cram_fd *fd, cram_container *c);
+
+/*! Encode CRAM containers on the caller's own threads.
+ *
+ * By default a CRAM writer encodes each full container in the writing thread,
+ * or on its thread pool (CRAM_OPT_NTHREADS, CRAM_OPT_THREAD_POOL).  With an
+ * executor installed, each full container is instead handed to @p fn, which
+ * must arrange for:
+ *
+ *  - cram_encode_container() to be called on it, on any thread, and possibly
+ *    concurrently with other encodes and with further records being written;
+ *  - cram_flush_encoded_container() to be called on it after it is encoded, from one
+ *    thread at a time, in the order the executor received the containers.
+ *
+ * The final, partial container is handed over by cram_flush().  Every handed
+ * over container must be written before hts_close()/cram_close(), which then
+ * write only the EOF block (and finish any index).  If any was not written
+ * (an encode or write failed, or the application gave up), the close reports
+ * an error and writes no EOF block, so the incomplete file cannot pass for a
+ * complete one.  This lets an application
+ * with its own thread pool or task scheduler parallelise CRAM encoding without
+ * starting htslib's.
+ *
+ * Set this immediately after opening, before writing the header.  It cannot be
+ * combined with CRAM_OPT_NTHREADS or CRAM_OPT_THREAD_POOL.  Passing a NULL
+ * @p fn removes the executor.
+ *
+ * @return 0 on success, -1 on failure.
+ */
+HTSLIB_EXPORT
+int cram_set_container_executor(cram_fd *fd, cram_container_executor *fn,
+                                void *arg);
+
+/*! Encode a container handed to a cram_container_executor.
+ *
+ * Thread safe: may run concurrently with other encodes and with records being
+ * added to the file.
+ *
+ * @return 0 on success, -1 on failure.  On failure the container is still
+ * owned by the caller; free it with cram_free_container().
+ */
+HTSLIB_EXPORT
+int cram_encode_container(cram_fd *fd, cram_container *c);
+
+/*! Write an encoded container to the file (and to its index, if any), then
+ *  free it.
+ *
+ * Containers must be written one at a time, in the order the executor
+ * received them.
+ *
+ * @return 0 on success, -1 on failure.  The container is freed either way.
+ */
+HTSLIB_EXPORT
+int cram_flush_encoded_container(cram_fd *fd, cram_container *c);
+
 /*! Checks for end of file on a cram_fd stream.
  *
  * @return
