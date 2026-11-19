@@ -5991,7 +5991,8 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
                 && b_cigar > bam_get_cigar(b)
                 && bam_cigar_op(b_cigar[-1]) == BAM_CDEL) {
                 // Del in B means it's moved on further than A
-                do {
+                while (a_iref + a->core.pos < b_iref+b->core.pos &&
+                       a_iseq < a->core.l_qseq) {
                     a_qual[a_iseq] = amul
                         ? a_qual[a_iseq]*0.8
                         : 0;
@@ -5999,11 +6000,12 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
                                                  &a_icig, &a_iseq, &a_iref);
                     if (a_ret < 0)
                         return -(a_ret<-1); // 0 or -1
-                } while (a_iref + a->core.pos < b_iref+b->core.pos);
+                }
             } else if (a_cigar > bam_get_cigar(a)
                        && bam_cigar_op(a_cigar[-1]) == BAM_CDEL) {
                 // Del in A means it's moved on further than B
-                do {
+                while (b_iref + b->core.pos < a_iref+a->core.pos &&
+                       b_iseq < b->core.l_qseq) {
                     b_qual[b_iseq] = bmul
                         ? b_qual[b_iseq]*0.8
                         : 0;
@@ -6011,7 +6013,7 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
                                                  &b_icig, &b_iseq, &b_iref);
                     if (b_ret < 0)
                         return -(b_ret<-1); // 0 or -1
-                } while (b_iref + b->core.pos < a_iref+a->core.pos);
+                }
             } else {
                 // Anything else, eg ref-skip, we don't support here
                 continue;
