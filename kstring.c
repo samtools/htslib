@@ -144,9 +144,9 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 {
 	va_list args;
 	int l;
-	va_copy(args, ap);
 
 	if (fmt[0] == '%' && fmt[1] == 'g' && fmt[2] == 0) {
+        va_copy(args, ap);
 		double d = va_arg(args, double);
 		l = kputd(d, s);
 		va_end(args);
@@ -162,14 +162,24 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 		s->l = 0;
 	}
 
-	l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args); // This line does not work with glibc 2.0. See `man snprintf'.
+	va_copy(args, ap);
+	// This line does not work with glibc 2.0. See `man snprintf'.
+	l = vsnprintf(s->s + s->l,
+	              s->m - s->l < INT_MAX ? s->m - s->l : INT_MAX,
+	              fmt, args);
 	va_end(args);
+	if (l < 0)
+		return -1;
 	if (l + 1 > s->m - s->l) {
 		if (ks_resize(s, s->l + l + 2) < 0)
 			return -1;
 		va_copy(args, ap);
-		l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args);
+		l = vsnprintf(s->s + s->l,
+		              s->m - s->l < INT_MAX ? s->m - s->l : INT_MAX,
+		              fmt, args);
 		va_end(args);
+		if (l < 0)
+			return -1;
 	}
 	s->l += l;
 	return l;
