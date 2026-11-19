@@ -24,14 +24,11 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-#include <dirent.h>
-#include <errno.h>
-#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -42,6 +39,11 @@ DEALINGS IN THE SOFTWARE.  */
 
 #define TEMP_DIR "/tmp/"
 #define TEMP_PREFIX "htsfai."
+
+// Whether paths of the form "/proc/self/fd/<fd>" can be used to refer to
+// files that have been unlinked but are still open (a Linux feature).
+// Determined once, on the first call.
+static int use_proc_fd = -1;
 
 // Fetches (at most) the first 64 sequences, to exercise the random-access
 // seek paths.
@@ -59,73 +61,98 @@ static void fetch_a_few(faidx_t *fai) {
     }
 }
 
-// Removes leftover temporary files from runs that were killed before they
-// could clean up after themselves.
-static void unlink_stale_temp_files(void) {
-    DIR *dir = opendir(TEMP_DIR);
-    struct dirent *entry;
+// Creates a temporary file under TEMP_DIR (the only location the OSS-Fuzz
+// sandbox allows us to write to) and returns an open descriptor for it.
+//
+// Where possible the file is unlinked immediately, keeping the descriptor
+// open so it can still be referred to via its /proc/self/fd/<fd> name.
+// The kernel reclaims unlinked files when the process exits, even if it is
+// killed, so no clean-up code is needed and no stray files are ever left
+// behind - unlike named temporary files, which survive if the fuzzer is
+// killed before it can tidy up (e.g. on AFL++ timeouts).  As the files are
+// anonymous, they cannot be confused with, or clobber, files made by other
+// processes when fuzzers are run in parallel.
+//
+// On systems without /proc, the path is kept and removed on a best-effort
+// basis by remove_temp_file().
+static int create_temp_file(char *path, size_t path_size, const char *suffix) {
+    char tmpl[64];
+    int fd;
 
-    if (dir == NULL)
-        return;
+    snprintf(tmpl, sizeof tmpl, TEMP_DIR TEMP_PREFIX "%ld.%s.XXXXXX",
+             (long) getpid(), suffix);
+    fd = mkstemp(tmpl);
+    if (fd < 0)
+        return -1;
 
-    while ((entry = readdir(dir)) != NULL) {
-        const char *name = entry->d_name;
-        char *end;
-        long pid;
-        char path[512];
-
-        if (strncmp(name, TEMP_PREFIX, sizeof TEMP_PREFIX - 1) != 0)
-            continue;
-        pid = strtol(name + sizeof TEMP_PREFIX - 1, &end, 10);
-        if (end == name + sizeof TEMP_PREFIX - 1 || pid <= 0
-            || (*end != '\0' && *end != '.'))
-            continue;
-        if (kill((pid_t) pid, 0) == 0 || errno != ESRCH)
-            continue;
-
-        if (snprintf(path, sizeof path, TEMP_DIR "%s", name)
-            < (int) sizeof path)
-            unlink(path);
+    if (use_proc_fd) {
+        unlink(tmpl);
+        snprintf(path, path_size, "/proc/self/fd/%d", fd);
+    } else {
+        snprintf(path, path_size, "%s", tmpl);
     }
 
-    closedir(dir);
+    return fd;
+}
+
+static void remove_temp_file(const char *path) {
+    if (!use_proc_fd)
+        unlink(path);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    char fa[64], idx[80];
-    int fd;
+    char fa_path[96], fai_path[96], gzi_path[96];
+    int fd_fa, fd_fai, fd_gzi;
+    faidx_t *fai;
 
     if (size == 0 || size > (1 << 20))
         return 0;
 
-    // Clean up any files left behind by killed runs, then (re)create ours.
-    unlink_stale_temp_files();
-
-    snprintf(fa, sizeof fa, TEMP_DIR TEMP_PREFIX "%ld.XXXXXX",
-             (long) getpid());
-    fd = mkstemp(fa);
-    if (fd < 0)
-        return 0;
-    if (write(fd, data, size) != (ssize_t) size) {
-        close(fd);
-        unlink(fa);
-        return 0;
-    }
-    close(fd);
-
-    // fai_load builds the index by parsing the FASTA/FASTQ body, then reads
-    // it back; fetching a few sequences exercises the random-access seek
-    // paths.
-    faidx_t *fai = fai_load(fa);
-    if (fai) {
-        fetch_a_few(fai);
-        fai_destroy(fai);
+    if (use_proc_fd < 0) {
+        struct stat st;
+        use_proc_fd = (stat("/proc/self/fd", &st) == 0);
     }
 
-    snprintf(idx, sizeof idx, "%s.fai", fa);
-    unlink(idx);
-    snprintf(idx, sizeof idx, "%s.gzi", fa);
-    unlink(idx);
-    unlink(fa);
+    fd_fa = create_temp_file(fa_path, sizeof fa_path, "fa");
+    if (fd_fa < 0)
+        return 0;
+    if (write(fd_fa, data, size) != (ssize_t) size) {
+        close(fd_fa);
+        remove_temp_file(fa_path);
+        return 0;
+    }
+
+    // The index files are created empty, so build the index explicitly with
+    // fai_build3() (fai_load3() with FAI_CREATE would find the empty files
+    // and skip the build), then load it back; fetching a few sequences
+    // exercises the random-access seek paths.
+    fd_fai = create_temp_file(fai_path, sizeof fai_path, "fai");
+    fd_gzi = create_temp_file(gzi_path, sizeof gzi_path, "gzi");
+    if (fd_fai >= 0 && fd_gzi >= 0
+        && fai_build3(fa_path, fai_path, gzi_path) == 0) {
+        // Load as both FASTA and FASTQ, to exercise both index parsers
+        // (fai_read).  Failed loads simply return NULL.
+        fai = fai_load3(fa_path, fai_path, gzi_path, 0);
+        if (fai) {
+            fetch_a_few(fai);
+            fai_destroy(fai);
+        }
+
+        fai = fai_load3_format(fa_path, fai_path, gzi_path, 0, FAI_FASTQ);
+        if (fai) {
+            fetch_a_few(fai);
+            fai_destroy(fai);
+        }
+    }
+
+    close(fd_fa);
+    if (fd_fai >= 0)
+        close(fd_fai);
+    if (fd_gzi >= 0)
+        close(fd_gzi);
+    remove_temp_file(fa_path);
+    remove_temp_file(fai_path);
+    remove_temp_file(gzi_path);
     return 0;
 }
+
