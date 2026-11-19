@@ -87,7 +87,9 @@ static int print_pileup_seq(const bam_pileup1_t *p, int n) {
         if (p->is_del)
             putchar(p->is_refskip ? (is_rev ? '<' : '>') : '*');
         else {
-            unsigned char c = seq_nt16_str[bam_seqi(seq, p->qpos)];
+            unsigned char c = p->qpos < p->b->core.l_qseq
+                ? seq_nt16_str[bam_seqi(seq, p->qpos)]
+                : 'N';
             putchar(is_rev ? tolower(c) : toupper(c));
         }
 
