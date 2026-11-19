@@ -312,8 +312,16 @@ int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *hdr, const char *str)
     return ret;
 }
 
-// Point h->id[type][] at the entries of dictionary type.  Every entry's id
-// must already be below h->n[type].
+
+// There are two ways to access a header dictionary entry:
+//  - by name, such as DP -> hash lookup -> bcf_idinfo_t containing Type, Number, etc.
+//  - by numeric ID -> hdr->id[type][id].val -> the same bcf_idinfo_t
+//
+// Adding entries can cause rehashing, moving the bcf_idinfo_t values and leaving
+// the hdr->id[type][id].val pointers stale.  Refresh those pointers here.
+//
+// Every entry's numeric ID must already be nonnegative and below hdr->n[type],
+// with space allocated in hdr->id[type].
 static void bcf_hdr_sync_ids(bcf_hdr_t *h, int type)
 {
     vdict_t *d = (vdict_t*)h->dict[type];
@@ -335,7 +343,8 @@ int bcf_hdr_sync(bcf_hdr_t *h)
         if ( h->n[i] < kh_size(d) )
         {
             bcf_idpair_t *new_idpair;
-            // this should be true only for i=2, BCF_DT_SAMPLE
+            // this should be true only for i=2, BCF_DT_SAMPLE, tag/contig insertion
+            // grows id[] and updates n[] through bcf_hdr_set_idx().
             new_idpair = hts_realloc_p(h->id[i], sizeof(bcf_idpair_t), kh_size(d));
             if (!new_idpair) return -1;
             h->n[i] = kh_size(d);
@@ -1200,15 +1209,15 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
     bcf_hrec_check(hrec);   // todo: check return status and propagate errors up
 
-    // A kh_put() rehash moves every entry, leaving hdr->id[] stale until a
-    // bcf_hdr_sync() that callers often skip.  A rehash either grows the
-    // table or, clearing deleted slots, lowers n_occupied; check for both.
+    // kh_put() can rehash the dictionary, invalidating hdr->id[] value pointers.
+    // Detect the rehash by a change in bucket count and update stale pointers,
+    // callers often skip bcf_hdr_sync()
     khint_t buckets[BCF_DT_CTG + 1], occupied[BCF_DT_CTG + 1];
     int type;
     for (type = BCF_DT_ID; type <= BCF_DT_CTG; type++) {
         vdict_t *d = (vdict_t*)hdr->dict[type];
-        buckets[type] = kh_n_buckets(d);
-        occupied[type] = d->n_occupied;
+        buckets[type] = kh_n_buckets(d);    // number of live buckets
+        occupied[type] = d->n_occupied;     // number of both live and deleted slots
     }
     res = bcf_hdr_register_hrec(hdr,hrec);
     for (type = BCF_DT_ID; type <= BCF_DT_CTG; type++) {
