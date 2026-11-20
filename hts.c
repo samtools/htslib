@@ -1030,7 +1030,7 @@ static int get_int_kmg(const char *str, int min_val, int max_val,
 
     if (l < INT32_MIN || l > INT32_MAX) {
         // Just enough to ensure multiplications do not overflow
-        hts_log_error("Value of out range: expected >= %d_val and <= %d",
+        hts_log_error("Value out of range: expected >= %d and <= %d",
                       min_val, max_val);
         return -1;
     }
@@ -1049,7 +1049,7 @@ static int get_int_kmg(const char *str, int min_val, int max_val,
     }
 
     if (l < min_val || l > max_val) {
-        hts_log_error("Value of out range: expected >= %d_val and <= %d",
+        hts_log_error("Value out of range: expected >= %d and <= %d",
                       min_val, max_val);
         return -1;
     }
