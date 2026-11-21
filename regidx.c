@@ -487,7 +487,7 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, hts_pos_t
 
     ss = se+1;
     *beg = hts_parse_decimal(ss, &se, 0);
-    if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
+    if ( ss==se || !*se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     ss = se+1;
     *end = hts_parse_decimal(ss, &se, 0) - 1;
