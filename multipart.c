@@ -141,11 +141,12 @@ static const struct hFILE_backend multipart_backend =
 };
 
 // Returns 'v' (valid value), 'i' (invalid; required GA4GH field missing),
-// or upon encountering an unexpected token, that token's type.
+// '!' (out of memory), '?' (JSON parse error), '\0' (EOF), or upon
+// encountering an unexpected token, that token's type.
 // Explicit `return '?'` means a JSON parsing error, typically a member key
 // that is not a string.  An unexpected token may be a valid token that was
-// not the type expected for a particular GA4GH field, or it may be '?' or
-// '\0' which should be propagated.
+// not the type expected for a particular GA4GH field, or it may be '!', '?'
+// or '\0' which should be propagated.
 static char
 parse_ga4gh_body_json(hFILE_multipart *fp, hFILE *json,
                       kstring_t *b, kstring_t *header)
@@ -219,11 +220,12 @@ parse_ga4gh_body_json(hFILE_multipart *fp, hFILE *json,
 }
 
 // Returns 'v' (valid value), 'i' (invalid; required GA4GH field missing),
-// or upon encountering an unexpected token, that token's type.
+// '!' (out of memory), '?' (JSON parse error), '\0' (EOF), or upon
+// encountering an unexpected token, that token's type.
 // Explicit `return '?'` means a JSON parsing error, typically a member key
 // that is not a string.  An unexpected token may be a valid token that was
-// not the type expected for a particular GA4GH field, or it may be '?' or
-// '\0' which should be propagated.
+// not the type expected for a particular GA4GH field, or it may be '!', '?'
+// or '\0' which should be propagated.
 static char
 parse_ga4gh_redirect_json(hFILE_multipart *fp, hFILE *json,
                           kstring_t *b, kstring_t *header) {
@@ -263,7 +265,15 @@ hFILE *hopen_htsget_redirect(hFILE *hfile, const char *mode)
     if (ret != 'v') {
         free_all_parts(fp);
         hfile_destroy((hFILE *) fp);
-        errno = (ret == '?' || ret == '\0')? EPROTO : EINVAL;
+        switch (ret) {
+        case '?': // fall through
+        case '\0':
+            errno = EPROTO; break;
+        case '!':
+            errno = ENOMEM; break;
+        default:
+            errno = EINVAL; break;
+        }
         return NULL;
     }
 
