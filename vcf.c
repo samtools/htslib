@@ -3273,7 +3273,9 @@ static inline int align_mem(kstring_t *s)
     return e == 0 ? 0 : -1;
 }
 
-#define MAX_N_FMT 255   /* Limited by size of bcf1_t n_fmt field */
+#define MAX_N_INFO 65535   /* Limited by size of bcf1_t n_info field */
+#define MAX_N_ALLELE 65535 /* Limited by size of bcf1_t n_allele field */
+#define MAX_N_FMT 255      /* Limited by size of bcf1_t n_fmt field */
 
 // detect FORMAT "."
 static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
@@ -5797,6 +5799,13 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         return 0;
     }
 
+    if (!inf && line->n_info == MAX_N_INFO) {
+        hts_log_error("Too many INFO entries at %s:%"PRIhts_pos" (max supported is %d)",
+                      bcf_seqname_safe(hdr, line), line->pos + 1, MAX_N_INFO);
+        line->errcode |= BCF_ERR_LIMITS;
+        return -1;
+    }
+
     if (is_end_tag)
     {
         if (n != 1)
@@ -5961,6 +5970,13 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
         return 0;
     }
 
+    if (!fmt && line->n_fmt == MAX_N_FMT) {
+        hts_log_error("Too many FORMAT entries at %s:%"PRIhts_pos" (max supported is %d)",
+                      bcf_seqname_safe(hdr, line), line->pos + 1, MAX_N_FMT);
+        line->errcode |= BCF_ERR_LIMITS;
+        return -1;
+    }
+
     line->n_sample = bcf_hdr_nsamples(hdr);
     int nps = n / line->n_sample;  // number of values per sample
     assert( nps && nps*line->n_sample==n );     // must be divisible by n_sample
@@ -6104,7 +6120,7 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
     line->d.var_type = -1;
 
     line->n_allele = nals;
-    hts_expand(char*, line->n_allele, line->d.m_allele, line->d.allele);
+    hts_expand(char*, nals, line->d.m_allele, line->d.allele);
 
     char *als = line->d.als;
     int n = 0;
@@ -6122,6 +6138,13 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
 }
 int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
+    if (nals < 0 || nals > MAX_N_ALLELE) {
+        hts_log_error("Allele count outside supported range at %s:%"PRIhts_pos,
+                      bcf_seqname_safe(hdr, line), line->pos + 1);
+        line->errcode |= BCF_ERR_LIMITS;
+        return -1;
+    }
+
     if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
     char *free_old = NULL;
     char buffer[256];
@@ -6186,17 +6209,29 @@ int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles,
 
 int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
 {
+    int nals = 1;
+    const char *s;
+    for (s = alleles_string; *s; ++s) {
+        if (*s != ',') continue;
+        if (nals == UINT16_MAX) {
+            hts_log_error("Too many alleles at %s:%"PRIhts_pos,
+                          bcf_seqname_safe(hdr, line), line->pos + 1);
+            line->errcode |= BCF_ERR_LIMITS;
+            return -1;
+        }
+        ++nals;
+    }
+
     if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line, BCF_UN_STR);
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
     kputs(alleles_string, &tmp);
     line->d.als = tmp.s; line->d.m_als = tmp.m;
 
-    int nals = 1;
     char *t = line->d.als;
     while (*t)
     {
-        if ( *t==',' ) { *t = 0; nals++; }
+        if ( *t==',' ) *t = 0;
         t++;
     }
     return _bcf1_sync_alleles(hdr, line, nals);
