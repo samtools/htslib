@@ -167,8 +167,10 @@ int main(int argc, char **argv) {
 
         puts("---");
 
-        bam_parse_basemod2(b, m, flags);
-
+        if (bam_parse_basemod2(b, m, flags) < 0) {
+            fprintf(stderr, "Failed to parse MM/ML aux tags\n");
+            goto err;
+        }
         // List possible mod choices.
         int *all_mods;
         int all_mods_n = 0;

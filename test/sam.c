@@ -296,7 +296,8 @@ static int aux_fields1(void)
 
         check_aux_count(aln, 24, "Original record");
 
-        bam_aux_del(aln,p);
+        if (bam_aux_del(aln,p) < 0)
+            fail("bam_aux_del failed");
         if (bam_aux_get(aln,"XA"))
             fail("XA field was not deleted");
 
@@ -330,19 +331,22 @@ static int aux_fields1(void)
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), HELLO);
 
-        bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO)+1,NEW_HELLO);
+        if (bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO)+1,NEW_HELLO) < 0)
+            fail("bam_aux_update_str failed");
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO);
         if (!check_bam_aux_get(aln, "XH", 'H'))
             fail("bam_aux_update_str(,,strlen(NEW_HELLO)+1,NEW_HELLO) corrupted XH tag");
 
-        bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO2), NEW_HELLO2);
+        if (bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO2), NEW_HELLO2) < 0)
+            fail("bam_aux_update_str failed");
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO2) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO2);
         if (!check_bam_aux_get(aln, "XH", 'H'))
             fail("bam_aux_update_str(,,strlen(NEW_HELLO2),NEW_HELLO2) corrupted XH tag");
 
-        bam_aux_update_str(aln,"XZ",-1,NEW_HELLO);
+        if (bam_aux_update_str(aln,"XZ",-1,NEW_HELLO) < 0)
+            fail("bam_aux_update_str failed");
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO);
         if (!check_bam_aux_get(aln, "XH", 'H'))
@@ -501,18 +505,24 @@ static int aux_fields1(void)
         // Append a couple of strings
         // First add and remove some data so that failure to NUL-terminate will
         // be spotted
-        bam_aux_update_str(aln,"oo",strlen(hose) + 1,hose);
+        if (bam_aux_update_str(aln,"oo",strlen(hose) + 1,hose) < 0)
+            fail("bam_aux_update_str failed");
         if ((p = check_bam_aux_get(aln, "oo", 'Z')) && strcmp(bam_aux2Z(p), hose) != 0)
             fail("oo field is \"%s\", expected \"%s\"", bam_aux2Z(p), hose);
-        if (p) bam_aux_del(aln, p);
+        if (p) {
+            if (bam_aux_del(aln, p) < 0)
+                fail("bam_aux_del failed");
+        }
         if (bam_aux_get(aln, "oo"))
             fail("oo field wasn't deleted correctly");
 
-        bam_aux_update_str(aln,"Za",strlen(HELLO),HELLO);
+        if (bam_aux_update_str(aln,"Za",strlen(HELLO),HELLO) < 0)
+            fail("bam_aux_update_str failed");
         if ((p = check_bam_aux_get(aln, "Za", 'Z')) && strcmp(bam_aux2Z(p), HELLO) != 0)
             fail("Za field is \"%s\", expected \"%s\"", bam_aux2Z(p), HELLO);
 
-        bam_aux_update_str(aln,"Zb",strlen(NEW_HELLO2)+1,NEW_HELLO2);
+        if (bam_aux_update_str(aln,"Zb",strlen(NEW_HELLO2)+1,NEW_HELLO2) < 0)
+            fail("bam_aux_update_str failed");
         if ((p = check_bam_aux_get(aln, "Zb", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO2) != 0)
             fail("Zb field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO2);
 
@@ -575,21 +585,24 @@ static void set_qname(void)
     kstring_t ks = { 0, 0, NULL };
 
     if (sam_read1(in, header, aln) >= 0) {
-        bam_set_qname(aln, "r1");
+        if (bam_set_qname(aln, "r1") < 0)
+            fail("bam_set_qname(aln, \"r1\") failed");
         if (sam_format1(header, aln, &ks) < 0) fail("can't format record");
         if (strcmp(ks.s, r1) != 0) fail("record formatted incorrectly:\nGot: \"%s\"\nExp: \"%s\"\n", ks.s, r1);
     }
     else fail("can't read record");
 
     if (sam_read1(in, header, aln) >= 0) {
-        bam_set_qname(aln, "r234");
+        if (bam_set_qname(aln, "r234") < 0)
+            fail("bam_set_qname(aln, \"r234\") failed");
         if (sam_format1(header, aln, &ks) < 0) fail("can't format record");
         if (strcmp(ks.s, r2) != 0) fail("record formatted incorrectly:\nGot: \"%s\"\nExp: \"%s\"\n", ks.s, r2);
     }
     else fail("can't read record");
 
     if (sam_read1(in, header, aln) >= 0) {
-        bam_set_qname(aln, "xyz");
+        if (bam_set_qname(aln, "xyz") < 0)
+            fail("bam_set_qname(aln, \"xyz\") failed");
         if (sam_format1(header, aln, &ks) < 0) fail("can't format record");
         if (strcmp(ks.s, r3) != 0) fail("record formatted incorrectly:\nGot: \"%s\"\nExp: \"%s\"\n", ks.s, r3);
     }
