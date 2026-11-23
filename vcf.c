@@ -2174,6 +2174,21 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                         bcf_hdr_id2int(hdr, BCF_DT_ID, "GT") : -1 :
                     -1;
 
+    // Sample selection changes the header count, but records still contain
+    // the original samples until bcf_subset_format() has been called.
+    if (hdr) {
+        int nsamples = hdr->nsamples_ori > 0
+            ? hdr->nsamples_ori : bcf_hdr_nsamples(hdr);
+        if (rec->n_sample != nsamples) {
+            hts_log_error("Bad BCF record at %s:%"PRIhts_pos
+                          ": Number of samples does not match header (%u vs %d)",
+                          bcf_seqname_safe(hdr, rec), rec->pos + 1,
+                          (unsigned int) rec->n_sample, nsamples);
+            rec->errcode |= BCF_ERR_NCOLS;
+            return -2;
+        }
+    }
+
     // Check for valid contig ID
     if (rec->rid < 0
         || (hdr && (rec->rid >= hdr->n[BCF_DT_CTG]
