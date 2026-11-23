@@ -798,7 +798,9 @@ void test_rlen_values(void)
     ++id; check0(bcf_update_info_int32(hdr, rec, "SVLEN", &val, 2));  //Add svlen
     if (rec->rlen != 6)
         error("Incorrect rlen set, expected 6 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
-    ++id; bcf_copy(rec2, rec);
+    ++id;
+    if (bcf_copy(rec2, rec) == NULL)
+        error("bcf_copy() failed");
     if (rec2->rlen != 6)
         error("Incorrect rlen set, expected 6 got %"PRIhts_pos" @ %d\n", rec->rlen, id);
 

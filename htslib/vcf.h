@@ -439,6 +439,10 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     /*
      *  bcf_dup() - create a copy of BCF record.
      *
+     *  @param src    record to duplicate
+     *
+     *  @return  A new bcf1_t on success; NULL on failure.
+     *
      *  Note that bcf_unpack() must be called on the returned copy as if it was
      *  obtained from bcf_read(). Also note that bcf_dup() calls bcf_sync1(src)
      *  internally to reflect any changes made by bcf_update_* functions.
@@ -448,6 +452,21 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      */
     HTSLIB_EXPORT
     bcf1_t *bcf_dup(bcf1_t *src);
+
+
+    /// Copy bcf1_t structure contents
+    /** @param  dst    Destination record
+     *  @param  src    Source record
+     *
+     *  @return  @p dst on success; NULL on failure
+     *
+     *  Note that bcf_unpack() must be called on @p dst as if it was
+     *  obtained from bcf_read(). Also note that bcf_dup() calls bcf_sync1(src)
+     *  internally to reflect any changes made by bcf_update_* functions.
+     *
+     *  @p dst should not be used if this function fails as it may be
+     *  internally inconsistent.
+     */
 
     HTSLIB_EXPORT
     bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src);
