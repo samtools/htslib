@@ -1,0 +1,19 @@
+##fileformat=VCFv4.4
+##FILTER=<ID=PASS,Description="All filters passed">
+##contig=<ID=1,length=1000>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##comment="GT-only diploid lines use a fast path in vcf_parse_format(); the others do not"
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A	B	C
+1	1	.	A	C	.	.	.	GT	0|0	0|1	1|1
+1	2	.	A	C	.	.	.	GT	0/0	0/1	1/1
+1	3	.	A	C	.	.	.	GT	0|1	0/1	1|0
+1	4	.	A	C	.	.	.	GT	./.	.|.	./1
+1	5	.	A	C	.	.	.	GT	.|1	1|.	1/.
+1	6	.	A	C	.	.	.	GT	9|9	0/9	9/0
+1	7	.	A	C	.	.	.	GT	10|1	0|1	0|0
+1	8	.	A	C	.	.	.	GT	0	0|1	0|0
+1	9	.	A	C	.	.	.	GT	0|1|1	0|1	0|0
+1	11	.	A	C	.	.	.	GT	0|1	0|1	0/0
+1	14	.	A	C	.	.	.	GT:DP	0|1:3	0|1:.	0/0:1
+1	15	.	A	C	.	.	.	GT	0/1	1|1	0/0

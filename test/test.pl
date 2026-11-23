@@ -1187,6 +1187,9 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing-data.vcf 2>&1 >/dev/null");
     test_cmd($opts, %args, out => "emptyfile",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf 2>&1 >/dev/null");
+    # Diploid GT-only lines (parsed by a fast path) mixed with ones that are not
+    test_cmd($opts, %args, out => "gt-fastpath.out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/gt-fastpath.vcf");
     test_cmd($opts, %args, out => "vcf_meta_meta.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf_meta_meta.vcf");
 
