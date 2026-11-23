@@ -152,16 +152,19 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
     }
     if (bq && redo_baq)
     {
-        bam_aux_del(b, bq-1);
+        if (bam_aux_del(b, bq-1) < 0)
+            return -4;
         bq = 0;
     }
     if (bq && zq) { // remove the ZQ tag
-        bam_aux_del(b, zq-1);
+        if (bam_aux_del(b, zq-1) < 0)
+            return -4;
         zq = 0;
     }
     if (!zq && fix_bq) { // Need to fix invalid BQ tag (by realigning)
         assert(bq != NULL);
-        bam_aux_del(b, bq-1);
+        if (bam_aux_del(b, bq-1) < 0)
+            return -4;
         bq = 0;
     }
 
@@ -321,8 +324,12 @@ int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag) {
         }
         if (apply_baq) {
             for (i = 0; i < c->l_qseq; ++i) qual[i] -= bq[i] - 64; // modify qual
-            bam_aux_append(b, "ZQ", 'Z', c->l_qseq + 1, bq);
-        } else bam_aux_append(b, "BQ", 'Z', c->l_qseq + 1, bq);
+            if (bam_aux_append(b, "ZQ", 'Z', c->l_qseq + 1, bq) < 0)
+                goto fail;
+        } else {
+            if (bam_aux_append(b, "BQ", 'Z', c->l_qseq + 1, bq) < 0)
+                goto fail;
+        }
         free(bq); free(state);
     }
 
