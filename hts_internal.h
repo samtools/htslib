@@ -196,6 +196,13 @@ static inline int svlen_on_ref_for_vcf_alt(const char *alt, int32_t size)
     return alt[sz - 1] == '>' ? 1 : 0; // Check symbolic allele ends correctly
 }
 
+// Multi-threaded VCF reading (vcf.c)
+int vcf_set_thread_pool(htsFile *fp, htsThreadPool *p);
+int vcf_set_threads(htsFile *fp, int nthreads);
+// Frees the state; returns the thread pool to destroy, if it owned one, so
+// that the caller can do so after closing the BGZF stream that may use it.
+struct hts_tpool *vcf_state_destroy(htsFile *fp);
+
 #ifdef __cplusplus
 }
 #endif

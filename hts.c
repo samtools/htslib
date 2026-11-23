@@ -1769,16 +1769,23 @@ int hts_close(htsFile *fp)
     case fastq_format:
     case sam:
     case vcf:
+        {
+        struct hts_tpool *vcf_pool = NULL;
         if (fp->format.format == sam)
             ret = sam_state_destroy(fp);
         else if (fp->format.format == fastq_format ||
                  fp->format.format == fasta_format)
             fastq_state_destroy(fp);
+        else if (fp->format.format == vcf && !fp->is_write)
+            vcf_pool = vcf_state_destroy(fp);
 
         if (fp->format.compression != no_compression)
             ret |= bgzf_close(fp->fp.bgzf);
         else
             ret |= hclose(fp->fp.hfile);
+        if (vcf_pool)
+            hts_tpool_destroy(vcf_pool);
+        }
         break;
 
     default:
@@ -2020,6 +2027,8 @@ int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->format.format == sam) {
         return sam_set_threads(fp, n);
+    } else if (fp->format.format == vcf && !fp->is_write) {
+        return vcf_set_threads(fp, n);
     } else if (fp->format.compression == bgzf) {
         return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
     } else if (fp->format.format == cram) {
@@ -2031,6 +2040,11 @@ int hts_set_threads(htsFile *fp, int n)
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (fp->format.format == sam || fp->format.format == text_format) {
         return sam_set_thread_pool(fp, p);
+    } else if (fp->format.format == vcf && !fp->is_write) {
+        if (fp->format.compression == bgzf
+            && bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize) < 0)
+            return -1;
+        return vcf_set_thread_pool(fp, p);
     } else if (fp->format.compression == bgzf) {
         return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
     } else if (fp->format.format == cram) {
