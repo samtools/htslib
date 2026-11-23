@@ -2517,6 +2517,7 @@ static inline int bcf1_sync_info(bcf1_t *line, kstring_t *str)
     return 0;
 }
 
+HTS_RESULT_USED
 static int bcf1_sync(bcf1_t *line)
 {
     char *shared_ori = line->shared.s;
@@ -2724,9 +2725,15 @@ static int bcf1_sync(bcf1_t *line)
 
 bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
 {
-    bcf1_sync(src);
+    if (bcf1_sync(src) < 0)
+        return NULL;
 
     bcf_clear(dst);
+    if (hts_resize(char, src->shared.l, &dst->shared.m, &dst->shared.s, 0) < 0)
+        return NULL;
+    if (hts_resize(char, src->indiv.l, &dst->indiv.m, &dst->indiv.s, 0) < 0)
+        return NULL;
+
     dst->rid  = src->rid;
     dst->pos  = src->pos;
     dst->rlen = src->rlen;
@@ -2734,19 +2741,10 @@ bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
     dst->n_info = src->n_info; dst->n_allele = src->n_allele;
     dst->n_fmt = src->n_fmt; dst->n_sample = src->n_sample;
 
-    if ( dst->shared.m < src->shared.l )
-    {
-        dst->shared.s = (char*) realloc(dst->shared.s, src->shared.l);
-        dst->shared.m = src->shared.l;
-    }
     dst->shared.l = src->shared.l;
-    memcpy(dst->shared.s,src->shared.s,dst->shared.l);
+    if (dst->shared.l)
+        memcpy(dst->shared.s,src->shared.s,dst->shared.l);
 
-    if ( dst->indiv.m < src->indiv.l )
-    {
-        dst->indiv.s = (char*) realloc(dst->indiv.s, src->indiv.l);
-        dst->indiv.m = src->indiv.l;
-    }
     dst->indiv.l = src->indiv.l;
     if (dst->indiv.l)
         memcpy(dst->indiv.s,src->indiv.s,dst->indiv.l);
@@ -2756,7 +2754,12 @@ bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
 bcf1_t *bcf_dup(bcf1_t *src)
 {
     bcf1_t *out = bcf_init1();
-    return bcf_copy(out, src);
+    if (bcf_copy(out, src) == NULL)
+    {
+        bcf_destroy(out);
+        return NULL;
+    }
+    return out;
 }
 
 int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
@@ -2784,7 +2787,10 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
         hts_log_error("Unchecked error (%d %s) at %s:%"PRIhts_pos, v->errcode, bcf_strerror(v->errcode, errdescription, sizeof(errdescription)), bcf_seqname_safe(h,v), v->pos+1);
         return -1;
     }
-    bcf1_sync(v);   // check if the BCF record was modified
+
+    // check if the BCF record was modified
+    if (bcf1_sync(v) < 0)
+        return -1;
 
     if ( v->unpacked & BCF_IS_64BIT )
     {
