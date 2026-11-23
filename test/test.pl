@@ -1190,6 +1190,10 @@ sub test_vcf_various
     test_cmd($opts, %args, out => "vcf_meta_meta.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/vcf_meta_meta.vcf");
 
+    # Diploid GTs written by a fast path mixed with ones that are not
+    test_cmd($opts, %args, out => "gt-format-fastpath.out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/gt-format-fastpath.vcf");
+
     # VCF file with contig IDX=1, simulating an edited BCF file
     # See htslib issue 1534
     test_cmd($opts, %args, out => "modhdr.expected.vcf",
