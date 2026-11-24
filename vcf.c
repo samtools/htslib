@@ -3374,7 +3374,8 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                                  char *p, char *q, fmt_aux_t *fmt) {
     int n_sample_ori = -1;
     char *r = q + 1;  // r: position in the format string
-    int l = 0, m = 1, g = 1, j;
+    size_t l = 0, m = 1, g = 1;
+    int j;
     v->n_sample = 0;  // m: max vector size, l: max field len, g: max number of alleles
     const char *end = s->s + s->l;
 
@@ -3439,6 +3440,13 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             default: // valid due to while loop above.
             case ':':
                 l = r - r_start; r_start = r;
+                // Validate full-width counts before storing them in fmt_aux_t.
+                if (l > INT_MAX || m > INT_MAX || g > INT_MAX) {
+                    hts_log_error("FORMAT field too large at %s:%"PRIhts_pos,
+                                  bcf_seqname_safe(h,v), v->pos+1);
+                    v->errcode |= BCF_ERR_LIMITS;
+                    return -1;
+                }
                 if (f->max_m < m) f->max_m = m;
                 if (f->max_l < l) f->max_l = l;
                 if (f->is_gt && f->max_g < g) f->max_g = g;
@@ -3481,12 +3489,13 @@ static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     int j;
     for (j = 0; j < v->n_fmt; ++j) {
         fmt_aux_t *f = &fmt[j];
+        uint64_t size;
         if ( !f->max_m ) f->max_m = 1;  // omitted trailing format field
 
         if ((f->y>>4&0xf) == BCF_HT_STR) {
-            f->size = f->is_gt? f->max_g << 2 : f->max_l;
+            size = f->is_gt ? (uint64_t) f->max_g * 4 : f->max_l;
         } else if ((f->y>>4&0xf) == BCF_HT_REAL || (f->y>>4&0xf) == BCF_HT_INT) {
-            f->size = f->max_m << 2;
+            size = (uint64_t) f->max_m * 4;
         } else {
             hts_log_error("The format type %d at %s:%"PRIhts_pos" is currently not supported", f->y>>4&0xf, bcf_seqname_safe(h,v), v->pos+1);
             v->errcode |= BCF_ERR_TAG_INVALID;
@@ -3502,7 +3511,9 @@ static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         // Limit the total memory to ~2Gb per VCF row.  This should mean
         // malformed VCF data is less likely to take excessive memory and/or
         // time.
-        if ((uint64_t) mem->l + v->n_sample * (uint64_t)f->size > INT_MAX) {
+        // Each count is at most INT_MAX and n_sample is a 24-bit field,
+        // so the byte count and total fit in uint64_t before this check.
+        if (size > INT_MAX || (uint64_t) mem->l + v->n_sample * size > INT_MAX) {
             static int warned = 0;
             if ( !warned ) hts_log_warning("Excessive memory required by FORMAT fields at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
             warned = 1;
@@ -3512,13 +3523,14 @@ static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
             continue;
         }
 
+        f->size = size;
         f->offset = mem->l;
         if (ks_resize(mem, mem->l + v->n_sample * (size_t)f->size) < 0) {
             hts_log_error("Memory allocation failure at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
             v->errcode |= BCF_ERR_LIMITS;
             return -1;
         }
-        mem->l += v->n_sample * f->size;
+        mem->l += v->n_sample * (size_t) f->size;
     }
 
     {
