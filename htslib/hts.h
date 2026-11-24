@@ -323,6 +323,7 @@ enum hts_fmt_option {
     CRAM_OPT_USE_ARITH,
     CRAM_OPT_POS_DELTA,  // force delta for AP, even on non-pos sorted data
     CRAM_OPT_RM_UR,  // remove any UR tags
+    CRAM_OPT_REQUIRED_TAGS, // char *: with SAM_AUX, decode only these tags
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,

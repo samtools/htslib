@@ -1245,6 +1245,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
                strcmp(o->arg, "NAME_PREFIX") == 0) {
         o->opt = CRAM_OPT_PREFIX, o->val.s = val;
 
+    } else if (strcmp(o->arg, "required_tags") == 0 ||
+               strcmp(o->arg, "REQUIRED_TAGS") == 0) {
+        o->opt = CRAM_OPT_REQUIRED_TAGS, o->val.s = val;
+
     } else if (strcmp(o->arg, "store_md") == 0 ||
                strcmp(o->arg, "STORE_MD") == 0) {
         o->opt = CRAM_OPT_STORE_MD;
@@ -1351,6 +1355,7 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
                 // fall through
             case CRAM_OPT_VERSION:
             case CRAM_OPT_PREFIX:
+            case CRAM_OPT_REQUIRED_TAGS:
             case HTS_OPT_FILTER:
             case FASTQ_OPT_AUX:
             case FASTQ_OPT_BARCODE:
