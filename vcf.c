@@ -4310,6 +4310,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
         *(q = (char*)aux.p) = 0;
 
         if (vcf_parse_format(s, h, v, p, q)) {
+            // Don't claim to have sample data that wasn't (fully) stored
+            v->n_fmt = v->n_sample = 0;
+            v->indiv.l = 0;
             goto err;
         }
     }

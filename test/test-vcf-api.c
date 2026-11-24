@@ -986,6 +986,59 @@ static void test_hdr_append_keeps_existing_ids_valid(void)
 // vcf_parse() adds undeclared INFO, FORMAT and contig names to the header,
 // growing its dictionaries part way through a record.  Check every name
 // added that way can still be looked up, and that records round-trip.
+static void parse_line(const char *line, const bcf_hdr_t *hdr, bcf1_t *rec,
+                       int exp_ret, const char *exp_out)
+{
+    kstring_t str = KS_INITIALIZE, out = KS_INITIALIZE;
+    int ret;
+    if (kputs(line, &str) < 0) error("Out of memory");
+    if ((ret = vcf_parse(&str, hdr, rec)) != exp_ret)
+        error("vcf_parse returned %d, expected %d", ret, exp_ret);
+    if (vcf_format(hdr, rec, &out) < 0)
+        error("vcf_format failed");
+    if (strcmp(out.s, exp_out) != 0)
+        error("Wrong record:\n  expected: %s  got:      %s", exp_out, out.s);
+    ks_free(&str);
+    ks_free(&out);
+}
+
+// A record whose sample columns could not be parsed should not have any
+// sample data, in particular not that of the previous line.
+static void test_failed_format_parse(void)
+{
+    char header[] = "##fileformat=VCFv4.2\n"
+        "##contig=<ID=1>\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\tS2\n";
+    const char *good = "1\t1\t.\tA\tG\t.\t.\t.\tGT\t0/1\t1/1";
+    // Not a number in S2, and a missing S2
+    const char *bad[2] = { "1\t5\t.\tT\t.\t.\t.\t.\tGT\t./.\t\001",
+                           "1\t5\t.\tT\t.\t.\t.\t.\tGT\t./." };
+    const char *exp_good = "1\t1\t.\tA\tG\t.\t.\t.\tGT\t0/1\t1/1\n";
+    const char *exp_bad = "1\t5\t.\tT\t.\t.\t.\t.\n";
+    enum htsLogLevel logging = hts_get_log_level();
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    int i;
+
+    if (!hdr) error("Out of memory");
+    if (bcf_hdr_parse(hdr, header) < 0) error("Couldn't parse header");
+
+    hts_set_log_level(HTS_LOG_OFF);  // Silence the expected errors
+    for (i = 0; i < 2; i++) {
+        bcf1_t *rec = bcf_init();
+        if (!rec) error("Out of memory");
+        // On a new record, after a good line, and followed by a good line
+        parse_line(bad[i], hdr, rec, -2, exp_bad);
+        parse_line(good, hdr, rec, 0, exp_good);
+        parse_line(bad[i], hdr, rec, -2, exp_bad);
+        parse_line(good, hdr, rec, 0, exp_good);
+        bcf_destroy(rec);
+    }
+    hts_set_log_level(logging);
+
+    bcf_hdr_destroy(hdr);
+}
+
 static void test_undeclared_names_grow_header(void)
 {
     const int n_info = 200, n_fmt = 50, n_ctg = 100;
@@ -1236,6 +1289,7 @@ int main(int argc, char **argv)
     test_bcf_remove_allele_set();
     test_bcf_remove_allele_set_short_lg();
     test_hdr_append_keeps_existing_ids_valid();
+    test_failed_format_parse();
     test_undeclared_names_grow_header();
     return 0;
 }
