@@ -1807,10 +1807,10 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
     if ( !reg->tbx )
     {
         size_t iline = 0;
-        int len = strlen(regions);
-        int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
+        size_t len = strlen(regions);
+        int is_bed = len >= 4 && !strcasecmp(".bed",regions+len-4);
         int r;
-        if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
+        if ( !is_bed && len >= 7 && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
 
         if ( reg->file->format.format==vcf ) ito = 1;
 
