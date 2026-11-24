@@ -418,15 +418,19 @@ bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec)
         out->value = strdup(hrec->value);
         if (!out->value) goto fail;
     }
-    out->nkeys = hrec->nkeys;
-    out->keys = hts_malloc_p(sizeof(char*), hrec->nkeys);
-    if (!out->keys) goto fail;
-    out->vals = hts_malloc_p(sizeof(char*), hrec->nkeys);
-    if (!out->vals) goto fail;
-    int i, j = 0;
+    if (hrec->nkeys > 0) {
+        out->keys = hts_calloc(sizeof(*out->keys), hrec->nkeys);
+        if (!out->keys) goto fail;
+        out->vals = hts_calloc(sizeof(*out->vals), hrec->nkeys);
+        if (!out->vals) goto fail;
+    }
+    int i;
     for (i=0; i<hrec->nkeys; i++)
     {
         if ( hrec->keys[i] && !strcmp("IDX",hrec->keys[i]) ) continue;
+        // Both arrays exist and this slot is zeroed, so cleanup is safe
+        // even if either of the following string allocations fails.
+        int j = out->nkeys++;
         if ( hrec->keys[i] ) {
             out->keys[j] = strdup(hrec->keys[i]);
             if (!out->keys[j]) goto fail;
@@ -435,9 +439,7 @@ bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec)
             out->vals[j] = strdup(hrec->vals[i]);
             if (!out->vals[j]) goto fail;
         }
-        j++;
     }
-    if ( i!=j ) out->nkeys -= i-j;   // IDX was omitted
     return out;
 
  fail:
