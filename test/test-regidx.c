@@ -412,6 +412,39 @@ void test(set_line_f set_line, regidx_parse_f parse)
     regidx_destroy(idx);
 }
 
+void test_reset(void)
+{
+    char line[] = "1\t10\t20";
+    regidx_t *idx = regidx_init(NULL,regidx_parse_tab,NULL,0,NULL);
+    if ( !idx ) error("init failed\n");
+    if ( regidx_insert(idx,line)!=0 ) error("insert failed: %s\n", line);
+    regitr_t *itr = regitr_init(idx);
+    if ( !itr ) error("init failed\n");
+
+    if ( !regidx_overlap(idx,"1",11,14,itr) ) error("query failed, there should be a hit\n");
+    if ( !regitr_overlap(itr) ) error("query failed, expected one hit, found none\n");
+
+    // after the reset there is no query to iterate over
+    regitr_reset(idx,itr);
+    if ( regitr_overlap(itr) ) error("found a hit after regitr_reset, there should be none\n");
+    debug("ok: no overlap found after reset\n");
+
+    // but the iterator can be used for another query or for looping
+    int nhit = 0;
+    while ( regitr_loop(itr) ) nhit++;
+    if ( nhit!=1 ) error("looping failed, expected one region, found %d\n",nhit);
+
+    regitr_reset(idx,itr);
+    if ( !regidx_overlap(idx,"1",11,14,itr) ) error("query failed, there should be a hit\n");
+    nhit = 0;
+    while ( regitr_overlap(itr) ) nhit++;
+    if ( nhit!=1 ) error("query failed, expected one hit, found %d\n",nhit);
+    debug("ok: iterator used again after reset\n");
+
+    regitr_destroy(itr);
+    regidx_destroy(idx);
+}
+
 static void usage(void)
 {
     fprintf(stderr, "Usage: test-regidx [OPTIONS]\n");
@@ -458,6 +491,9 @@ int main(int argc, char **argv)
 
     info("Testing custom payload\n");
     test_custom_payload();
+
+    info("Testing iterator reset\n");
+    test_reset();
 
     info("Testing cases encountered in past\n");
     test_explicit("12:2064519-2064763","12:2064488-2067434","1");
