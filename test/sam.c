@@ -601,6 +601,86 @@ static void set_qname(void)
     free(ks.s);
 }
 
+typedef struct {
+    int n_read;        // records supplied so far
+    int n_con, n_des;  // constructor and destructor calls
+} plp_reset_data;
+
+// Supplies four 8M records, starting at 100, 102, 104 and 106
+static int plp_reset_read(void *data, bam1_t *b)
+{
+    plp_reset_data *d = data;
+    const uint32_t cigar[] = { bam_cigar_gen(8, BAM_CMATCH) };
+
+    if (d->n_read == 4) return -1;
+    return bam_set1(b, 1, "q", 0, 0, 100 + 2 * d->n_read++, 60, 1, cigar,
+                    -1, -1, 0, 8, "ACGTACGT", NULL, 0) < 0 ? -2 : 0;
+}
+
+static int plp_reset_con(void *data, const bam1_t *b, bam_pileup_cd *cd)
+{
+    plp_reset_data *d = data;
+    if (!(cd->p = malloc(1))) return -1;
+    d->n_con++;
+    return 0;
+}
+
+static int plp_reset_des(void *data, const bam1_t *b, bam_pileup_cd *cd)
+{
+    plp_reset_data *d = data;
+    free(cd->p);
+    d->n_des++;
+    return 0;
+}
+
+// Resetting an iterator that still holds records should pass them to the
+// destructor.
+static void test_plp_reset(void)
+{
+    plp_reset_data d = { 0, 0, 0 };
+    int tid, pos, n, n_cols = 0;
+    bam_plp_t iter = bam_plp_init(plp_reset_read, &d);
+
+    VERIFY(iter != NULL, "bam_plp_init failed");
+    bam_plp_constructor(iter, plp_reset_con);
+    bam_plp_destructor(iter, plp_reset_des);
+
+    VERIFY(bam_plp_auto(iter, &tid, &pos, &n) != NULL, "bam_plp_auto failed");
+    VERIFY(d.n_con > 0 && d.n_des == 0, "expected records in the buffer");
+    bam_plp_reset(iter);
+    VERIFY(d.n_des == d.n_con, "destructor not called by bam_plp_reset");
+
+    // The iterator can be used again
+    d.n_read = 0;
+    while (bam_plp_auto(iter, &tid, &pos, &n) != NULL) n_cols++;
+    VERIFY(n == 0 && n_cols == 14, "wrong pileup after reset");
+    VERIFY(d.n_des == d.n_con, "destructor calls don't match after reset");
+
+cleanup:
+    if (iter) bam_plp_destroy(iter);
+}
+
+static void test_mplp_reset(void)
+{
+    plp_reset_data d = { 0, 0, 0 };
+    void *data[1] = { &d };
+    const bam_pileup1_t *plp[1];
+    int tid, pos, n[1];
+    bam_mplp_t iter = bam_mplp_init(1, plp_reset_read, data);
+
+    VERIFY(iter != NULL, "bam_mplp_init failed");
+    bam_mplp_constructor(iter, plp_reset_con);
+    bam_mplp_destructor(iter, plp_reset_des);
+
+    VERIFY(bam_mplp_auto(iter, &tid, &pos, n, plp) > 0, "bam_mplp_auto failed");
+    VERIFY(d.n_con > 0 && d.n_des == 0, "expected records in the buffer");
+    bam_mplp_reset(iter);
+    VERIFY(d.n_des == d.n_con, "destructor not called by bam_mplp_reset");
+
+cleanup:
+    if (iter) bam_mplp_destroy(iter);
+}
+
 static void iterators1(void)
 {
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_REST, 0, 0));
@@ -2333,6 +2413,8 @@ int main(int argc, char **argv)
 
     aux_fields1();
     iterators1();
+    test_plp_reset();
+    test_mplp_reset();
     samrecord_layout();
     use_header_api();
     test_header_pg_lines();
