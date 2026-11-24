@@ -1474,7 +1474,16 @@ sub test_plugin_loading {
 
 sub test_index_load {
     my ($opts) = @_;
-    testv $opts, "$$opts{path}/test_index_load $$opts{tmp}";
+    my $test = "test_index_load";
+    my $cmd = "$$opts{path}/test_index_load $$opts{tmp}";
+    print "$test:\n";
+    print "\t$cmd\n";
+    my ($ret,$out) = _cmd("$cmd 2>&1");
+    if ( $ret ) {
+        print $out;
+        failed($opts,$test);
+    }
+    else { passed($opts,$test); }
 }
 
 sub test_realn {
