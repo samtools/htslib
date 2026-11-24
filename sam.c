@@ -5774,9 +5774,9 @@ bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
     iter->head = iter->tail = mp_alloc(iter->mp);
     iter->max_tid = iter->max_pos = -1;
     iter->maxcnt = 8000;
+    iter->data = data;
     if (func) {
         iter->func = func;
-        iter->data = data;
         iter->b = bam_init1();
     }
     return iter;
