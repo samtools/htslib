@@ -118,6 +118,7 @@ typedef struct
     vdict_t dict;   // bcf_hdr_t.dict[0] vdict_t dictionary which keeps bcf_idinfo_t for BCF_HL_FLT,BCF_HL_INFO,BCF_HL_FMT
     hdict_t *gen;   // hdict_t dictionary which keeps bcf_hrec_t* pointers for generic and structured fields
     size_t *key_len;// length of h->id[BCF_DT_ID] strings
+    int m_key_len;  // allocated number of key_len entries
     int version;    //cached version
     uint32_t ref_count; // reference count, low bit indicates bcf_hdr_destroy() has been called
 }
@@ -375,9 +376,10 @@ int bcf_hdr_sync(bcf_hdr_t *h)
 
     // Invalidate key length cache
     bcf_hdr_aux_t *aux = get_hdr_aux(h);
-    if (aux && aux->key_len) {
+    if (aux) {
         free(aux->key_len);
         aux->key_len = NULL;
+        aux->m_key_len = 0;
     }
 
     h->dirty = 0;
@@ -4518,20 +4520,12 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 
     bcf_unpack((bcf1_t*)v, BCF_UN_ALL & ~(BCF_UN_INFO|BCF_UN_FMT));
 
-    // Cache of key lengths so we don't keep repeatedly using them.
-    // This assumes we're not modifying the header between successive calls
-    // to vcf_format, but that would lead to many other forms of breakage
-    // so it feels like a valid assumption to make.
-    //
-    // We cannot just do this in bcf_hdr_sync as some code (eg bcftools
-    // annotate) manipulates the headers directly without calling sync to
-    // refresh the data structures.  So we must do just-in-time length
-    // calculation during writes instead.
+    // Cache key lengths lazily. Callers can add header tags without calling
+    // bcf_hdr_sync(), so grow the cache here and clear newly allocated slots.
     bcf_hdr_aux_t *aux = get_hdr_aux(h);
-    if (!aux->key_len) {
-        if (!(aux->key_len = calloc(h->n[BCF_DT_ID]+1, sizeof(*aux->key_len))))
-            return -1;
-    }
+    if (hts_resize(size_t, h->n[BCF_DT_ID], &aux->m_key_len,
+                   &aux->key_len, HTS_RESIZE_CLEAR) < 0)
+        return -1;
     size_t *key_len = aux->key_len;
 
     kputs(chrom, s); // CHROM
