@@ -550,10 +550,85 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
  * Returns 0 on success
  *        -1 on failure
  */
+static cram_map *map_find(cram_map **map, unsigned char *key, int id);
+
+enum { CRAM_TAG_SKIP, CRAM_TAG_CONSUME, CRAM_TAG_KEEP };
+
+/* Whether tag name t[0..1] is in fd->required_tags */
+static int cram_tag_wanted(cram_fd *fd, const unsigned char *t) {
+    const char *r;
+    for (r = fd->required_tags; *r; r += 2)
+        if (r[0] == t[0] && r[1] == t[1])
+            return 1;
+    return 0;
+}
+
+/* Whether codec c reads from a block already in use */
+static int cram_codec_uses_block(cram_slice *s, cram_codec *c,
+                                 int *block_used, int core_used) {
+    int bnum1, bnum2, j;
+
+    bnum1 = cram_codec_to_id(c, &bnum2);
+    for (;;) {
+        if (bnum1 == -1 && core_used)
+            return 1;
+        for (j = 0; bnum1 >= 0 && j < s->hdr->num_blocks; j++)
+            if (block_used[j] && s->block[j]->content_type == EXTERNAL &&
+                s->block[j]->content_id == bnum1)
+                return 1;
+        if (bnum2 == -2 || bnum1 == bnum2)
+            return 0;
+        bnum1 = bnum2;
+    }
+}
+
+/*
+ * With fd->required_tags, fills s->tl_act: for each tag of each TL line,
+ * whether it is kept, decoded only to keep shared blocks in step, or skipped.
+ */
+static int cram_tag_actions(cram_fd *fd, cram_block_compression_hdr *hdr,
+                            cram_slice *s, int *block_used, int core_used) {
+    int i, n = 0;
+    unsigned char *act;
+
+    for (i = 0; i < hdr->nTL; i++)
+        n += strlen((char *)hdr->TL[i]) / 3;
+    free(s->tl_act);
+    s->tl_act = malloc(hdr->nTL * sizeof(*s->tl_act) + n + 1);
+    if (!s->tl_act)
+        return -1;
+    act = (unsigned char *)(s->tl_act + hdr->nTL);
+
+    for (i = 0; i < hdr->nTL; i++) {
+        unsigned char *TN = hdr->TL[i];
+        s->tl_act[i] = act;
+        for (; *TN; TN += 3) {
+            int id = (TN[0]<<16) | (TN[1]<<8) | TN[2];
+            cram_map *m = map_find(hdr->tag_encoding_map, TN, id);
+            if (cram_tag_wanted(fd, TN) || (TN[0] == 'c' && TN[1] == 'F'))
+                *act++ = CRAM_TAG_KEEP;
+            else if (m && m->codec &&
+                     cram_codec_uses_block(s, m->codec, block_used, core_used))
+                *act++ = CRAM_TAG_CONSUME;
+            else
+                *act++ = CRAM_TAG_SKIP;
+        }
+    }
+    s->keep_md = cram_tag_wanted(fd, (unsigned char *)"MD");
+    s->keep_nm = cram_tag_wanted(fd, (unsigned char *)"NM");
+    if (!s->keep_md && !s->keep_nm)
+        s->decode_md = 0;
+
+    return 0;
+}
+
 int cram_dependent_data_series(cram_fd *fd,
                                cram_block_compression_hdr *hdr,
                                cram_slice *s) {
     int *block_used;
+    int blocks_changed;
+    // Decode only the aux tags listed in fd->required_tags
+    int filt = fd->required_tags && (fd->required_fields & SAM_AUX);
     int core_used = 0;
     int i;
     static int i_to_id[] = {
@@ -568,7 +643,7 @@ int cram_dependent_data_series(cram_fd *fd,
      * Set the data_series bit field based on fd->required_fields
      * contents.
      */
-    if (fd->required_fields && fd->required_fields != INT_MAX) {
+    if ((fd->required_fields && fd->required_fields != INT_MAX) || filt) {
         s->data_series = 0;
 
         if (fd->required_fields & SAM_QNAME)
@@ -610,7 +685,9 @@ int cram_dependent_data_series(cram_fd *fd,
             s->data_series |= CRAM_QUAL;
 
         if (fd->required_fields & SAM_AUX)
-            s->data_series |= CRAM_RG | CRAM_TL | CRAM_aux;
+            s->data_series |= CRAM_TL | CRAM_aux |
+                (filt && !cram_tag_wanted(fd, (unsigned char *)"RG")
+                 ? 0 : CRAM_RG);
 
         if (fd->required_fields & SAM_RGAUX)
             s->data_series |= CRAM_RG | CRAM_BF;
@@ -634,6 +711,7 @@ int cram_dependent_data_series(cram_fd *fd,
         return -1;
 
     do {
+        blocks_changed = 0;
         /*
          * Also set data_series based on code prerequisites. Eg if we need
          * CRAM_QS then we also need to know CRAM_RL so we know how long it
@@ -731,7 +809,13 @@ int cram_dependent_data_series(cram_fd *fd,
 
                 while (m) {
                     cram_codec *c = m->codec;
-                    if (!c) {
+                    unsigned char key[2] = {(m->key>>16)&0xff,
+                                            (m->key>>8)&0xff};
+                    // Unselected tags are read only if they share a block
+                    if (!c || (filt && !cram_tag_wanted(fd, key) &&
+                               !(key[0] == 'c' && key[1] == 'F') &&
+                               !cram_codec_uses_block(s, c, block_used,
+                                                      core_used))) {
                         m = m->next;
                         continue;
                     }
@@ -744,6 +828,7 @@ int cram_dependent_data_series(cram_fd *fd,
                             break;
 
                         case -1:
+                            blocks_changed |= !core_used;
                             core_used = 1;
                             break;
 
@@ -751,6 +836,7 @@ int cram_dependent_data_series(cram_fd *fd,
                             for (j = 0; j < s->hdr->num_blocks; j++) {
                                 if (s->block[j]->content_type == EXTERNAL &&
                                     s->block[j]->content_id == bnum1) {
+                                    blocks_changed |= !block_used[j];
                                     block_used[j] = 1;
                                     if (cram_uncompress_block(s->block[j])) {
                                         free(block_used);
@@ -836,14 +922,15 @@ int cram_dependent_data_series(cram_fd *fd,
 
                     case -1:
                         //printf(" + data series %08x:\n", CRAM_aux);
-                        s->data_series |= CRAM_aux;
+                        if (!filt)
+                            s->data_series |= CRAM_aux;
                         break;
 
                     default:
                         for (j = 0; j < s->hdr->num_blocks; j++) {
                             if (s->block[j]->content_type == EXTERNAL &&
                                 s->block[j]->content_id == bnum1) {
-                                if (block_used[j]) {
+                                if (block_used[j] && !filt) {
                                     //printf(" + data series %08x:\n",
                                     //       CRAM_aux);
                                     s->data_series |= CRAM_aux;
@@ -862,7 +949,12 @@ int cram_dependent_data_series(cram_fd *fd,
                 m = m->next;
             }
         }
-    } while (orig_ds != s->data_series);
+    } while (orig_ds != s->data_series || (filt && blocks_changed));
+
+    if (filt && cram_tag_actions(fd, hdr, s, block_used, core_used) < 0) {
+        free(block_used);
+        return -1;
+    }
 
     free(block_used);
     return 0;
@@ -2008,6 +2100,7 @@ static int cram_decode_aux(cram_fd *fd,
     int32_t TL = 0;
     unsigned char *TN;
     uint32_t ds = s->data_series;
+    unsigned char *act;
     cr->has_CG = 0;
 
     if (!(ds & (CRAM_TL|CRAM_aux))) {
@@ -2024,6 +2117,7 @@ static int cram_decode_aux(cram_fd *fd,
 
     TN = c->comp_hdr->TL[TL];
     cr->ntags = strlen((char *)TN)/3; // optimise to remove strlen
+    act = s->tl_act ? s->tl_act[TL] : NULL;
 
     //printf("TC=%d\n", cr->ntags);
     cr->aux_size = 0;
@@ -2036,12 +2130,20 @@ static int cram_decode_aux(cram_fd *fd,
         int32_t id, out_sz = 1;
         unsigned char tag_data[7];
         cram_map *m;
+        int a = act ? act[i] : CRAM_TAG_KEEP;
 
-        if (TN[0] == 'M' && TN[1] == 'D' && has_MD)
+        if (a == CRAM_TAG_SKIP) {
+            TN += 3;
+            continue;
+        }
+
+        if (a != CRAM_TAG_KEEP)
+            ;
+        else if (TN[0] == 'M' && TN[1] == 'D' && has_MD)
             *has_MD = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);
         if (TN[0] == 'N' && TN[1] == 'M' && has_NM)
             *has_NM = (BLOCK_SIZE(s->aux_blk)+3) * (TN[2] == '*' ? -1 : 1);;
-        if (TN[0] == 'C' && TN[1] == 'G')
+        if (a == CRAM_TAG_KEEP && TN[0] == 'C' && TN[1] == 'G')
             cr->has_CG = 1;
 
         //printf("Tag %d/%d\n", i+1, cr->ntags);
@@ -2067,6 +2169,11 @@ static int cram_decode_aux(cram_fd *fd,
             out_sz *= aux_ele_size(TN[-1]);
         r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
         if (r) break;
+        if (a == CRAM_TAG_CONSUME) {
+            // Read to keep a shared block in step, but not selected
+            BLOCK_SIZE(s->aux_blk) -= out_sz + 3;
+            continue;
+        }
         cr->aux_size += out_sz + 3;
 
         // cF CRAM flags.
@@ -2092,6 +2199,12 @@ static int cram_decode_aux(cram_fd *fd,
             hts_log_error("CRAM->BAM aux block size overflow");
             goto block_err;
         }
+    }
+
+    // Unselected MD / NM: act as if present so they are not generated
+    if (act) {
+        if (!s->keep_md && has_MD) *has_MD = 1;
+        if (!s->keep_nm && has_NM) *has_NM = 1;
     }
 
     return r;

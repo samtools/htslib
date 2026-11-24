@@ -655,6 +655,11 @@ struct cram_slice {
     unsigned int data_series; // See cram_fields enum
     int decode_md;
 
+    // Per TL line, one CRAM_TAG_* action per tag; NULL decodes all tags.
+    // Set when fd->required_tags selects tags (see cram_dependent_data_series)
+    unsigned char **tl_act;
+    int keep_md, keep_nm;      // MD / NM selected by fd->required_tags
+
     int max_rec, curr_rec;       // current and max recs per slice
     int slice_num;               // To be copied into c->curr_slice in decode
 
@@ -826,6 +831,7 @@ struct cram_fd {
     int use_arith;
     int shared_ref;
     unsigned int required_fields;
+    char *required_tags; // NULL or concatenated 2-char tag names, eg "ASNM"
     int store_md;
     int store_nm;
     int remove_ur;

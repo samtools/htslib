@@ -49,6 +49,7 @@ run_test('test_view',$opts,0);
 run_test('test_view',$opts,4);
 
 run_test('test_MD',$opts);
+run_test('test_required_tags',$opts);
 
 run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep');
 run_test('test_bcf2vcf',$opts);
@@ -1048,6 +1049,57 @@ sub test_MD
             failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
         }
     }
+}
+
+# CRAM_OPT_REQUIRED_TAGS: decoding a subset of tags must give the full
+# decode with every other tag removed (RG is kept as it is SAM_RGAUX).
+sub test_required_tags
+{
+    my ($opts) = @_;
+    my $fails = 0;
+
+    my $read_recs = sub {
+        my ($fn, $keep) = @_;
+        open(my $fh, '<', $fn) || die "$fn: $!";
+        my @recs;
+        while (<$fh>) {
+            next if /^@/;
+            chomp;
+            my @f = split(/\t/);
+            my @aux = @f[11..$#f];
+            @aux = grep { /^(..):/ && exists($$keep{$1}) } @aux if $keep;
+            push(@recs, join("\t", @f[0..10], @aux));
+        }
+        close($fh);
+        return \@recs;
+    };
+
+    foreach my $t (["auxf#values.sam", "auxf.fa"],
+                   ["xx#MD.sam", "xx.fa"],
+                   ["xx#large_aux.sam", "xx.fa"]) {
+        my ($sam, $ref) = @$t;
+        my $cram = "$$opts{tmp}/required_tags.tmp.cram";
+        my $out = "$$opts{tmp}/required_tags.tmp.sam";
+        print "test_required_tags: $sam\n";
+        $test_view_failures = 0;
+        testv $opts, "./test_view -t $ref -C $sam > $cram";
+        testv $opts, "./test_view $cram > $out.all";
+        foreach my $tags ("", "NM", "MD", "MD:NM", "BC:Z0:Ab:Bz:co", "iA:Ju") {
+            my %keep = map { $_ => 1 } ("RG", split(/:/, $tags));
+            foreach my $th ("", "-\@2") {
+                testv $opts, "./test_view $th -i required_tags=$tags $cram > $out";
+                my $exp = $read_recs->("$out.all", \%keep);
+                my $got = $read_recs->($out);
+                if (join("\n", @$exp) ne join("\n", @$got)) {
+                    print STDERR "FAILED required_tags=$tags $th\n";
+                    $test_view_failures++;
+                }
+            }
+        }
+        $fails += $test_view_failures;
+    }
+    if ($fails) { failed($opts, "test_required_tags", "$fails subtests failed"); }
+    else        { passed($opts, "test_required_tags"); }
 }
 
 sub test_index

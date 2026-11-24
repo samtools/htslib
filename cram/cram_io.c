@@ -110,6 +110,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../htslib/bgzf.h"
 #include "../htslib/faidx.h"
 #include "../hts_internal.h"
+#include "../textutils_internal.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX FILENAME_MAX
@@ -4214,6 +4215,8 @@ void cram_free_slice(cram_slice *s) {
     if (s->TN)
         free(s->TN);
 
+    free(s->tl_act);
+
     if (s->pair_keys)
         string_pool_destroy(s->pair_keys);
 
@@ -5325,6 +5328,7 @@ int cram_close(cram_fd *fd) {
         sam_hdr_destroy(fd->header);
 
     free(fd->prefix);
+    free(fd->required_tags);
 
     if (fd->ctr)
         cram_free_container(fd->ctr);
@@ -5613,6 +5617,33 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         if (fd->range.refid != -2)
             fd->required_fields |= SAM_POS;
         break;
+
+    case CRAM_OPT_REQUIRED_TAGS: {
+        // Tag names separated by any non-alphanumeric character, eg "AS:NM"
+        const char *t = va_arg(args, const char *);
+        char *tags = NULL;
+        size_t n = 0;
+        if (t) {
+            if (!(tags = malloc(strlen(t) + 1)))
+                return -1;
+            while (*t) {
+                if (!isalnum_c(*t)) { t++; continue; }
+                if (!isalpha_c(t[0]) || !isalnum_c(t[1])
+                    || (t[2] && isalnum_c(t[2]))) {
+                    hts_log_error("Invalid tag list for required_tags");
+                    free(tags);
+                    return -1;
+                }
+                tags[n++] = t[0];
+                tags[n++] = t[1];
+                t += 2;
+            }
+            tags[n] = '\0';
+        }
+        free(fd->required_tags);
+        fd->required_tags = tags;
+        break;
+    }
 
     case CRAM_OPT_STORE_MD:
         CHECK_RANGE(fd->store_md = va_arg(args, int), 0, 1);
