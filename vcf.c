@@ -5093,7 +5093,11 @@ int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src)
         else
         {
             int j = bcf_hrec_find_key(src->hrec[i],"ID");
-            assert( j>=0 ); // this should always be true for valid VCFs
+            if (j < 0) {
+                hts_log_error("Missing ID in header line %s", src->hrec[i]->key);
+                errno = EINVAL;
+                return -1;
+            }
 
             bcf_hrec_t *rec = bcf_hdr_get_hrec(dst, src->hrec[i]->type, "ID", src->hrec[i]->vals[j], NULL);
             if ( !rec ) {
@@ -5106,18 +5110,24 @@ int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src)
                 // macro cannot be used here because dst header is not synced yet.
                 vdict_t *d_src = (vdict_t*)src->dict[BCF_DT_ID];
                 vdict_t *d_dst = (vdict_t*)dst->dict[BCF_DT_ID];
-                khint_t k_src  = kh_get(vdict, d_src, src->hrec[i]->vals[0]);
-                khint_t k_dst  = kh_get(vdict, d_dst, src->hrec[i]->vals[0]);
+                khint_t k_src  = kh_get(vdict, d_src, src->hrec[i]->vals[j]);
+                khint_t k_dst  = kh_get(vdict, d_dst, src->hrec[i]->vals[j]);
+                if (k_src >= kh_end(d_src) || k_dst >= kh_end(d_dst)) {
+                    hts_log_error("Inconsistent header dictionaries for tag %s",
+                                  src->hrec[i]->vals[j]);
+                    errno = EINVAL;
+                    return -1;
+                }
                 if ( (kh_val(d_src,k_src).info[rec->type]>>8 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>8 & 0xf) )
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different lengths",
-                        src->hrec[i]->vals[0]);
+                        src->hrec[i]->vals[j]);
                     ret |= 1;
                 }
                 if ( (kh_val(d_src,k_src).info[rec->type]>>4 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>4 & 0xf) )
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different types",
-                        src->hrec[i]->vals[0]);
+                        src->hrec[i]->vals[j]);
                     ret |= 1;
                 }
             }
@@ -5197,7 +5207,11 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
         else
         {
             int j = bcf_hrec_find_key(src->hrec[i],"ID");
-            assert( j>=0 ); // this should always be true for valid VCFs
+            if (j < 0) {
+                hts_log_error("Missing ID in header line %s", src->hrec[i]->key);
+                errno = EINVAL;
+                return NULL;
+            }
 
             bcf_hrec_t *rec = bcf_hdr_get_hrec(dst, src->hrec[i]->type, "ID", src->hrec[i]->vals[j], NULL);
             if ( !rec ) {
@@ -5210,17 +5224,23 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
                 // macro cannot be used here because dst header is not synced yet.
                 vdict_t *d_src = (vdict_t*)src->dict[BCF_DT_ID];
                 vdict_t *d_dst = (vdict_t*)dst->dict[BCF_DT_ID];
-                khint_t k_src  = kh_get(vdict, d_src, src->hrec[i]->vals[0]);
-                khint_t k_dst  = kh_get(vdict, d_dst, src->hrec[i]->vals[0]);
+                khint_t k_src  = kh_get(vdict, d_src, src->hrec[i]->vals[j]);
+                khint_t k_dst  = kh_get(vdict, d_dst, src->hrec[i]->vals[j]);
+                if (k_src >= kh_end(d_src) || k_dst >= kh_end(d_dst)) {
+                    hts_log_error("Inconsistent header dictionaries for tag %s",
+                                  src->hrec[i]->vals[j]);
+                    errno = EINVAL;
+                    return NULL;
+                }
                 if ( (kh_val(d_src,k_src).info[rec->type]>>8 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>8 & 0xf) )
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different lengths",
-                        src->hrec[i]->vals[0]);
+                        src->hrec[i]->vals[j]);
                 }
                 if ( (kh_val(d_src,k_src).info[rec->type]>>4 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>4 & 0xf) )
                 {
                     hts_log_warning("Trying to combine \"%s\" tag definitions of different types",
-                        src->hrec[i]->vals[0]);
+                        src->hrec[i]->vals[j]);
                 }
             }
         }
