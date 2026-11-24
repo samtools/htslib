@@ -81,6 +81,15 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam);
  * Returns header ptr on success;
  *         NULL on failure
  */
+/*! Sets hdr->needed_ids to the external block content IDs that decoding
+ * fd->required_fields reads, as cram_dependent_data_series() finds them.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int cram_needed_block_ids(cram_fd *fd, cram_block_compression_hdr *hdr);
+
 cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
                                                            cram_block *b);
 

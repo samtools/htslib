@@ -1148,7 +1148,39 @@ cram_block *cram_new_block(enum cram_content_type content_type,
  * Returns cram_block pointer on success.
  *         NULL on failure
  */
-cram_block *cram_read_block(cram_fd *fd) {
+static int cmp_int(const void *a, const void *b) {
+    int x = *(const int *)a, y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+
+/* Skips len bytes of fd, seeking if possible. Returns 0 on success */
+static int cram_skip_bytes(cram_fd *fd, int32_t len) {
+    char buf[8192];
+
+    if (!fd->skip_by_read) {
+        if (hseek(fd->fp, len, SEEK_CUR) >= 0)
+            return 0;
+        // Not seekable (eg a pipe): the failed seek left the buffer as it
+        // was, so clear the error and read through the data instead.
+        hclearerr(fd->fp);
+        fd->skip_by_read = 1;
+    }
+    while (len > 0) {
+        ssize_t n = hread(fd->fp, buf, len < sizeof(buf) ? len : sizeof(buf));
+        if (n <= 0)
+            return -1;
+        len -= n;
+    }
+    return 0;
+}
+
+/*
+ * Reads a block.  With needed_ids (sorted, n_needed entries), the data of
+ * an external block whose content ID is neither listed nor keep_id is
+ * skipped: b->data is NULL and cram_uncompress_block() fails on it.
+ */
+static cram_block *cram_read_block_ids(cram_fd *fd, const int *needed_ids,
+                                       int n_needed, int keep_id) {
     cram_block *b = malloc(sizeof(*b));
     unsigned char c;
     uint32_t crc = 0;
@@ -1172,7 +1204,18 @@ cram_block *cram_read_block(cram_fd *fd) {
     //fprintf(stderr, "  method %d, ctype %d, cid %d, csize %d, ucsize %d\n",
     //      b->method, b->content_type, b->content_id, b->comp_size, b->uncomp_size);
 
-    if (b->method == RAW) {
+    if (needed_ids && b->content_type == EXTERNAL &&
+        b->content_id != keep_id && b->comp_size > 0 &&
+        b->uncomp_size > 0 &&
+        !bsearch(&b->content_id, needed_ids, n_needed, sizeof(int),
+                 cmp_int)) {
+        b->alloc = 0;
+        b->data = NULL;
+        if (cram_skip_bytes(fd, b->comp_size) < 0) {
+            free(b);
+            return NULL;
+        }
+    } else if (b->method == RAW) {
         if (b->uncomp_size < 0 || b->comp_size != b->uncomp_size) {
             free(b);
             return NULL;
@@ -1217,6 +1260,10 @@ cram_block *cram_read_block(cram_fd *fd) {
     b->bit = 7; // MSB
 
     return b;
+}
+
+cram_block *cram_read_block(cram_fd *fd) {
+    return cram_read_block_ids(fd, NULL, 0, -1);
 }
 
 
@@ -1318,6 +1365,13 @@ int cram_uncompress_block(cram_block *b) {
     // Pretend the CRC was OK so the fuzzer doesn't have to get it right
     b->crc32_checked = 1;
 #endif
+
+    if (!b->data && b->uncomp_size > 0) {
+        // Skipped by cram_read_slice_hdr()
+        hts_log_error("Block %d was not read, as not required",
+                      b->content_id);
+        return -1;
+    }
 
     if (b->crc32_checked == 0) {
         uint32_t crc = crc32(b->crc_part, b->data ? b->data : (uc *)"", b->alloc);
@@ -4085,6 +4139,8 @@ cram_block_compression_hdr *cram_new_compression_header(void) {
 void cram_free_compression_header(cram_block_compression_hdr *hdr) {
     int i;
 
+    free(hdr->needed_ids);
+
     if (hdr->landmark)
         free(hdr->landmark);
 
@@ -4298,9 +4354,14 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
  *         NULL on failure
  */
 cram_slice *cram_read_slice(cram_fd *fd) {
+    return cram_read_slice_hdr(fd, NULL);
+}
+
+cram_slice *cram_read_slice_hdr(cram_fd *fd, cram_block_compression_hdr *hdr) {
     cram_block *b = cram_read_block(fd);
     cram_slice *s = calloc(1, sizeof(*s));
     int i, n, max_id, min_id;
+    int *needed_ids = NULL, n_needed = 0;
 
     if (!b || !s)
         goto err;
@@ -4328,8 +4389,19 @@ cram_slice *cram_read_slice(cram_fd *fd) {
     if (!s->block)
         goto err;
 
+    if (hdr) {
+        if (!hdr->needed_ids_set && cram_needed_block_ids(fd, hdr) < 0)
+            goto err;
+        if (hdr->n_needed_ids >= 0) {
+            needed_ids = hdr->needed_ids;
+            n_needed = hdr->n_needed_ids;
+        }
+    }
+
     for (max_id = i = 0, min_id = INT_MAX; i < n; i++) {
-        if (!(s->block[i] = cram_read_block(fd)))
+        // The embedded reference is not a data series; always keep it
+        if (!(s->block[i] = cram_read_block_ids(fd, needed_ids, n_needed,
+                                                s->hdr->ref_base_id)))
             goto err;
 
         if (s->block[i]->content_type == EXTERNAL) {
@@ -5108,6 +5180,8 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->job_pending = NULL;
     fd->ooc         = 0;
     fd->required_fields = INT_MAX;
+    // Seeking a remote file starts a new request; reading past is cheaper
+    fd->skip_by_read = filename && hisremote(filename);
 
     pthread_mutex_init(&fd->metrics_lock, NULL);
     pthread_mutex_init(&fd->ref_lock, NULL);

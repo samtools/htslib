@@ -550,9 +550,13 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_dependent_data_series(cram_fd *fd,
-                               cram_block_compression_hdr *hdr,
-                               cram_slice *s) {
+/*
+ * As cram_dependent_data_series(), and with used_out returns the array of
+ * which s->block[] are in use (to free), or NULL when all are.
+ */
+static int cram_dependent_blocks(cram_fd *fd,
+                                 cram_block_compression_hdr *hdr,
+                                 cram_slice *s, int **used_out) {
     int *block_used;
     int core_used = 0;
     int i;
@@ -864,8 +868,101 @@ int cram_dependent_data_series(cram_fd *fd,
         }
     } while (orig_ds != s->data_series);
 
-    free(block_used);
+    if (used_out)
+        *used_out = block_used;
+    else
+        free(block_used);
     return 0;
+}
+
+int cram_dependent_data_series(cram_fd *fd,
+                               cram_block_compression_hdr *hdr,
+                               cram_slice *s) {
+    return cram_dependent_blocks(fd, hdr, s, NULL);
+}
+
+/* Adds the external block IDs codec c reads to ids[*n] (ids sized enough) */
+static void cram_codec_ids(cram_codec *c, int *ids, int *n) {
+    int bnum1, bnum2;
+
+    if (!c)
+        return;
+    bnum1 = cram_codec_to_id(c, &bnum2);
+    if (bnum1 >= 0)
+        ids[(*n)++] = bnum1;
+    if (bnum2 >= 0 && bnum2 != bnum1)
+        ids[(*n)++] = bnum2;
+}
+
+static int cmp_int(const void *a, const void *b) {
+    int x = *(const int *)a, y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+
+int cram_needed_block_ids(cram_fd *fd, cram_block_compression_hdr *hdr) {
+    int i, n = 0, nb, ncodec = DS_END, *ids = NULL, *used = NULL, ret = -1;
+    cram_slice s = {0};
+    cram_block_slice_hdr sh = {0};
+    cram_block *blocks = NULL;
+    cram_map *m;
+
+    hdr->needed_ids_set = 1;
+    hdr->n_needed_ids = -1;
+    free(hdr->needed_ids);
+    hdr->needed_ids = NULL;
+    if (!fd->required_fields || fd->required_fields == INT_MAX)
+        return 0; // all blocks
+
+    for (i = 0; i < CRAM_MAP_HASH; i++)
+        for (m = hdr->tag_encoding_map[i]; m; m = m->next)
+            ncodec++;
+
+    // Unique IDs of the blocks the codecs read
+    if (!(ids = malloc(2 * ncodec * sizeof(*ids))))
+        return -1;
+    for (i = 0; i < DS_END; i++)
+        cram_codec_ids(hdr->codecs[i], ids, &n);
+    for (i = 0; i < CRAM_MAP_HASH; i++)
+        for (m = hdr->tag_encoding_map[i]; m; m = m->next)
+            cram_codec_ids(m->codec, ids, &n);
+    qsort(ids, n, sizeof(*ids), cmp_int);
+    for (nb = i = 0; i < n; i++)
+        if (!nb || ids[i] != ids[nb-1])
+            ids[nb++] = ids[i];
+
+    // A slice holding one empty block per ID, plus CORE as block 0, run
+    // through the same fixpoint the slice decoder uses.
+    if (!(blocks = calloc(nb + 1, sizeof(*blocks))) ||
+        !(s.block = malloc((nb + 1) * sizeof(*s.block))))
+        goto out;
+    for (i = 0; i <= nb; i++) {
+        blocks[i].content_type = i ? EXTERNAL : CORE;
+        blocks[i].content_id = i ? ids[i-1] : 0;
+        blocks[i].method = RAW;
+        blocks[i].crc32_checked = 1;
+        s.block[i] = &blocks[i];
+    }
+    sh.num_blocks = nb + 1;
+    s.hdr = &sh;
+    s.decode_md = fd->decode_md;
+
+    if (cram_dependent_blocks(fd, hdr, &s, &used) < 0)
+        goto out;
+
+    for (n = 0, i = 1; i <= nb; i++)
+        if (!used || used[i])
+            ids[n++] = blocks[i].content_id;
+    hdr->needed_ids = ids;
+    hdr->n_needed_ids = n;
+    ids = NULL;
+    ret = 0;
+
+ out:
+    free(used);
+    free(ids);
+    free(s.block);
+    free(blocks);
+    return ret;
 }
 
 /*
@@ -3486,7 +3583,8 @@ cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                 goto empty_container;
             }
 
-            if (!(s_next = c_next->slice = cram_read_slice(fd)))
+            if (!(s_next = c_next->slice =
+                  cram_read_slice_hdr(fd, c_next->comp_hdr)))
                 return NULL;
 
             s_next->slice_num = ++c_next->curr_slice_mt;
