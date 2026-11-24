@@ -2154,6 +2154,12 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
             if ( *ss=='\t' ) i++;
             ss++;
         }
+        if ( i!=als_idx || !*ss || *ss=='\t' )
+        {
+            hts_log_error("Missing or empty allele column %d in targets list", als_idx+1);
+            *errnum = bcf_sr_regions_error;
+            return -1;
+        }
         char *se = ss;
         reg->nals = 1;
         while ( *se && *se!='\t' )
@@ -2161,6 +2167,7 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
             if ( *se==',' ) reg->nals++;
             se++;
         }
+        char *als_end = se;
         if (ks_resize(&reg->als_str, se-ss+1+reg->nals) < 0)
             goto nomem;
         reg->als_str.l = 0;
@@ -2168,10 +2175,8 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
             goto nomem;
         reg->nals = 0;
 
-        se = ss;
-        while ( *(++se) )
+        for (se = ss; se < als_end; se++)
         {
-            if ( *se=='\t' ) break;
             if ( *se!=',' ) continue;
             reg->als[reg->nals] = &reg->als_str.s[reg->als_str.l];
             if (kputsn(ss,se-ss,&reg->als_str) < 0)
@@ -2179,7 +2184,7 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
             if ( &reg->als_str.s[reg->als_str.l] - reg->als[reg->nals] > max_len ) max_len = &reg->als_str.s[reg->als_str.l] - reg->als[reg->nals];
             reg->als_str.l++;
             reg->nals++;
-            ss = ++se;
+            ss = se+1;
         }
         reg->als[reg->nals] = &reg->als_str.s[reg->als_str.l];
         if (kputsn(ss,se-ss,&reg->als_str) < 0)
