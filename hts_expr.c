@@ -47,8 +47,9 @@ DEALINGS IN THE SOFTWARE.  */
 struct hts_filter_t {
     char *str;
     int parsed;
-    int curr_regex, max_regex;
+    int curr_regex;
     regex_t preg[MAX_REGEX];
+    char *preg_str[MAX_REGEX];  // Source of each preg[], NULL if not compiled
     int depth;
 };
 
@@ -792,15 +793,24 @@ static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             hts_expr_val_free(&val);
             return -1;
         }
+
+        // One slot in the cache per match in the expression, even if this
+        // match is skipped below, so it doesn't depend on the data.
+        int idx = filt->curr_regex++;
+
         if (val.s.s && res->s.s && val.is_true >= 0 && res->is_true >= 0) {
             regex_t preg_, *preg;
-            if (filt->curr_regex >= filt->max_regex) {
-                // Compile regex if not seen before
-                if (filt->curr_regex >= MAX_REGEX) {
-                    preg = &preg_;
-                } else {
-                    preg = &filt->preg[filt->curr_regex];
-                    filt->max_regex++;
+            char **preg_str = idx < MAX_REGEX ? &filt->preg_str[idx] : NULL;
+
+            preg = preg_str ? &filt->preg[idx] : &preg_;
+
+            // Compile regex if not seen before.  The pattern may come from
+            // the data too, so it could also differ from the cached one.
+            if (!preg_str || !*preg_str || strcmp(*preg_str, val.s.s) != 0) {
+                if (preg_str && *preg_str) {
+                    regfree(preg);
+                    free(*preg_str);
+                    *preg_str = NULL;
                 }
 
                 // Sanity check for known cases that can cause memory
@@ -825,22 +835,23 @@ static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                     char errbuf[1024];
                     regerror(ec, preg, errbuf, 1024);
                     fprintf(stderr, "Failed regex: %.1024s\n", errbuf);
-                    if (preg != &preg_)
-                        filt->max_regex--;
                     hts_expr_val_undef(res);
                     hts_expr_val_free(&val);
                     return -1;
                 }
-            } else {
-                preg = &filt->preg[filt->curr_regex];
+
+                if (preg_str && !(*preg_str = strdup(val.s.s))) {
+                    regfree(preg);
+                    hts_expr_val_undef(res);
+                    hts_expr_val_free(&val);
+                    return -1;
+                }
             }
             res->is_true = res->d = regexec(preg, res->s.s, 0, NULL, 0) == 0
                 ? *str == '='  // matcn
                 : *str == '!'; // no-match
             if (preg == &preg_)
                 regfree(preg);
-
-            filt->curr_regex++;
         } else {
             // nul regexp or input is considered false
             res->is_true = 0;
@@ -947,8 +958,12 @@ void hts_filter_free(hts_filter_t *filt) {
         return;
 
     int i;
-    for (i = 0; i < filt->max_regex; i++)
-        regfree(&filt->preg[i]);
+    for (i = 0; i < MAX_REGEX; i++) {
+        if (filt->preg_str[i]) {
+            regfree(&filt->preg[i]);
+            free(filt->preg_str[i]);
+        }
+    }
 
     free(filt->str);
     free(filt);
