@@ -2934,9 +2934,13 @@ const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
     return names;
 }
 
+static int vcf_wmt_adopt(htsFile *fp);
+
 int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
     kstring_t htxt = {0,0,0};
+    if (vcf_wmt_adopt(fp) < 0)
+        return -1;
     if (bcf_hdr_format(h, 0, &htxt) < 0) {
         free(htxt.s);
         return -1;
@@ -4642,6 +4646,271 @@ hts_tpool *vcf_state_destroy(htsFile *fp)
     return pool;
 }
 
+/*
+ * Threaded VCF writing: records are copied into blocks, formatted to text
+ * on the thread pool, and the text is written in order on the caller's
+ * thread.  Not used when building an index on the fly, which needs the
+ * file offset of each record as it is written.
+ */
+#define VCF_WMT_MAGIC  0x56434657  // "VCFW"; SAM_state starts with a NULL pointer
+#define VCF_WMT_NRECS  1024
+#define VCF_WMT_NBYTES (256 << 10)
+
+typedef struct vcf_wmt_job {
+    struct vcf_wmt_job *next;  // free list
+    const bcf_hdr_t *h;
+    bcf1_t **recs;
+    size_t *ends;              // end of each record's line in out
+    int n, m, ret;
+    size_t bytes;
+    kstring_t out;
+} vcf_wmt_job;
+
+typedef struct {
+    int magic;
+    hts_tpool *p;
+    hts_tpool_process *q;
+    int own_pool, qsize, inflight, err;
+    const bcf_hdr_t *h_user;   // caller's header, compared by address
+    int h_nhrec, h_n[3];       // and by size, as readers add lines to it
+    bcf_hdr_t *h;              // our copy, so the caller may free theirs
+    vcf_wmt_job *curr, *free_jobs;
+} vcf_wmt_state;
+
+static vcf_wmt_state *vcf_wmt(htsFile *fp)
+{
+    vcf_wmt_state *st = fp->state;
+    return fp->is_write && st && st->magic == VCF_WMT_MAGIC ? st : NULL;
+}
+
+static void *vcf_wmt_worker(void *arg)
+{
+    vcf_wmt_job *j = arg;
+    int i;
+    j->out.l = 0;
+    j->ret = 0;
+    for (i = 0; i < j->n; i++) {
+        if (vcf_format(j->h, j->recs[i], &j->out) < 0) {
+            j->ret = -1;
+            break;
+        }
+        j->ends[i] = j->out.l;
+    }
+    return j;
+}
+
+static void vcf_wmt_free_job(vcf_wmt_job *j)
+{
+    int i;
+    for (i = 0; i < j->m; i++)
+        if (j->recs[i]) bcf_destroy(j->recs[i]);
+    free(j->recs);
+    free(j->ends);
+    free(j->out.s);
+    free(j);
+}
+
+// Write one finished block and put the job back on the free list
+static void vcf_wmt_output(htsFile *fp, vcf_wmt_state *st, vcf_wmt_job *j)
+{
+    if (j->ret < 0) {
+        st->err = -1;
+    } else if (!st->err && fp->format.compression != no_compression) {
+        // Line by line, flushing blocks as vcf_write() does, so the
+        // BGZF blocks come out the same as without threads
+        size_t start = 0;
+        int i;
+        for (i = 0; i < j->n && !st->err; i++) {
+            size_t len = j->ends[i] - start;
+            if (bgzf_flush_try(fp->fp.bgzf, len) < 0
+                || bgzf_write(fp->fp.bgzf, j->out.s + start, len) != len)
+                st->err = -1;
+            start = j->ends[i];
+        }
+    } else if (!st->err && j->out.l) {
+        if (hwrite(fp->fp.hfile, j->out.s, j->out.l) != j->out.l)
+            st->err = -1;
+    }
+    j->n = 0;
+    j->bytes = 0;
+    j->next = st->free_jobs;
+    st->free_jobs = j;
+}
+
+static int vcf_wmt_collect(htsFile *fp, vcf_wmt_state *st, int wait)
+{
+    while (st->inflight > 0) {
+        hts_tpool_result *r = wait ? hts_tpool_next_result_wait(st->q)
+                                   : hts_tpool_next_result(st->q);
+        if (!r) {
+            if (wait) st->err = -1;
+            break;
+        }
+        vcf_wmt_job *j = hts_tpool_result_data(r);
+        hts_tpool_delete_result(r, 0);
+        st->inflight--;
+        vcf_wmt_output(fp, st, j);
+        if (wait) break;
+    }
+    return st->err;
+}
+
+static int vcf_wmt_dispatch(htsFile *fp, vcf_wmt_state *st)
+{
+    vcf_wmt_job *j = st->curr;
+    st->curr = NULL;
+    if (!j || j->n == 0) {
+        if (j) { j->next = st->free_jobs; st->free_jobs = j; }
+        return st->err;
+    }
+    while (st->inflight >= st->qsize && !st->err)
+        vcf_wmt_collect(fp, st, 1);
+    if (st->err || hts_tpool_dispatch(st->p, st->q, vcf_wmt_worker, j) < 0) {
+        st->err = -1;
+        j->next = st->free_jobs;
+        st->free_jobs = j;
+        return -1;
+    }
+    st->inflight++;
+    return vcf_wmt_collect(fp, st, 0);
+}
+
+static int vcf_wmt_drain(htsFile *fp, vcf_wmt_state *st)
+{
+    vcf_wmt_dispatch(fp, st);
+    while (st->inflight > 0 && !st->err)
+        vcf_wmt_collect(fp, st, 1);
+    while (st->inflight > 0) {  // after an error, just wait for the workers
+        hts_tpool_result *r = hts_tpool_next_result_wait(st->q);
+        if (!r) break;
+        vcf_wmt_job *j = hts_tpool_result_data(r);
+        hts_tpool_delete_result(r, 0);
+        st->inflight--;
+        j->next = st->free_jobs;
+        st->free_jobs = j;
+    }
+    return st->err;
+}
+
+static int vcf_wmt_write(htsFile *fp, vcf_wmt_state *st, const bcf_hdr_t *h, bcf1_t *v)
+{
+    if (st->err)
+        return -1;
+    if (h != st->h_user || h->nhrec != st->h_nhrec || h->n[0] != st->h_n[0]
+        || h->n[1] != st->h_n[1] || h->n[2] != st->h_n[2]) {
+        // New or grown header: finish what used the old one, then copy it
+        if (vcf_wmt_drain(fp, st) < 0)
+            return -1;
+        bcf_hdr_destroy(st->h);
+        if (!(st->h = bcf_hdr_dup(h)))
+            return st->err = -1;
+        st->h_user = h;
+        st->h_nhrec = h->nhrec;
+        memcpy(st->h_n, h->n, sizeof(st->h_n));
+    }
+    vcf_wmt_job *j = st->curr;
+    if (!j) {
+        if ((j = st->free_jobs)) {
+            st->free_jobs = j->next;
+        } else if (!(j = calloc(1, sizeof(*j)))) {
+            return st->err = -1;
+        }
+        j->h = st->h;
+        st->curr = j;
+    }
+    if (j->n == j->m) {
+        int m = j->m ? j->m * 2 : 64;
+        bcf1_t **recs = realloc(j->recs, m * sizeof(*recs));
+        if (!recs)
+            return st->err = -1;
+        memset(recs + j->m, 0, (m - j->m) * sizeof(*recs));
+        j->recs = recs;
+        size_t *ends = realloc(j->ends, m * sizeof(*ends));
+        if (!ends)
+            return st->err = -1;
+        j->ends = ends;
+        j->m = m;
+    }
+    if (!j->recs[j->n] && !(j->recs[j->n] = bcf_init()))
+        return st->err = -1;
+    bcf1_t *r = bcf_copy(j->recs[j->n], v);
+    j->n++;
+    j->bytes += r->shared.l + r->indiv.l;
+    if (j->n >= VCF_WMT_NRECS || j->bytes >= VCF_WMT_NBYTES)
+        return vcf_wmt_dispatch(fp, st);
+    return 0;
+}
+
+static int vcf_wmt_init(htsFile *fp, hts_tpool *p, int qsize, int own_pool)
+{
+    vcf_wmt_state *st = calloc(1, sizeof(*st));
+    if (!st)
+        return -1;
+    st->magic = VCF_WMT_MAGIC;
+    st->p = p;
+    st->qsize = qsize > 0 ? qsize : 2 * hts_tpool_size(p);
+    st->own_pool = own_pool;
+    if (!(st->q = hts_tpool_process_init(p, st->qsize, 0))) {
+        free(st);
+        return -1;
+    }
+    fp->state = st;
+    return 0;
+}
+
+// For a VCF opened for writing before its format was known, swap the
+// SAM state set up by hts_set_thread_pool() for a VCF writer.
+static int vcf_wmt_adopt(htsFile *fp)
+{
+    if (!fp->is_write || !fp->state || vcf_wmt(fp))
+        return 0;
+    int own = 0;
+    hts_tpool *p = sam_state_release_pool(fp, &own);
+    if (!p)
+        return 0;
+    return vcf_wmt_init(fp, p, 0, own);
+}
+
+int vcf_has_write_state(htsFile *fp)
+{
+    return vcf_wmt(fp) != NULL;
+}
+
+int vcf_flush_threads(htsFile *fp)
+{
+    vcf_wmt_state *st = vcf_wmt(fp);
+    return st ? vcf_wmt_drain(fp, st) : 0;
+}
+
+hts_tpool *vcf_write_state_destroy(htsFile *fp, int *ret)
+{
+    vcf_wmt_state *st = vcf_wmt(fp);
+    hts_tpool *pool = NULL;
+    if (!st)
+        return NULL;
+    if (vcf_wmt_drain(fp, st) < 0)
+        *ret = -1;
+    hts_tpool_process_destroy(st->q);
+    while (st->free_jobs) {
+        vcf_wmt_job *j = st->free_jobs;
+        st->free_jobs = j->next;
+        vcf_wmt_free_job(j);
+    }
+    bcf_hdr_destroy(st->h);
+    if (st->own_pool)
+        pool = st->p;
+    free(st);
+    fp->state = NULL;
+    return pool;
+}
+
+int vcf_set_write_thread_pool(htsFile *fp, htsThreadPool *p)
+{
+    if (fp->state || !fp->is_write || !p || !p->pool)
+        return 0;
+    return vcf_wmt_init(fp, p->pool, p->qsize, 0);
+}
+
 int vcf_open_mode(char *mode, const char *fn, const char *format)
 {
     if (format == NULL) {
@@ -5080,6 +5349,11 @@ int vcf_write_line(htsFile *fp, kstring_t *line)
 int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     ssize_t ret;
+    vcf_wmt_state *st = vcf_wmt(fp);
+    if (st && !fp->idx)
+        return vcf_wmt_write(fp, st, h, v);
+    if (st && vcf_wmt_drain(fp, st) < 0)
+        return -1;
     fp->line.l = 0;
     if (vcf_format1(h, v, &fp->line) != 0)
         return -1;

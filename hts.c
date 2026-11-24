@@ -1778,6 +1778,8 @@ int hts_close(htsFile *fp)
             fastq_state_destroy(fp);
         else if (fp->format.format == vcf && !fp->is_write)
             vcf_pool = vcf_state_destroy(fp);
+        else if (fp->format.format == vcf)
+            vcf_pool = vcf_write_state_destroy(fp, &ret);
 
         if (fp->format.compression != no_compression)
             ret |= bgzf_close(fp->fp.bgzf);
@@ -1833,6 +1835,9 @@ int hts_flush(htsFile *fp)
     case fastq_format:
     case sam:
     case vcf:
+        if (fp->format.format == vcf && fp->is_write
+            && vcf_flush_threads(fp) < 0)
+            return -1;
         if (fp->format.compression != no_compression)
             return bgzf_flush(fp->fp.bgzf);
         else
@@ -2045,6 +2050,11 @@ int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
             && bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize) < 0)
             return -1;
         return vcf_set_thread_pool(fp, p);
+    } else if (fp->format.format == vcf) {
+        if (fp->format.compression == bgzf
+            && bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize) < 0)
+            return -1;
+        return vcf_set_write_thread_pool(fp, p);
     } else if (fp->format.compression == bgzf) {
         return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
     } else if (fp->format.format == cram) {

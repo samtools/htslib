@@ -1194,6 +1194,15 @@ sub test_vcf_threads
                  . "$$opts{path}/test_view -@ 4 $f > $f.t4 2> $f.t4.err && "
                  . "cmp $f.t0 $f.t4 && cmp $f.t0.err $f.t4.err");
     }
+    # Threaded writing to VCF.gz, and with an index built on the fly
+    my $o = "$$opts{tmp}/vcf-threads.out";
+    test_cmd($opts, %args, out => "emptyfile",
+        cmd => "$$opts{path}/test_view -z -p $o.0.gz $in.gz 2>/dev/null && "
+             . "$$opts{path}/test_view -@ 4 -z -p $o.4.gz $in.gz 2>/dev/null && "
+             . "cmp $o.0.gz $o.4.gz && "
+             . "$$opts{path}/test_view -z -x $o.0i.gz.csi -p $o.0i.gz $in.gz 2>/dev/null && "
+             . "$$opts{path}/test_view -@ 4 -z -x $o.4i.gz.csi -p $o.4i.gz $in.gz 2>/dev/null && "
+             . "cmp $o.0i.gz $o.4i.gz && cmp $o.0i.gz.csi $o.4i.gz.csi");
 }
 
 sub test_vcf_various
