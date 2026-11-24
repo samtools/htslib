@@ -931,24 +931,25 @@ static int bcf_hdr_register_hrec_ctg(bcf_hdr_t *hdr, bcf_hrec_t *hrec) {
         }
     }
 
-    kh_val(d, k) = bcf_idinfo_def;
-    kh_val(d, k).id = idx;
-    kh_val(d, k).info[0] = len;
-    kh_val(d, k).hrec[0] = hrec;
-    if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
-        if (!replacing) {
-            kh_del(vdict, d, k);
-            free(id_copy);
-        }
-        return -1;
-    }
-    if ( idx==-1 ) {
-        if (hrec_add_idx(hrec, kh_val(d,k).id) < 0) {
-            return -1;
-        }
-    }
+    // Prepare the replacement without changing an existing dictionary entry.
+    bcf_idinfo_t idinfo = bcf_idinfo_def;
+    idinfo.id = idx;
+    idinfo.info[0] = len;
+    idinfo.hrec[0] = hrec;
+    if (idx == -1 && hrec_add_idx(hrec, hdr->n[BCF_DT_CTG]) < 0)
+        goto fail;
+    if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &idinfo) < 0)
+        goto fail;
+    kh_val(d, k) = idinfo;
 
     return 1;
+
+ fail:
+    if (!replacing) {
+        kh_del(vdict, d, k);
+        free(id_copy);
+    }
+    return -1;
 }
 
 // Sub-function of bcf_hdr_register_hrec for type is BCF_HL_INFO,
@@ -1061,13 +1062,13 @@ static int bcf_hdr_register_hrec_info(bcf_hdr_t *hdr, bcf_hrec_t *hrec) {
             return 0;
         }
 
-        kh_val(d, k).info[info&0xf] = info;
-        kh_val(d, k).hrec[info&0xf] = hrec;
         if ( idx==-1 ) {
             if (hrec_add_idx(hrec, kh_val(d, k).id) < 0) {
                 return -1;
             }
         }
+        kh_val(d, k).info[info&0xf] = info;
+        kh_val(d, k).hrec[info&0xf] = hrec;
         return 1;
     }
     k = kh_put(vdict, d, id_copy, &ret);
@@ -1075,22 +1076,23 @@ static int bcf_hdr_register_hrec_info(bcf_hdr_t *hdr, bcf_hrec_t *hrec) {
         free(id_copy);
         return -1;
     }
-    kh_val(d, k) = bcf_idinfo_def;
-    kh_val(d, k).info[info&0xf] = info;
-    kh_val(d, k).hrec[info&0xf] = hrec;
-    kh_val(d, k).id = idx;
-    if (bcf_hdr_set_idx(hdr, BCF_DT_ID, kh_key(d,k), &kh_val(d,k)) < 0) {
-        kh_del(vdict, d, k);
-        free(id_copy);
-        return -1;
-    }
-    if ( idx==-1 ) {
-        if (hrec_add_idx(hrec, kh_val(d,k).id) < 0) {
-            return -1;
-        }
-    }
+    // Finish fallible IDX setup before publishing the new header record.
+    bcf_idinfo_t idinfo = bcf_idinfo_def;
+    idinfo.info[info&0xf] = info;
+    idinfo.hrec[info&0xf] = hrec;
+    idinfo.id = idx;
+    if (idx == -1 && hrec_add_idx(hrec, hdr->n[BCF_DT_ID]) < 0)
+        goto fail;
+    if (bcf_hdr_set_idx(hdr, BCF_DT_ID, kh_key(d,k), &idinfo) < 0)
+        goto fail;
+    kh_val(d, k) = idinfo;
 
     return 1;
+
+ fail:
+    kh_del(vdict, d, k);
+    free(id_copy);
+    return -1;
 }
 
 // returns: 1 when hdr needs to be synced, -1 on error, 0 otherwise
