@@ -1959,7 +1959,12 @@ void bcf_clear(bcf1_t *v)
     v->d.n_flt = 0;
     v->errcode = 0;
     if (v->d.m_als) v->d.als[0] = 0;
-    if (v->d.m_id) v->d.id[0] = 0;
+    if (v->d.m_id) {
+        // Missing, as in a new record
+        kstring_t id = { 0, v->d.m_id, v->d.id };
+        kputs(".", &id);
+        v->d.id = id.s; v->d.m_id = id.m;
+    }
 }
 
 void bcf_empty(bcf1_t *v)

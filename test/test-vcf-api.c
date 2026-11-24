@@ -1257,6 +1257,13 @@ static void test_record_ids(void)
     check0(bcf_add_id(hdr, rec, "rs1"));
     check_id(hdr, rec, "rs1;rs12");
 
+    // A cleared record has no ID either
+    bcf_clear(rec);
+    new_site(hdr, rec);
+    check_id(hdr, rec, ".");
+    check0(bcf_add_id(hdr, rec, "rs2"));
+    check_id(hdr, rec, "rs2");
+
     bcf_destroy(rec);
     bcf_hdr_destroy(hdr);
 }
