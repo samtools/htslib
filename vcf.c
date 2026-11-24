@@ -6208,7 +6208,7 @@ int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 
     int len = strlen(id);
     char *dst = line->d.id;
-    while ( *dst && (dst=strstr(dst,id)) )
+    while ( dst && *dst && (dst=strstr(dst,id)) )
     {
         if ( dst[len]!=0 && dst[len]!=';' ) dst++;              // a prefix, not a match
         else if ( dst==line->d.id || dst[-1]==';' ) return 0;   // already present

@@ -1215,6 +1215,52 @@ void test_bcf_remove_allele_set_short_lg(void)
     kbs_destroy(rm_set);
 }
 
+static void check_id(const bcf_hdr_t *hdr, bcf1_t *rec, const char *id)
+{
+    kstring_t str = KS_INITIALIZE, exp = KS_INITIALIZE;
+    if (vcf_format(hdr, rec, &str) < 0)
+        error("vcf_format failed");
+    if (ksprintf(&exp, "1\t100\t%s\tA\tG\t.\t.\t.\n", id) < 0)
+        error("Out of memory");
+    if (strcmp(str.s, exp.s) != 0)
+        error("Wrong record:\n  expected: %s  got:      %s", exp.s, str.s);
+    ks_free(&str);
+    ks_free(&exp);
+}
+
+static void new_site(const bcf_hdr_t *hdr, bcf1_t *rec)
+{
+    rec->rid = 0;
+    rec->pos = 99;
+    bcf_float_set_missing(rec->qual);
+    check0(bcf_update_alleles_str(hdr, rec, "A,G"));
+}
+
+// IDs on records built from scratch
+static void test_record_ids(void)
+{
+    char header[] = "##fileformat=VCFv4.2\n"
+        "##contig=<ID=1>\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+    bcf_hdr_t *hdr = bcf_hdr_init("r");
+    bcf1_t *rec = bcf_init();
+
+    if (!hdr || !rec) error("Out of memory");
+    if (bcf_hdr_parse(hdr, header) < 0) error("Couldn't parse header");
+
+    // Adding to a record that has no ID yet
+    new_site(hdr, rec);
+    check_id(hdr, rec, ".");
+    check0(bcf_add_id(hdr, rec, "rs1"));
+    check_id(hdr, rec, "rs1");
+    check0(bcf_add_id(hdr, rec, "rs12"));
+    check0(bcf_add_id(hdr, rec, "rs1"));
+    check_id(hdr, rec, "rs1;rs12");
+
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -1237,5 +1283,6 @@ int main(int argc, char **argv)
     test_bcf_remove_allele_set_short_lg();
     test_hdr_append_keeps_existing_ids_valid();
     test_undeclared_names_grow_header();
+    test_record_ids();
     return 0;
 }
