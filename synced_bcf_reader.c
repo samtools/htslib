@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/stat.h>
 #include "htslib/synced_bcf_reader.h"
 #include "htslib/kseq.h"
+#include "htslib/hfile.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/bgzf.h"
 #include "htslib/hts_alloc.h"
@@ -352,9 +353,12 @@ int bcf_sr_add_hreader(bcf_srs_t *files, htsFile *file_ptr, int autoclose, const
             files->errnum = no_eof;
             hts_log_warning("No BGZF EOF marker; file '%s' may be truncated", file_ptr->fn);
         }
-        if (files->p)
+        if (files->p && reader->file->format.format!=vcf)
             bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
     }
+    // VCF: also parse lines on the pool (and decompress, if BGZF)
+    if ( files->p && reader->file->format.format==vcf )
+        hts_set_thread_pool(reader->file, files->p);
 
     if ( files->require_index==REQUIRE_IDX_ )
     {
@@ -1037,7 +1041,21 @@ static int reader_fill_buffer(bcf_srs_t *files, int reader_idx)
         }
         if ( files->streaming )
         {
-            if ( reader->file->format.format==vcf )
+            if ( reader->file->format.format==vcf && reader->file->state && !reader->file->is_write )
+            {
+                // threaded VCF reading: vcf_read parses lines on the pool
+                bcf1_t *rec = reader->buffer[reader->nbuffer+1];
+                ret = bcf_read1(reader->file, reader->header, rec);
+                if ( ret < -1 || (ret == -1 && rec->errcode) )
+                {
+                    // vcf_read returns -2 for both I/O and parse errors
+                    BGZF *bgzf = hts_get_bgzfp(reader->file);
+                    int io_err = bgzf ? bgzf->errcode : reader->file->fp.hfile->has_errno;
+                    err = files->errnum = io_err ? bcf_read_error : vcf_parse_error;
+                }
+                if ( ret < 0 ) break; // no more lines or an error
+            }
+            else if ( reader->file->format.format==vcf )
             {
                 ret = hts_getline(reader->file, KS_SEP_LINE, &files->tmps);
                 if ( ret < -1 ) err = files->errnum = bcf_read_error;
