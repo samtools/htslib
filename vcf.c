@@ -130,6 +130,7 @@ static inline bcf_hdr_aux_t *get_hdr_aux(const bcf_hdr_t *hdr)
 
 //version macros
 #define VCF_DEF 4002000
+#define VCF43   4003000
 #define VCF44   4004000
 #define VCF45   4005000
 
@@ -1408,7 +1409,7 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
         {"END",       "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
         {"H2",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
         {"H3",        "0",  BCF_VL_FIXED, VCF_DEF, BCF_HT_FLAG},
-        {"MQ",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_REAL},
+        {"MQ",        "1",  BCF_VL_FIXED, VCF43,   BCF_HT_REAL},
         {"MQ0",       "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
         {"NS",        "1",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
         {"SB",        "4",  BCF_VL_FIXED, VCF_DEF, BCF_HT_INT},
@@ -1471,12 +1472,13 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
             }
 
             if (info_warned[i]) {
-                hts_log_warning("%s should be declared as Number=%s",
+                hts_log_warning("INFO %s should be declared as Number=%s",
                                 info_tags[i].name, info_tags[i].number_str);
             }
 
-            if (bcf_hdr_id2type(hdr, BCF_HL_INFO, id) != info_tags[i].type) {
-                hts_log_warning("%s should be declared as Type=%s",
+            if (bcf_hdr_id2type(hdr, BCF_HL_INFO, id) != info_tags[i].type &&
+                version >= info_tags[i].version) {
+                hts_log_warning("INFO %s should be declared as Type=%s",
                                 info_tags[i].name, type_str[info_tags[i].type]);
                 info_warned[i] = 1;
             }
@@ -1507,12 +1509,13 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
             }
 
             if (fmt_warned[i]) {
-                hts_log_warning("%s should be declared as Number=%s",
+                hts_log_warning("FORMAT %s should be declared as Number=%s",
                                 fmt_tags[i].name, fmt_tags[i].number_str);
             }
 
-            if (bcf_hdr_id2type(hdr, BCF_HL_FMT, id) != fmt_tags[i].type) {
-                hts_log_warning("%s should be declared as Type=%s",
+            if (bcf_hdr_id2type(hdr, BCF_HL_FMT, id) != fmt_tags[i].type &&
+                version >= fmt_tags[i].version) {
+                hts_log_warning("FORMAT %s should be declared as Type=%s",
                                 fmt_tags[i].name, type_str[fmt_tags[i].type]);
                 fmt_warned[i] = 1;
             }
