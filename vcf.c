@@ -3861,7 +3861,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     // detect FORMAT "."
     int ret; // +ve = ok, -ve = err
     if ((ret = vcf_parse_format_empty1(s, h, v, p, q)))
-        return ret ? 0 : -1;
+        return ret > 0 ? 0 : -1;
 
     // get format information from the dictionary
     if (vcf_parse_format_dict2(s, h, v, p, q, fmt) < 0)
