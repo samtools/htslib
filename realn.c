@@ -72,7 +72,10 @@ int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres)
             if (j < l) break;
             x += l;
         } else if (op == BAM_CSOFT_CLIP) {
-            for (j = 0; j < l; ++j) clip_q += qual[y+j];
+            if (y+l <= seq_len)
+                for (j = 0; j < l; ++j) clip_q += qual[y+j];
+            else
+                clip_q += 13 * l; // treat as hard clip
             clip_l += l;
             y += l;
         } else if (op == BAM_CHARD_CLIP) {
