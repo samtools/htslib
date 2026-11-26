@@ -4698,7 +4698,29 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             if ( first ) kputsn("\t.", 2, s);
 
             // VALUES per sample
-            for (j = 0; j < v->n_sample; ++j) {
+            j = 0;
+            if (v->n_fmt == 1 && gt_i == 0 && fmt[0].p
+                && fmt[0].type == BCF_BT_INT8 && fmt[0].n == 2
+                && get_hdr_aux(h)->version < VCF44) {
+                // GT alone: the samples bcf_format_gt_v2() would write as
+                // "A|B" are written here in one go, up to the first that isn't
+                if (ks_resize(s, s->l + 4 * (size_t) v->n_sample + 1) < 0) {
+                    if (fmt_packed)
+                        free(fmt);
+                    return -1;
+                }
+                const uint8_t *p = fmt[0].p;
+                char *o = s->s + s->l;
+                for (; j < v->n_sample && p[0] <= 21 && p[1] <= 21; j++, p += 2) {
+                    o[0] = '\t';
+                    o[1] = p[0] >> 1 ? '0' + (p[0] >> 1) - 1 : '.';
+                    o[2] = "/|"[p[1] & 1];
+                    o[3] = p[1] >> 1 ? '0' + (p[1] >> 1) - 1 : '.';
+                    o += 4;
+                }
+                s->l = o - s->s;
+            }
+            for (; j < v->n_sample; ++j) {
                 kputc_('\t', s);
                 first = 1;
                 bcf_fmt_t *f = fmt;
@@ -6548,6 +6570,25 @@ int bcf_format_gt_v2(const bcf_hdr_t *hdr, bcf_fmt_t *fmt, int isample, kstring_
     int ploidy = 1, anyunphased = 0;
     int32_t val0 = 0;
     size_t pos = str ? str->l : 0;
+
+    // Fast path: a diploid int8 genotype of alleles 0-9 or missing, written
+    // as three characters.  VCF 4.4 output may need a phasing prefix, so is
+    // left to the general code below.
+    if (fmt->type == BCF_BT_INT8 && fmt->n == 2
+        && (!hdr || get_hdr_aux(hdr)->version < VCF44)) {
+        const uint8_t *ptr = fmt->p + isample*fmt->size;
+        if (ptr[0] <= 21 && ptr[1] <= 21) {
+            if (ks_resize(str, str->l + 4) < 0)
+                return -1;
+            char *o = str->s + str->l;
+            o[0] = ptr[0] >> 1 ? '0' + (ptr[0] >> 1) - 1 : '.';
+            o[1] = "/|"[ptr[1] & 1];
+            o[2] = ptr[1] >> 1 ? '0' + (ptr[1] >> 1) - 1 : '.';
+            o[3] = 0;
+            str->l += 3;
+            return 0;
+        }
+    }
 
     #define BRANCH(type_t, convert, missing, vector_end) { \
         uint8_t *ptr = fmt->p + isample*fmt->size; \
