@@ -54,6 +54,7 @@ run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep
 run_test('test_bcf2vcf',$opts);
 run_test('test_vcf_sweep',$opts,out=>'test-vcf-sweep.out');
 run_test('test_vcf_various',$opts);
+run_test('test_vcf_threads',$opts);
 run_test('test_vcf_44', $opts);
 run_test('test_bcf_sr_sort',$opts);
 run_test('test_bcf_sr_no_index',$opts);
@@ -1165,6 +1166,44 @@ sub test_vcf_sweep
 {
     my ($opts,%args) = @_;
     test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-sweep $$opts{tmp}/test-vcf-api.bcf");
+}
+
+# Reading VCF with a thread pool gives the records, header changes and
+# warnings that reading without one does, including for lines that add an
+# undefined contig, FILTER, INFO or FORMAT to the header, over several blocks.
+sub test_vcf_threads
+{
+    my ($opts, %args) = @_;
+    my $in = "$$opts{tmp}/vcf-threads.vcf";
+    open(my $fh, '>', $in) or error("$in: $!");
+    print $fh "##fileformat=VCFv4.2\n##contig=<ID=1>\n",
+        "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n",
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\n";
+    for my $i (1..10000) {
+        my $chr = $i < 5000 ? "1" : $i % 2 ? "1" : "2";
+        my $flt = $i == 7000 ? "q10" : "PASS";
+        my $info = $i == 3000 ? "DP=3;XX=1" : "DP=$i";
+        my ($fmt, $smpl) = $i == 9000 ? ("GT:YY", "0|1:5\t1|1:2") : ("GT", "0|1\t1/1");
+        print $fh "$chr\t$i\t.\tA\tC\t.\t$flt\t$info\t$fmt\t$smpl\n";
+    }
+    close($fh);
+    _cmd("$$opts{path}/test_view -z -p $in.gz $in 2>/dev/null");
+    for my $f ($in, "$in.gz") {
+        test_cmd($opts, %args, out => "emptyfile",
+            cmd => "$$opts{path}/test_view $f > $f.t0 2> $f.t0.err && "
+                 . "$$opts{path}/test_view -@ 4 $f > $f.t4 2> $f.t4.err && "
+                 . "cmp $f.t0 $f.t4 && cmp $f.t0.err $f.t4.err");
+    }
+    # Threaded writing to VCF.gz, and with an index built on the fly
+    my $o = "$$opts{tmp}/vcf-threads.out";
+    test_cmd($opts, %args, out => "emptyfile",
+        cmd => "$$opts{path}/test_view -z -p $o.0.gz $in.gz 2>/dev/null && "
+             . "$$opts{path}/test_view -@ 4 -z -p $o.4.gz $in.gz 2>/dev/null && "
+             . "cmp $o.0.gz $o.4.gz && "
+             . "$$opts{path}/test_view -z -x $o.0i.gz.csi -p $o.0i.gz $in.gz 2>/dev/null && "
+             . "$$opts{path}/test_view -@ 4 -z -x $o.4i.gz.csi -p $o.4i.gz $in.gz 2>/dev/null && "
+             . "cmp $o.0i.gz $o.4i.gz && cmp $o.0i.gz.csi $o.4i.gz.csi");
 }
 
 sub test_vcf_various

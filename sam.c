@@ -1153,7 +1153,11 @@ int sam_idx_save(htsFile *fp) {
     if (fp->format.format == bam || fp->format.format == bcf ||
         fp->format.format == vcf || fp->format.format == sam) {
         int ret;
-        if ((ret = sam_state_destroy(fp)) < 0) {
+        if (fp->format.format == vcf && vcf_has_write_state(fp)) {
+            // Threaded VCF writer: write out pending records, keep the state
+            if (vcf_flush_threads(fp) < 0)
+                return -1;
+        } else if ((ret = sam_state_destroy(fp)) < 0) {
             errno = -ret;
             return -1;
         }
@@ -3764,6 +3768,19 @@ int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
         return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);
 
     return 0;
+}
+
+// Take the thread pool out of a SAM state that was set up on a file
+// that turned out to be VCF, and free the state.  The BGZF pool is kept.
+hts_tpool *sam_state_release_pool(htsFile *fp, int *own_pool) {
+    SAM_state *fd = fp->state;
+    if (!fd || fd->h)
+        return NULL;
+    hts_tpool *p = fd->p;
+    *own_pool = fd->own_pool;
+    fd->own_pool = 0;
+    sam_state_destroy(fp);
+    return p;
 }
 
 int sam_set_threads(htsFile *fp, int nthreads) {

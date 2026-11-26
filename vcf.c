@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <pthread.h>
 
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 #include "fuzz_settings.h"
@@ -45,6 +46,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/bgzf.h"
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
+#include "htslib/thread_pool.h"
 #include "hts_internal.h"
 #include "htslib/hts_alloc.h"
 #include "htslib/hts_endian.h"
@@ -2932,9 +2934,13 @@ const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
     return names;
 }
 
+static int vcf_wmt_adopt(htsFile *fp);
+
 int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
     kstring_t htxt = {0,0,0};
+    if (vcf_wmt_adopt(fp) < 0)
+        return -1;
     if (bcf_hdr_format(h, 0, &htxt) < 0) {
         free(htxt.s);
         return -1;
@@ -3257,6 +3263,11 @@ static inline int align_mem(kstring_t *s)
 
 #define MAX_N_FMT 255   /* Limited by size of bcf1_t n_fmt field */
 
+// Returned by the parsing functions below when called with hdr_ro set (from
+// a worker thread) for a line that would add a contig or tag to the header.
+// The line is then parsed again on the calling thread, which may change it.
+#define VCF_PARSE_NEEDS_HDR (-100)
+
 // detect FORMAT "."
 static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                                    const char *p, const char *q) {
@@ -3297,7 +3308,8 @@ static int vcf_parse_format_empty1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 
 // get format information from the dictionary
 static int vcf_parse_format_dict2(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
-                                  const char *p, const char *q, fmt_aux_t *fmt) {
+                                  const char *p, const char *q, fmt_aux_t *fmt,
+                                  int hdr_ro) {
     const vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
     char *t;
     int j;
@@ -3314,6 +3326,8 @@ static int vcf_parse_format_dict2(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         *(char*)aux1.p = 0;
         khint_t k = kh_get(vdict, d, t);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_FMT] == 15) {
+            if (hdr_ro)
+                return VCF_PARSE_NEEDS_HDR;
             if ( t[0]=='.' && t[1]==0 )
             {
                 hts_log_error("Invalid FORMAT tag name '.' at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
@@ -3455,8 +3469,7 @@ static int vcf_parse_format_max3(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
 // allocate memory for arrays
 static int vcf_parse_format_alloc4(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                                    const char *p, const char *q,
-                                   fmt_aux_t *fmt) {
-    kstring_t *mem = (kstring_t*)&h->mem;
+                                   fmt_aux_t *fmt, kstring_t *mem) {
 
     int j;
     for (j = 0; j < v->n_fmt; ++j) {
@@ -3847,10 +3860,9 @@ static int vcf_parse_format_check7(const bcf_hdr_t *h, bcf1_t *v) {
 
 // p,q is the start and the end of the FORMAT field
 static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
-                            char *p, char *q)
+                            char *p, char *q, kstring_t *mem, int hdr_ro)
 {
     if ( !bcf_hdr_nsamples(h) ) return 0;
-    kstring_t *mem = (kstring_t*)&h->mem;
     mem->l = 0;
 
     fmt_aux_t fmt[MAX_N_FMT];
@@ -3861,8 +3873,8 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         return ret ? 0 : -1;
 
     // get format information from the dictionary
-    if (vcf_parse_format_dict2(s, h, v, p, q, fmt) < 0)
-        return -1;
+    if ((ret = vcf_parse_format_dict2(s, h, v, p, q, fmt, hdr_ro)) < 0)
+        return ret == VCF_PARSE_NEEDS_HDR ? ret : -1;
 
     // FORMAT data is per-sample A:B:C A:B:C A:B:C ... but in memory it is
     // stored as per-type arrays AAA... BBB... CCC...  This is basically
@@ -3886,7 +3898,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
         return -1;
 
     // allocate memory for arrays
-    if (vcf_parse_format_alloc4(s, h, v, p, q, fmt) < 0)
+    if (vcf_parse_format_alloc4(s, h, v, p, q, fmt, mem) < 0)
         return -1;
 
     // fill the sample fields; at beginning of the loop
@@ -3923,7 +3935,8 @@ static khint_t fix_chromosome(const bcf_hdr_t *h, vdict_t *d, const char *p) {
     return k;
 }
 
-static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q) {
+static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q,
+                            int hdr_ro) {
     int i, n_flt = 1, max_n_flt = 0;
     char *r, *t;
     int32_t *a_flt = NULL;
@@ -3949,6 +3962,10 @@ static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char 
         k = kh_get(vdict, d, t);
         if (k == kh_end(d))
         {
+            if (hdr_ro) {
+                free(a_flt);
+                return VCF_PARSE_NEEDS_HDR;
+            }
             // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
             // been already printed, but will enable tools like vcfcheck to proceed.
             hts_log_warning("FILTER '%s' at %s:%"PRIhts_pos" is not defined in the header",
@@ -3981,7 +3998,8 @@ static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char 
     return 0;
 }
 
-static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q) {
+static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q,
+                          int hdr_ro) {
     static int extreme_int_warned = 0, negative_rlen_warned = 0;
     int max_n_val = 0, overflow = 0;
     char *r, *key;
@@ -4013,6 +4031,10 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
         k = kh_get(vdict, d, key);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
         {
+            if (hdr_ro) {
+                free(a_val);
+                return VCF_PARSE_NEEDS_HDR;
+            }
             hts_log_warning("INFO '%s' at %s:%"PRIhts_pos" is not defined in the header, assuming Type=String",
                             key, bcf_seqname_safe(h,v), v->pos+1);
             if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
@@ -4153,9 +4175,10 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
     return -1;
 }
 
-int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
+static int vcf_parse_internal(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
+                              kstring_t *mem, int hdr_ro)
 {
-    int ret = -2, overflow = 0;
+    int ret = -2, r2, overflow = 0;
     char *p, *q, *r, *t;
     kstring_t *str;
     khint_t k;
@@ -4201,12 +4224,14 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
     k = kh_get(vdict, d, p);
     if (k == kh_end(d)) {
-        hts_log_warning("Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
+        if (hdr_ro)
+            return VCF_PARSE_NEEDS_HDR;
+        hts_log(HTS_LOG_WARNING, "vcf_parse", "Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
             if ((v->errcode & (BCF_ERR_TAG_UNDEF|BCF_ERR_CTG_UNDEF)) == 0)
-                hts_log_warning("Missing headers may cause later processing to fail");
+                hts_log(HTS_LOG_WARNING, "vcf_parse", "Missing headers may cause later processing to fail");
         v->errcode = BCF_ERR_CTG_UNDEF;
         if ((k = fix_chromosome(h, d, p)) == kh_end(d)) {
-            hts_log_error("Could not add dummy header for contig '%s'", p);
+            hts_log(HTS_LOG_ERROR, "vcf_parse", "Could not add dummy header for contig '%s'", p);
             v->errcode |= BCF_ERR_CTG_INVALID;
             goto err;
         }
@@ -4222,10 +4247,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     char *tmp = p;
     v->pos = hts_str2uint(p, &p, 62, &overflow);
     if (overflow) {
-        hts_log_error("Position value '%s' is too large", tmp);
+        hts_log(HTS_LOG_ERROR, "vcf_parse", "Position value '%s' is too large", tmp);
         goto err;
     } else if ( *p ) {
-        hts_log_error("Could not parse the position '%s'", tmp);
+        hts_log(HTS_LOG_ERROR, "vcf_parse", "Could not parse the position '%s'", tmp);
         goto err;
     } else {
         v->pos -= 1;
@@ -4258,7 +4283,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
         for (r = t = p;; ++r) {
             if (*r == ',' || *r == 0) {
                 if (v->n_allele == UINT16_MAX) {
-                    hts_log_error("Too many ALT alleles at %s:%"PRIhts_pos,
+                    hts_log(HTS_LOG_ERROR, "vcf_parse", "Too many ALT alleles at %s:%"PRIhts_pos,
                                   bcf_seqname_safe(h,v), v->pos+1);
                     v->errcode |= BCF_ERR_LIMITS;
                     goto err;
@@ -4286,7 +4311,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     *(q = (char*)aux.p) = 0;
 
     if (NOT_DOT(p)) {
-        if (vcf_parse_filter(str, h, v, p, q)) {
+        if ((r2 = vcf_parse_filter(str, h, v, p, q, hdr_ro))) {
+            if (r2 == VCF_PARSE_NEEDS_HDR) ret = r2;
             goto err;
         }
     } else bcf_enc_vint(str, 0, 0, -1);
@@ -4298,7 +4324,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     *(q = (char*)aux.p) = 0;
 
     if (NOT_DOT(p)) {
-        if (vcf_parse_info(str, h, v, p, q)) {
+        if ((r2 = vcf_parse_info(str, h, v, p, q, hdr_ro))) {
+            if (r2 == VCF_PARSE_NEEDS_HDR) ret = r2;
             goto err;
         }
     }
@@ -4309,7 +4336,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     if (p) {
         *(q = (char*)aux.p) = 0;
 
-        if (vcf_parse_format(s, h, v, p, q)) {
+        if ((r2 = vcf_parse_format(s, h, v, p, q, mem, hdr_ro))) {
+            if (r2 == VCF_PARSE_NEEDS_HDR) ret = r2;
             goto err;
         }
     }
@@ -4320,6 +4348,567 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 
  err:
     return ret;
+}
+
+int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
+{
+    return vcf_parse_internal(s, h, v, h ? (kstring_t *) &h->mem : NULL, 0);
+}
+
+/* -----------------------------------------------------------------------------
+ * Multi-threaded VCF reading
+ *
+ * With a thread pool, vcf_read() reads lines ahead in blocks on the calling
+ * thread and parses each block on a worker thread, then hands out the
+ * records in order.  Workers treat the header as read-only: a line that
+ * needs a header change (an undefined contig, FILTER, INFO or FORMAT) is
+ * parsed again on the calling thread, while no worker is running, so the
+ * header ends up as it would single-threaded.
+ *
+ * Reading ahead moves the stream.  If the position is not where the last
+ * block ended (the caller seeked, or read with an iterator), the queued
+ * blocks are dropped and reading resumes from the new position.
+ */
+
+#define VCF_MT_NLINES 4096          // Maximum lines per block
+#define VCF_MT_NBYTES (512*1024)    // Approximate maximum bytes per block
+
+struct vcf_mt_state;
+
+typedef struct vcf_mt_job {
+    struct vcf_mt_job *next;    // free list
+    struct vcf_mt_state *st;
+    const bcf_hdr_t *h;
+    int max_unpack;
+    kstring_t text;             // lines, each followed by a NUL
+    size_t *off;                // offset of each line in text
+    int nlines, alines;
+    bcf1_t *recs;               // the parsed lines
+    int *ret;                   // vcf_parse_internal() result for each line
+    int pos;                    // next record to give out
+    kstring_t line, mem;        // worker scratch space
+} vcf_mt_job;
+
+typedef struct vcf_mt_state {
+    hts_tpool *p;
+    hts_tpool_process *q;
+    int own_pool;
+    int qsize, inflight;
+    int at_end;                 // no more lines to read: 0, or the last
+                                // hts_getline() result (-1 for EOF)
+    int64_t next_pos;           // stream position after the last block
+    vcf_mt_job *curr;           // block being given out
+    vcf_mt_job *free_jobs;
+    pthread_rwlock_t hdr_lock;  // write-locked while the header may change
+} vcf_mt_state;
+
+static int64_t vcf_mt_tell(htsFile *fp)
+{
+    return fp->format.compression == no_compression
+        ? (int64_t) htell(fp->fp.hfile) : bgzf_tell(fp->fp.bgzf);
+}
+
+static void vcf_mt_free_job(vcf_mt_job *j)
+{
+    int i;
+    for (i = 0; i < j->alines; i++)
+        bcf_empty1(&j->recs[i]);
+    free(j->recs);
+    free(j->ret);
+    free(j->off);
+    free(j->text.s);
+    free(j->line.s);
+    free(j->mem.s);
+    free(j);
+}
+
+static void *vcf_mt_parse_worker(void *arg)
+{
+    vcf_mt_job *j = (vcf_mt_job *) arg;
+    int i;
+
+    pthread_rwlock_rdlock(&j->st->hdr_lock);
+    for (i = 0; i < j->nlines; i++) {
+        // Parse a copy, so that the line can be parsed again if need be
+        size_t len = (i + 1 < j->nlines ? j->off[i+1] : j->text.l) - j->off[i] - 1;
+        j->line.l = 0;
+        if (kputsn(j->text.s + j->off[i], len, &j->line) < 0) {
+            j->ret[i] = -2;
+            continue;
+        }
+        j->recs[i].max_unpack = j->max_unpack;
+        j->ret[i] = vcf_parse_internal(&j->line, j->h, &j->recs[i], &j->mem, 1);
+    }
+    pthread_rwlock_unlock(&j->st->hdr_lock);
+    return j;
+}
+
+// Reads the next block of lines and queues it for parsing.
+// Returns 1 if a block was queued, 0 if there were no more lines, or -1 on
+// error.
+static int vcf_mt_queue_block(htsFile *fp, const bcf_hdr_t *h, int max_unpack)
+{
+    vcf_mt_state *st = fp->state;
+    vcf_mt_job *j = st->free_jobs;
+    if (j) {
+        st->free_jobs = j->next;
+    } else {
+        if (!(j = calloc(1, sizeof(*j))))
+            return -1;
+        j->st = st;
+    }
+    j->next = NULL;
+    j->h = h;
+    j->max_unpack = max_unpack;
+    j->text.l = 0;
+    j->nlines = 0;
+    j->pos = 0;
+
+    while (j->nlines < VCF_MT_NLINES && j->text.l < VCF_MT_NBYTES) {
+        int ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
+        if (ret < 0) {
+            st->at_end = ret;
+            break;
+        }
+        if (j->nlines == j->alines) {
+            int n = j->alines ? j->alines * 2 : 64;
+            size_t *off = realloc(j->off, n * sizeof(*off));
+            if (off) j->off = off;
+            int *r = realloc(j->ret, n * sizeof(*r));
+            if (r) j->ret = r;
+            bcf1_t *recs = realloc(j->recs, n * sizeof(*recs));
+            if (recs) j->recs = recs;
+            if (!off || !r || !recs)
+                goto fail;
+            memset(&j->recs[j->alines], 0, (n - j->alines) * sizeof(*recs));
+            j->alines = n;
+        }
+        j->off[j->nlines++] = j->text.l;
+        if (kputsn(fp->line.s, fp->line.l, &j->text) < 0
+            || kputc_('\0', &j->text) < 0)
+            goto fail;
+    }
+    st->next_pos = vcf_mt_tell(fp);
+
+    if (j->nlines == 0) {
+        j->next = st->free_jobs;
+        st->free_jobs = j;
+        return 0;
+    }
+    if (hts_tpool_dispatch(st->p, st->q, vcf_mt_parse_worker, j) < 0)
+        goto fail;
+    st->inflight++;
+    return 1;
+
+ fail:
+    vcf_mt_free_job(j);
+    return -1;
+}
+
+// Waits for the queued blocks and drops them.
+static void vcf_mt_drain(vcf_mt_state *st)
+{
+    if (st->curr) {
+        st->curr->next = st->free_jobs;
+        st->free_jobs = st->curr;
+        st->curr = NULL;
+    }
+    while (st->inflight > 0) {
+        hts_tpool_result *r = hts_tpool_next_result_wait(st->q);
+        if (!r) break;
+        vcf_mt_job *j = hts_tpool_result_data(r);
+        hts_tpool_delete_result(r, 0);
+        st->inflight--;
+        if (j) {
+            j->next = st->free_jobs;
+            st->free_jobs = j;
+        }
+    }
+    st->inflight = 0;
+}
+
+static int vcf_mt_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
+{
+    vcf_mt_state *st = fp->state;
+
+    if (vcf_mt_tell(fp) != st->next_pos) {
+        // First call, or the stream has been moved since we read from it
+        vcf_mt_drain(st);
+        st->at_end = 0;
+        st->next_pos = vcf_mt_tell(fp);
+    }
+
+    for (;;) {
+        vcf_mt_job *j = st->curr;
+        if (j && j->pos < j->nlines) {
+            int i = j->pos++, ret = j->ret[i];
+            if (ret == VCF_PARSE_NEEDS_HDR || j->h != h
+                || j->max_unpack != v->max_unpack) {
+                // Parse here, with the header writable
+                size_t len = (i + 1 < j->nlines ? j->off[i+1] : j->text.l) - j->off[i] - 1;
+                fp->line.l = 0;
+                if (kputsn(j->text.s + j->off[i], len, &fp->line) < 0)
+                    return -2;
+                pthread_rwlock_wrlock(&st->hdr_lock);
+                ret = vcf_parse(&fp->line, h, v);
+                pthread_rwlock_unlock(&st->hdr_lock);
+                return ret;
+            }
+            bcf1_t tmp = *v;
+            *v = j->recs[i];
+            j->recs[i] = tmp;
+            return ret;
+        }
+        if (j) {
+            j->next = st->free_jobs;
+            st->free_jobs = j;
+            st->curr = NULL;
+        }
+
+        while (!st->at_end && st->inflight < st->qsize) {
+            int ret = vcf_mt_queue_block(fp, h, v->max_unpack);
+            if (ret < 0) return -2;
+            if (ret == 0) break;
+        }
+        if (st->inflight == 0)
+            return st->at_end ? st->at_end : -1;
+
+        hts_tpool_result *r = hts_tpool_next_result_wait(st->q);
+        if (!r) return -2;
+        st->curr = hts_tpool_result_data(r);
+        hts_tpool_delete_result(r, 0);
+        st->inflight--;
+        if (!st->curr) return -2;
+    }
+}
+
+int vcf_set_thread_pool(htsFile *fp, htsThreadPool *p)
+{
+    if (fp->state || fp->is_write || !p || !p->pool)
+        return 0;
+    vcf_mt_state *st = calloc(1, sizeof(*st));
+    if (!st)
+        return -1;
+    st->p = p->pool;
+    st->qsize = p->qsize > 0 ? p->qsize : 2 * hts_tpool_size(p->pool);
+    st->next_pos = -1;
+    if (pthread_rwlock_init(&st->hdr_lock, NULL) != 0) {
+        free(st);
+        return -1;
+    }
+    if (!(st->q = hts_tpool_process_init(st->p, st->qsize, 0))) {
+        pthread_rwlock_destroy(&st->hdr_lock);
+        free(st);
+        return -1;
+    }
+    fp->state = st;
+    return 0;
+}
+
+int vcf_set_threads(htsFile *fp, int nthreads)
+{
+    if (nthreads <= 0 || fp->is_write)
+        return 0;
+    htsThreadPool p = { hts_tpool_init(nthreads), 0 };
+    if (!p.pool)
+        return -1;
+    if (fp->format.compression == bgzf
+        && bgzf_thread_pool(fp->fp.bgzf, p.pool, 0) < 0)
+        goto fail;
+    if (vcf_set_thread_pool(fp, &p) < 0 || !fp->state)
+        goto fail;
+    ((vcf_mt_state *) fp->state)->own_pool = 1;
+    return 0;
+
+ fail:
+    hts_tpool_destroy(p.pool);
+    return -1;
+}
+
+hts_tpool *vcf_state_destroy(htsFile *fp)
+{
+    vcf_mt_state *st = fp->state;
+    hts_tpool *pool = NULL;
+    if (!st)
+        return NULL;
+    vcf_mt_drain(st);
+    hts_tpool_process_destroy(st->q);
+    while (st->free_jobs) {
+        vcf_mt_job *j = st->free_jobs;
+        st->free_jobs = j->next;
+        vcf_mt_free_job(j);
+    }
+    pthread_rwlock_destroy(&st->hdr_lock);
+    if (st->own_pool)
+        pool = st->p;
+    free(st);
+    fp->state = NULL;
+    return pool;
+}
+
+/*
+ * Threaded VCF writing: records are copied into blocks, formatted to text
+ * on the thread pool, and the text is written in order on the caller's
+ * thread.  Not used when building an index on the fly, which needs the
+ * file offset of each record as it is written.
+ */
+#define VCF_WMT_MAGIC  0x56434657  // "VCFW"; SAM_state starts with a NULL pointer
+#define VCF_WMT_NRECS  1024
+#define VCF_WMT_NBYTES (256 << 10)
+
+typedef struct vcf_wmt_job {
+    struct vcf_wmt_job *next;  // free list
+    const bcf_hdr_t *h;
+    bcf1_t **recs;
+    size_t *ends;              // end of each record's line in out
+    int n, m, ret;
+    size_t bytes;
+    kstring_t out;
+} vcf_wmt_job;
+
+typedef struct {
+    int magic;
+    hts_tpool *p;
+    hts_tpool_process *q;
+    int own_pool, qsize, inflight, err;
+    const bcf_hdr_t *h_user;   // caller's header, compared by address
+    int h_nhrec, h_n[3];       // and by size, as readers add lines to it
+    bcf_hdr_t *h;              // our copy, so the caller may free theirs
+    vcf_wmt_job *curr, *free_jobs;
+} vcf_wmt_state;
+
+static vcf_wmt_state *vcf_wmt(htsFile *fp)
+{
+    vcf_wmt_state *st = fp->state;
+    return fp->is_write && st && st->magic == VCF_WMT_MAGIC ? st : NULL;
+}
+
+static void *vcf_wmt_worker(void *arg)
+{
+    vcf_wmt_job *j = arg;
+    int i;
+    j->out.l = 0;
+    j->ret = 0;
+    for (i = 0; i < j->n; i++) {
+        if (vcf_format(j->h, j->recs[i], &j->out) < 0) {
+            j->ret = -1;
+            break;
+        }
+        j->ends[i] = j->out.l;
+    }
+    return j;
+}
+
+static void vcf_wmt_free_job(vcf_wmt_job *j)
+{
+    int i;
+    for (i = 0; i < j->m; i++)
+        if (j->recs[i]) bcf_destroy(j->recs[i]);
+    free(j->recs);
+    free(j->ends);
+    free(j->out.s);
+    free(j);
+}
+
+// Write one finished block and put the job back on the free list
+static void vcf_wmt_output(htsFile *fp, vcf_wmt_state *st, vcf_wmt_job *j)
+{
+    if (j->ret < 0) {
+        st->err = -1;
+    } else if (!st->err && fp->format.compression != no_compression) {
+        // Line by line, flushing blocks as vcf_write() does, so the
+        // BGZF blocks come out the same as without threads
+        size_t start = 0;
+        int i;
+        for (i = 0; i < j->n && !st->err; i++) {
+            size_t len = j->ends[i] - start;
+            if (bgzf_flush_try(fp->fp.bgzf, len) < 0
+                || bgzf_write(fp->fp.bgzf, j->out.s + start, len) != len)
+                st->err = -1;
+            start = j->ends[i];
+        }
+    } else if (!st->err && j->out.l) {
+        if (hwrite(fp->fp.hfile, j->out.s, j->out.l) != j->out.l)
+            st->err = -1;
+    }
+    j->n = 0;
+    j->bytes = 0;
+    j->next = st->free_jobs;
+    st->free_jobs = j;
+}
+
+static int vcf_wmt_collect(htsFile *fp, vcf_wmt_state *st, int wait)
+{
+    while (st->inflight > 0) {
+        hts_tpool_result *r = wait ? hts_tpool_next_result_wait(st->q)
+                                   : hts_tpool_next_result(st->q);
+        if (!r) {
+            if (wait) st->err = -1;
+            break;
+        }
+        vcf_wmt_job *j = hts_tpool_result_data(r);
+        hts_tpool_delete_result(r, 0);
+        st->inflight--;
+        vcf_wmt_output(fp, st, j);
+        if (wait) break;
+    }
+    return st->err;
+}
+
+static int vcf_wmt_dispatch(htsFile *fp, vcf_wmt_state *st)
+{
+    vcf_wmt_job *j = st->curr;
+    st->curr = NULL;
+    if (!j || j->n == 0) {
+        if (j) { j->next = st->free_jobs; st->free_jobs = j; }
+        return st->err;
+    }
+    while (st->inflight >= st->qsize && !st->err)
+        vcf_wmt_collect(fp, st, 1);
+    if (st->err || hts_tpool_dispatch(st->p, st->q, vcf_wmt_worker, j) < 0) {
+        st->err = -1;
+        j->next = st->free_jobs;
+        st->free_jobs = j;
+        return -1;
+    }
+    st->inflight++;
+    return vcf_wmt_collect(fp, st, 0);
+}
+
+static int vcf_wmt_drain(htsFile *fp, vcf_wmt_state *st)
+{
+    vcf_wmt_dispatch(fp, st);
+    while (st->inflight > 0 && !st->err)
+        vcf_wmt_collect(fp, st, 1);
+    while (st->inflight > 0) {  // after an error, just wait for the workers
+        hts_tpool_result *r = hts_tpool_next_result_wait(st->q);
+        if (!r) break;
+        vcf_wmt_job *j = hts_tpool_result_data(r);
+        hts_tpool_delete_result(r, 0);
+        st->inflight--;
+        j->next = st->free_jobs;
+        st->free_jobs = j;
+    }
+    return st->err;
+}
+
+static int vcf_wmt_write(htsFile *fp, vcf_wmt_state *st, const bcf_hdr_t *h, bcf1_t *v)
+{
+    if (st->err)
+        return -1;
+    if (h != st->h_user || h->nhrec != st->h_nhrec || h->n[0] != st->h_n[0]
+        || h->n[1] != st->h_n[1] || h->n[2] != st->h_n[2]) {
+        // New or grown header: finish what used the old one, then copy it
+        if (vcf_wmt_drain(fp, st) < 0)
+            return -1;
+        bcf_hdr_destroy(st->h);
+        if (!(st->h = bcf_hdr_dup(h)))
+            return st->err = -1;
+        st->h_user = h;
+        st->h_nhrec = h->nhrec;
+        memcpy(st->h_n, h->n, sizeof(st->h_n));
+    }
+    vcf_wmt_job *j = st->curr;
+    if (!j) {
+        if ((j = st->free_jobs)) {
+            st->free_jobs = j->next;
+        } else if (!(j = calloc(1, sizeof(*j)))) {
+            return st->err = -1;
+        }
+        j->h = st->h;
+        st->curr = j;
+    }
+    if (j->n == j->m) {
+        int m = j->m ? j->m * 2 : 64;
+        bcf1_t **recs = realloc(j->recs, m * sizeof(*recs));
+        if (!recs)
+            return st->err = -1;
+        memset(recs + j->m, 0, (m - j->m) * sizeof(*recs));
+        j->recs = recs;
+        size_t *ends = realloc(j->ends, m * sizeof(*ends));
+        if (!ends)
+            return st->err = -1;
+        j->ends = ends;
+        j->m = m;
+    }
+    if (!j->recs[j->n] && !(j->recs[j->n] = bcf_init()))
+        return st->err = -1;
+    bcf1_t *r = bcf_copy(j->recs[j->n], v);
+    j->n++;
+    j->bytes += r->shared.l + r->indiv.l;
+    if (j->n >= VCF_WMT_NRECS || j->bytes >= VCF_WMT_NBYTES)
+        return vcf_wmt_dispatch(fp, st);
+    return 0;
+}
+
+static int vcf_wmt_init(htsFile *fp, hts_tpool *p, int qsize, int own_pool)
+{
+    vcf_wmt_state *st = calloc(1, sizeof(*st));
+    if (!st)
+        return -1;
+    st->magic = VCF_WMT_MAGIC;
+    st->p = p;
+    st->qsize = qsize > 0 ? qsize : 2 * hts_tpool_size(p);
+    st->own_pool = own_pool;
+    if (!(st->q = hts_tpool_process_init(p, st->qsize, 0))) {
+        free(st);
+        return -1;
+    }
+    fp->state = st;
+    return 0;
+}
+
+// For a VCF opened for writing before its format was known, swap the
+// SAM state set up by hts_set_thread_pool() for a VCF writer.
+static int vcf_wmt_adopt(htsFile *fp)
+{
+    if (!fp->is_write || !fp->state || vcf_wmt(fp))
+        return 0;
+    int own = 0;
+    hts_tpool *p = sam_state_release_pool(fp, &own);
+    if (!p)
+        return 0;
+    return vcf_wmt_init(fp, p, 0, own);
+}
+
+int vcf_has_write_state(htsFile *fp)
+{
+    return vcf_wmt(fp) != NULL;
+}
+
+int vcf_flush_threads(htsFile *fp)
+{
+    vcf_wmt_state *st = vcf_wmt(fp);
+    return st ? vcf_wmt_drain(fp, st) : 0;
+}
+
+hts_tpool *vcf_write_state_destroy(htsFile *fp, int *ret)
+{
+    vcf_wmt_state *st = vcf_wmt(fp);
+    hts_tpool *pool = NULL;
+    if (!st)
+        return NULL;
+    if (vcf_wmt_drain(fp, st) < 0)
+        *ret = -1;
+    hts_tpool_process_destroy(st->q);
+    while (st->free_jobs) {
+        vcf_wmt_job *j = st->free_jobs;
+        st->free_jobs = j->next;
+        vcf_wmt_free_job(j);
+    }
+    bcf_hdr_destroy(st->h);
+    if (st->own_pool)
+        pool = st->p;
+    free(st);
+    fp->state = NULL;
+    return pool;
+}
+
+int vcf_set_write_thread_pool(htsFile *fp, htsThreadPool *p)
+{
+    if (fp->state || !fp->is_write || !p || !p->pool)
+        return 0;
+    return vcf_wmt_init(fp, p->pool, p->qsize, 0);
 }
 
 int vcf_open_mode(char *mode, const char *fn, const char *format)
@@ -4341,6 +4930,8 @@ int vcf_open_mode(char *mode, const char *fn, const char *format)
 int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret;
+    if (fp->state && fp->format.format == vcf)
+        return vcf_mt_read(fp, h, v);
     ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
     if (ret < 0) return ret;
     return vcf_parse1(&fp->line, h, v);
@@ -4758,6 +5349,11 @@ int vcf_write_line(htsFile *fp, kstring_t *line)
 int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     ssize_t ret;
+    vcf_wmt_state *st = vcf_wmt(fp);
+    if (st && !fp->idx)
+        return vcf_wmt_write(fp, st, h, v);
+    if (st && vcf_wmt_drain(fp, st) < 0)
+        return -1;
     fp->line.l = 0;
     if (vcf_format1(h, v, &fp->line) != 0)
         return -1;
