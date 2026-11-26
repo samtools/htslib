@@ -79,15 +79,23 @@ static char *mfload(FILE *fp, const char *fn, size_t *size, int binary) {
     int bufsize = 8192;
 
 #ifdef _WIN32
+    int fd = _fileno(fp);
+#else
+    int fd = fileno(fp);
+#endif
+    if (fd < 0)
+        return NULL;
+
+#ifdef _WIN32
     if (binary)
-        _setmode(_fileno(fp), _O_BINARY);
+        _setmode(fd, _O_BINARY);
     else
-        _setmode(_fileno(fp), _O_TEXT);
+        _setmode(fd, _O_TEXT);
 #endif
 
-    if (fn && -1 != stat(fn, &sb)) {
+    if (-1 != fstat(fd, &sb)) {
         data = malloc(allocated = sb.st_size);
-        if (!data)
+        if (sb.st_size && !data)
             return NULL;
         bufsize = sb.st_size;
     } else {
