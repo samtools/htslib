@@ -2151,25 +2151,25 @@ static void bgzf_close_mt(BGZF *fp) {
 
 int bgzf_close(BGZF* fp)
 {
-    int ret, block_length;
+    int ret, block_length, write_failed = 0;
     if (fp == 0) return -1;
     if (fp->is_write && fp->is_compressed) {
+        // On failure, carry on to release all resources, but don't try to
+        // write any more data.
         if (bgzf_flush(fp) != 0) {
-            bgzf_close_mt(fp);
-            return -1;
-        }
-        fp->compress_level = -1;
-        block_length = deflate_block(fp, 0); // write an empty block
-        if (block_length < 0) {
-            hts_log_debug("Deflate block operation failed: %s", bgzf_zerr(block_length, NULL));
-            bgzf_close_mt(fp);
-            return -1;
-        }
-        if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
-            || hflush(fp->fp) != 0) {
-            hts_log_error("File write failed");
-            fp->errcode |= BGZF_ERR_IO;
-            return -1;
+            write_failed = 1;
+        } else {
+            fp->compress_level = -1;
+            block_length = deflate_block(fp, 0); // write an empty block
+            if (block_length < 0) {
+                hts_log_debug("Deflate block operation failed: %s", bgzf_zerr(block_length, NULL));
+                write_failed = 1;
+            } else if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
+                       || hflush(fp->fp) != 0) {
+                hts_log_error("File write failed");
+                fp->errcode |= BGZF_ERR_IO;
+                write_failed = 1;
+            }
         }
     }
 
@@ -2185,12 +2185,17 @@ int bgzf_close(BGZF* fp)
         }
         free(fp->gz_stream);
     }
-    ret = hclose(fp->fp);
-    if (ret != 0) return -1;
+    if (write_failed) {
+        // hclose would try to flush the buffered data again
+        hclose_abruptly(fp->fp);
+        ret = -1;
+    } else {
+        ret = hclose(fp->fp) != 0 ? -1 : 0;
+    }
     bgzf_index_destroy(fp);
     free(fp->uncompressed_block);
     free_cache(fp);
-    ret = fp->errcode ? -1 : 0;
+    if (fp->errcode) ret = -1;
     free(fp);
     return ret;
 }
