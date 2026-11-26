@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.
 #include <sys/stat.h>
 #include <inttypes.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "../htslib/bgzf.h"
@@ -1070,6 +1071,57 @@ static int test_bgzf_getline_on_truncated_file(Files *f, const char *mode, int n
     return -1;
 }
 
+#ifndef _WIN32
+// bgzf_close must release all its resources even when the final flush
+// fails. Writing to a pipe with no reader makes it fail with EPIPE; the
+// leak itself is only detected when running under a leak checker (ASan).
+static int test_close_on_write_error(int nthreads) {
+    static const char text[] = "Data that is buffered until bgzf_close\n";
+    enum htsLogLevel lvl = hts_get_log_level();
+    void (*old_handler)(int);
+    BGZF *bgz = NULL;
+    int fds[2], ret = -1;
+
+    if (pipe(fds) != 0) {
+        fprintf(stderr, "%s : Couldn't make pipe : %s\n",
+                __func__, strerror(errno));
+        return -1;
+    }
+    close(fds[0]);
+    old_handler = signal(SIGPIPE, SIG_IGN);
+    hts_set_log_level(HTS_LOG_OFF);
+
+    bgz = bgzf_dopen(fds[1], "w");
+    if (!bgz) {
+        fprintf(stderr, "%s : bgzf_dopen failed : %s\n",
+                __func__, strerror(errno));
+        close(fds[1]);
+        goto out;
+    }
+    if (nthreads > 0 && bgzf_mt(bgz, nthreads, 64) < 0) {
+        fprintf(stderr, "%s : bgzf_mt failed\n", __func__);
+        bgzf_close(bgz);
+        goto out;
+    }
+    if (bgzf_write(bgz, text, sizeof(text) - 1) != sizeof(text) - 1) {
+        fprintf(stderr, "%s : bgzf_write failed\n", __func__);
+        bgzf_close(bgz);
+        goto out;
+    }
+    if (bgzf_close(bgz) != -1) {
+        fprintf(stderr, "%s : Expected bgzf_close to fail on a "
+                "closed pipe\n", __func__);
+        goto out;
+    }
+    ret = 0;
+
+ out:
+    hts_set_log_level(lvl);
+    signal(SIGPIPE, old_handler);
+    return ret;
+}
+#endif
+
 int main(int argc, char **argv) {
     Files f = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 };
     int retval = EXIT_FAILURE;
@@ -1153,6 +1205,13 @@ int main(int argc, char **argv) {
     if (test_bgzf_getline_on_truncated_file(&f, "w", 0) != 0) goto out;
     if (test_bgzf_getline_on_truncated_file(&f, "w", 1) != 0) goto out;
     if (test_bgzf_getline_on_truncated_file(&f, "w", 2) != 0) goto out;
+
+#ifndef _WIN32
+    // Failed flush on close
+    if (test_close_on_write_error(0) != 0) goto out;
+    if (test_close_on_write_error(1) != 0) goto out;
+    if (test_close_on_write_error(2) != 0) goto out;
+#endif
 
     retval = EXIT_SUCCESS;
 
