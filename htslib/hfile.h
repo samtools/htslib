@@ -62,6 +62,16 @@ typedef struct hFILE {
     // @endcond
 } hFILE;
 
+/// Defines the operations that used by an IO file
+typedef struct  hFILE_callback_ops {
+	void* cb_data;
+	ssize_t (*read)(void* cb_data, void* buf, size_t sz);
+	ssize_t (*write)(void* cb_data, const void* buf, size_t sz);
+	off_t (*seek)(void* cb_data, off_t ofs, int whence);
+	int (*flush)(void* cb_data);
+	int (*close)(void* cb_data);
+} hFILE_callback_ops;
+
 /// Open the named file or URL as a stream
 /** @return An hFILE pointer, or `NULL` (with _errno_ set) if an error occurred.
 
@@ -72,6 +82,11 @@ The usual `fopen(3)` _mode_ letters are supported: one of
 */
 HTSLIB_EXPORT
 hFILE *hopen(const char *filename, const char *mode, ...) HTS_RESULT_USED;
+
+/// Wrap a group of operation callbacks into a HFile stream
+/** @return An hFILE pointer, or NULL if error occurred
+ */
+hFILE *hopen_callback(hFILE_callback_ops ops, const char* mode) HTS_RESULT_USED;
 
 /// Associate a stream with an existing open file descriptor
 /** @return An hFILE pointer, or `NULL` (with _errno_ set) if an error occurred.
