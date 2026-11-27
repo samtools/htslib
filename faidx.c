@@ -366,7 +366,7 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
     if (read_done) {
         if (fai_insert_index(idx, name.s, seq_len, line_len, char_len, seq_offset, qual_offset) != 0)
             goto fail;
-    } else {
+    } else if (!(idx->format == FAI_FASTA && state == IN_SEQ && seq_len == 0)) { // don't fail on empty sequence last fasta
         hts_log_error("File truncated at line %d", line_num);
         goto fail;
     }
