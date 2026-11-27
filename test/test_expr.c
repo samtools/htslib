@@ -346,6 +346,89 @@ int test(void) {
     return res;
 }
 
+// Values of the symbols "x", "y" and "z"; NULL is absent (eg no aux tag)
+typedef struct {
+    const char *x, *y, *z;
+} xyz;
+
+int lookup_xyz(void *data, char *str, char **end, hts_expr_val_t *res) {
+    xyz *v = (xyz *)data;
+    const char *s;
+    if (*str == 'x')
+        s = v->x;
+    else if (*str == 'y')
+        s = v->y;
+    else if (*str == 'z')
+        s = v->z;
+    else
+        return -1;
+
+    *end = str+1;
+    res->is_str = 1;
+    res->is_true = s != NULL;
+    if (s) {
+        kputs(s, ks_clear(&res->s));
+    } else {
+        // As for absent aux tags in sam.c
+        res->s.l = 0;
+        res->d = 0;
+    }
+    return 0;
+}
+
+// Evaluates one filter on several sets of data.  The result should only
+// depend on the data, and not on what the filter has seen before.
+int test_regex_reuse(void) {
+    struct {
+        const char *str;
+        xyz data[4];
+        int truth_val[4];
+    } tests[] = {
+        // Matches skipped due to absent data
+        { "x =~ \"^a\" || y =~ \"^b\"",
+          { {NULL, "bcd"}, {"abc", NULL}, {"bcd", "abc"}, {"abc", "bcd"} },
+          { 1, 1, 0, 1 } },
+        { "x !~ \"^a\" && y =~ \"^b\" && z =~ \"^c\"",
+          { {"b", NULL, "c"}, {"b", "b", "c"}, {NULL, "b", "c"}, {"a", "b", "c"} },
+          { 0, 1, 0, 0 } },
+        // Pattern from the data
+        { "x =~ y",
+          { {"abc", "^a"}, {"abc", "^b"}, {"bcd", "^b"}, {"abc", "^a"} },
+          { 1, 0, 1, 1 } },
+        { "x =~ y || x =~ z",
+          { {"abc", "^b", "^a"}, {"abc", NULL, "^b"}, {"abc", "^a", NULL}, {"b", "a", "b"} },
+          { 1, 0, 1, 1 } },
+        // More than MAX_REGEX matches
+        { "x=~\"0\"||x=~\"1\"||x=~\"2\"||x=~\"3\"||x=~\"4\"||x=~\"5\"||"
+          "x=~\"6\"||x=~\"7\"||x=~\"8\"||x=~\"9\"||x=~\"a\"||x=~\"b\"",
+          { {"b"}, {"c"}, {"0"}, {"9"} },
+          { 1, 0, 1, 1 } },
+    };
+
+    int i, j, res = 0;
+    hts_expr_val_t r = HTS_EXPR_VAL_INIT;
+    for (i = 0; i < sizeof(tests) / sizeof(*tests); i++) {
+        hts_filter_t *filt = hts_filter_init(tests[i].str);
+        if (!filt)
+            return 1;
+        for (j = 0; j < 4; j++) {
+            if (hts_filter_eval2(filt, &tests[i].data[j], lookup_xyz, &r)) {
+                fprintf(stderr, "Failed to evaluate filter string %s\n",
+                        tests[i].str);
+                res = 1;
+            } else if (r.is_true != tests[i].truth_val[j]) {
+                fprintf(stderr, "Failed test: \"%s\" on data %d, got %s\n",
+                        tests[i].str, j, r.is_true ? "true" : "false");
+                res = 1;
+            }
+            hts_expr_val_free(&r);
+        }
+        hts_filter_free(filt);
+    }
+
+    return res;
+}
+
 int main(int argc, char **argv) {
     if (argc > 1) {
         hts_expr_val_t v = HTS_EXPR_VAL_INIT;
@@ -368,5 +451,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    return test();
+    int ret = test();
+    ret |= test_regex_reuse();
+    return ret;
 }
