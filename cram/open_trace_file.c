@@ -83,6 +83,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../htslib/hfile.h"
 #include "../htslib/hts_log.h"
 #include "../htslib/hts.h"
+#include "../textutils_internal.h"
 
 /*
  * Returns whether the path refers to a regular file.
@@ -138,6 +139,7 @@ char *tokenise_search_path(const char *searchpath) {
                  !strncmp(&searchpath[i], "URL=http:", 9) ||
                  !strncmp(&searchpath[i], "URL=https:",10)||
                  !strncmp(&searchpath[i], "URL=ftp:",  8))) {
+                // Copy protocol + colon(s) + "//"
                 do {
                     newsearch[j++] = searchpath[i];
                 } while (i<len && searchpath[i++] != ':');
@@ -147,26 +149,34 @@ char *tokenise_search_path(const char *searchpath) {
                     newsearch[j++] = searchpath[i++];
                 if (searchpath[i]=='/')
                     newsearch[j++] = searchpath[i++];
-                // Look for host:port
-                do {
+
+                // Copy host
+                while (i<len && searchpath[i] != ':' && searchpath[i] != '/')
                     newsearch[j++] = searchpath[i++];
-                } while (i<len && searchpath[i] != ':' && searchpath[i] != '/');
-                newsearch[j++] = searchpath[i++];
-                if (searchpath[i] == ':')
-                    i++;
+
+                // Copy port colon if :[digits], otherwise assume it's path
+                // separator.
+                if (searchpath[i] == ':' &&
+                    (isdigit_c(searchpath[i+1]) || searchpath[i+1]==':')) {
+                    newsearch[j++] = searchpath[i++];
+                    if (searchpath[i] == ':')
+                        i++; // skip double colon
+                }
             }
         }
+        // else path_sep!=':'  => all colons are literal chars to copy
 
         if (searchpath[i] == path_sep) {
             /* Skip blank path components */
             if (j && newsearch[j-1] != 0)
                 newsearch[j++] = 0;
         } else {
-            newsearch[j++] = searchpath[i];
+            if (searchpath[i])
+                newsearch[j++] = searchpath[i];
         }
     }
 
-    if (j)
+    if (j && newsearch[j-1] != 0)
         newsearch[j++] = 0;
     newsearch[j++] = '.';
     newsearch[j++] = '/';
@@ -175,6 +185,21 @@ char *tokenise_search_path(const char *searchpath) {
 
     return newsearch;
 }
+
+// Can test tokenise_search_path above with:
+// cc -I. -g -DOTF_MAIN cram/open_trace_file.c cram/mFILE.c -L. -lhts -Wl,-rpath,`pwd`
+#ifdef OTF_MAIN
+int main(int argc, char **argv) {
+    if (argc < 2)
+        exit(1);
+    char *newsearch = tokenise_search_path(argv[1]);
+    for (char *ele = newsearch; *ele; ele += strlen(ele)+1) {
+        printf("Path: '%s', len %ld\n", ele, strlen(ele));
+    }
+    free(newsearch);
+    return 0;
+}
+#endif
 
 static char *expand_path(const char *file, const char *dirname,
                          int max_s_digits);

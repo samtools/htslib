@@ -133,8 +133,10 @@ void cram_stats_dump(cram_stats *st) {
  * Returns the best codec to use.
  */
 enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
-    int nvals, i, max_val = 0, min_val = INT_MAX;
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0;
+    int nvals;
+    int64_t max_val = 0, min_val = INT64_MAX, v;
+    int64_t *vals = NULL;
+    int *freqs = NULL, vals_alloc = 0;
     int ntot HTS_UNUSED = 0;
 
 #if DEBUG_CRAM_STATS
@@ -142,12 +144,12 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 #endif
 
     /* Count number of unique symbols */
-    for (nvals = i = 0; i < MAX_STAT_VAL; i++) {
-        if (!st->freqs[i])
+    for (nvals = 0, v = 0; v < MAX_STAT_VAL; v++) {
+        if (!st->freqs[v])
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
+            int64_t *vals_tmp = hts_realloc_p(vals, sizeof(*vals), vals_alloc);
             int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
             if (!vals_tmp || !freqs_tmp) {
                 free(vals_tmp  ? vals_tmp  : vals);
@@ -157,39 +159,39 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
             vals = vals_tmp;
             freqs = freqs_tmp;
         }
-        vals[nvals] = i;
-        freqs[nvals] = st->freqs[i];
+        vals[nvals] = v;
+        freqs[nvals] = st->freqs[v];
         ntot += freqs[nvals];
-        if (max_val < i) max_val = i;
-        if (min_val > i) min_val = i;
+        if (max_val < v) max_val = v;
+        if (min_val > v) min_val = v;
         nvals++;
     }
     if (st->h) {
         khint_t k;
-        int i;
+
+        if (nvals + kh_size(st->h) >= vals_alloc) {
+            vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
+            int64_t *vals_tmp = hts_realloc_p(vals, sizeof(*vals),  vals_alloc);
+            int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
+            if (!vals_tmp || !freqs_tmp) {
+                free(vals_tmp  ? vals_tmp  : vals);
+                free(freqs_tmp ? freqs_tmp : freqs);
+                return E_HUFFMAN; // Cannot do much else atm
+            }
+            vals = vals_tmp;
+            freqs = freqs_tmp;
+        }
 
         for (k = kh_begin(st->h); k != kh_end(st->h); k++) {
             if (!kh_exist(st->h, k))
                 continue;
 
-            if (nvals >= vals_alloc) {
-                vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                int *vals_tmp  = hts_realloc_p(vals,  sizeof(*vals),  vals_alloc);
-                int *freqs_tmp = hts_realloc_p(freqs, sizeof(*freqs), vals_alloc);
-                if (!vals_tmp || !freqs_tmp) {
-                    free(vals_tmp  ? vals_tmp  : vals);
-                    free(freqs_tmp ? freqs_tmp : freqs);
-                    return E_HUFFMAN; // Cannot do much else atm
-                }
-                vals = vals_tmp;
-                freqs = freqs_tmp;
-            }
-            i = kh_key(st->h, k);
-            vals[nvals]=i;
+            v = kh_key(st->h, k);
+            vals[nvals]=v;
             freqs[nvals] = kh_val(st->h, k);
             ntot += freqs[nvals];
-            if (max_val < i) max_val = i;
-            if (min_val > i) min_val = i;
+            if (max_val < v) max_val = v;
+            if (min_val > v) min_val = v;
             nvals++;
         }
     }

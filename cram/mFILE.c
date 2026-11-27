@@ -79,23 +79,31 @@ static char *mfload(FILE *fp, const char *fn, size_t *size, int binary) {
     int bufsize = 8192;
 
 #ifdef _WIN32
+    int fd = _fileno(fp);
+#else
+    int fd = fileno(fp);
+#endif
+    if (fd < 0)
+        return NULL;
+
+#ifdef _WIN32
     if (binary)
-        _setmode(_fileno(fp), _O_BINARY);
+        _setmode(fd, _O_BINARY);
     else
-        _setmode(_fileno(fp), _O_TEXT);
+        _setmode(fd, _O_TEXT);
 #endif
 
-    if (fn && -1 != stat(fn, &sb)) {
+    if (-1 != fstat(fd, &sb)) {
         data = malloc(allocated = sb.st_size);
-        if (!data)
+        if (sb.st_size && !data)
             return NULL;
         bufsize = sb.st_size;
     } else {
         fn = NULL;
     }
 
+    size_t len = 0;
     do {
-        size_t len;
         if (used + bufsize > allocated) {
             allocated += bufsize;
             char *datan = realloc(data, allocated);
@@ -109,7 +117,15 @@ static char *mfload(FILE *fp, const char *fn, size_t *size, int binary) {
         len = fread(data + used, 1, allocated - used, fp);
         if (len > 0)
             used += len;
+        if (len == 0)
+            break;
     } while (!feof(fp) && (fn == NULL || used < sb.st_size));
+
+    if (len == 0 && !feof(fp)) {
+        // error
+        free(data);
+        return NULL;
+    }
 
     *size = used;
 
@@ -429,11 +445,10 @@ void *mfsteal(mFILE *mf, size_t *size_out) {
     void *data;
 
     if (!mf) return NULL;
+    if (size_out) *size_out = mf->size;
+    if (!mf->data) return NULL;
 
     data = mf->data;
-
-    if (NULL != size_out) *size_out = mf->size;
-
     if (mfdetach(mf) != 0)
         return NULL;
 
