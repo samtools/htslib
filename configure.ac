@@ -286,6 +286,11 @@ AC_ARG_WITH([libdeflate],
                   [use libdeflate for faster crc and deflate algorithms])],
   [], [with_libdeflate=check])
 
+AC_ARG_WITH([isal],
+  [AS_HELP_STRING([--with-isal],
+                  [use isal for faster crc and faster deflate at compression level 1 and 2.])],
+  [], [with_isal=check])
+
 AC_ARG_WITH([plugin-dir],
   [AS_HELP_STRING([--with-plugin-dir=DIR],
                   [plugin installation location [LIBEXECDIR/htslib]])],
@@ -566,6 +571,27 @@ search paths in CPPFLAGS and/or LDFLAGS if the header and library
 are not currently on them.
 
 Either configure with --without-libdeflate or resolve this error to build
+HTSlib.])])])])
+
+AS_IF([test "x$with_isal" != "xno"],
+  [isal=ok
+   AC_CHECK_HEADER([isa-l.h],[],[isal='missing header'],[;])
+   AC_CHECK_LIB([isal], [isal_deflate_stateless],[:],[isal='missing library'])
+   AS_IF([test "$isal" = "ok"],
+    [AC_DEFINE([HAVE_ISAL], 1, [Define if ISAL is available.])
+     LIBS="-lisal $LIBS"
+     private_LIBS="$private_LIBS -lisal"
+     static_LIBS="$static_LIBS -lisal"],
+    [AS_IF([test "x$with_isal" != "xcheck"],
+       [MSG_ERROR([isal development files not found: $isal
+
+You requested isal, but do not have the required header / library
+files.  The source for isal is available from
+<https://github.com/intel/isa-l>.  You may have to adjust
+search paths in CPPFLAGS and/or LDFLAGS if the header and library
+are not currently on them.
+
+Either configure with --without-isal or resolve this error to build
 HTSlib.])])])])
 
 libcurl=disabled
