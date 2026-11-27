@@ -46,6 +46,14 @@
 #include <isa-l/crc.h>
 #endif
 
+#ifdef __x86_64__
+#define X86_64 __x86_64__
+#elifdef _M_AMD64
+#define X86_64 _M_AMD64
+#else 
+#define X86_64 0
+#endif
+
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
@@ -604,13 +612,14 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
     return fp;
 }
 
-#if HAVE_ISAL
-uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
-    return crc32_gzip_refl(crc, buf, len);
-}
-#elif HAVE_LIBDEFLATE
+
+#if HAVE_LIBDEFLATE
 uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
     return libdeflate_crc32(crc, buf, len);
+}
+#elif HAVE_ISAL
+uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
+    return crc32_gzip_refl(crc, buf, len);
 }
 #else
 uint32_t hts_crc32(uint32_t crc, const void *buf, size_t len) {
@@ -846,7 +855,7 @@ static int deflate_block(BGZF *fp, int block_length)
     return comp_size;
 }
 
-#ifdef HAVE_ISAL
+#if HAVE_ISAL && X86_64
 static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
                            const uint8_t *src, size_t slen,
                            uint32_t expected_crc) {
@@ -983,7 +992,7 @@ static int inflate_block(BGZF* fp, int block_length)
     return dlen;
 }
 
-#if HAVE_ISAL
+#if HAVE_ISAL && X86_64
 static int inflate_gzip_block(BGZF *fp)
 {
     // we will set this to true when we detect EOF, so we don't bang against the EOF more than once per call
@@ -1389,7 +1398,7 @@ static int bgzf_read_block_core(BGZF *fp)
             count = hread(fp->fp, cblock+sizeof(header), BGZF_BLOCK_SIZE - sizeof(header)) + sizeof(header);
 
             fp->is_gzip = 1;
-#if HAVE_ISAL
+#if HAVE_ISAL && X86_64
             fp->isal_inflate_state = (struct inflate_state *)calloc(1, sizeof(struct inflate_state));
             if (fp->isal_inflate_state == NULL) {
                 hts_log_error("Out of memory");
