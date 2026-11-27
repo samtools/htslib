@@ -2317,6 +2317,52 @@ cleanup:
     ks_free(&ks);
 }
 
+typedef struct {
+    void *con_data, *des_data;  // "data" argument last passed to each callback
+} plp_cb_data;
+
+static plp_cb_data plp_cb;
+
+static int plp_con(void *data, const bam1_t *b, bam_pileup_cd *cd)
+{
+    plp_cb.con_data = data;
+    return 0;
+}
+
+static int plp_des(void *data, const bam1_t *b, bam_pileup_cd *cd)
+{
+    plp_cb.des_data = data;
+    return 0;
+}
+
+// The constructor and destructor should be given the data passed to
+// bam_plp_init(), also when the records are supplied with bam_plp_push().
+static void test_plp_push_callback_data(void)
+{
+    int my_data = 0;
+    const uint32_t cigar[] = { bam_cigar_gen(4, BAM_CMATCH) };
+    bam1_t *b = bam_init1();
+    bam_plp_t iter = bam_plp_init(NULL, &my_data);
+
+    VERIFY(b != NULL && iter != NULL, "allocation failed");
+    VERIFY(bam_set1(b, 1, "q", 0, 0, 100, 60, 1, cigar, -1, -1, 0,
+                    4, "ACGT", NULL, 0) >= 0, "bam_set1 failed");
+
+    memset(&plp_cb, 0, sizeof(plp_cb));
+    bam_plp_constructor(iter, plp_con);
+    bam_plp_destructor(iter, plp_des);
+    VERIFY(bam_plp_push(iter, b) == 0, "bam_plp_push failed");
+    VERIFY(plp_cb.con_data == &my_data, "wrong data passed to constructor");
+
+    bam_plp_destroy(iter);
+    iter = NULL;
+    VERIFY(plp_cb.des_data == &my_data, "wrong data passed to destructor");
+
+cleanup:
+    if (iter) bam_plp_destroy(iter);
+    if (b) bam_destroy1(b);
+}
+
 static void test_cigar_api(void)
 {
     uint32_t *buf = NULL;
@@ -2378,6 +2424,7 @@ int main(int argc, char **argv)
     test_bam_set1_validate_size_limits();
     test_bam_set1_write_and_read_back();
     test_cigar_api();
+    test_plp_push_callback_data();
 
     return status;
 }
