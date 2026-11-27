@@ -855,6 +855,13 @@ struct cram_fd {
     int own_pool;
     hts_tpool *pool;
     hts_tpool_process *rqueue;
+    // Caller-supplied container executor (cram_set_container_executor).
+    // When set, full containers are handed to it instead of being encoded
+    // in this thread or dispatched to `pool`.
+    cram_container_executor *executor;
+    void *executor_arg;
+    // Containers handed to the executor and not yet written (metrics_lock).
+    int64_t executor_pending;
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
     pthread_mutex_t range_lock;

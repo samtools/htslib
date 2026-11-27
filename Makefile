@@ -83,6 +83,7 @@ BUILT_TEST_PROGRAMS = \
 	test/sam \
 	test/test_alloc \
 	test/test_bgzf \
+	test/test_cram_executor \
 	test/test_expr \
 	test/test_faidx \
 	test/test_kfunc \
@@ -712,6 +713,7 @@ check test: all $(HTSCODECS_TEST_TARGETS)
 	fi
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
+	REF_PATH=: test/test_cram_executor test/ce#1000.sam test/ce.fa test/test_cram_executor.tmp
 	cd test/faidx && bash ./test-faidx.sh faidx.tst
 	cd test/sam_filter && bash ./filter.sh filter.tst
 	cd test/tabix && bash ./test-tabix.sh tabix.tst
@@ -809,6 +811,9 @@ test/test_kfunc: test/test_kfunc.o libhts.a
 
 test/test_khash: test/test_khash.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_khash.o libhts.a $(LIBS) -lpthread
+
+test/test_cram_executor: test/test_cram_executor.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_cram_executor.o libhts.a $(LIBS) -lpthread
 
 test/test_ksort: test/test_ksort.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_ksort.o libhts.a $(LIBS) -lpthread
@@ -932,6 +937,7 @@ test/test_alloc.o: test/test_alloc.c config.h $(htslib_hts_alloc_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(hfile_internal_h)
 test/test_expr.o: test/test_expr.c config.h $(htslib_hts_expr_h)
 test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
+test/test_cram_executor.o: test/test_cram_executor.c config.h $(htslib_cram_h) $(htslib_hts_h) $(htslib_hts_log_h) $(htslib_kstring_h) $(htslib_sam_h)
 test/test_khash.o: test/test_khash.c config.h $(htslib_hts_alloc_h) $(htslib_khash_h) $(htslib_kroundup_h)
 test/test_ksort.o: test/test_ksort.c config.h $(htslib_hts_alloc_h) $(htslib_ksort_h) $(htslib_khash_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h) kstring.c

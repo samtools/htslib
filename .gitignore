@@ -65,6 +65,8 @@ shlib-exports-*.txt
 /test/test-bcf-translate
 /test/test-bcf_set_variant_type
 /test/test_bgzf
+/test/test_cram_executor
+/test/test_cram_executor.tmp.*
 /test/test_expr
 /test/test_faidx
 /test/test_index

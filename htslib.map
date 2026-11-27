@@ -678,3 +678,9 @@ HTSLIB_1.25 {
     sam_hdr_remove_tag_all;
     tbx_itr_regions;
 } HTSLIB_1.24;
+
+HTSLIB_1.26 {
+    cram_encode_container;
+    cram_flush_encoded_container;
+    cram_set_container_executor;
+} HTSLIB_1.25;
