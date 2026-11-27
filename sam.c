@@ -6343,6 +6343,8 @@ void bam_plp_reset(bam_plp_t iter)
     while (iter->head != iter->tail) {
         lbnode_t *p = iter->head;
         iter->head = p->next;
+        if (iter->plp_destruct)
+            iter->plp_destruct(iter->data, &p->b, &p->cd);
         mp_free(iter->mp, p);
     }
 }
