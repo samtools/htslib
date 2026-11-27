@@ -1453,7 +1453,13 @@ overlaps more than one region, it will only be returned once.
 which works for both BCF and VCF.
 */
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
-    #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
+    /* Has the exact hts_id2name_f type, so the indirect call in
+       hts_idx_seqnames() passes Control Flow Integrity (kCFI) checks. */
+    static inline const char *bcf_hdr_id2name_void(void *hdr, int rid)
+    {
+        return bcf_hdr_id2name((const bcf_hdr_t *) hdr, rid);
+    }
+    #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),bcf_hdr_id2name_void,(hdr))
 
 /// Load a BCF index from a given index file name
 /**  @param fn     Input BAM/BCF/etc filename

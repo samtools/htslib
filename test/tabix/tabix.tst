@@ -56,6 +56,7 @@ P vcf_file.1.3000151.out $tabix vcf_file.tmp.bcf 1:3000151-3000151
 P vcf_file.1.3000151.out $tabix -u vcf_file.tmp.bcf 1:3000151-3000151
 P vcf_file.2.3199812.out $tabix vcf_file.tmp.bcf 2:3199812-3199812
 P vcf_file.2.3199812.out $tabix -u vcf_file.tmp.bcf 2:3199812-3199812
+P vcf_file.list.out $tabix -l vcf_file.tmp.bcf
 
 # VCF file with chromosome > 2^29-1 bases long
 # TBI cannot index this file, so building the index should fail
