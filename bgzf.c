@@ -50,7 +50,7 @@
 #define X86_64 __x86_64__
 #elifdef _M_AMD64
 #define X86_64 _M_AMD64
-#else 
+#else
 #define X86_64 0
 #endif
 
@@ -2405,6 +2405,7 @@ int bgzf_close(BGZF* fp)
             hts_log_error("Call to inflateEnd/deflateEnd failed: %s", bgzf_zerr(ret, NULL));
         }
         free(fp->gz_stream);
+        free(fp->isal_inflate_state);
     }
     ret = hclose(fp->fp);
     if (ret != 0) return -1;
