@@ -48,7 +48,7 @@
 
 #ifdef __x86_64__
 #define X86_64 __x86_64__
-#elifdef _M_AMD64
+#elif defined(_M_AMD64)
 #define X86_64 _M_AMD64
 #else
 #define X86_64 0
