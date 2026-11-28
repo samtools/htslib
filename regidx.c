@@ -604,6 +604,7 @@ void regitr_reset(regidx_t *regidx, regitr_t *regitr)
     itr_t_ *itr = (itr_t_*) regitr->itr;
     memset(itr,0,sizeof(itr_t_));
     itr->ridx = regidx;
+    regitr->seq = NULL;     // no query in progress, see regitr_overlap()
 }
 
 void regitr_destroy(regitr_t *regitr)
