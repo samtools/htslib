@@ -4014,6 +4014,51 @@ static int vcf_parse_format_check7(const bcf_hdr_t *h, bcf1_t *v) {
     return 0;
 }
 
+// Fast path for FORMAT "GT" alone, with every sample a diploid genotype of
+// single-digit or missing alleles ("0|1", "./."), as in large phased cohorts.
+// Encodes straight to int8 in one pass, giving the same bytes as
+// vcf_parse_format_max3() to _gt6() would.  Returns 0 on success, 1 if the
+// line does not qualify (nothing is written then) and -1 on error.
+static inline int vcf_gt_allele_code(char c) {
+    return c >= '0' && c <= '9' ? (c - '0' + 1) << 1 : c == '.' ? 0 : -1;
+}
+
+static int vcf_parse_format_diploid_gt(kstring_t *s, const bcf_hdr_t *h,
+                                       bcf1_t *v, const char *q,
+                                       fmt_aux_t *fmt) {
+    const int nsamples = bcf_hdr_nsamples(h);
+    const char *t = q + 1, *end = s->s + s->l;
+    if (h->keep_samples || v->n_fmt != 1 || !fmt[0].is_gt
+        || (fmt[0].y>>4&0xf) != BCF_HT_STR
+        || end - t != 4 * (ptrdiff_t) nsamples - 1)
+        return 1;
+
+    kstring_t *str = &v->indiv;
+    size_t l0 = str->l;
+    if (bcf_enc_int1(str, fmt[0].key) < 0
+        || bcf_enc_size(str, 2, BCF_BT_INT8) < 0
+        || ks_resize(str, str->l + 2 * (size_t) nsamples) < 0)
+        return -1;
+
+    uint8_t *x = (uint8_t *) str->s + str->l;
+    int i;
+    for (i = 0; i < nsamples; i++, t += 4, x += 2) {
+        int a = vcf_gt_allele_code(t[0]), b = vcf_gt_allele_code(t[2]);
+        if (a < 0 || b < 0 || (t[1] != '|' && t[1] != '/')
+            || (i + 1 < nsamples && t[3] != '\t')) {
+            str->l = l0;
+            return 1;
+        }
+        // Unprefixed diploid: both alleles take the separator's phasing
+        int phased = t[1] == '|';
+        x[0] = a | phased;
+        x[1] = b | phased;
+    }
+    str->l += 2 * (size_t) nsamples;
+    v->n_sample = nsamples;
+    return 0;
+}
+
 // p,q is the start and the end of the FORMAT field
 static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
                             char *p, char *q)
@@ -4032,6 +4077,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v,
     // get format information from the dictionary
     if (vcf_parse_format_dict2(s, h, v, p, q, fmt) < 0)
         return -1;
+
+    if ((ret = vcf_parse_format_diploid_gt(s, h, v, q, fmt)) <= 0)
+        return ret;
 
     // FORMAT data is per-sample A:B:C A:B:C A:B:C ... but in memory it is
     // stored as per-type arrays AAA... BBB... CCC...  This is basically
