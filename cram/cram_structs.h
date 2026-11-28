@@ -358,6 +358,13 @@ struct cram_block_compression_hdr {
 
     // Total codec count, used for index to block_by_id for transforms
     int ncodecs;
+
+    // External block content IDs that slices of this container need for
+    // fd->required_fields, sorted.  n_needed_ids < 0 means all blocks.
+    // Computed on the first slice read (needed_ids_set).
+    int *needed_ids;
+    int n_needed_ids;
+    int needed_ids_set;
 };
 
 typedef struct cram_map {
@@ -826,6 +833,7 @@ struct cram_fd {
     int use_arith;
     int shared_ref;
     unsigned int required_fields;
+    int skip_by_read;   // cram_read_slice_hdr skips data by reading, not seeking
     int store_md;
     int store_nm;
     int remove_ur;

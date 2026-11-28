@@ -49,6 +49,7 @@ run_test('test_view',$opts,0);
 run_test('test_view',$opts,4);
 
 run_test('test_MD',$opts);
+run_test('test_required_fields',$opts);
 
 run_test('test_vcf_api',$opts,out=>'test-vcf-api.out',needed_by=>'test_vcf_sweep');
 run_test('test_bcf2vcf',$opts);
@@ -1049,6 +1050,44 @@ sub test_MD
             failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
         }
     }
+}
+
+# CRAM_OPT_REQUIRED_FIELDS skips reading the blocks that are not needed.
+# Decoding must work and give the same records whether the data is
+# skipped by seeking (file) or by reading (pipe), with or without threads.
+sub test_required_fields
+{
+    my ($opts) = @_;
+    my $fails = 0;
+    my $tmp = "$$opts{tmp}/required_fields.tmp";
+
+    foreach my $t (["ce#5b_java.cram", "ce.fa"], ["range.cram", "ce.fa"],
+                   ["xx#large_aux_java.cram", "xx.fa"],
+                   ["auxf#values_java.cram", "auxf.fa"]) {
+        my ($cram, $ref) = @$t;
+        print "test_required_fields: $cram\n";
+        $test_view_failures = 0;
+        # FLAG, +RNAME/POS/MAPQ, +RNEXT/PNEXT (flagstat), +AUX, +SEQ
+        foreach my $rf (2, 30, 222, 2050, 2562, 1023) {
+            my @out;
+            foreach my $how ("$cram", "-\@2 $cram", "- < $cram") {
+                my $out = "$tmp." . scalar(@out);
+                testv $opts, "./test_view -i reference=$ref -i required_fields=$rf $how > $out";
+                push(@out, $out);
+            }
+            testv $opts, "cmp $out[0] $out[1]";
+            testv $opts, "cmp $out[0] $out[2]";
+        }
+        # The fields asked for match a full decode
+        if ($cram eq "ce#5b_java.cram") {
+            testv $opts, "./test_view -i reference=ce.fa $cram | cut -f2-5 > $tmp.all";
+            testv $opts, "./test_view -i reference=ce.fa -i required_fields=30 $cram | cut -f2-5 > $tmp.sub";
+            testv $opts, "cmp $tmp.all $tmp.sub";
+        }
+        $fails += $test_view_failures;
+    }
+    if ($fails) { failed($opts, "test_required_fields", "$fails subtests failed"); }
+    else        { passed($opts, "test_required_fields"); }
 }
 
 sub test_index

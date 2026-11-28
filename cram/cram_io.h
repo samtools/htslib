@@ -504,6 +504,18 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs);
  */
 cram_slice *cram_read_slice(cram_fd *fd);
 
+/*! Reads a slice of a container with compression header hdr, skipping
+ * the data of external blocks that fd->required_fields does not need.
+ *
+ * Skipped blocks have NULL data and cannot be uncompressed.
+ * With hdr NULL, this is cram_read_slice().
+ *
+ * @return
+ * Returns cram_slice ptr on success;
+ *         NULL on failure
+ */
+cram_slice *cram_read_slice_hdr(cram_fd *fd, cram_block_compression_hdr *hdr);
+
 
 
 /**@}*/
